@@ -1,0 +1,4 @@
+# [legacy] 선생님 코드 호환용 — target 클래스명 → 카메라 좌표 (x,y,z) [mm]. 신규 코드는 TrackedObjectArray 토픽 사용.
+string target
+---
+float64[] depth_position

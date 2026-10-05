@@ -1,0 +1,4 @@
+uint8 mode                           # TrialResult.MODE_*
+---
+bool success
+string message

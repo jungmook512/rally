@@ -1,0 +1,111 @@
+# RALLY — 서비스별 컨테이너. PC마다 프로필로 필요한 서비스만 띄운다.
+#   PC1 (로봇 제어 호스트): ROS 2 네이티브 실행, 컨테이너 없음 (ros2_ws 직접 빌드)
+#   PC2: docker compose --profile pc2 up
+#   PC3: docker compose --profile pc3 up
+# 공통: network_mode host + 동일 ROS_DOMAIN_ID, Fast DDS Discovery Server(PC3) 사용
+x-ros: &ros
+  network_mode: host
+  ipc: host
+  environment:
+    - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-7}
+    - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+    - ROS_DISCOVERY_SERVER=${PC3_IP:-192.168.0.13}:11811
+    - FASTRTPS_DEFAULT_PROFILES_FILE=/ros2_ws/fastdds_client.xml
+  volumes:
+    - ../ros2_ws:/ros2_ws
+  restart: unless-stopped
+
+services:
+  # ---------- PC2 : AI 추론 (GPU) ----------
+  vision:
+    <<: *ros
+    profiles: [pc2]
+    build: { context: .., dockerfile: docker/vision/Dockerfile }
+    devices: ["/dev/bus/usb:/dev/bus/usb"]        # RealSense
+    deploy: { resources: { reservations: { devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }] } } }
+    volumes:
+      - ../ros2_ws:/ros2_ws
+      - ../models:/models:ro
+    command: ros2 launch rally_bringup pc2_perception.launch.py part:=vision
+
+  hand_pose:
+    <<: *ros
+    profiles: [pc2]
+    build: { context: .., dockerfile: docker/hand_pose/Dockerfile }
+    devices: ["/dev/video0:/dev/video0"]          # 측면 웹캠
+    deploy: { resources: { reservations: { devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }] } } }
+    command: ros2 launch rally_bringup pc2_perception.launch.py part:=human
+
+  voice:
+    <<: *ros
+    profiles: [pc2]
+    build: { context: .., dockerfile: docker/voice/Dockerfile }
+    devices: ["/dev/snd:/dev/snd"]
+    group_add: ["audio"]
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ../ros2_ws:/ros2_ws
+      - ../models:/models:ro
+    command: ros2 launch rally_bringup pc2_perception.launch.py part:=voice
+
+  # ---------- PC3 : 서버 ----------
+  discovery:
+    image: ros:jazzy-ros-core
+    profiles: [pc3]
+    network_mode: host
+    command: fastdds discovery -i 0 -l 0.0.0.0 -p 11811
+    restart: unless-stopped
+
+  db:
+    image: timescale/timescaledb-ha:pg16          # TimescaleDB + pgvector 포함
+    profiles: [pc3]
+    environment:
+      - POSTGRES_USER=rally
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-rally}
+      - POSTGRES_DB=rally
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/home/postgres/pgdata/data
+      - ../ros2_ws/src/rally_db/rally_db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rally"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    profiles: [pc3]
+    ports: ["6379:6379"]
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 5s, retries: 10 }
+
+  brain:
+    <<: *ros
+    profiles: [pc3]
+    build: { context: .., dockerfile: docker/brain/Dockerfile }
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-7}
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+      - ROS_DISCOVERY_SERVER=127.0.0.1:11811
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DATABASE_URL=postgresql://rally:${POSTGRES_PASSWORD:-rally}@127.0.0.1:5432/rally
+      - REDIS_URL=redis://127.0.0.1:6379/0
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    command: ros2 launch rally_bringup pc3_brain.launch.py
+
+  dashboard:
+    profiles: [pc3]
+    build: { context: .., dockerfile: docker/dashboard/Dockerfile }
+    network_mode: host
+    environment:
+      - DATABASE_URL=postgresql://rally:${POSTGRES_PASSWORD:-rally}@127.0.0.1:5432/rally
+      - REDIS_URL=redis://127.0.0.1:6379/0
+    depends_on:
+      db: { condition: service_healthy }
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+volumes:
+  pgdata:

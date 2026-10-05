@@ -1,0 +1,5 @@
+string text
+bool block_mic                       # 발화 중 마이크 차단 (기본 true)
+---
+bool done
+float32 duration_s

@@ -1,0 +1,15 @@
+# ROS 2
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+__pycache__/
+*.pyc
+# 데이터·모델 (용량)
+models/*.pt
+models/*.engine
+models/*.onnx
+data/datasets/
+data/bags/
+# 비밀
+docker/.env
+.env

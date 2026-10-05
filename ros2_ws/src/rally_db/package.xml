@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>rally_db</name>
+  <version>0.1.0</version>
+  <description>RALLY — TrialResult·시계열 기록, pgvector 검색, Redis 상태 발행</description>
+  <maintainer email="team@rally.local">조정묵</maintainer>
+  <license>MIT</license>
+  <depend>rclpy</depend>
+  <depend>rally_interfaces</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>tf2_ros</depend>
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>pytest</test_depend>
+  <export><build_type>ament_python</build_type></export>
+</package>

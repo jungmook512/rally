@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>rally_bringup</name>
+  <version>0.1.0</version>
+  <description>RALLY — launch 파일, 파라미터(yaml), Lifecycle 기동 순서</description>
+  <maintainer email="team@rally.local">조정묵</maintainer>
+  <license>MIT</license>
+  <depend>rclpy</depend>
+  <depend>rally_interfaces</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>tf2_ros</depend>
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>pytest</test_depend>
+  <export><build_type>ament_python</build_type></export>
+</package>

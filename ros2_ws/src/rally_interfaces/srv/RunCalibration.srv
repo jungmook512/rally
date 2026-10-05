@@ -1,0 +1,8 @@
+# eye-in-hand 캘리브레이션 실행 (로봇이 자세를 순회하며 ArUco 촬영)
+uint8 num_poses                      # 권장 15
+bool publish_static_tf
+---
+bool success
+float64 reprojection_error_mm
+geometry_msgs/Transform tool_to_camera
+string message

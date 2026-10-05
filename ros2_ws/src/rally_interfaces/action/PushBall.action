@@ -1,0 +1,14 @@
+# 모드 1: 공을 밀어 목표 지점 근처에 멈추게 한다
+geometry_msgs/PointStamped target     # 환자 손 기준 목표 정지 위치
+float32 push_speed                    # [m/s]
+float32 push_dir_deg                  # 테이블 평면 기준 [deg]
+float32 contact_force_threshold       # 접촉 감지 [N]
+---
+bool success
+geometry_msgs/Point stop_position     # 비전이 측정한 실제 정지 위치
+float32 error_mm
+float32 contact_force_peak
+string failure_reason
+---
+string phase                          # approach | contact | push | observe
+float32 progress                      # 0~1

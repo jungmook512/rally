@@ -1,0 +1,8 @@
+# RG2 저수준 명령 (skill 내부용)
+float32 width_mm                     # 0 ~ 110
+float32 force_n                      # 3 ~ 40
+bool wait_until_done
+---
+bool success
+float32 actual_width_mm
+bool object_detected                 # 폭 피드백 기반 파지 판정

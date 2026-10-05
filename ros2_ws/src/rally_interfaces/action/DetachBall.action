@@ -1,0 +1,11 @@
+# 모드 3 후처리: 거치대에 걸린 패드에서 벨크로 공을 RG2로 떼어낸다
+geometry_msgs/PoseStamped ball_pose   # 비전이 측정한 패드 위 공 위치
+float32 grip_force_n
+float32 pull_force_limit_n            # 안전 한계
+---
+bool success
+float32 peak_pull_force_n             # 떼어지는 순간의 최대 당김 힘
+float32 detach_drop_n                 # 힘 급락 크기 (판정 근거)
+---
+string phase                          # approach | grasp | pull | detached | retreat
+float32 pull_force_n

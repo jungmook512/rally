@@ -1,0 +1,12 @@
+# 공통: 순응 제어로 테이블 위 물체 집기 (테이블 접촉 감지 후 파지)
+geometry_msgs/PoseStamped target
+float32 yaw                           # 마스크 주축 [rad]
+float32 grip_force_n
+float32 z_stiffness                   # 낮을수록 부드럽게 접촉
+---
+bool success
+float32 grip_width_mm
+float32 contact_force_n
+---
+string phase                          # approach | descend | contact | grasp | lift
+float32 progress

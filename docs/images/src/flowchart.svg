@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1190" width="900" height="1190" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">
+  <defs>
+    <marker id="fa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#566A70"/></marker>
+    <marker id="fw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#B9420E"/></marker>
+  </defs>
+  <rect width="900" height="1190" fill="#FFFFFF"/>
+  <text x="30" y="36" font-size="18" font-weight="700" fill="#15242A">RALLY 정상상태 흐름 — 세션은 한 방향, 시도 루프는 모드마다 반복, 안전 감시는 항상 우선</text>
+
+  <g transform="translate(0,40)"><!-- loop group -->
+  <rect x="125" y="300" width="290" height="350" rx="14" fill="#DCEEEA" stroke="#0E7268" stroke-width="1.4"/>
+  <text x="141" y="324" font-size="13" font-weight="700" fill="#0E7268">시도 루프 · 모드마다 반복 (실시간)</text>
+
+  <!-- safety lane -->
+  <rect x="660" y="300" width="216" height="350" rx="14" fill="#FBE8DD" stroke="#B9420E" stroke-width="1.4" stroke-dasharray="6 4"/>
+  <text x="768" y="326" text-anchor="middle" font-size="13" font-weight="700" fill="#B9420E">상시 안전 감시 · 100 Hz</text>
+  <rect x="676" y="344" width="184" height="66" rx="8" fill="#FFFFFF" stroke="#B9420E"/>
+  <text x="768" y="370" text-anchor="middle" font-size="14" font-weight="700" fill="#15242A">속도 감속</text>
+  <text x="768" y="391" text-anchor="middle" font-size="12" fill="#566A70">손이 중앙선에 근접</text>
+  <rect x="676" y="426" width="184" height="66" rx="8" fill="#FFFFFF" stroke="#B9420E"/>
+  <text x="768" y="452" text-anchor="middle" font-size="14" font-weight="700" fill="#15242A">즉시 정지</text>
+  <text x="768" y="473" text-anchor="middle" font-size="12" fill="#566A70">nudge · "그만" · 주먹 제스처</text>
+  <rect x="676" y="508" width="184" height="66" rx="8" fill="#FFFFFF" stroke="#B9420E"/>
+  <text x="768" y="534" text-anchor="middle" font-size="14" font-weight="700" fill="#15242A">해제 · 후퇴</text>
+  <text x="768" y="555" text-anchor="middle" font-size="12" fill="#566A70">힘 한계 초과</text>
+  <text x="768" y="606" text-anchor="middle" font-size="12" fill="#566A70">별도 콜백 그룹에서 실행</text>
+  <text x="768" y="624" text-anchor="middle" font-size="12" fill="#566A70">모든 단계보다 우선</text>
+
+  <!-- connectors -->
+  <g fill="none" stroke="#566A70" stroke-width="1.5">
+    <path d="M270 88V118" marker-end="url(#fa)"/>
+    <path d="M270 178V208" marker-end="url(#fa)"/>
+    <path d="M270 268V336" marker-end="url(#fa)"/>
+    <path d="M270 396V416" marker-end="url(#fa)"/>
+    <path d="M270 476V496" marker-end="url(#fa)"/>
+    <path d="M270 556V576" marker-end="url(#fa)"/>
+    <path d="M270 636V682" marker-end="url(#fa)"/>
+    <path d="M370 730H428" marker-end="url(#fa)"/>
+    <path d="M270 776V808" marker-end="url(#fa)"/>
+    <path d="M520 759V848H397" marker-end="url(#fa)"/>
+    <path d="M270 886V918" marker-end="url(#fa)"/>
+    <path d="M270 1000V1038" marker-end="url(#fa)"/>
+    <path d="M180 960H70V239H143" marker-end="url(#fa)"/>
+  </g>
+  <path d="M660 527H417" fill="none" stroke="#B9420E" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#fw)"/>
+  <text x="538" y="517" text-anchor="middle" font-size="12" font-weight="700" fill="#B9420E">감속 · 정지 인터럽트</text>
+
+  <text x="399" y="720" text-anchor="middle" font-size="12" fill="#566A70">아니오</text>
+  <text x="280" y="798" font-size="12" fill="#566A70">예</text>
+  <text x="280" y="1024" font-size="12" fill="#566A70">예</text>
+  <text x="58" y="600" text-anchor="middle" font-size="12" fill="#566A70" transform="rotate(-90 58 600)">아니오 · 다음 시도 / 다음 모드</text>
+
+  <!-- nodes -->
+  <rect x="145" y="30" width="250" height="58" rx="29" fill="#FFFFFF" stroke="#15242A" stroke-width="1.6"/>
+  <text x="270" y="54" text-anchor="middle" font-size="15" font-weight="700" fill="#15242A">시스템 기동</text>
+  <text x="270" y="74" text-anchor="middle" font-size="12" fill="#566A70">Lifecycle 노드 순차 활성화</text>
+
+  <rect x="145" y="120" width="250" height="58" rx="10" fill="#FFFFFF" stroke="#15242A" stroke-width="1.3"/>
+  <text x="270" y="144" text-anchor="middle" font-size="15" font-weight="700" fill="#15242A">세션 시작</text>
+  <text x="270" y="164" text-anchor="middle" font-size="12" fill="#566A70">웨이크워드 · 지난 기록으로 난이도 결정</text>
+
+  <rect x="145" y="210" width="250" height="58" rx="10" fill="#FFFFFF" stroke="#15242A" stroke-width="1.3"/>
+  <text x="270" y="234" text-anchor="middle" font-size="15" font-weight="700" fill="#15242A">모드 선택</text>
+  <text x="270" y="254" text-anchor="middle" font-size="12" fill="#566A70">행동 트리가 모드 1 → 3 → 5 실행</text>
+
+  <rect x="145" y="338" width="250" height="58" rx="10" fill="#FFFFFF" stroke="#0E7268" stroke-width="1.3"/>
+  <text x="270" y="362" text-anchor="middle" font-size="15" font-weight="700" fill="#15242A">감지</text>
+  <text x="270" y="382" text-anchor="middle" font-size="12" fill="#566A70">YOLO-Seg · ByteTrack · 3D 손 관절</text>
+
+  <rect x="145" y="418" width="250" height="58" rx="10" fill="#FFFFFF" stroke="#0E7268" stroke-width="1.3"/>
+  <text x="270" y="442" text-anchor="middle" font-size="15" font-weight="700" fill="#15242A">예측 · 계획</text>
+  <text x="270" y="462" text-anchor="middle" font-size="12" fill="#566A70">칼만 예측 · 궤적 · 파라미터 결정</text>
+
+  <rect x="145" y="498" width="250" height="58" rx="10" fill="#FFFFFF" stroke="#0E7268" stroke-width="1.3"/>
+  <text x="270" y="522" text-anchor="middle" font-size="15" font-weight="700" fill="#15242A">로봇 동작</text>
+  <text x="270" y="542" text-anchor="middle" font-size="12" fill="#566A70">skill action 실행 · 순응 · 힘 조건 감시</text>
+
+  <rect x="145" y="578" width="250" height="58" rx="10" fill="#FFFFFF" stroke="#0E7268" stroke-width="1.3"/>
+  <text x="270" y="602" text-anchor="middle" font-size="15" font-weight="700" fill="#15242A">판정</text>
+  <text x="270" y="622" text-anchor="middle" font-size="12" fill="#566A70">정지 위치 오차 · 패드 명중 · 그리퍼 폭 · 힘</text>
+
+  <polygon points="270,684 370,730 270,776 170,730" fill="#FFFFFF" stroke="#15242A" stroke-width="1.3"/>
+  <text x="270" y="726" text-anchor="middle" font-size="13" font-weight="700" fill="#15242A">규칙으로</text>
+  <text x="270" y="744" text-anchor="middle" font-size="13" font-weight="700" fill="#15242A">결정 가능?</text>
+
+  <rect x="430" y="701" width="180" height="58" rx="10" fill="#E8E5F7" stroke="#5848B0" stroke-width="1.6"/>
+  <text x="520" y="725" text-anchor="middle" font-size="15" font-weight="700" fill="#15242A">LLM 판단</text>
+  <text x="520" y="745" text-anchor="middle" font-size="12" fill="#566A70">비동기 · JSON 스키마 검증</text>
+
+  <rect x="145" y="810" width="250" height="76" rx="10" fill="#FFFFFF" stroke="#15242A" stroke-width="1.3"/>
+  <text x="270" y="834" text-anchor="middle" font-size="15" font-weight="700" fill="#15242A">결정 · 피드백 · 기록</text>
+  <text x="270" y="854" text-anchor="middle" font-size="12" fill="#566A70">난이도 · 휴식 · 자세 교정 → TTS</text>
+  <text x="270" y="872" text-anchor="middle" font-size="12" fill="#566A70">TrialResult → DB (Timescale · pgvector)</text>
+
+  <polygon points="270,920 360,960 270,1000 180,960" fill="#FFFFFF" stroke="#15242A" stroke-width="1.3"/>
+  <text x="270" y="965" text-anchor="middle" font-size="13" font-weight="700" fill="#15242A">세션 종료?</text>
+
+  <rect x="145" y="1040" width="250" height="58" rx="29" fill="#DCEEEA" stroke="#0E7268" stroke-width="2"/>
+  <text x="270" y="1064" text-anchor="middle" font-size="15" font-weight="700" fill="#15242A">세션 리포트</text>
+  <text x="270" y="1084" text-anchor="middle" font-size="12" fill="#566A70">LLM 회차 해석 → 치료사 대시보드</text>
+
+  <!-- legend -->
+  <rect x="430" y="1040" width="14" height="14" rx="3" fill="#DCEEEA" stroke="#0E7268"/><text x="452" y="1052" font-size="12" fill="#566A70">시도 루프 (실시간, 빠른 층)</text>
+  <rect x="430" y="1064" width="14" height="14" rx="3" fill="#E8E5F7" stroke="#5848B0"/><text x="452" y="1076" font-size="12" fill="#566A70">LLM 판단 (비동기, 느린 층)</text>
+  <rect x="430" y="1088" width="14" height="14" rx="3" fill="#FBE8DD" stroke="#B9420E"/><text x="452" y="1100" font-size="12" fill="#566A70">안전 감시 (항상 우선)</text>
+
+</g></svg>

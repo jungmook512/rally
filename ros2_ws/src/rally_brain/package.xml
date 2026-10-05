@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>rally_brain</name>
+  <version>0.1.0</version>
+  <description>RALLY — 상황 요약, 규칙 레이어, LLM advisor, py_trees 행동 트리</description>
+  <maintainer email="team@rally.local">조정묵</maintainer>
+  <license>MIT</license>
+  <depend>rclpy</depend>
+  <depend>rally_interfaces</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>tf2_ros</depend>
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>pytest</test_depend>
+  <export><build_type>ament_python</build_type></export>
+</package>

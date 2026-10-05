@@ -1,0 +1,522 @@
+# RALLY — 테이블 건너편 재활 파트너 로봇 기획서
+
+**R**ehabilitation **A**rm that **L**earns the ra**LLY** with you
+공을 주고받는 "랠리", 그리고 회복한다는 뜻의 rally.
+
+| 항목 | 내용 |
+|---|---|
+| 문서 버전 | v1.0 (2026-10-05) |
+| 팀 | 정정인(로봇 제어) · 박성현(비전) · 정동휘(사람 인식·음성·대시보드) · 조정묵(지능·인프라) |
+| 로봇 | 두산 M0609 + OnRobot RG2 |
+| 센서 | RealSense D4xx (그리퍼 위 장착, eye-in-hand) · 웹캠(환자 측면) · USB 마이크 · 스피커 |
+| 환경 | Ubuntu 24.04 · ROS 2 Jazzy · Docker · PostgreSQL/TimescaleDB/pgvector/Redis |
+| 개발 기간 | 2026-10-06 ~ 10-13 (8일) |
+| 저장소 | `rally/` (구조는 10절) |
+
+---
+
+## 목차
+
+1. [프로젝트 개요](#1-프로젝트-개요)
+2. [BRD — 비즈니스 요구사항](#2-brd--비즈니스-요구사항)
+3. [시스템 범위와 훈련 모드](#3-시스템-범위와-훈련-모드)
+4. [핵심 기술과 고도화 포인트](#4-핵심-기술과-고도화-포인트)
+5. [정상상태 흐름 (Flowchart)](#5-정상상태-흐름-flowchart)
+6. [시스템 아키텍처](#6-시스템-아키텍처)
+7. [SRD — 시스템 요구사항](#7-srd--시스템-요구사항)
+8. [Critical Point와 대응](#8-critical-point와-대응)
+9. [시연 셋팅](#9-시연-셋팅)
+10. [저장소 구조와 인터페이스](#10-저장소-구조와-인터페이스)
+11. [개발 일정과 역할](#11-개발-일정과-역할)
+12. [Phase 2 (이번 범위 밖)](#12-phase-2-이번-범위-밖)
+
+---
+
+## 1. 프로젝트 개요
+
+### 1.1 한 줄 정의
+
+로봇은 테이블 반대편에서 **환자 몸에 닿지 않고**, 공·벨크로 패드·컵 같은 물체로만 상호작용하며 상지 재활 훈련의 상대 역할을 하고, 동작을 측정·기록하며, 시도할수록 스스로 정확해지는 반자율 협동로봇.
+
+### 1.2 왜 이 주제인가
+
+- 현재 확보한 기반은 "말로 시키면 **정해진 좌표**의 물건을 옮기는 로봇"이다 (Whisper + ChatGPT API + YOLO + 고정 좌표 픽앤플레이스).
+- 이 기반의 한계 세 가지를 깨는 것이 목표다.
+  1. 물체 위치를 고정 좌표로 쓴다 → **핸드-아이 캘리브레이션 + 분할 마스크 기반 3D 위치**
+  2. 로봇이 접촉을 느끼지 못한다 → **힘·순응 제어**
+  3. 판단이 명령 → 실행 한 방향이다 → **상황 판단 + LLM 학습 루프**
+- 재활 도메인은 "사람과 협업하는 반자율 협동로봇"이라는 과제 목표에 정확히 맞고, 환자 몸에 닿지 않는 구조로 안전 문제를 설계 단계에서 제거했다.
+
+### 1.3 평가 지표와의 연결
+
+| 과제 요구 | RALLY에서 구현되는 곳 |
+|---|---|
+| RealSense 캘리브레이션 · Topic · Service · Interface | eye-in-hand 캘리브레이션, `rally_interfaces` 커스텀 msg/srv/action 19종 |
+| Doosan 협동로봇 제어 | movel/amovel/servol/movec/movesx, 순응·힘 제어, 힘 조건 감시 |
+| RG2 그리퍼 + Modbus | Pymodbus 비동기, 폭·파지력 피드백으로 파지 판정 |
+| Object Detection · 학습 · 추론 | YOLO-Seg 커스텀 데이터셋 학습, TensorRT 추론 |
+| Voice Processing · Wakeup word · Keyword | openWakeWord 커스텀 호출어, faster-whisper, LLM function calling |
+| Docker · DB · 다중 PC 통신 | 컨테이너 6개 / PC 3대, DB 4종 역할 분리, Fast DDS Discovery Server |
+
+---
+
+## 2. BRD — 비즈니스 요구사항
+
+### 2.1 문제 정의
+
+- 뇌졸중·어깨 수술 후 상지 재활은 뻗기·던지기·쥐기를 **수백 번 반복**해야 하는데, 치료사 1명이 환자 1명을 붙잡고 공을 주고받으며 결과를 수기로 기록한다.
+- 평가가 치료사의 눈대중에 의존해 **사람마다 결과가 다르고**, 회복 추이를 수치로 남기기 어렵다.
+- 기존 상지 재활 로봇(엔드이펙터형·외골격형)은 환자 팔을 **직접 잡는** 고가 전용 장비라 설치 공간과 비용 부담이 크다.
+
+### 2.2 목표 사용자
+
+| 사용자 | 역할 | 니즈 |
+|---|---|---|
+| 환자 (1차) | 로봇과 마주 앉아 훈련 | 지루하지 않은 반복, 즉각적인 피드백, 안전 |
+| 치료사 (2차) | 세션 설정·모니터링, 리포트 확인 | 여러 환자 동시 관리, 객관적 수치, 기록 자동화 |
+| 운영자 (팀) | 시연·유지보수 | 캘리브레이션·안전 점검 루틴 |
+
+### 2.3 비즈니스 목표
+
+| ID | 목표 | 측정 |
+|---|---|---|
+| BG-1 | 반복 훈련 상대 역할을 로봇이 맡아 치료사 1명이 여러 환자를 본다 | 세션 중 치료사 개입 없이 진행되는 시도 비율 |
+| BG-2 | 동작 품질을 정량화해 회복 추이를 데이터로 남긴다 | 시도별 오차·관절 각도·성공률이 DB에 자동 기록 |
+| BG-3 | 환자 상태에 맞춰 난이도를 스스로 조절한다 | 난이도 변경 결정의 근거가 리포트에 남음 |
+| BG-4 | 환자 몸에 닿지 않는 구조로 안전 인증 부담을 낮춘다 | 로봇 작업 공간이 중앙선을 넘지 않음 (하드 제한) |
+
+### 2.4 사업성
+
+- 재활 전문 인력 부족과 평가 표준화 수요가 동시에 있다.
+- 협동로봇 + RGB-D 카메라 + 일반 소품으로 구성되어 전용 재활 로봇 대비 저가·소형이고, 소규모 재활 병원·요양 시설·재택 보급 모델이 가능하다.
+- 축적되는 시도 데이터(궤적·힘·관절)는 그 자체로 회복 평가 지표 연구에 쓸 수 있다.
+
+### 2.5 범위
+
+**Phase 1 (이번 8일)**: 훈련 모드 1·3·5, 세션 흐름, 안전, 기록·리포트, 학습 루프
+**Phase 2 (범위 밖, 12절)**: 굴러오는 공 받기(구 장면 2), 블록 번갈아 쌓기(구 장면 4), VLA 비교 실험
+
+---
+
+## 3. 시스템 범위와 훈련 모드
+
+### 3.1 세션 구조
+
+세션은 **모드 1 → 모드 3 → 모드 5** 순서로 진행되며, 재활 관점에서 **큰 동작(팔 뻗기) → 협응(던지기) → 미세 동작(손목·쥐기)** 순서다. 모드마다 여러 번 시도하고, 시도마다 "감지 → 예측·계획 → 로봇 동작 → 판정 → 결정·기록" 루프를 한 번 돈다.
+
+### 3.2 모드 1 — 공 굴려주기 (팔 뻗기 훈련)
+
+| 항목 | 내용 |
+|---|---|
+| 시나리오 | 로봇이 공을 집어 환자의 마비 쪽 손이 **닿을 듯 말 듯한 위치**로 밀어 보낸다. 환자가 뻗어서 잡고 다시 로봇 쪽으로 굴려 돌려준다. |
+| 로봇 기능 | `PickCompliant`(순응 상태로 테이블 접촉 후 파지) → `PushBall`(속도·방향 프로파일, 접촉 힘 감지) |
+| 비전 | 공 마스크 추적, 굴러가는 중 **정지 위치 예측**(칼만 + 마찰 감속), 실제 정지 위치 측정 |
+| 손 인식 | 환자 손 3D 위치 = 목표 지점 기준, 뻗기 거리 측정 |
+| 학습 루프 | 매 시도 "밀기 속도·방향 → 실제 정지 위치" 기록 → LLM + pgvector 유사 시도 검색 → 다음 파라미터 제안. **시도할수록 목표 오차가 줄어드는 곡선**이 이 모드의 쇼케이스 |
+| 판정 | 정지 위치와 목표의 오차(mm), 환자가 잡았는지(손 마스크·공 마스크 접촉) |
+
+### 3.3 모드 3 — 움직이는 패드 맞히기 (던지기·협응 훈련)
+
+| 항목 | 내용 |
+|---|---|
+| 시나리오 | 로봇이 **벨크로 패드**를 들고 원·8자·다점 궤적으로 천천히 움직인다. 환자가 벨크로 공을 던져 패드에 붙인다. 시도가 끝나면 로봇이 패드를 **거치대에 걸고**, 붙은 공을 RG2로 **떼어내** 환자에게 건넨다. |
+| 로봇 기능 | `MoveTarget`(movec·movesx·moveb) → `DetachBall`(힘 제어 당김, 힘 급락으로 떼어짐 판정) → `Handover`(GIVE) |
+| 비전 | 패드 마스크 위 **공 마스크 분리** → 명중 여부와 중심 오차(mm). 공 비행은 측면 웹캠으로 추적 (패드가 RealSense 시야를 가릴 수 있음) |
+| 손·몸 인식 | 릴리스 순간(손 마스크·공 마스크 분리), 몸통 기울임 보상 동작 감지 |
+| 판정 | 비전 명중 판정 우선, 힘 센서 충격 피크는 보조 |
+| 난이도 | 명중률 추세에 따라 궤적 속도·범위 조절 (학습 루프 백업 위치) |
+
+### 3.4 모드 5 — 기울인 물체 건네고 받기 (손목 회전·쥐기 훈련)
+
+| 항목 | 내용 |
+|---|---|
+| 시나리오 | 로봇이 막대·컵을 여러 각도로 기울여 중앙선 앞에 내민다. 환자는 손목을 돌려 잡고, 당기면 로봇이 놓는다. 반대로 환자가 내밀면 로봇이 손 위치를 따라가 받는다. |
+| 로봇 기능 | `Handover`(GIVE: 기울여 제시 → 당김 힘 감지 → 해제 / RECEIVE: servol 손 추종 → 순응 상태로 받기) |
+| 비전 | 거치대 위 막대·컵의 마스크 주축으로 파지 각도 계산 |
+| 손 인식 | 손 3D 위치(추종 목표), 잡는 순간 손목 각도, 쥐기 완료(grip_closure) |
+| 판정 | 잡을 때 손목 각도, 핸드오버 소요 시간 |
+
+### 3.5 공통 — 안전 (모드가 아니라 항상 켜진 감시)
+
+| 수단 | 동작 |
+|---|---|
+| 작업 공간 제한 | 로봇 TCP가 중앙선을 넘지 못함 (DRL 작업 공간 + safety_monitor 이중) |
+| 손 근접 감속 | 손이 중앙선 0.25 m 이내 → 속도 50 %, 0.15 m 이내 → 정지 |
+| 3중 정지 | nudge(로봇을 톡 치면 힘 급변 감지) · 음성 "그만" · 주먹 제스처 |
+| 힘 한계 | 25 N 초과 → 순응 해제 + 후퇴 |
+| 하드웨어 | 비상정지 버튼 (운영자 손 닿는 곳) |
+
+---
+
+## 4. 핵심 기술과 고도화 포인트
+
+각 기술을 "지금 된 것 → 이번에 올리는 것" 형태로 정리한다. 전부 모드 어딘가에서 **없으면 성립이 안 되는** 자리에 있다.
+
+### 4.1 핸드-아이 캘리브레이션 (eye-in-hand)
+
+- **지금**: 체커보드 내부 파라미터만. 카메라가 물체를 찾아도 로봇은 정해진 좌표로 이동.
+- **이미 있는 것**: 선생님 `Calibration_Tutorial`로 구한 `T_gripper2camera.npy`(eye-in-hand 변환)가 코드에 포함되어 있다. Day 1은 새로 구하는 게 아니라 `verify.py`로 오차를 재는 것부터 시작한다.
+- **이번**: 오차가 5 mm를 넘으면 체커보드/ArUco를 로봇 자세 15개 이상에서 재촬영해 `cv2.calibrateHandEye`로 **tool0 → camera_link** 변환을 다시 구하고 tf2 static transform으로 등록. 비전 노드는 매 프레임 timestamp가 일치하는 tf를 조회해 base_link 좌표로 변환한다.
+- **검증**: 기준점 터치 — TCP를 마커 위에 두고 비전 좌표와 비교, 목표 오차 5 mm 이내. 시연 직전 루틴으로 고정.
+- **주의**: 카메라가 팔과 함께 움직이므로 감지할 때는 테이블 전체가 보이는 **관측 자세**로 올라가 촬영한다 (`/rally/robot/go_observe_pose`).
+
+### 4.2 YOLO-Segment
+
+- **지금**: 박스 탐지로 "뭐가 어디 있다"까지.
+- **이번**: 픽셀 마스크로 물체 모양을 그대로 얻는다. 필요한 이유 네 가지.
+  1. **파지 각도** — 2지 그리퍼는 방향이 틀리면 못 잡는다. 마스크 주축(PCA)으로 손목 회전각 계산 (모드 5 막대·컵, 모드 3 공 회수).
+  2. **정확한 3D 위치** — 박스 안의 테이블 픽셀이 깊이 평균을 오염시킨다. 마스크 픽셀 깊이만 써서 중심 계산 (모드 1 공 정지 위치).
+  3. **순간 검출** — 손 마스크와 공 마스크가 실제로 떨어지는 프레임 = 릴리스 시점 (모드 3). 박스는 겹친 채로 남아 부정확.
+  4. **패드 위 공 위치** — 패드 마스크 안에서 공 마스크를 분리해 중심 오차 계산 (모드 3 명중 판정). 박스로는 겹쳐서 불가.
+- **고도화**: 소품별 커스텀 데이터셋 폴리곤 라벨링(Roboflow) → 파인튜닝 → TensorRT 변환으로 FPS 비교 제시.
+
+### 4.3 움직이는 물체 추적·예측
+
+- **지금**: 정지 물체만.
+- **이번**: ByteTrack으로 프레임 간 ID 유지, 칼만 필터 + 마찰 감속 모델로 **공이 다 멈추기 전에 정지 위치를 예측**(모드 1), 콩 대신 벨크로 공의 비행을 웹캠으로 추적해 착지 예측(모드 3). 예측과 실제의 차이를 대시보드에 함께 표시해 모델 정확도를 보여준다.
+- 마찰 계수는 매 시도 실제 궤적으로 온라인 추정한다.
+
+### 4.4 3D 손 관절·모션 인식
+
+- **지금**: 미사용.
+- **이번**: MediaPipe Hands(21점)·Pose(33점)의 2D 랜드마크에 RealSense 깊이를 입혀 3D 관절로 복원. 손바닥 좌표계, 손목 회전각, 손가락 굽힘(grip_closure), 몸통 기울임(보상 동작), 주먹 정지 제스처를 계산해 `HandState`·`BodyPose`로 발행.
+- 모드 5에서는 손 위치를 30 Hz로 보내 로봇이 **servol로 따라가며 받는다** — 움직이는 대상을 실시간 추종하는 기술이 여기서 살아난다.
+
+### 4.5 힘·순응 제어
+
+- **지금**: movej/movel 위치 제어만.
+- **이번**: 로봇이 접촉을 느끼고 반응한다.
+  - `task_compliance_ctrl` + `set_stiffnessx`: Z 저강성으로 테이블에 부드럽게 닿은 뒤 파지 (PickCompliant)
+  - `check_force_condition`: 공 접촉 순간(PushBall), 당김 힘 감지(Handover GIVE)
+  - 힘 시계열 변화율: 벨크로 공이 떨어지는 순간의 **힘 급락** 검출 (DetachBall), 패드 충격 피크(MoveTarget 보조)
+  - nudge 감지: 사람이 로봇을 톡 치면 정지
+- 이동 명령도 movec(원), movesx(스플라인 8자), moveb(다점 블렌딩), amovel(비동기), servol(스트리밍)까지 사용.
+
+### 4.6 LLM 궤적 해석·학습 루프
+
+- **지금**: ChatGPT가 음성 명령을 해석.
+- **이번**: 시도 결과를 해석하고 다음 파라미터를 제안한다. 구조는 **2단**.
+  - 빠른 층(실시간): 칼만·피팅·규칙이 예측과 즉시 판단을 맡는다.
+  - 느린 층(비동기, 수 초): `SuggestParams` 서비스로 최근 시도 특징(오차, 속도, 방향, 타이밍)을 JSON으로 보내고, pgvector에서 유사한 과거 시도를 검색해 예시로 함께 넣는다. 출력은 JSON 스키마 검증 + 허용 범위 클램핑 후에만 적용.
+- **학습이 보이는 지점**: 모드 1 목표 오차 감소 곡선(주), 모드 3 궤적 난이도 조절(백업).
+- **데이터 보호**: 영상은 외부로 보내지 않고 익명화된 특징값만 전송 (`llm.yaml` 화이트리스트).
+
+### 4.7 문맥 기반 상황 판단
+
+- **지금**: 명령 하나 = 동작 하나, 실패하면 멈춤.
+- **이번**: `context_builder`가 모드·시도 결과 추세·손/몸 상태·음성·안전 상태·DB 이력을 `SceneContext`로 묶는다. 확실한 것(안전, 연속 성공 → 난이도 상승)은 **규칙 레이어**가, 애매한 것(피로 징후 + "힘들어요", 반복 실패 원인)은 **LLM function calling**이 미리 정한 행동 목록 중에서 고른다. 결과는 **py_trees 행동 트리**가 실행하고, 실패 시 재탐지·재시도·대기 같은 복구 분기로 간다.
+
+### 4.8 음성 인터페이스
+
+- **지금**: Whisper 명령 인식.
+- **이번**: openWakeWord 커스텀 호출어("랠리야"), Silero VAD로 발화 구간 검출 + faster-whisper 스트리밍, LLM function calling으로 `VoiceIntent` 구조화, Piper TTS 피드백, TTS 중 마이크 차단(half-duplex), "그만"은 STT를 거치지 않고 안전 토픽으로 직결.
+
+### 4.9 인프라 (ROS 2 · Docker · DB)
+
+- **ROS 2**: 커스텀 인터페이스 19종(msg 8, srv 5, action 6), Lifecycle 기동 순서, QoS 분리(스트림 BestEffort / 안전·결과 Reliable / estop TransientLocal), MultiThreadedExecutor + 콜백 그룹으로 100 Hz 안전 감시 분리, tf2 좌표계, ros2 bag 재현, 노드별 지연 측정.
+- **Docker**: 서비스별 이미지 6개(멀티 스테이지), GPU·오디오·USB 패스스루, healthcheck 의존, PC별 compose 프로필, host 네트워크 + Fast DDS Discovery Server, GitHub Actions 빌드.
+- **DB (역할별 4종)**: PostgreSQL(환자·세션·시도 관계형), TimescaleDB(힘·관절·궤적 하이퍼테이블, 연속 집계), pgvector(시도 특징 벡터 유사 검색), Redis(실시간 상태·대화 문맥·대시보드 pub/sub).
+
+---
+
+## 5. 정상상태 흐름 (Flowchart)
+
+![RALLY 정상상태 플로우차트](images/flowchart.png)
+
+### 5.1 단계 설명
+
+| 단계 | 담당 노드 | 내용 |
+|---|---|---|
+| 시스템 기동 | rally_bringup | Lifecycle 순서: db/redis → robot(safety 먼저) → camera/vision → human/voice → brain → dashboard |
+| 세션 시작 | voice → brain → db | 웨이크워드 + "훈련 시작" → 환자 ID 확인 → 지난 세션 결과로 시작 난이도 결정 |
+| 모드 선택 | brain/bt_runner | 세션 트리가 모드 1 → 3 → 5 순서로 서브트리 실행 |
+| 감지 | vision, human | 관측 자세에서 `TrackedObjectArray`, `HandState`, `BodyPose` 수신 |
+| 예측·계획 | vision/predictor, brain | 칼만 예측, 궤적 패턴 선택, 이번 시도 파라미터 확정 |
+| 로봇 동작 | robot/skill_server | 해당 모드의 action 실행 (순응·힘 조건 감시 포함) |
+| 판정 | vision + robot | 정지 위치 오차 / 패드 명중·중심 오차 / 그리퍼 폭 / 손목 각도 |
+| 규칙 결정 가능? | brain/rule_layer | 안전·명확한 추세는 규칙으로 즉시, 애매하면 LLM |
+| LLM 판단 | brain/llm_advisor | 비동기, 3 s 타임아웃, 스키마 검증 실패 시 규칙 기본값 |
+| 결정·피드백·기록 | brain, voice, db | 난이도/휴식/교정 → TTS, `TrialResult` → DB(trials, ts_*, feature_vec) |
+| 세션 종료? | brain | 모드별 시도 횟수 완료 또는 음성 "끝" |
+| 세션 리포트 | brain/llm_advisor → db → dashboard | 회차별 변화 해석, 치료사용 리포트 저장·표시 |
+
+### 5.2 모드별 시도 루프
+
+**모드 1 공 굴려주기**
+감지(환자 손 3D, 공 위치) → 계획(목표 정지 위치에서 밀기 속도·방향 역산) → 동작(PickCompliant → PushBall) → 판정(실제 정지 위치 오차) → 학습(TrialResult 저장, SuggestParams로 다음 파라미터)
+
+**모드 3 패드 맞히기**
+감지(패드·공·손 마스크) → 계획(명중률 추세로 궤적 패턴·속도) → 동작(MoveTarget 중 환자 투구 → 패드 거치 → DetachBall → Handover GIVE) → 판정(패드 위 공 중심 오차, 릴리스 속도, 보상 동작) → 학습(난이도 조절)
+
+**모드 5 건네고 받기**
+감지(거치대 물체 주축, 손 3D) → 계획(가동 범위 기록으로 제시 각도) → 동작(PickCompliant → Handover GIVE / RECEIVE with follow_hand) → 판정(손목 각도, 쥐기 완료, 소요 시간) → 학습(가동 범위 추이 기록)
+
+### 5.3 안전 인터럽트
+
+`safety_monitor`는 별도 콜백 그룹에서 100 Hz로 돌며 `SafetyStatus`를 발행한다. `LEVEL_SLOW`면 skill_server가 속도 오버라이드를 낮추고, `LEVEL_STOP`이면 실행 중인 action을 abort 하고 순응 해제 → 후퇴한다. 복구는 운영자가 `/rally/robot/reset_safety`를 호출할 때만.
+
+---
+
+## 6. 시스템 아키텍처
+
+![RALLY 시스템 아키텍처](images/architecture.png)
+
+### 6.1 배치 원칙
+
+- **PC 1 (로봇 제어)**: 호스트에서 ROS 2 네이티브 실행. 실시간성이 중요한 안전 감시와 스킬 실행을 컨테이너 오버헤드 없이 돌린다.
+- **PC 2 (AI 추론, GPU)**: 무거운 추론(YOLO-Seg, MediaPipe, Whisper)을 컨테이너 3개로 분리. RealSense 드라이버는 vision 컨테이너에서 **하나만** 띄우고 hand_pose가 구독한다.
+- **PC 3 (서버)**: 판단(brain), 저장(db·redis), 표시(dashboard), 그리고 DDS Discovery Server.
+- PC가 2대면 PC 3의 컨테이너를 PC 1로 옮긴다 (compose 프로필만 변경).
+
+### 6.2 데이터 흐름
+
+1. 센서 → PC 2 컨테이너 → `/rally/perception/*`, `/rally/voice/intent` 토픽 (BestEffort, 최신 프레임만)
+2. brain이 `SceneContext`를 만들고 행동 트리가 PC 1의 skill action을 호출
+3. PC 1은 `WrenchStamped`(100 Hz)·`SafetyStatus`·action feedback을 되돌림
+4. 시도가 끝나면 `TrialResult` → rally_db recorder → PostgreSQL/Timescale/pgvector, Redis pub/sub → dashboard WebSocket
+
+### 6.3 통신 설계
+
+- 같은 `ROS_DOMAIN_ID`, 모든 컨테이너 `network_mode: host`
+- Fast DDS Discovery Server(PC 3)로 멀티캐스트 탐색 트래픽 제거
+- 영상은 PC 2 내부에서만 소비(디버그 영상만 10 Hz로 압축 발행)
+- 노드별 `header.stamp` 대비 수신 시각 차이를 `scripts/measure_latency.py`로 측정해 예측 선행 시간에 반영
+
+인터페이스 전체 명세는 [`INTERFACES.md`](INTERFACES.md).
+
+---
+
+## 7. SRD — 시스템 요구사항
+
+### 7.1 기능 요구사항
+
+| ID | 요구사항 | 모드 | 담당 | 검증 |
+|---|---|---|---|---|
+| FR-01 | 로봇 자세 15개 이상으로 eye-in-hand 캘리브레이션을 수행하고 tf2 static transform으로 등록한다 | 공통 | 박성현 | 기준점 터치 오차 ≤ 5 mm |
+| FR-02 | 관측 자세에서 테이블 위 공·패드·막대·컵·손을 분할 마스크로 탐지하고 base_link 3D 위치·주축을 발행한다 | 공통 | 박성현 | mAP50 ≥ 0.85, 30 Hz |
+| FR-03 | 움직이는 공을 ID 유지하며 추적하고 정지 위치를 예측한다 | 1 | 박성현 | 예측–실제 오차 ≤ 30 mm (0.3 m/s 이하) |
+| FR-04 | 환자 손 21점 3D 관절, 손목 각도, 쥐기 정도, 주먹 제스처를 30 Hz로 발행한다 | 공통 | 정동휘 | 손 검출률 ≥ 95 % (정면 시야) |
+| FR-05 | 몸통 기울임 보상 동작을 감지한다 | 3 | 정동휘 | 임계 15° 이상 시 플래그 |
+| FR-06 | 커스텀 웨이크워드 → VAD → STT → 의도 구조화 → TTS 피드백을 수행하고 TTS 중 마이크를 차단한다 | 공통 | 정동휘 | 호출어 오탐 ≤ 1회/10분, 의도 정확도 ≥ 90 % |
+| FR-07 | "그만"·주먹·nudge 중 하나로 0.3 s 이내 정지한다 | 공통 | 정정인·정동휘 | 10회 전수 테스트 |
+| FR-08 | TCP가 중앙선을 넘지 않고, 손 근접 시 속도를 단계적으로 낮춘다 | 공통 | 정정인 | 경계 접근 테스트 |
+| FR-09 | 순응 제어로 테이블 접촉을 감지한 뒤 물체를 집는다 (PickCompliant) | 공통 | 정정인 | 접촉력 ≤ 10 N, 파지 성공 ≥ 90 % |
+| FR-10 | 지정 속도·방향으로 공을 밀고 접촉 순간을 힘으로 감지한다 (PushBall) | 1 | 정정인 | 접촉 감지 지연 ≤ 50 ms |
+| FR-11 | 패드를 들고 원·8자·다점 궤적을 지정 속도로 그린다 (MoveTarget) | 3 | 정정인 | 궤적 추종 오차 ≤ 10 mm |
+| FR-12 | 거치대의 패드에서 벨크로 공을 떼어내고 힘 급락으로 떼어짐을 판정한다 (DetachBall) | 3 | 정정인 | 성공 ≥ 90 %, 당김 ≤ 15 N |
+| FR-13 | 물체를 지정 각도로 기울여 제시하고 당김 힘 감지 시 놓는다; 손을 추종해 받는다 (Handover) | 5 | 정정인·정동휘 | 해제 지연 ≤ 200 ms |
+| FR-14 | 패드 위 공의 명중 여부와 중심 오차를 비전으로 판정한다 | 3 | 박성현 | 판정 정확도 ≥ 95 % |
+| FR-15 | 상황 요약(SceneContext)을 5 Hz로 만들고 규칙 → LLM 2단으로 다음 행동을 결정한다 | 공통 | 조정묵 | 문맥 유무 비교 사례 10개 |
+| FR-16 | 최근 시도와 유사 과거 시도를 바탕으로 LLM이 다음 파라미터를 제안하고 범위 클램핑 후 적용한다 | 1 (3 백업) | 조정묵 | 10회 시도 후 오차 ≥ 30 % 감소 |
+| FR-17 | 행동 트리로 세션(1→3→5)을 진행하고 실패 시 재탐지·재시도·대기로 복구한다 | 공통 | 조정묵 | 모의 실패 주입 테스트 |
+| FR-18 | 모든 시도·힘·관절·궤적을 DB에 기록하고 세션 리포트를 생성한다 | 공통 | 조정묵 | 세션 종료 후 리포트 자동 표시 |
+| FR-19 | 대시보드에 힘 그래프, 예측 vs 실제, 학습 곡선, 리포트를 실시간 표시한다 | 공통 | 정동휘 | 1 s 이내 갱신 |
+
+### 7.2 비기능 요구사항
+
+| ID | 항목 | 요구 |
+|---|---|---|
+| NFR-01 | 지연 | 카메라 → 탐지 결과 발행 ≤ 60 ms, 안전 정지 명령 전파 ≤ 20 ms |
+| NFR-02 | 실시간성 | 안전 감시 100 Hz 유지, 다른 콜백에 블로킹되지 않음 (콜백 그룹 분리) |
+| NFR-03 | 안전 | 로봇 작업 공간 하드 제한, 힘 한계 25 N, 3중 정지 + 하드웨어 비상정지 |
+| NFR-04 | LLM 격리 | LLM 응답은 로봇 명령으로 직접 전달되지 않음; 스키마 검증·범위 클램핑·타임아웃(3 s) 후 규칙 폴백 |
+| NFR-05 | 개인정보 | 영상 원본은 외부 전송·DB 저장 금지, 외부 LLM에는 익명 특징값만 |
+| NFR-06 | 재현성 | 모든 시연 시도를 ros2 bag(영상 제외)과 DB로 재현 가능 |
+| NFR-07 | 배포 | `docker compose --profile pcN up` 한 줄로 PC별 기동, CI에서 colcon build·이미지 빌드 통과 |
+| NFR-08 | 기동 | Lifecycle 순서 보장, 하나라도 비활성 시 brain은 세션을 시작하지 않음 |
+
+### 7.3 데이터 요구사항
+
+- `patients` → `sessions` → `trials` → `events` 관계형 구조 (`rally_db/schema.sql`)
+- `trials.params/metrics/decision` JSONB, `trials.feature_vec vector(32)` (pgvector ivfflat)
+- `ts_wrench`(100 Hz), `ts_tracked`(30 Hz), `ts_hand`(30 Hz) 하이퍼테이블, 보관 14일
+- Redis: `rally:state`(로봇·세션 상태), `rally:dialog`(최근 대화, TTL 5분), 채널 `rally:events`
+
+### 7.4 외부 인터페이스
+
+| 대상 | 방식 |
+|---|---|
+| M0609 | dsr_bringup2 (ROS 2) + DRL Python API, 이더넷 |
+| RG2 | Modbus TCP (Pymodbus 비동기), 레지스터: 폭·힘·상태 |
+| RealSense | realsense2_camera, USB 3 |
+| LLM | OpenAI API (function calling, JSON schema) |
+| 대시보드 | HTTP/WebSocket :8000 |
+
+---
+
+## 8. Critical Point와 대응
+
+| # | 리스크 | 영향 모드 | 대응 |
+|---|---|---|---|
+| CP1 | 핸드-아이 오차 | 전체 | 15개 이상 자세, 시연 전 기준점 터치 루틴, 오차 > 5 mm면 재캘리브레이션 |
+| CP2 | 전체 지연(카메라→로봇) | 1·5 | 노드별 타임스탬프 측정 → 예측 선행 시간 반영, TensorRT, depth 1 QoS |
+| CP3 | 패드가 RealSense 시야를 가림 | 3 | **Day 0 실측**. 가리면 공 비행·명중은 웹캠, RealSense는 떼어내기 근접 작업에만 |
+| CP4 | 공 굴림 모델 오차 | 1 | 마찰 계수 온라인 추정, 공 속도 0.3 m/s 이하, 펠트 상태 고정 |
+| CP5 | 벨크로 떼어내기 실패 | 3 | 당김 방향을 패드 면에 수직으로, 힘 급락 임계를 리허설 데이터로 결정, 실패 시 각도 바꿔 재시도(행동 트리) |
+| CP6 | 손 관절 결측 | 5 | 깊이 보간, 웹캠 보조, 짧은 결측은 칼만, 0.5 s 이상 결측 시 추종 중단 |
+| CP7 | 힘 센서 오탐 | 3·5 | 정지 구간에서만 충격 판정, 저역 필터 + 변화율 임계, 로봇 가속 구간 마스킹 |
+| CP8 | LLM 지연·오출력 | 1 | 비동기 호출, 3 s 타임아웃, 스키마 검증, 범위 클램핑, 규칙 폴백 |
+| CP9 | 음성 오인식 | 전체 | VAD, TTS 중 마이크 차단, 위험 명령 되묻기, "그만"은 키워드 스팟팅으로 직결 |
+| CP10 | 사람 안전 | 전체 | 중앙선 작업 공간 제한, 손 근접 감속, 3중 정지, 하드웨어 비상정지 |
+| CP11 | 모드 1 학습 곡선 미달 | 1 | Day 6 결정 지점: 학습 루프를 모드 3 궤적 조절로 이전 |
+| CP12 | 패드 파지 안정성 | 3 | 3D 프린팅 손잡이 어댑터, 충격 시 회전 방지 |
+
+---
+
+## 9. 시연 셋팅
+
+### 9.1 배치
+
+```
+             [스피커]                       [대시보드 모니터]
+   ┌──────────────────────────────────────────┐
+   │  ● M0609 (RealSense 그리퍼 위)            │  ← 로봇 구역 (테이블 끝 고정)
+   │   [패드 거치대]  [공]  [막대·컵 거치대]     │
+   │ - - - - - - 중앙선 (진입 금지) - - - - - - │
+   │                                          │  ← 환자 구역 (펠트)
+   │              [USB 마이크]                 │
+   └──────────────────────────────────────────┘
+                 [환자 의자]        [웹캠 · 측면]
+   [비상정지 버튼 · 운영자]
+```
+
+### 9.2 체크리스트
+
+**하드웨어·소품**
+- [ ] 펠트 깐 테이블, 중앙선 테이프
+- [ ] 고무·폼 공 지름 6~7 cm (RG2 개폐 폭 110 mm 이내) × 3
+- [ ] 벨크로 캐치볼 세트 (패드 1~2, 공 3~5), 패드용 3D 프린팅 손잡이 어댑터
+- [ ] 패드 거치대 (로봇이 걸고 떼어내기 가능한 높이)
+- [ ] 막대·컵 거치대 (마스크 주축이 잘 보이게 눕혀 놓는 홈)
+- [ ] ArUco 보드 (테이블 고정), 기준점 검증 마커
+- [ ] 하드웨어 비상정지 버튼 — 운영자 손 닿는 곳
+
+**센서·PC**
+- [ ] RealSense 그리퍼 위 고정, 케이블 여유 확인(팔 전 구간 이동)
+- [ ] 웹캠 환자 측면 고정(60 fps), USB 마이크 환자 앞, 스피커 로봇 쪽
+- [ ] PC 3대 유선 스위치, 고정 IP, `.env` 동일
+- [ ] 대시보드 모니터: 힘 그래프 · 예측 vs 실제 · 학습 곡선 · 리포트
+
+**시연 직전 루틴**
+- [ ] `docker compose --profile pc2 up`, `--profile pc3 up`, PC1 `ros2 launch rally_bringup pc1_robot.launch.py`
+- [ ] `ros2 lifecycle list`로 전 노드 active 확인
+- [ ] 캘리브레이션 기준점 터치 검증 (≤ 5 mm)
+- [ ] 3중 정지 각 1회 동작 확인
+- [ ] 리허설 시도 로그가 DB에 있는지 확인 (학습 곡선이 비어 보이지 않게)
+- [ ] 백업 영상 재생 준비
+
+---
+
+## 10. 저장소 구조와 인터페이스
+
+```
+rally/
+├── README.md
+├── docs/
+│   ├── RALLY_기획서.md            ← 이 문서
+│   ├── INTERFACES.md              ← 토픽·서비스·액션·tf·QoS 명세
+│   └── images/ (flowchart.png, architecture.png, src/*.svg)
+├── todo/                          ← 역할별 할 일 (Day 0 ~ 8)
+│   ├── TEAM.md
+│   ├── 01_robot_정정인.md
+│   ├── 02_vision_박성현.md
+│   ├── 03_human_voice_정동휘.md
+│   └── 04_brain_infra_조정묵.md
+├── ros2_ws/
+│   ├── fastdds_client.xml
+│   └── src/
+│       ├── rally_interfaces/      msg 8 · srv 5 · action 6
+│       ├── rally_bringup/         launch (pc1/pc2/pc3/full) · config yaml
+│       ├── rally_robot/           정정인 — onrobot.py·dsr_helpers.py·legacy_pick_and_place.py(선생님 코드) + skill_server, skills/*, safety_monitor, gripper_node, force_publisher
+│       ├── rally_vision/          박성현 — realsense.py·yolo.py·detection.py·calibration/·training/(선생님 코드) + segmenter, tracker, predictor, pad_hit_judge
+│       ├── rally_human/           정동휘 — hand_pose_node, body_pose_node, gesture
+│       ├── rally_voice/           정동휘 — wakeup_word·stt·get_keyword(선생님 코드) + intent_node, tts_node
+│       ├── _reference/            선생님 원본 (COLCON_IGNORE, 빌드 제외)
+│       ├── rally_brain/           조정묵 — context_builder, rule_layer, llm_advisor, bt_runner, trees/*, prompts/*
+│       └── rally_db/              조정묵 — recorder_node, repository, embeddings, schema.sql
+├── docker/
+│   ├── docker-compose.yml         프로필 pc2 / pc3
+│   ├── .env.example
+│   ├── entrypoint.sh
+│   └── vision/ hand_pose/ voice/ brain/ dashboard/ (Dockerfile + requirements.txt)
+├── dashboard/                     정동휘 — FastAPI app/ + web/
+├── models/  data/                 git 제외 (가중치 · 데이터셋 · bag)
+├── scripts/                       record_bag.sh · verify_calibration.py · measure_latency.py
+└── .github/workflows/build.yml    colcon build/test + 이미지 빌드
+```
+
+### 10.1 선생님 코드 재사용 원칙
+
+- **Day 1~2 기준선**: `ros2 launch rally_bringup legacy_baseline.launch.py` — 선생님의 `detection`(/get_3d_position) + `get_keyword`(/get_keyword) + `legacy_pick_and_place`가 import·패키지명만 바뀐 채 그대로 동작하는지 먼저 확인한다.
+- 재사용 파일: `onrobot.py`(RG2), `realsense.py`(ImgNode), `yolo.py`(YoloModel), `wakeup_word.py`/`stt.py`, `calibration/*`, `training/*`, `T_gripper2camera.npy`(eye-in-hand 변환), `SrvDepthPosition.srv`.
+- 확장 지점: 서비스 1회 호출 → 토픽 상시 발행(`TrackedObjectArray`, `HandState`, `VoiceIntent`), 블로킹 `movel` → 스킬 action + 콜백 그룹 분리, 박스 → 마스크, 위치 제어 → 순응·힘 제어, `robot_control` 순차 호출 → `brain` 행동 트리.
+
+### 10.2 인터페이스 요약
+
+| 종류 | 이름 | 용도 |
+|---|---|---|
+| msg | `TrackedObject`, `TrackedObjectArray` | 분할 마스크 기반 추적 물체 (3D 위치·속도·주축·정지 예측) |
+| msg | `HandState`, `BodyPose` | 3D 손 관절·제스처·손목 각도, 몸통 보상 동작 |
+| msg | `VoiceIntent` | 의도·슬롯·긴급 플래그 |
+| msg | `SafetyStatus` | 안전 레벨·사유·속도 오버라이드 |
+| msg | `TrialResult` | 시도 결과·파라미터·측정값 (DB·LLM 입력) |
+| msg | `SceneContext` | 상황 요약 (규칙·LLM 공통 입력) |
+| srv | `SetMode`, `RunCalibration`, `SuggestParams`, `Speak`, `GripperCommand` | 모드 전환, 캘리브레이션, LLM 제안, TTS, 그리퍼 |
+| action | `PushBall`, `MoveTarget`, `DetachBall`, `Handover`, `PickCompliant` | 로봇 스킬 (진행률·취소) |
+| action | `RunSession` | 세션 최상위 |
+| 표준 | `sensor_msgs/Image·CameraInfo·JointState`, `geometry_msgs/WrenchStamped·PoseStamped`, `std_msgs/Bool`, `std_srvs/Trigger`, tf2 | 센서·힘·정지·관측 자세·좌표계 |
+
+---
+
+## 11. 개발 일정과 역할
+
+### 11.1 역할
+
+| 담당 | 영역 | 책임 모드 | 주요 패키지 |
+|---|---|---|---|
+| 정정인 | 로봇 제어 (PC 1) | 모드 1 | rally_robot |
+| 박성현 | 비전 (PC 2 vision) | 모드 3 | rally_vision |
+| 정동휘 | 사람 인식·음성·대시보드 (PC 2 hand_pose/voice, PC 3 dashboard) | 모드 5 | rally_human, rally_voice, dashboard |
+| 조정묵 | 지능·인프라 (PC 3 brain/db, compose, 인터페이스) | 세션 전체 | rally_brain, rally_db, rally_bringup, rally_interfaces, docker |
+
+### 11.2 일정 (Day 0 = 10/5)
+
+| Day | 날짜 | 목표 | 마일스톤 |
+|---|---|---|---|
+| 0 | 10/5 | 인터페이스 합의, 환경·소품·패드 시야 확인 | 레포 push, msg/action 확정 |
+| 1 | 10/6 | 기반: 캘리브레이션, RG2·힘 토픽, 손 관절·STT, DB·통신 | 3 PC 토픽 상호 수신 |
+| 2 | 10/7 | 단위 기능: 모드 5 스킬, Seg 1차 학습, 의도·TTS, 행동 트리 골격 | 각 노드 단독 동작 |
+| 3 | 10/8 | **모드 5 완성**, 안전 노드, TensorRT, 추적 | 1차 통합 시연 |
+| 4 | 10/9 | **모드 3 완성**: 패드 궤적, 명중 판정, 떼어내기, 대시보드 골격 | 2차 통합 시연 |
+| 5 | 10/10 | 모드 1 기본: 밀기, 정지 예측, LLM 루프·pgvector | 모드 1 단독 동작 |
+| 6 | 10/11 | **모드 1 학습 루프 + 세션 전체 흐름**, 리포트 | 3차 통합 시연 · CP11 결정 |
+| 7 | 10/12 | 전체 통합·안정화, 지연 측정, 안전 전수 점검, **기능 동결** | 리허설 데이터 축적 |
+| 8 | 10/13 | 리허설 3회, 발표 자료, 백업 영상 | 시연 준비 완료 |
+
+세부 할 일은 `todo/` 폴더. 매일 아침 10분 스탠드업, 저녁 main 머지 후 통합 실행.
+
+---
+
+## 12. Phase 2 (이번 범위 밖)
+
+이번 8일에서 제외했지만 같은 아키텍처 위에 추가할 수 있도록 인터페이스는 미리 열어 두었다.
+
+### 12.1 굴러오는 공 받기 (구 장면 2)
+
+- 환자가 굴린 공의 도착 지점·시간을 예측해 로봇이 **미리 가서 기다렸다가**(amovel) 직전에 보정(servol)하며 잡는 예측 요격.
+- 제외 이유: 카메라 → 예측 → 이동 → 그리퍼 닫힘까지 전체 지연을 맞춰야 하고, 카메라가 그리퍼 위에 있어 팔이 움직이면 시야도 함께 움직인다.
+- 준비된 것: `TrackedObject.predicted_stop/_time`, `PickCompliant` 재사용, 좁은 레인 가이드 설계(폭 25~30 cm).
+- 추가 필요: `Intercept.action`, 그리퍼 닫힘 지연 보정 테이블.
+
+### 12.2 블록 번갈아 쌓기 (구 장면 4)
+
+- 환자와 로봇이 블록을 번갈아 올리고, 삐뚤게 놓인 블록 위에도 XY 순응·Z 강성으로 스스로 맞춰 내려놓는다.
+- 제외 이유: 모드 1·3·5만으로도 Seg 파지 각도·순응 제어가 이미 커버되어 우선순위를 낮춤.
+- 준비된 것: `PickCompliant`(yaw 포함), 블록 클래스는 Seg 데이터셋에 추가만 하면 됨.
+- 추가 필요: `PlaceCompliant.action`, 탑 높이 추정.
+
+### 12.3 VLA 비교 실험
+
+- 모드 5 핸드오버의 텔레오퍼레이션 데이터로 SmolVLA를 한 작업에 파인튜닝해 직접 짠 스킬과 성공률 비교.
+- 준비된 것: `HandState` → 로봇 자세 매핑 구조, bag 기록 스크립트.
+- 추가 필요: LeRobot 데이터셋 변환, GPU 24 GB급.

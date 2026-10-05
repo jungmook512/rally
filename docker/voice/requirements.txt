@@ -1,0 +1,7 @@
+openwakeword
+faster-whisper
+silero-vad
+sounddevice
+piper-tts
+openai>=1.40
+pydantic

@@ -1,0 +1,104 @@
+# RALLY ROS 2 인터페이스 명세
+
+ROS 2 Jazzy 기준. 표준 메시지를 쓸 수 있는 곳은 표준을 쓰고, 프로젝트 고유 데이터만 `rally_interfaces`에 정의한다. 모든 커스텀 메시지는 `std_msgs/Header`를 가지며, 3D 좌표는 특별한 언급이 없으면 `base_link`(로봇 베이스) 기준이다.
+
+## 1. 좌표계 (tf2)
+
+```
+base_link            로봇 베이스 (world 역할)
+ └─ link_6 / tool0   플랜지
+     ├─ gripper_tcp  RG2 TCP (set_tcp 값과 일치)
+     └─ camera_link  RealSense (eye-in-hand 캘리브레이션 결과, static)
+         └─ camera_color_optical_frame
+table_link           테이블 원점 (base_link 기준 static, 중앙선 y=0)
+webcam_link          측면 웹캠 (table_link 기준 static)
+```
+
+- `camera_link`는 `RunCalibration` 서비스 결과를 `static_transform_publisher`로 올린다. 값은 `rally_bringup/config/hand_eye.yaml`에 저장.
+- 비전 노드는 `camera_color_optical_frame` → `base_link` 변환을 tf2로 매 프레임 조회한다 (카메라가 팔과 함께 움직이므로 반드시 timestamp 일치).
+
+## 2. 토픽
+
+### 2.1 센서 (표준 메시지)
+
+| 토픽 | 타입 | 발행 | 주기 | QoS |
+|---|---|---|---|---|
+| `/camera/color/image_raw` | `sensor_msgs/Image` | realsense2_camera | 30 Hz | SensorData |
+| `/camera/aligned_depth_to_color/image_raw` | `sensor_msgs/Image` | realsense2_camera | 30 Hz | SensorData |
+| `/camera/color/camera_info` | `sensor_msgs/CameraInfo` | realsense2_camera | 30 Hz | SensorData |
+| `/webcam/image_raw` | `sensor_msgs/Image` | usb_cam (측면) | 60 Hz | SensorData |
+| `/rally/robot/wrench` | `geometry_msgs/WrenchStamped` | rally_robot/force_publisher | 100 Hz | SensorData |
+| `/rally/robot/tcp_pose` | `geometry_msgs/PoseStamped` | rally_robot/force_publisher | 100 Hz | SensorData |
+| `/rally/gripper/state` | `sensor_msgs/JointState` (width, force) | rally_robot/gripper_node | 20 Hz | SensorData |
+| `/joint_states` | `sensor_msgs/JointState` | dsr_bringup2 | 100 Hz | SensorData |
+| `/tf`, `/tf_static` | `tf2_msgs/TFMessage` | 여러 노드 | - | 표준 |
+
+### 2.2 인식 (커스텀)
+
+| 토픽 | 타입 | 발행 | 구독 | 주기 | QoS |
+|---|---|---|---|---|---|
+| `/rally/perception/objects` | `rally_interfaces/TrackedObjectArray` | rally_vision/tracker | brain, robot | 30 Hz | BestEffort, depth 1 |
+| `/rally/perception/objects/debug_image` | `sensor_msgs/Image` | rally_vision/tracker | dashboard | 10 Hz | BestEffort |
+| `/rally/perception/hand` | `rally_interfaces/HandState` | rally_human/hand_pose_node | brain, robot(safety), robot(handover) | 30 Hz | BestEffort, depth 1 |
+| `/rally/perception/body` | `rally_interfaces/BodyPose` | rally_human/body_pose_node | brain | 15 Hz | BestEffort |
+| `/rally/voice/intent` | `rally_interfaces/VoiceIntent` | rally_voice/intent_node | brain, safety | 이벤트 | Reliable |
+| `/rally/voice/transcript` | `std_msgs/String` | rally_voice/stt_node | dashboard | 이벤트 | Reliable |
+
+### 2.3 판단·안전·기록 (커스텀)
+
+| 토픽 | 타입 | 발행 | 구독 | 주기 | QoS |
+|---|---|---|---|---|---|
+| `/rally/safety/status` | `rally_interfaces/SafetyStatus` | rally_robot/safety_monitor | brain, dashboard, skill_server | 100 Hz (변화 시 즉시) | **Reliable, depth 10** |
+| `/rally/safety/estop` | `std_msgs/Bool` | voice, hand_pose, 대시보드 버튼 | safety_monitor | 이벤트 | **Reliable, TransientLocal** |
+| `/rally/brain/context` | `rally_interfaces/SceneContext` | rally_brain/context_builder | llm_advisor, dashboard | 5 Hz | BestEffort |
+| `/rally/brain/trial_result` | `rally_interfaces/TrialResult` | rally_brain/bt_runner | rally_db/recorder, dashboard | 이벤트 | Reliable |
+| `/rally/brain/state` | `std_msgs/String` (BT 현재 노드) | rally_brain/bt_runner | dashboard | 2 Hz | Reliable |
+
+QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최신 것만), **정지·안전·결과는 Reliable**. 안전 토픽은 유일하게 TransientLocal을 써서 늦게 켜진 노드도 마지막 상태를 받는다.
+
+## 3. 서비스
+
+| 서비스 | 타입 | 서버 | 설명 |
+|---|---|---|---|
+| `/rally/brain/set_mode` | `rally_interfaces/SetMode` | rally_brain | 모드 강제 전환 (대시보드·음성) |
+| `/rally/vision/run_calibration` | `rally_interfaces/RunCalibration` | rally_vision/calibration | eye-in-hand 캘리브레이션 (로봇 자세 순회 포함) |
+| `/rally/llm/suggest_params` | `rally_interfaces/SuggestParams` | rally_brain/llm_advisor | 다음 시도 파라미터 제안 |
+| `/rally/voice/speak` | `rally_interfaces/Speak` | rally_voice/tts_node | TTS 발화, 발화 중 마이크 차단 |
+| `/rally/gripper/command` | `rally_interfaces/GripperCommand` | rally_robot/gripper_node | RG2 폭·힘 명령 |
+| `/rally/robot/go_observe_pose` | `std_srvs/Trigger` | rally_robot/skill_server | 관측 자세로 이동 (카메라가 테이블 전체를 보는 자세) |
+| `/rally/robot/reset_safety` | `std_srvs/Trigger` | rally_robot/safety_monitor | 정지 해제 (운영자만) |
+| `/rally/db/start_session` | `std_srvs/Trigger` → 추후 커스텀 | rally_db | 세션 레코드 생성 |
+
+## 4. 액션 (스킬)
+
+모든 스킬은 `rally_robot/skill_server`가 제공하고 `rally_brain/bt_runner`가 호출한다. 진행률 피드백과 취소를 지원하며, `SafetyStatus.level == STOP`이면 서버가 즉시 abort 한다.
+
+| 액션 | 타입 | 모드 | 핵심 로봇 기능 |
+|---|---|---|---|
+| `/rally/skill/push_ball` | `rally_interfaces/PushBall` | 1 | movel 속도 프로파일, check_force_condition(접촉) |
+| `/rally/skill/pick_compliant` | `rally_interfaces/PickCompliant` | 1·3·5 공통 | task_compliance_ctrl(Z 저강성), 접촉 감지 후 파지 |
+| `/rally/skill/move_target` | `rally_interfaces/MoveTarget` | 3 | movec / movesx / moveb, 힘 피크 카운트 |
+| `/rally/skill/detach_ball` | `rally_interfaces/DetachBall` | 3 | 힘 제어 당김, 힘 급락으로 떼어짐 판정 |
+| `/rally/skill/handover` | `rally_interfaces/Handover` | 5 | 기울여 제시, 당김 힘 감지 해제, servol 손 추종 |
+| `/rally/session/run` | `rally_interfaces/RunSession` | 전체 | brain 최상위 action |
+
+## 5. Lifecycle 기동 순서
+
+```
+1. db, redis (healthcheck 통과)
+2. dsr_bringup2 → rally_robot (safety_monitor 먼저 active)
+3. realsense2_camera → rally_vision (hand_eye.yaml 로드 실패 시 unconfigured 유지)
+4. rally_human, rally_voice
+5. rally_brain (위 노드가 모두 active일 때만 activate)
+6. dashboard
+```
+
+하나라도 `inactive`로 떨어지면 brain은 `RunSession`을 abort 하고 robot은 관측 자세에서 대기한다.
+
+## 6. 파라미터 파일 (rally_bringup/config)
+
+- `hand_eye.yaml` — tool0 → camera_link 변환
+- `table.yaml` — table_link 원점, 중앙선 위치, 작업 공간 한계(x,y,z min/max)
+- `safety.yaml` — 손 근접 감속 거리(기본 0.25 m → 50 %, 0.15 m → 정지), 힘 한계(기본 25 N), nudge 임계(8 N 급변)
+- `skills.yaml` — 관측 자세, 모드별 기본 파라미터와 허용 범위(LLM 클램핑 범위와 동일)
+- `llm.yaml` — 모델, 타임아웃(3 s), 프롬프트 템플릿 경로, 전송 필드 화이트리스트(익명화)

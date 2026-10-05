@@ -1,0 +1,9 @@
+py_trees>=2.2
+py_trees_ros
+openai>=1.40
+pydantic
+sqlalchemy
+psycopg[binary]
+pgvector
+redis
+numpy

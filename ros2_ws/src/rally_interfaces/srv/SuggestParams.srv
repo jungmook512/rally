@@ -1,0 +1,12 @@
+# LLM advisor: 최근 시도를 보고 다음 파라미터 제안 (비동기 호출 권장)
+uint8 mode
+TrialResult[] history
+string[] param_keys
+float32[] param_min
+float32[] param_max
+---
+bool success
+string[] param_keys
+float32[] param_values               # 범위 클램핑 완료
+string rationale                     # 한 문장, TTS/대시보드 표시용
+float32 confidence
