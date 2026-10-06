@@ -16,8 +16,8 @@
 |---|---|---|
 | 정정인 | 로봇 제어 (로봇·인식 PC, 네이티브) · 모드 1 | `rally_robot` |
 | 박성현 | 비전 (로봇·인식 PC, 컨테이너) · 모드 3 | `rally_vision` |
-| 정동휘 | 사람 인식 · 음성 (로봇·인식 PC, 컨테이너) · 대시보드 (서버 PC) · 모드 5 | `rally_human`, `rally_voice`, `dashboard/` |
-| 조정묵 | 지능 · 인프라 (서버 PC) · 세션 전체 | `rally_brain`, `rally_db`, `rally_bringup`, `rally_interfaces`, `docker/` |
+| 정동휘 | 사람 인식 · 음성 (로봇·인식 PC, 컨테이너) · 모드 5 | `rally_human`, `rally_voice` |
+| 조정묵 | 지능 · 인프라 · HMI 대시보드 (서버 PC) · 세션 전체 | `rally_brain`, `rally_db`, `rally_bringup`, `rally_interfaces`, `docker/`, `dashboard/` |
 
 ## 빠른 시작
 
