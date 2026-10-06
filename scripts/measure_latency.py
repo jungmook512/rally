@@ -90,7 +90,8 @@ def summarize(topics, samples, duration):
     return "\n".join([lines[0], "-" * len(lines[0]), *lines[1:]])
 
 
-def main():
+def parse_args():
+    """명령어 뒤 옵션 읽기 → (옵션, 잴 토픽 목록)"""
     parser = argparse.ArgumentParser(description="header.stamp 기준 토픽 지연 측정")
     parser.add_argument("--duration", type=float, default=10.0, help="측정 시간 [s]")
     parser.add_argument("--topic", type=parse_topic, action="append", default=[],
@@ -99,36 +100,56 @@ def main():
     parser.add_argument("--csv", default=None, help="샘플별 CSV 저장 경로")
     opts = parser.parse_args()
 
-    topics = [t for t in DEFAULT_TOPICS if not opts.only or t[0] in opts.only] + opts.topic
     unknown = set(opts.only) - {t[0] for t in DEFAULT_TOPICS}
     if unknown:
         parser.error(f"--only 에 기본 목록에 없는 토픽: {', '.join(sorted(unknown))} (--topic 으로 추가)")
+    topics = [t for t in DEFAULT_TOPICS if not opts.only or t[0] in opts.only] + opts.topic
+    return opts, topics
 
-    rclpy.init()
-    node = LatencyProbe(topics)
-    log = node.get_logger()
-    log.info(f"{len(topics)}개 토픽, {opts.duration:.0f} s 측정 시작")
-    end = time.monotonic() + opts.duration
+
+def collect(node, duration):
+    """duration 동안 메시지 받기. Ctrl+C 로 일찍 끝내면 실제로 잰 시간을 돌려준다"""
+    end = time.monotonic() + duration
     try:
         while time.monotonic() < end:
             rclpy.spin_once(node, timeout_sec=0.05)
     except KeyboardInterrupt:
-        opts.duration -= max(0.0, end - time.monotonic())
+        duration -= max(0.0, end - time.monotonic())
+    return max(duration, 1e-3)
 
-    print(summarize(topics, node.samples, max(opts.duration, 1e-3)))
+
+def warn_clock_skew(node):
+    """지연이 음수인 토픽이 있으면 시계 차이 경고"""
     skewed = [n for n, s in node.samples.items() if s and min(x[2] for x in s) < CLOCK_SKEW_WARN_MS]
     if skewed:
-        log.warn(f"지연이 음수인 토픽: {', '.join(skewed)} — 발행 PC 와 시계가 다릅니다. "
-                 "같은 PC 에서 재거나 두 PC 시계를 맞추세요 (chrony)")
+        node.get_logger().warn(f"지연이 음수인 토픽: {', '.join(skewed)} — 발행 PC 와 시계가 다릅니다. "
+                               "같은 PC 에서 재거나 두 PC 시계를 맞추세요 (chrony)")
 
-    if opts.csv:
-        os.makedirs(os.path.dirname(os.path.abspath(opts.csv)), exist_ok=True)
-        with open(opts.csv, "w", newline="", encoding="utf-8") as f:
-            w = csv.writer(f)
-            w.writerow(["topic", "recv_ns", "stamp_ns", "latency_ms"])
-            for name, rows in node.samples.items():
-                w.writerows((name, *r) for r in rows)
-        log.info(f"CSV 저장: {opts.csv} ({sum(len(s) for s in node.samples.values())} 행)")
+
+def save_csv(path, samples):
+    """샘플 하나당 한 줄: topic, 수신 시각, stamp, 지연 ms"""
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["topic", "recv_ns", "stamp_ns", "latency_ms"])
+        for name, rows in samples.items():
+            w.writerows((name, *r) for r in rows)
+    return sum(len(s) for s in samples.values())
+
+
+def main():
+    opts, topics = parse_args()                       # 1. 옵션 읽기
+
+    rclpy.init()
+    node = LatencyProbe(topics)                       # 2. 토픽 구독
+    node.get_logger().info(f"{len(topics)}개 토픽, {opts.duration:.0f} s 측정 시작")
+    duration = collect(node, opts.duration)           # 3. 정한 시간 동안 측정
+
+    print(summarize(topics, node.samples, duration))  # 4. 결과 표 + 시계 경고
+    warn_clock_skew(node)
+    if opts.csv:                                      # 5. CSV 저장 (선택)
+        rows = save_csv(opts.csv, node.samples)
+        node.get_logger().info(f"CSV 저장: {opts.csv} ({rows} 행)")
 
     node.destroy_node()
     rclpy.try_shutdown()
