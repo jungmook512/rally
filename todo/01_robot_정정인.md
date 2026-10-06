@@ -4,7 +4,7 @@
 참고: `docs/INTERFACES.md` 2.1 / 3 / 4, `rally_bringup/config/safety.yaml`, `skills.yaml`
 
 ## Day 0 (10/5)
-- [ ] `rally_robot/README.md` 읽기 — 선생님 코드가 어디로 옮겨졌는지, `dsr_helpers.init_dsr()` 패턴
+- [x] `rally_robot/README.md` 읽기 — 선생님 코드가 어디로 옮겨졌는지, `dsr_helpers.init_dsr()` 패턴
 - [x] dsr_bringup2 빌드, M0609 연결, `movel` 기본 이동 확인
 - [x] RG2 Modbus TCP 연결, 폭·힘 레지스터 읽기/쓰기 확인 (`scripts/check_gripper.py`)
 - [ ] `get_tool_force()` 값 읽기, 노이즈 수준 메모
@@ -15,12 +15,12 @@
 - [ ] **기준선**: `ros2 launch rally_bringup legacy_baseline.launch.py` 로 선생님 픽앤플레이스가 그대로 동작하는지 확인 (박성현·정동휘와)
 - [x] `force_publisher.py`: `/rally/robot/wrench` (WrenchStamped, 100 Hz), `/rally/robot/tcp_pose` — 코드 완료, PC1 에서 `ros2 topic hz` 확인 필요
 - [x] `gripper_node.py`: `GripperCommand` srv, `/rally/gripper/state`, grip 비트 + 폭으로 `object_detected` — 동기 클라이언트 + Lock. 비동기 교체는 TODO. PC1 확인 필요
-- [ ] `/rally/robot/go_observe_pose` (std_srvs/Trigger)
+- [x] `/rally/robot/go_observe_pose` (std_srvs/Trigger) — skill_server 에 있음, OBSERVE_POS 티칭 값만 교체 필요
 - [x] 캘리브레이션용 로봇 자세 15개 순회 스크립트 (`ros2 run rally_robot calib_sweep --center … --dry-run` 먼저) — 중심 자세 티칭 후 PC1 확인 필요
 - [ ] 그리퍼 닫힘 지연 측정 (`scripts/check_gripper.py` 가 ms 출력) → `skills.yaml gripper.command_to_motion_ms`
 
 ## Day 2 — 모드 5 스킬
-- [ ] `skill_server.py` 골격: MultiThreadedExecutor, 콜백 그룹(안전 / 스킬 / 상태) 분리
+- [x] `skill_server.py` 골격: MultiThreadedExecutor, 콜백 그룹(안전 / 스킬 / 상태) 분리
 - [ ] `pick_compliant.py`: `task_compliance_ctrl` Z 저강성 → 하강 → `check_force_condition` 접촉 → 파지 → 들기
 - [ ] `handover.py` GIVE: 물체를 `tilt_deg`로 기울여 중앙선 앞 제시 → 당김 힘 임계 감지 → RG2 해제 → 후퇴
 - [ ] 당김 힘 임계값 실험 (사람이 당길 때 힘 곡선 10회 기록)
