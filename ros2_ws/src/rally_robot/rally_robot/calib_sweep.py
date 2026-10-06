@@ -15,7 +15,9 @@
   1. 모든 자세가 safety.yaml 작업 공간 안인지 먼저 검사. 하나라도 밖이면 움직이지 않는다.
   2. /rally/safety/status 를 받을 때까지 대기(5 s). 못 받으면 움직이지 않는다 (safety_monitor 먼저 기동).
   3. /camera/color/image_raw 가 오는지 확인(2 s). 안 오면 중단 (--no-camera 로 이동만 점검 가능).
-  4. 이동은 amovel + check_motion 폴링. 이동 중 STOP → move_stop 후 중단. SLOW 로 바뀌면 정지 후 감속 배율로 재이동.
+  4. 이동은 amovel + check_motion 폴링. 이동 중 STOP → 정지 서비스(소프트 → 퀵 순으로 재시도) 호출 후 check_motion 으로
+     **실제로 멈췄는지 확인**해야 '정지'로 기록. 확인 실패면 에러 로그 + 종료 코드 4 (하드웨어 비상정지 안내).
+     SLOW 로 바뀌면 같은 절차로 정지 확인 후 감속 배율로 재이동.
   5. 속도 = VELOCITY × 0.3 × speed_override.
 """
 import argparse
@@ -36,11 +38,17 @@ FRAME_TIMEOUT_S = 2.0
 SAFETY_TIMEOUT_S = 5.0
 SPEED_SCALE = 0.3
 MOTION_TIMEOUT_S = 20.0
+STOP_MODES = (2, 1)          # 정지 재시도 순서: 2 SSTOP(소프트) → 1 QSTOP(퀵)
+STOP_VERIFY_S = 1.5          # 정지 명령 후 check_motion()==0 을 기다리는 시간 (시도당)
 WORKSPACE_DEFAULT_M = dict(x_min=0.25, x_max=0.80, y_min=-0.45, y_max=0.45, z_min=0.0, z_max=0.60)  # safety.yaml 과 동일
 
 
 class SafetyStop(RuntimeError):
-    pass
+    """안전 사유로 순회 중단. stopped=False 면 정지 서비스가 실패해 로봇이 아직 움직일 수 있다."""
+
+    def __init__(self, reason: str, stopped: bool):
+        super().__init__(reason)
+        self.reason, self.stopped = reason, stopped
 
 
 # ---------------------------------------------------------------- 자세 생성·검사 (ROS·두산 불필요)
@@ -152,12 +160,31 @@ def run_sweep(poses, out_dir, no_camera=False):
         from DSR_ROBOT2 import amovel, check_motion, get_current_posx, posx
         import cv2
 
+        def stop_robot(why):
+            """정지 서비스 호출 → check_motion()==0 으로 실제 정지 확인. 실패하면 정지 모드를 올려 재시도.
+            멈춘 것이 확인되면 True. 끝까지 확인 못 하면 에러 로그 후 False (호출자가 '정지'로 기록하면 안 됨)."""
+            for attempt, mode in enumerate(STOP_MODES, 1):
+                ok = move_stop(dsr, stop_mode=mode)
+                t0 = time.monotonic()
+                while time.monotonic() - t0 < STOP_VERIFY_S:
+                    rclpy.spin_once(node, timeout_sec=0.0)
+                    if check_motion() == 0:
+                        node.get_logger().warning(f"정지 확인 ({why}) mode={mode} 시도 {attempt} 서비스 응답={ok}")
+                        return True
+                    time.sleep(0.05)
+                node.get_logger().error(f"정지 확인 실패 ({why}) mode={mode} 시도 {attempt} 서비스 응답={ok} — 아직 움직임, 재시도")
+            node.get_logger().fatal(f"정지 실패 ({why}) — 로봇이 아직 움직일 수 있음. 티치펜던트/하드웨어 비상정지 사용")
+            return False
+
+        def reason():
+            return node.safety.reason if node.safety else "no_status"
+
         def move_checked(p):
-            """amovel 후 check_motion 폴링. STOP → 정지·예외, SLOW 변화 → 정지 후 배율 바꿔 재이동."""
+            """amovel 후 check_motion 폴링. STOP → 정지 확인 후 예외, SLOW 변화 → 정지 확인 후 배율 바꿔 재이동."""
             while True:
                 rclpy.spin_once(node, timeout_sec=0.0)
                 if node.stop_requested():
-                    raise SafetyStop(node.safety.reason if node.safety else "no_status")
+                    raise SafetyStop(reason(), stopped=True)          # 아직 명령 전이라 움직이지 않음
                 scale = SPEED_SCALE * node.speed_scale()
                 slowed = node.speed_scale() < 1.0
                 amovel(posx(*p), vel=VELOCITY * scale, acc=ACC * scale)
@@ -165,17 +192,15 @@ def run_sweep(poses, out_dir, no_camera=False):
                 while check_motion() != 0:
                     rclpy.spin_once(node, timeout_sec=0.05)
                     if node.stop_requested():
-                        move_stop(dsr)
-                        raise SafetyStop(node.safety.reason if node.safety else "no_status")
-                    if (node.speed_scale() < 1.0) != slowed:              # 감속 배율이 바뀜 → 정지 후 재이동
-                        move_stop(dsr)
-                        while check_motion() != 0:
-                            time.sleep(0.05)
+                        raise SafetyStop(reason(), stopped=stop_robot("safety STOP"))
+                    if (node.speed_scale() < 1.0) != slowed:              # 감속 배율이 바뀜 → 정지 확인 후 재이동
+                        if not stop_robot("감속 배율 변경"):
+                            raise SafetyStop("stop_failed_on_slow", stopped=False)
                         node.get_logger().info(f"안전 레벨 변경(speed_override={node.speed_scale():.2f}) — 같은 자세로 재이동")
-                        break
+                        break                                              # 바깥 while 이 STOP 을 다시 확인하고 재명령
                     if time.monotonic() - t0 > MOTION_TIMEOUT_S:
-                        move_stop(dsr)
-                        raise RuntimeError(f"이동 {MOTION_TIMEOUT_S} s 타임아웃")
+                        stopped = stop_robot("이동 타임아웃")
+                        raise SafetyStop(f"motion_timeout_{MOTION_TIMEOUT_S:.0f}s", stopped=stopped)
                 else:
                     return
 
@@ -200,8 +225,11 @@ def run_sweep(poses, out_dir, no_camera=False):
         node.get_logger().info(f"저장 {len(record['poses'])}장 → {out_dir}/calibrate_data.json (건너뜀 {len(record['skipped'])})")
         return 0
     except SafetyStop as e:
-        node.get_logger().error(f"안전 정지({e}) — 순회 중단. 로봇은 현재 위치에 멈춤. reset_safety 후 다시 실행")
-        return 3
+        if e.stopped:
+            node.get_logger().error(f"안전 정지({e.reason}) — 순회 중단. 로봇 정지 확인됨. reset_safety 후 다시 실행")
+            return 3
+        node.get_logger().fatal(f"안전 정지({e.reason}) — 정지 명령 실패, 로봇이 아직 움직일 수 있음. 하드웨어 비상정지로 멈추고 점검")
+        return 4
     finally:
         node.destroy_node()
         if dsr is not None:
