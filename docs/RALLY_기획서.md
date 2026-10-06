@@ -327,6 +327,9 @@
 ### 6.3 통신 설계
 
 - 같은 `ROS_DOMAIN_ID`, 모든 컨테이너 `network_mode: host`
+- PC 사이는 **Wi-Fi(Rokey_A)** 로 간다 (10/6 결정, 유선 스위치 없음). PC1+PC2 통합으로 카메라→인식→로봇 경로가 한 PC 안이라 Wi-Fi 를 타는 것은 인식 결과·안전 상태·action·대시보드 토픽뿐이다. 호스트 네이티브 노드도 `scripts/env_robot_pc.sh` 로 Discovery Server 클라이언트 설정을 맞춘다
+  - 인식 결과(`/rally/perception/*`)는 BestEffort depth 1 이라 지연이 튀어도 최신 것만 쓴다. 반면 `/rally/safety/status`(Reliable depth 10), action goal·result(Reliable), `/rally/safety/estop`(Reliable + TransientLocal)은 패킷이 빠지면 재전송하므로 Wi-Fi 에서 지연이 **더 늘어난다**. brain 의 트리 중단·결과 수신이 늦어질 수 있다는 뜻이고, Day 1 에 `scripts/measure_latency.py` 로 PC 간 지연을 재서 기록한다
+  - 안전 정지 세 수단('그만' 음성 · 주먹 제스처 · nudge)은 모두 로봇·인식 PC 안에서 처리되어 **Wi-Fi 를 타지 않는다**. 예외는 서버 PC 대시보드의 비상정지 버튼 하나로, Wi-Fi 지연을 그대로 받으므로 **보조 수단**이다. 하드웨어 비상정지 버튼은 네트워크와 무관하다
 - Fast DDS Discovery Server(서버 PC)로 멀티캐스트 탐색 트래픽 제거
 - 영상은 로봇·인식 PC 내부에서만 소비(디버그 영상만 10 Hz로 압축 발행). PC 사이를 오가는 것은 인식 결과·상태·결과 토픽뿐
 - 노드별 `header.stamp` 대비 수신 시각 차이를 `scripts/measure_latency.py`로 측정해 예측 선행 시간에 반영
@@ -456,7 +459,7 @@
 **센서·PC**
 - [ ] RealSense 그리퍼 위 고정, 케이블 여유 확인(팔 전 구간 이동)
 - [ ] 웹캠 환자 측면 고정(60 fps), USB 마이크 환자 앞, 스피커 로봇 쪽
-- [ ] PC 2대 유선 스위치, 고정 IP, `.env` 동일
+- [ ] PC 2대 Wi-Fi `Rokey_A`(172.24.0.0/22) 고정 IP, `.env` 동일 (유선 스위치 안 씀 — 10/6 결정)
 - [ ] 대시보드 모니터: 힘 그래프 · 예측 vs 실제 · 학습 곡선 · 리포트
 
 **시연 직전 루틴**

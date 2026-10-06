@@ -7,7 +7,7 @@
 - [ ] 레포 초기화·push, 브랜치 규칙 공지, `.github/workflows/build.yml` 첫 실행 확인
 - [ ] 인터페이스 합의 회의 주도 → `rally_interfaces` 수정·커밋 (이후 변경은 PR로)
 - [ ] `docker/.env` 작성(IP, DOMAIN_ID, API 키), 팀원 배포
-- [ ] PC 2대 고정 IP (로봇·인식 PC 172.24.0.136, 서버 PC 172.24.3.122), `fastdds_client.xml` 서버 주소 확정
+- [ ] PC 2대 고정 IP (로봇·인식 PC 172.24.0.136, 서버 PC 172.24.3.122), `fastdds_client.xml` 서버 주소 확정 — Wi-Fi Rokey_A 로 확정(유선 스위치 안 씀). PC 간 토픽 지연을 `scripts/measure_latency.py` 로 한 번 재서 기록
 - [ ] LLM API 키 발급·한도 확인
 
 ## Day 1 — 인프라 기반 ✅
