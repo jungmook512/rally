@@ -112,6 +112,9 @@ def apply_depth_offset(td_coord):
 # ---------------------------------------------------------------- 스킬 공용: 안전 체크가 들어간 이동 · 정지 확인 · 순응 제어 컨텍스트
 STOP_MODES = (2, 1)          # 정지 재시도 순서: SSTOP(소프트) → QSTOP(퀵)
 STOP_VERIFY_S = 1.5          # 정지 명령 후 check_motion()==0 을 기다리는 시간 (시도당)
+START_GRACE_S = 0.6          # amovel 직후 check_motion 이 IDLE(0) 에서 INIT/BUSY 로 바뀌기까지 기다리는 시간 (바로 0 이면 '끝'으로 오판)
+ARRIVE_TOL_MM = 3.0          # 도착 검증: 목표와 위치 차이 허용
+ARRIVE_TOL_DEG = 2.0         # 도착 검증: 자세 차이 허용
 
 
 class SkillAbort(Exception):
@@ -135,9 +138,13 @@ def rotate_tool(pose6, axis_xyz, deg):
 
 def stop_robot(dsr_node, logger, why="safety"):
     """정지 서비스 호출 → check_motion()==0 으로 실제 정지 확인. 실패하면 정지 모드를 올려 재시도. 멈춘 것이 확인되면 True."""
+    import DSR_ROBOT2
     from DSR_ROBOT2 import check_motion
     for attempt, mode in enumerate(STOP_MODES, 1):
-        ok = move_stop(dsr_node, stop_mode=mode) if dsr_node is not None else True
+        if dsr_node is not None:
+            ok = move_stop(dsr_node, stop_mode=mode)
+        else:                                                   # fake 모드: 가짜 모듈의 정지 흉내
+            ok = bool(getattr(DSR_ROBOT2, "fake_move_stop", lambda m=2: True)(mode))
         t0 = time.monotonic()
         while time.monotonic() - t0 < STOP_VERIFY_S:
             if check_motion() == 0:
@@ -155,6 +162,13 @@ def motion_timeout_s(from6, to6, vel_mm_s, floor_s=10.0):
     return max(floor_s, dist / max(float(vel_mm_s), 1.0) * 2.0 + 5.0)
 
 
+def pose_error(cur6, target6):
+    """(위치 오차 mm, 자세 오차 deg) — ZYZ 표현 차이가 아니라 실제 회전각으로 비교."""
+    dpos = float(np.linalg.norm(np.array(cur6[:3], dtype=float) - np.array(target6[:3], dtype=float)))
+    d = Rotation.from_euler("ZYZ", cur6[3:6], degrees=True).inv() * Rotation.from_euler("ZYZ", target6[3:6], degrees=True)
+    return dpos, float(np.degrees(np.linalg.norm(d.as_rotvec())))
+
+
 def move_checked(node, pose6, vel, acc, timeout_s=None, poll_s=0.02, on_poll=None):
     """amovel + check_motion 폴링. node 는 stop_requested()/speed_scale()/dsr/get_logger() 를 제공해야 한다.
     timeout_s 가 None 이면 현재 자세 → 목표 거리와 속도로 계산(motion_timeout_s).
@@ -170,8 +184,12 @@ def move_checked(node, pose6, vel, acc, timeout_s=None, poll_s=0.02, on_poll=Non
         slowed = scale < 1.0
         if timeout_s is None:
             timeout_s = motion_timeout_s(get_current_posx()[0], pose6, vel * scale)
-        amovel(posx(*pose6), vel=vel * scale, acc=acc * scale)
+        ret = amovel(posx(*pose6), vel=vel * scale, acc=acc * scale)
+        if ret not in (None, 0):
+            raise SkillAbort(f"amovel_rejected_{ret}", stopped=True)      # 컨트롤러가 명령 거부 (도달 불가·모드 등)
         t0 = time.monotonic()
+        while check_motion() == 0 and time.monotonic() - t0 < START_GRACE_S:   # 시작 대기
+            time.sleep(poll_s)
         while check_motion() != 0:
             time.sleep(poll_s)
             if node.stop_requested():
@@ -189,6 +207,10 @@ def move_checked(node, pose6, vel, acc, timeout_s=None, poll_s=0.02, on_poll=Non
                 stopped = stop_robot(node.dsr, logger, "이동 타임아웃")
                 raise SkillAbort(f"motion_timeout_{timeout_s:.0f}s", stopped=stopped)
         else:
+            dpos, dang = pose_error(get_current_posx()[0], pose6)              # 도착 검증
+            if dpos > ARRIVE_TOL_MM or dang > ARRIVE_TOL_DEG:
+                logger.error(f"목표 미도달: 위치 {dpos:.1f} mm · 자세 {dang:.1f}° 차이 — 명령이 거부되었거나 중단됨")
+                raise SkillAbort("not_arrived", stopped=True)
             return "done"
 
 
