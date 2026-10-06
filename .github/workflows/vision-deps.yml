@@ -1,0 +1,59 @@
+# vision 이미지 가벼운 검사 (#7). 전체 이미지(CUDA·torch·TensorRT, ~10 GB, 15~25분)는 빌드하지 않는다.
+# 실제로 반복된 문제는 "pip 패키지가 apt numpy 1.26(cv_bridge 기준)과 충돌"이라 그것만 본다.
+# GPU·TensorRT 동작은 CI 에 GPU 가 없어 어차피 확인 불가 → 로봇·인식 PC 에서 확인.
+# vision 관련 파일이 바뀔 때만 돈다 (한 번에 약 4분, pip 메타데이터 판단에 약 3 GB 다운로드).
+name: vision-deps
+on:
+  push:
+    paths:
+      - docker/vision/**
+      - docker/entrypoint.sh
+      - ros2_ws/src/rally_vision/**
+      - ros2_ws/src/rally_interfaces/**
+      - ros2_ws/src/rally_bringup/**
+      - .github/workflows/vision-deps.yml
+  pull_request:
+    paths:
+      - docker/vision/**
+      - docker/entrypoint.sh
+      - ros2_ws/src/rally_vision/**
+      - ros2_ws/src/rally_interfaces/**
+      - ros2_ws/src/rally_bringup/**
+      - .github/workflows/vision-deps.yml
+jobs:
+  build-stage:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: vision Dockerfile 빌드 스테이지 (colcon, CUDA 없음)
+        run: |
+          docker build --target build -f docker/vision/Dockerfile . 2>&1 | tee build.log | tail -5
+          grep -E "Summary: [0-9]+ packages finished" build.log   # 패키지 수는 의존성에 따라 다르다 (지금 2: interfaces·vision)
+          ! grep -q "packages failed" build.log
+  pip-deps:
+    runs-on: ubuntu-24.04
+    container: ros:jazzy-ros-base          # 런타임과 같은 Ubuntu 24.04 · python 3.12 · apt numpy
+    steps:
+      - uses: actions/checkout@v4
+      - name: apt (런타임 Dockerfile 과 같은 numpy 기준)
+        run: apt-get update && apt-get install -y --no-install-recommends ros-jazzy-cv-bridge python3-pip
+      - name: pip install --dry-run
+        run: pip3 install --dry-run --quiet --no-cache-dir --break-system-packages --report report.json -r docker/vision/requirements.txt
+      - name: numpy · opencv 판정
+        shell: python3 {0}
+        run: |
+          import json, sys
+          inst = {i["metadata"]["name"].lower(): i["metadata"]["version"] for i in json.load(open("report.json"))["install"]}
+          errors = []
+          if "numpy" in inst:
+              errors.append(f"numpy {inst['numpy']} 를 새로 설치하려 함 — apt numpy 1.26(cv_bridge 기준)을 덮는다. requirements 에 numpy<2 와 원인 패키지 상한 필요")
+          for name in ("opencv-python", "opencv-python-headless", "opencv-contrib-python"):
+              v = inst.get(name)
+              if v and tuple(int(x) for x in v.split(".")[:2]) >= (4, 12):
+                  errors.append(f"{name} {v} — 4.12 부터 numpy>=2 요구. <4.12 로 고정")
+          print(f"설치 예정 {len(inst)}개 | numpy: {inst.get('numpy', '설치 안 함 (시스템 1.26 유지)')} | "
+                f"opencv: {inst.get('opencv-python-headless', '-')} / {inst.get('opencv-python', '-')} | "
+                f"torch: {inst.get('torch', '-')} | ultralytics: {inst.get('ultralytics', '-')}")
+          for e in errors:
+              print(f"::error::{e}")
+          sys.exit(1 if errors else 0)
