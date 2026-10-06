@@ -1,0 +1,21 @@
+# 모드 7: 저항 밀기 (팔씨름형 등척성 근력 훈련)
+# 로봇은 손잡이를 쥐고 환자 앞에 내민 뒤 순응 제어로 스프링처럼 버틴다. 환자 힘이 target_force_n 을 넘으면
+# yield_distance_m 만큼 천천히 "밀려나 준다"(져준다). 로봇은 절대 환자 쪽으로 능동적으로 밀지 않는다.
+geometry_msgs/PoseStamped handle_pose   # 손잡이 제시 자세 (중앙선 앞, 환자 팔 높이)
+float32 stiffness                       # 순응 강성 (낮을수록 쉽게 밀림) — 난이도
+float32 target_force_n                  # 이 힘을 넘으면 져줌 (예: 8 N)
+float32 hold_time_s                     # 목표 힘을 이 시간 이상 유지해야 성공 (예: 2 s)
+float32 yield_distance_m                # 져줄 때 밀려나는 거리 (예: 0.05)
+float32 force_limit_n                   # 안전 한계 (기본 15 N, safety.yaml 보다 낮게)
+float32 timeout_s
+---
+bool success                            # target_force_n 을 hold_time_s 이상 유지
+float32 peak_force_n
+float32 hold_time_achieved_s
+float32 force_smoothness               # 힘 곡선 떨림 지표 (표준편차/평균)
+float32[] force_profile_n              # 20 Hz 힘 시계열 (리포트·pgvector 특징용)
+string failure_reason                   # timeout | force_limit | released | safety_stop
+---
+string phase                            # present | resist | yielding | return
+float32 current_force_n
+float32 hold_progress                   # 0~1

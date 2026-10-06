@@ -37,7 +37,8 @@ webcam_link          측면 웹캠 (table_link 기준 static)
 
 | 토픽 | 타입 | 발행 | 구독 | 주기 | QoS |
 |---|---|---|---|---|---|
-| `/rally/perception/objects` | `rally_interfaces/TrackedObjectArray` | rally_vision/tracker | brain, robot | 30 Hz | BestEffort, depth 1 |
+| `/rally/perception/objects` | `rally_interfaces/TrackedObjectArray` | rally_vision/tracker | brain, robot | 30 Hz (웹캠 비행 추적은 60 Hz) | BestEffort, depth 1 |
+| `/rally/perception/landing` | `geometry_msgs/PointStamped` (+ confidence는 objects에) | rally_vision/flight_predictor | robot(catch_ball) | 60 Hz, 비행 중만 | BestEffort, depth 1 |
 | `/rally/perception/objects/debug_image` | `sensor_msgs/Image` | rally_vision/tracker | dashboard | 10 Hz | BestEffort |
 | `/rally/perception/hand` | `rally_interfaces/HandState` | rally_human/hand_pose_node | brain, robot(safety), robot(handover) | 30 Hz | BestEffort, depth 1 |
 | `/rally/perception/body` | `rally_interfaces/BodyPose` | rally_human/body_pose_node | brain | 15 Hz | BestEffort |
@@ -77,10 +78,16 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 |---|---|---|---|
 | `/rally/skill/push_ball` | `rally_interfaces/PushBall` | 1 | movel 속도 프로파일, check_force_condition(접촉) |
 | `/rally/skill/pick_compliant` | `rally_interfaces/PickCompliant` | 1·3·5 공통 | task_compliance_ctrl(Z 저강성), 접촉 감지 후 파지 |
-| `/rally/skill/move_target` | `rally_interfaces/MoveTarget` | 3 | movec / movesx / moveb, 힘 피크 카운트 |
+| `/rally/skill/catch_ball` | `rally_interfaces/CatchBall` | 3 (챌린지) | 예측 착지점으로 amovel 선행 이동 + servol 보정, 패드 면 정렬 |
+| `/rally/skill/move_target` | `rally_interfaces/MoveTarget` | 3 (Phase 2) | movec / movesx / moveb 궤적, 환자가 맞혀야 하는 후기 단계 |
 | `/rally/skill/detach_ball` | `rally_interfaces/DetachBall` | 3 | 힘 제어 당김, 힘 급락으로 떼어짐 판정 |
 | `/rally/skill/handover` | `rally_interfaces/Handover` | 5 | 기울여 제시, 당김 힘 감지 해제, servol 손 추종 |
+| `/rally/skill/resist_push` | `rally_interfaces/ResistPush` | 7 | 순응 강성으로 버티기, 목표 힘 유지 시 져주기(밀려남), 저속 복귀. 로봇은 절대 밀지 않음 |
 | `/rally/session/run` | `rally_interfaces/RunSession` | 전체 | brain 최상위 action |
+
+## 4.1 모드 3 요격 타이밍
+
+릴리스 검출(손·공 마스크 분리, 웹캠 60 Hz) → 3~5 프레임 후 첫 착지 예측 발행 → `catch_ball`이 `lead_time_s`만큼 앞선 시각의 예측점으로 amovel → 매 프레임 갱신되는 예측으로 servol 보정 → 착지 → 패드 위 공 판정. 공 비행 시간이 보통 0.5~0.8 s(살살 토스)이므로 카메라→로봇 전체 지연을 100 ms 안쪽으로 맞추는 것이 핵심(`scripts/measure_latency.py`).
 
 ## 5. Lifecycle 기동 순서
 

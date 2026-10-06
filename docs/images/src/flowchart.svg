@@ -60,7 +60,7 @@
 
   <rect x="145" y="210" width="250" height="58" rx="10" fill="#FFFFFF" stroke="#15242A" stroke-width="1.3"/>
   <text x="270" y="234" text-anchor="middle" font-size="15" font-weight="700" fill="#15242A">모드 선택</text>
-  <text x="270" y="254" text-anchor="middle" font-size="12" fill="#566A70">행동 트리가 모드 1 → 3 → 5 실행</text>
+  <text x="270" y="254" text-anchor="middle" font-size="12" fill="#566A70">행동 트리가 모드 1 → (3) → 5 → 7 실행</text>
 
   <rect x="145" y="338" width="250" height="58" rx="10" fill="#FFFFFF" stroke="#0E7268" stroke-width="1.3"/>
   <text x="270" y="362" text-anchor="middle" font-size="15" font-weight="700" fill="#15242A">감지</text>
@@ -68,7 +68,7 @@
 
   <rect x="145" y="418" width="250" height="58" rx="10" fill="#FFFFFF" stroke="#0E7268" stroke-width="1.3"/>
   <text x="270" y="442" text-anchor="middle" font-size="15" font-weight="700" fill="#15242A">예측 · 계획</text>
-  <text x="270" y="462" text-anchor="middle" font-size="12" fill="#566A70">칼만 예측 · 궤적 · 파라미터 결정</text>
+  <text x="270" y="462" text-anchor="middle" font-size="12" fill="#566A70">칼만·포물선 예측 · 파라미터 결정</text>
 
   <rect x="145" y="498" width="250" height="58" rx="10" fill="#FFFFFF" stroke="#0E7268" stroke-width="1.3"/>
   <text x="270" y="522" text-anchor="middle" font-size="15" font-weight="700" fill="#15242A">로봇 동작</text>
@@ -76,7 +76,7 @@
 
   <rect x="145" y="578" width="250" height="58" rx="10" fill="#FFFFFF" stroke="#0E7268" stroke-width="1.3"/>
   <text x="270" y="602" text-anchor="middle" font-size="15" font-weight="700" fill="#15242A">판정</text>
-  <text x="270" y="622" text-anchor="middle" font-size="12" fill="#566A70">정지 위치 오차 · 패드 명중 · 그리퍼 폭 · 힘</text>
+  <text x="270" y="622" text-anchor="middle" font-size="12" fill="#566A70">정지 오차 · 요격 · 손목 각도 · 최대 힘·유지</text>
 
   <polygon points="270,684 370,730 270,776 170,730" fill="#FFFFFF" stroke="#15242A" stroke-width="1.3"/>
   <text x="270" y="726" text-anchor="middle" font-size="13" font-weight="700" fill="#15242A">규칙으로</text>

@@ -4,3 +4,5 @@ numpy
 filterpy
 scipy
 pyrealsense2
+torch
+tensorrt

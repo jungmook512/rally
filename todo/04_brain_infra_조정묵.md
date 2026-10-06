@@ -30,9 +30,12 @@
 - [ ] `rule_layer.py` 1차: 안전 레벨 반영, 연속 성공 3회 → 난이도 상승, 음성 `tired` → 휴식 제안
 - [ ] `SetMode` srv, 음성 intent → 트리 이벤트 연결
 
-## Day 4 — 모드 3 통합 ✅
-- [ ] `trees/mode3_catch.py`: MoveTarget(환자 투구 대기, 타임아웃) → 패드 거치 → DetachBall → Handover GIVE, 떼어내기 실패 시 각도 변경 재시도
-- [ ] 명중률 추세 → 궤적 패턴·속도 조절 규칙
+## Day 4 — 모드 7 통합 ✅ + 모드 3 착수
+- [ ] `trees/mode7_resist.py`: ResistPush(지난 peak_force 60 % 에서 시작) → 성공 3연속 +10 % / 실패 2회 -10 % → TrialResult(peak, hold, smoothness) → TTS
+- [ ] 세션 트리 순서 1 → (3 조건부) → 5 → 7, 모드 3 은 `skills.yaml mode3_challenge.enabled` 플래그로 on/off
+- [ ] `trees/mode3_catch.py`: CatchBall(catch_radius=0.35, lead_time, 타임아웃) → caught 면 패드 거치 → DetachBall → Handover GIVE / missed 면 TTS 격려 후 재시도. 떼어내기 실패 시 각도 변경 재시도
+- [ ] `skills.yaml` mode3 단계값(0.35 / 0.15 / 0), Phase 1은 0.35 고정. `rule_layer` 에 단계 전환 자리만
+- [ ] `scripts/measure_latency.py` 로 웹캠→landing→skill_server 지연 측정 → lead_time 결정 (정정인·박성현과)
 - [ ] 떼어내기 힘 곡선 `ts_wrench` 저장 → 임계 결정 데이터 정정인에게
 - [ ] `llm_advisor.py` 골격: OpenAI function calling, 3 s 타임아웃, pydantic 스키마 검증, 범위 클램핑, 폴백
 
@@ -44,6 +47,7 @@
 - [ ] 문맥 유무 비교 사례 10개 시나리오 작성 (평가용)
 
 ## Day 6 — 학습 루프 + 세션 전체 ✅
+- [ ] **CP13 최종 결정**: 모드 3 요격 성공률 ≥ 70 % 면 포함, 아니면 `mode3_challenge.enabled: false` 로 빼고 시도 데이터는 발표 "도전 과제" 슬라이드로
 - [ ] 30회 반복 시도에서 오차 감소 확인 (목표 ≥ 30 %) → **CP11 결정**: 미달 시 학습 루프를 모드 3 궤적 조절로 이전
 - [ ] `trees/session_tree.py`: 1 → 3 → 5 연속, `RunSession` action, 세션 시작·종료 DB
 - [ ] `prompts/session_report.md`: 회차별 변화 해석 → `sessions.report_md`

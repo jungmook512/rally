@@ -25,6 +25,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SrvDepthPosition.srv"
   "action/PushBall.action"
   "action/MoveTarget.action"
+  "action/CatchBall.action"
+  "action/ResistPush.action"
   "action/DetachBall.action"
   "action/Handover.action"
   "action/PickCompliant.action"

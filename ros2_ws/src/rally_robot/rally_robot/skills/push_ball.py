@@ -2,7 +2,8 @@
 담당: 정정인 · 모드 1
 
 단계
-1. 공 뒤쪽(목표 반대편)으로 접근 (관측 자세 → 공 위 → 뒤쪽 하강)
+0. goal.lane 으로 가이드 길 선택 (skills.yaml lanes[lane].start/dir). 길 폭 10~12 cm 라 좌우 오차도 남는다
+1. 공을 길 입구에 놓고(PickCompliant → place) 뒤쪽으로 접근 (관측 자세 → 공 위 → 뒤쪽 하강)
 2. push_dir_deg 방향으로 push_speed 속도 movel, check_force_condition 으로 접촉 감지 → feedback.phase='contact'
 3. 정해진 거리만큼 밀고 정지 → 관측 자세 복귀
 4. 비전(/rally/perception/objects)이 is_moving=false 가 될 때까지 대기 → stop_position, error_mm 채워 result

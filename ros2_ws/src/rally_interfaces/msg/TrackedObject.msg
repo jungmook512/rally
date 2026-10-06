@@ -9,5 +9,9 @@ float32 yaw                          # 마스크 주축 방향 [rad] (파지 각
 float32 mask_area                    # [px^2]
 sensor_msgs/RegionOfInterest bbox
 bool is_moving
-geometry_msgs/Point predicted_stop   # 정지 예측 위치 [m] (is_moving일 때)
+bool in_flight                       # 공중 비행 중 (던진 공)
+geometry_msgs/Point predicted_stop   # 정지 예측 위치 [m] (굴러가는 공, is_moving일 때)
 builtin_interfaces/Time predicted_stop_time
+geometry_msgs/Point predicted_landing  # 착지 예측 위치 [m] (in_flight일 때, 포물선 피팅)
+builtin_interfaces/Time predicted_landing_time
+float32 prediction_confidence        # 0~1, 관측 프레임 수·잔차 기반

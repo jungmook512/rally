@@ -16,6 +16,7 @@ setup(
         'detection = rally_vision.detection:main',             # 선생님 코드 기준선 (/get_3d_position)
         'segmenter = rally_vision.segmenter_node:main',
         'tracker = rally_vision.tracker_node:main',
+        'flight_predictor = rally_vision.flight_predictor:main',
         'calibration = rally_vision.calibration_node:main',
     ]},
 )

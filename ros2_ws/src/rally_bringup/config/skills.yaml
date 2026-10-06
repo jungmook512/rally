@@ -1,1 +1,29 @@
 # config/skills.yaml — 값은 docs/INTERFACES.md 6절 참고
+
+# mode3 (던진 공 요격)
+#   catch_radius_m: Phase 1 초기 단계 0.35 (넓게 받아줌). Phase 2 에서 명중률에 따라 0.35 → 0.15 → 0(패드 고정)
+#   lead_time_s: scripts/measure_latency.py 결과(웹캠→skill_server) + 로봇 가속 시간
+#   ready_pose: 테이블 중앙, 패드 면 환자 쪽
+mode3:
+  catch_radius_m: 0.35
+  lead_time_s: 0.12
+  max_ball_speed_mps: 3.0
+
+# mode1 (공 굴려주기) — 가이드 길 3개 (폭 10~12 cm, 높이 ≤ 공 반지름)
+mode1:
+  lanes:
+    - {name: left,   start: [0.45, -0.20, 0.02], dir_deg: 100}   # TODO 실측
+    - {name: center, start: [0.45,  0.00, 0.02], dir_deg: 90}
+    - {name: right,  start: [0.45,  0.20, 0.02], dir_deg: 80}
+  push_speed_range: [0.05, 0.35]
+
+# mode7 (저항 밀기) — 로봇은 버티거나 져주기만, 절대 밀지 않음
+mode7:
+  stiffness_range: [200, 1500]      # N/m, 낮을수록 쉬움
+  target_force_start_n: 5.0
+  target_force_range_n: [3.0, 12.0]
+  hold_time_s: 2.0
+  yield_distance_m: 0.05
+  force_limit_n: 15.0               # safety.yaml 25 N 보다 낮음
+mode3_challenge:
+  enabled: true                     # CP13 결정에 따라 false 로 시연에서 제외
