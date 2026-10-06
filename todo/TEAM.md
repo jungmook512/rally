@@ -5,12 +5,12 @@
 
 ## 매일
 - [ ] 아침 10분 스탠드업: 어제 한 것 / 오늘 할 것 / 막힌 것
-- [ ] 저녁 main 머지 → 3 PC에서 같이 한 번 실행
+- [ ] 저녁 main 머지 → 2 PC에서 같이 한 번 실행
 - [ ] 변경한 인터페이스는 `docs/INTERFACES.md` 같이 수정
 
 ## Day 0 (10/5) — 전원
 - [ ] 인터페이스 합의: `rally_interfaces` msg/srv/action 필드 확정 (30분 회의)
-- [ ] PC 3대 환경: Ubuntu 24.04, ROS 2 Jazzy, Docker, PC2 nvidia-container-toolkit
+- [ ] PC 2대 환경: Ubuntu 24.04, ROS 2 Jazzy, Docker, 로봇·인식 PC nvidia-container-toolkit (10/6 결정: PC1+PC2 를 GPU PC 한 대로 합침, pc1/pc2/pc3 는 역할 이름)
 - [ ] 고정 IP·`ROS_DOMAIN_ID` 통일, PC끼리 `ros2 topic list` 상호 확인
 - [ ] 소품: 공 ×3, 벨크로 캐치볼 세트, 막대·컵, 펠트, 중앙선 테이프, ArUco 보드 출력, **가이드 길 3개**, **모드 7 손잡이 막대**
 - [ ] **패드 시야 실측**: 로봇이 패드 들고 환자 쪽 향할 때 RealSense에 환자·공이 보이는지 (CP3)
@@ -20,7 +20,7 @@
 - [ ] 레포 clone, 브랜치 규칙: `feat/<pkg>/<topic>`, PR → main
 
 ## 마일스톤
-- [ ] Day 1: 선생님 코드 기준선(`legacy_baseline.launch.py`) 동작 + 3 PC 토픽 상호 수신
+- [ ] Day 1: 선생님 코드 기준선(`legacy_baseline.launch.py`) 동작 + 2 PC 토픽 상호 수신
 - [ ] Day 3: 모드 5 통합 시연
 - [ ] Day 4: 모드 7 통합 시연 + 모드 3 착수 · CP13 중간 점검
 - [ ] Day 6: **CP13 최종 결정** — 모드 3 포함 여부 (성공률 ≥70 %)

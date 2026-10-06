@@ -25,7 +25,7 @@
 ## 검증
 - 로봇 없는 환경: `python3 -m py_compile $(find ros2_ws/src -name "*.py" -not -path "*/_reference/*")`
 - ROS 2 환경: `cd ros2_ws && colcon build --symlink-install --packages-up-to rally_bringup && colcon test`
-- 하드웨어가 필요한 변경은 PR에 "PC1/PC2에서 확인 필요"라고 적고, 가짜 발행기나 bag 재생으로 검증 방법을 남긴다.
+- 하드웨어가 필요한 변경은 PR에 "로봇·인식 PC에서 확인 필요"라고 적고, 가짜 발행기나 bag 재생으로 검증 방법을 남긴다.
 
 ## 브랜치·커밋
 - `feat/<패키지>/<주제>`, `fix/<패키지>/<주제>` → PR → `main`

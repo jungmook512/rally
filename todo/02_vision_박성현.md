@@ -1,4 +1,4 @@
-# TODO — 비전 (PC 2 vision) · 박성현
+# TODO — 비전 (로봇·인식 PC, vision 컨테이너) · 박성현
 
 패키지: `ros2_ws/src/rally_vision` · 책임 모드: **모드 3 (패드 맞히기)**
 참고: `docs/INTERFACES.md` 1 / 2.2, `rally_bringup/config/hand_eye.yaml`, `table.yaml`
