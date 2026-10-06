@@ -56,7 +56,7 @@
 | RG2 그리퍼 + Modbus | Pymodbus 비동기, 폭·파지력 피드백으로 파지 판정 |
 | Object Detection · 학습 · 추론 | YOLO-Seg 커스텀 데이터셋 학습, TensorRT 추론 |
 | Voice Processing · Wakeup word · Keyword | openWakeWord 커스텀 호출어, faster-whisper, LLM function calling |
-| Docker · DB · 다중 PC 통신 | 컨테이너 6개 / PC 3대, DB 4종 역할 분리, Fast DDS Discovery Server |
+| Docker · DB · 다중 PC 통신 | 컨테이너 6개 / PC 2대, DB 4종 역할 분리, Fast DDS Discovery Server |
 
 ---
 
@@ -278,31 +278,39 @@
 
 ## 6. 시스템 아키텍처
 
-![RALLY 시스템 아키텍처](images/architecture.png)
+현행 배치 **v3** (2026-10-06, 물리 PC 2대 — PC1+PC2 통합). 노드별 토픽·서비스·액션 상세는 `docs/images/src/architecture_v3.py`로 생성:
 
-노드별 토픽·서비스·액션 상세(v2, `docs/images/src/architecture_v2.py`로 생성):
+![RALLY 시스템 아키텍처 v3 — PC 2대, 노드별 인터페이스](images/architecture_v3.png)
 
-![RALLY 시스템 아키텍처 v2 — 노드별 인터페이스](images/architecture_v2.png)
+<details><summary>이전 버전 — v2 (10/6 오전, PC 3대 노드별 배선도) · v1 (10/5, 개요)</summary>
+
+![RALLY 시스템 아키텍처 v2](images/architecture_v2.png)
+
+![RALLY 시스템 아키텍처 v1](images/architecture.png)
+
+</details>
 
 ### 6.1 배치 원칙
 
-- **PC 1 (로봇 제어)**: 호스트에서 ROS 2 네이티브 실행. 실시간성이 중요한 안전 감시와 스킬 실행을 컨테이너 오버헤드 없이 돌린다.
-- **PC 2 (AI 추론, GPU)**: 무거운 추론(YOLO-Seg, MediaPipe, Whisper)을 컨테이너 3개로 분리. RealSense 드라이버는 vision 컨테이너에서 **하나만** 띄우고 hand_pose가 구독한다.
-- **PC 3 (서버)**: 판단(brain), 저장(db·redis), 표시(dashboard), 그리고 DDS Discovery Server.
-- PC가 2대면 PC 3의 컨테이너를 PC 1로 옮긴다 (compose 프로필만 변경).
+물리 PC는 **2대**다 (2026-10-06 결정). `pc1`/`pc2`/`pc3` 는 launch·compose 프로필의 **역할 이름**이고 PC 번호가 아니다.
+
+- **로봇·인식 PC (GPU, RTX 4060 8 GB · 16코어)**: 두산 드라이버·RG2·안전 감시·스킬 서버는 **호스트 네이티브**(역할 `pc1`, 컨테이너 오버헤드 없이). 무거운 추론(YOLO-Seg, MediaPipe, Whisper)은 같은 PC의 **컨테이너 3개**(역할 `pc2`, compose `cpus` 상한으로 로봇 노드와 CPU 분리). RealSense·웹캠·마이크 USB 는 모두 이 PC. RealSense 드라이버는 vision 컨테이너에서 **하나만** 띄우고 hand_pose 가 구독한다.
+- **서버 PC**: 판단(brain), 저장(db·redis), 표시(dashboard), 그리고 DDS Discovery Server (역할 `pc3`). GPU·저지연 불필요.
+- 합친 이유: GPU 가 한 대뿐이고 GPU 는 학습이 아니라 **실시간 추론**(YOLO-Seg 30 Hz, CPU 로는 5~10 fps)에 필요하다. 카메라 → 인식 → 로봇의 시간 임계 경로가 한 PC 안에서 끝나 네트워크 홉이 없고, 컬러+깊이 30 Hz 영상(기가비트 대역의 대부분)이 네트워크를 타지 않는다.
+- 주의: 추론 컨테이너에 CPU 상한을 두어 100 Hz 안전 감시가 밀리지 않게 한다. RealSense 와 웹캠은 서로 다른 USB 컨트롤러 포트에 꽂는다. 이 PC 가 죽으면 로봇·인식이 같이 죽는다 (시연 수준에서 감수).
 
 ### 6.2 데이터 흐름
 
-1. 센서 → PC 2 컨테이너 → `/rally/perception/*`, `/rally/voice/intent` 토픽 (BestEffort, 최신 프레임만)
-2. brain이 `SceneContext`를 만들고 행동 트리가 PC 1의 skill action을 호출
-3. PC 1은 `WrenchStamped`(100 Hz)·`SafetyStatus`·action feedback을 되돌림
+1. 센서 → 인식 컨테이너(로봇·인식 PC) → `/rally/perception/*`, `/rally/voice/intent` 토픽 (BestEffort, 최신 프레임만). 손·착지 예측·비상정지는 같은 PC 의 로봇 노드가 직접 구독 (PC 간 홉 없음)
+2. brain(서버 PC)이 `SceneContext`를 만들고 행동 트리가 로봇 노드의 skill action을 호출
+3. 로봇 노드는 `WrenchStamped`(100 Hz)·`SafetyStatus`·action feedback을 되돌림
 4. 시도가 끝나면 `TrialResult` → rally_db recorder → PostgreSQL/Timescale/pgvector, Redis pub/sub → dashboard WebSocket
 
 ### 6.3 통신 설계
 
 - 같은 `ROS_DOMAIN_ID`, 모든 컨테이너 `network_mode: host`
-- Fast DDS Discovery Server(PC 3)로 멀티캐스트 탐색 트래픽 제거
-- 영상은 PC 2 내부에서만 소비(디버그 영상만 10 Hz로 압축 발행)
+- Fast DDS Discovery Server(서버 PC)로 멀티캐스트 탐색 트래픽 제거
+- 영상은 로봇·인식 PC 내부에서만 소비(디버그 영상만 10 Hz로 압축 발행). PC 사이를 오가는 것은 인식 결과·상태·결과 토픽뿐
 - 노드별 `header.stamp` 대비 수신 시각 차이를 `scripts/measure_latency.py`로 측정해 예측 선행 시간에 반영
 
 인터페이스 전체 명세는 [`INTERFACES.md`](INTERFACES.md).
@@ -424,11 +432,11 @@
 **센서·PC**
 - [ ] RealSense 그리퍼 위 고정, 케이블 여유 확인(팔 전 구간 이동)
 - [ ] 웹캠 환자 측면 고정(60 fps), USB 마이크 환자 앞, 스피커 로봇 쪽
-- [ ] PC 3대 유선 스위치, 고정 IP, `.env` 동일
+- [ ] PC 2대 유선 스위치, 고정 IP, `.env` 동일
 - [ ] 대시보드 모니터: 힘 그래프 · 예측 vs 실제 · 학습 곡선 · 리포트
 
 **시연 직전 루틴**
-- [ ] `docker compose --profile pc2 up`, `--profile pc3 up`, PC1 `ros2 launch rally_bringup pc1_robot.launch.py`
+- [ ] 로봇·인식 PC: `ros2 launch rally_bringup pc1_robot.launch.py` + `docker compose --profile pc2 up` / 서버 PC: `--profile pc3 up`
 - [ ] `ros2 lifecycle list`로 전 노드 active 확인
 - [ ] 캘리브레이션 기준점 터치 검증 (≤ 5 mm)
 - [ ] 3중 정지 각 1회 동작 확인
@@ -445,7 +453,7 @@ rally/
 ├── docs/
 │   ├── RALLY_기획서.md            ← 이 문서
 │   ├── INTERFACES.md              ← 토픽·서비스·액션·tf·QoS 명세
-│   └── images/ (flowchart.png, architecture.png, architecture_v2.png, src/*.svg, src/architecture_v2.py)
+│   └── images/ (flowchart.png, architecture.png, architecture_v2.png, architecture_v3.png, src/*.svg, src/architecture_v*.py) — 그림은 덮어쓰지 않고 버전을 올린다
 ├── todo/                          ← 역할별 할 일 (Day 0 ~ 8)
 │   ├── TEAM.md
 │   ├── 01_robot_정정인.md
@@ -504,17 +512,17 @@ rally/
 
 | 담당 | 영역 | 책임 모드 | 주요 패키지 |
 |---|---|---|---|
-| 정정인 | 로봇 제어 (PC 1) | 모드 1 · 7 | rally_robot |
-| 박성현 | 비전 (PC 2 vision) | 모드 3 (챌린지) | rally_vision |
-| 정동휘 | 사람 인식·음성·대시보드 (PC 2 hand_pose/voice, PC 3 dashboard) | 모드 5 | rally_human, rally_voice, dashboard |
-| 조정묵 | 지능·인프라 (PC 3 brain/db, compose, 인터페이스) | 세션 전체 | rally_brain, rally_db, rally_bringup, rally_interfaces, docker |
+| 정정인 | 로봇 제어 (로봇·인식 PC, 네이티브) | 모드 1 · 7 | rally_robot |
+| 박성현 | 비전 (로봇·인식 PC, vision 컨테이너) | 모드 3 (챌린지) | rally_vision |
+| 정동휘 | 사람 인식·음성·대시보드 (로봇·인식 PC hand_pose/voice 컨테이너, 서버 PC dashboard) | 모드 5 | rally_human, rally_voice, dashboard |
+| 조정묵 | 지능·인프라 (서버 PC brain/db, compose, 인터페이스) | 세션 전체 | rally_brain, rally_db, rally_bringup, rally_interfaces, docker |
 
 ### 11.2 일정 (Day 0 = 10/5)
 
 | Day | 날짜 | 목표 | 마일스톤 |
 |---|---|---|---|
 | 0 | 10/5 | 인터페이스 합의, 환경·소품·패드 시야 확인 | 레포 push, msg/action 확정 |
-| 1 | 10/6 | 기반: 캘리브레이션, RG2·힘 토픽, 손 관절·STT, DB·통신 | 3 PC 토픽 상호 수신 |
+| 1 | 10/6 | 기반: 캘리브레이션, RG2·힘 토픽, 손 관절·STT, DB·통신 | 2 PC 토픽 상호 수신 |
 | 2 | 10/7 | 단위 기능: 모드 5 스킬, Seg 1차 학습, 의도·TTS, 행동 트리 골격 | 각 노드 단독 동작 |
 | 3 | 10/8 | **모드 5 완성**, 안전 노드, TensorRT, 추적 | 1차 통합 시연 |
 | 4 | 10/9 | **모드 7 완성**(오전, 핸드오버 코드 재사용) + 모드 3 착수(비행 추적·착지 예측), 대시보드 골격 | 2차 통합 시연 · CP13 중간 점검 |

@@ -14,10 +14,10 @@
 
 | 담당 | 영역 | 패키지 |
 |---|---|---|
-| 정정인 | 로봇 제어 (PC 1) · 모드 1 | `rally_robot` |
-| 박성현 | 비전 (PC 2) · 모드 3 | `rally_vision` |
-| 정동휘 | 사람 인식 · 음성 · 대시보드 · 모드 5 | `rally_human`, `rally_voice`, `dashboard/` |
-| 조정묵 | 지능 · 인프라 · 세션 전체 | `rally_brain`, `rally_db`, `rally_bringup`, `rally_interfaces`, `docker/` |
+| 정정인 | 로봇 제어 (로봇·인식 PC, 네이티브) · 모드 1 | `rally_robot` |
+| 박성현 | 비전 (로봇·인식 PC, 컨테이너) · 모드 3 | `rally_vision` |
+| 정동휘 | 사람 인식 · 음성 (로봇·인식 PC, 컨테이너) · 대시보드 (서버 PC) · 모드 5 | `rally_human`, `rally_voice`, `dashboard/` |
+| 조정묵 | 지능 · 인프라 (서버 PC) · 세션 전체 | `rally_brain`, `rally_db`, `rally_bringup`, `rally_interfaces`, `docker/` |
 
 ## 빠른 시작
 
@@ -25,14 +25,16 @@
 # 공통: 환경 변수
 cp docker/.env.example docker/.env   # IP, ROS_DOMAIN_ID, OPENAI_API_KEY 수정
 
-# PC 1 (로봇 제어, 호스트 네이티브)
+# 물리 PC 2대: 로봇·인식 PC(GPU) + 서버 PC. pc1/pc2/pc3 는 역할 이름(launch·compose 프로필)이다.
+
+# 로봇·인식 PC ① 로봇 제어 (호스트 네이티브)
 cd ros2_ws && colcon build --symlink-install && source install/setup.bash
 ros2 launch rally_bringup pc1_robot.launch.py
 
-# PC 2 (AI 추론, GPU)
+# 로봇·인식 PC ② AI 추론 컨테이너 (같은 PC, GPU)
 cd docker && docker compose --profile pc2 up --build
 
-# PC 3 (서버)
+# 서버 PC
 cd docker && docker compose --profile pc3 up --build
 # 대시보드: http://<PC3_IP>:8000
 ```

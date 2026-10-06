@@ -4,7 +4,9 @@
 
 ## 1. 프로젝트 한 줄
 
-두산 M0609 + RG2 + RealSense(그리퍼 위, eye-in-hand)로, 물체(공·패드·컵·손잡이)를 통해서만 환자와 상호작용하는 **상지 재활 파트너 로봇**. 로봇이 환자 쪽으로 능동적으로 미는 동작은 설계상 없다. 훈련 모드는 1(가이드 길 공 굴려주기) · 5(기울인 물체 건네고 받기) · 7(저항 밀기, 팔씨름형)이 확정이고, 3(던진 공을 패드로 예측 요격)은 챌린지(Day 6 결정). Phase 2(모드 3 반경 좁히기·패드 고정, 공 받기, 블록 쌓기)는 범위 밖.
+두산 M0609 + RG2 + RealSense(그리퍼 위, eye-in-hand)로, 물체(공·패드·컵·손잡이)를 통해서만 환자와 상호작용하는 **상지 재활 파트너 로봇**. 로봇이 환자 쪽으로 능동적으로 미는 동작은 설계상 없다.
+
+물리 PC는 **2대**다. **로봇·인식 PC**(GPU, 이 저장소의 `cobot2_ws`·두산·RealSense·추론 컨테이너가 모두 여기)와 **서버 PC**(brain·DB·대시보드). `pc1_robot.launch` / compose 프로필 `pc2` / `pc3` 는 **역할 이름**이지 PC 번호가 아니다 — 로봇·인식 PC에서 `pc1`(네이티브)과 `pc2`(컨테이너)를 같이 띄운다. (2026-10-06 결정: GPU가 한 대뿐이고, 카메라→인식→로봇 경로를 한 PC 안에 두는 편이 지연·대역 면에서 낫다.) 훈련 모드는 1(가이드 길 공 굴려주기) · 5(기울인 물체 건네고 받기) · 7(저항 밀기, 팔씨름형)이 확정이고, 3(던진 공을 패드로 예측 요격)은 챌린지(Day 6 결정). Phase 2(모드 3 반경 좁히기·패드 고정, 공 받기, 블록 쌓기)는 범위 밖.
 
 ## 2. 먼저 읽을 것 (순서대로)
 
@@ -20,12 +22,12 @@
 ros2_ws/src/
   rally_interfaces/   msg 8 · srv 6 · action 8  (조정묵, 변경은 PR 필수)
   rally_bringup/      launch, config/*.yaml       (조정묵)
-  rally_robot/        PC1 로봇 제어                (정정인)
-  rally_vision/       PC2 비전                    (박성현)
-  rally_human/        PC2 손·몸 인식               (정동휘)
-  rally_voice/        PC2 음성                    (정동휘)
-  rally_brain/        PC3 판단·행동 트리·LLM        (조정묵)
-  rally_db/           PC3 기록·pgvector            (조정묵)
+  rally_robot/        로봇·인식 PC(네이티브) 로봇 제어        (정정인)
+  rally_vision/       로봇·인식 PC(컨테이너 pc2) 비전        (박성현)
+  rally_human/        로봇·인식 PC(컨테이너 pc2) 손·몸 인식   (정동휘)
+  rally_voice/        로봇·인식 PC(컨테이너 pc2) 음성        (정동휘)
+  rally_brain/        서버 PC(컨테이너 pc3) 판단·행동 트리·LLM (조정묵)
+  rally_db/           서버 PC(컨테이너 pc3) 기록·pgvector     (조정묵)
   _reference/         선생님 원본, COLCON_IGNORE   (수정 금지)
 docker/               compose(pc2/pc3 프로필), 서비스별 Dockerfile
 dashboard/            FastAPI + WebSocket          (정동휘)
@@ -81,15 +83,16 @@ python3 -m py_compile $(find ros2_ws/src -name "*.py" -not -path "*/_reference/*
 # 단위 테스트
 cd ros2_ws && colcon test --packages-select <pkg> && colcon test-result --verbose
 
-# 선생님 코드 기준선 (Day 1~2 확인용, PC1에 dsr_bringup2·realsense2_camera 먼저)
+# 선생님 코드 기준선 (Day 1~2 확인용, 로봇·인식 PC에 dsr_bringup2·realsense2_camera 먼저)
 ros2 launch rally_bringup legacy_baseline.launch.py
 
-# 컨테이너
-cd docker && docker compose --profile pc2 up --build     # PC2
-cd docker && docker compose --profile pc3 up --build     # PC3
+# 컨테이너 — 로봇·인식 PC: 네이티브 로봇 노드 + pc2 프로필 / 서버 PC: pc3 프로필
+ros2 launch rally_bringup pc1_robot.launch.py            # 로봇·인식 PC (네이티브)
+cd docker && docker compose --profile pc2 up --build     # 로봇·인식 PC (추론 컨테이너, 같은 PC)
+cd docker && docker compose --profile pc3 up --build     # 서버 PC
 ```
 
-에이전트가 할 수 있는 검증의 한계: **로봇·카메라·마이크가 없는 환경에서는 `py_compile`과 `colcon build`(인터페이스 생성 포함)까지만 가능하다.** 하드웨어가 필요한 변경은 "PC1/PC2에서 확인 필요"라고 명시하고, 가짜 발행기(fake publisher)나 bag 재생으로 검증 방법을 적어둔다.
+에이전트가 할 수 있는 검증의 한계: **로봇·카메라·마이크가 없는 환경에서는 `py_compile`과 `colcon build`(인터페이스 생성 포함)까지만 가능하다.** 하드웨어가 필요한 변경은 "로봇·인식 PC에서 확인 필요"라고 명시하고, 가짜 발행기(fake publisher)나 bag 재생으로 검증 방법을 적어둔다.
 
 ## 7. 작업 흐름
 

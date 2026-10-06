@@ -1,8 +1,8 @@
-# RALLY — 서비스별 컨테이너. PC마다 프로필로 필요한 서비스만 띄운다.
-#   PC1 (로봇 제어 호스트): ROS 2 네이티브 실행, 컨테이너 없음 (ros2_ws 직접 빌드)
-#   PC2: docker compose --profile pc2 up
-#   PC3: docker compose --profile pc3 up
-# 공통: network_mode host + 동일 ROS_DOMAIN_ID, Fast DDS Discovery Server(PC3) 사용
+# RALLY — 서비스별 컨테이너. 물리 PC 2대, 프로필 이름(pc2/pc3)은 역할이지 PC 번호가 아니다.
+#   로봇·인식 PC (GPU): 로봇 노드는 ROS 2 네이티브(ros2_ws 직접 빌드, pc1_robot.launch) + 추론 컨테이너 `docker compose --profile pc2 up`
+#   서버 PC:           `docker compose --profile pc3 up`
+# 공통: network_mode host + 동일 ROS_DOMAIN_ID, Fast DDS Discovery Server(서버 PC) 사용
+# pc2 서비스의 cpus 상한: 같은 PC 의 100 Hz 안전 감시·스킬 서버가 CPU 를 뺏기지 않게 (16코어 중 추론 12, 로봇 4 이상)
 x-ros: &ros
   network_mode: host
   ipc: host
@@ -16,10 +16,11 @@ x-ros: &ros
   restart: unless-stopped
 
 services:
-  # ---------- PC2 : AI 추론 (GPU) ----------
+  # ---------- pc2 역할 : AI 추론 (GPU) — 로봇·인식 PC, 로봇 노드와 같은 호스트 ----------
   vision:
     <<: *ros
     profiles: [pc2]
+    cpus: "6"
     build: { context: .., dockerfile: docker/vision/Dockerfile }
     devices: ["/dev/bus/usb:/dev/bus/usb"]        # RealSense
     deploy: { resources: { reservations: { devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }] } } }
@@ -31,6 +32,7 @@ services:
   hand_pose:
     <<: *ros
     profiles: [pc2]
+    cpus: "4"
     build: { context: .., dockerfile: docker/hand_pose/Dockerfile }
     devices: ["/dev/video0:/dev/video0"]          # 측면 웹캠
     deploy: { resources: { reservations: { devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }] } } }
@@ -39,6 +41,7 @@ services:
   voice:
     <<: *ros
     profiles: [pc2]
+    cpus: "2"
     build: { context: .., dockerfile: docker/voice/Dockerfile }
     devices: ["/dev/snd:/dev/snd"]
     group_add: ["audio"]
@@ -49,7 +52,7 @@ services:
       - ../models:/models:ro
     command: ros2 launch rally_bringup pc2_perception.launch.py part:=voice
 
-  # ---------- PC3 : 서버 ----------
+  # ---------- pc3 역할 : 서버 PC ----------
   discovery:
     image: ros:jazzy-ros-core
     profiles: [pc3]

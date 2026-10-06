@@ -1,4 +1,4 @@
-# TODO — 지능 · 인프라 (PC 3 brain/db, compose, 인터페이스) · 조정묵
+# TODO — 지능 · 인프라 (서버 PC brain/db, compose, 인터페이스) · 조정묵
 
 패키지: `ros2_ws/src/rally_brain`, `rally_db`, `rally_bringup`, `rally_interfaces`, `docker/` · 책임: **세션 전체 흐름**
 참고: `docs/INTERFACES.md` 전체, `rally_db/schema.sql`
@@ -7,15 +7,15 @@
 - [ ] 레포 초기화·push, 브랜치 규칙 공지, `.github/workflows/build.yml` 첫 실행 확인
 - [ ] 인터페이스 합의 회의 주도 → `rally_interfaces` 수정·커밋 (이후 변경은 PR로)
 - [ ] `docker/.env` 작성(IP, DOMAIN_ID, API 키), 팀원 배포
-- [ ] PC 3대 고정 IP, `fastdds_client.xml` 서버 주소 확정
+- [ ] PC 2대 고정 IP (로봇·인식 PC 172.24.0.136, 서버 PC 172.24.3.122), `fastdds_client.xml` 서버 주소 확정
 - [ ] LLM API 키 발급·한도 확인
 
 ## Day 1 — 인프라 기반 ✅
-- [ ] `rally_interfaces` colcon build 통과, 3 PC에 배포
+- [ ] `rally_interfaces` colcon build 통과, 2 PC에 배포
 - [ ] `docker compose --profile pc3 up`: discovery, db(Timescale+pgvector), redis 기동, healthcheck 통과
 - [ ] `schema.sql` 적용 확인, 하이퍼테이블·ivfflat 인덱스 생성 확인
-- [ ] 3 PC 토픽 상호 수신 테스트 (Discovery Server 경유), `ros2 topic hz`로 확인
-- [ ] `rally_bringup` launch 3종 골격 (pc1/pc2/pc3), Lifecycle 기동 순서 스크립트
+- [ ] 2 PC 토픽 상호 수신 테스트 (Discovery Server 경유), `ros2 topic hz`로 확인. 같은 PC 안(네이티브 ↔ 컨테이너 host 네트워크)도 확인
+- [ ] `rally_bringup` launch 3종 골격 (pc1/pc2/pc3 — 역할 이름, pc1+pc2 는 같은 PC), Lifecycle 기동 순서 스크립트
 - [ ] `scripts/measure_latency.py` 초안
 
 ## Day 2 — 행동 트리 골격 + 기록
@@ -54,7 +54,7 @@
 - [ ] LLM 피로·교정 판단 (규칙으로 애매한 케이스만)
 
 ## Day 7 — 통합·안정화 · 기능 동결
-- [ ] `full_system.launch.py`, 3 PC compose 일괄 기동 문서 (README)
+- [ ] `full_system.launch.py`, 2 PC 일괄 기동 문서 (README)
 - [ ] 노드별 지연 측정 결과 정리 (NFR-01 확인)
 - [ ] 모의 실패 주입 테스트: 손 결측·파지 실패·LLM 타임아웃·safety STOP 각 1회 → 복구 확인
 - [ ] 리허설 데이터 DB 축적, `trial_rolling` 뷰 갱신

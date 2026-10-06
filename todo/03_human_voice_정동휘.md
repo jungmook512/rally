@@ -1,4 +1,4 @@
-# TODO — 사람 인식 · 음성 · 대시보드 (PC 2 hand_pose/voice, PC 3 dashboard) · 정동휘
+# TODO — 사람 인식 · 음성 · 대시보드 (로봇·인식 PC hand_pose/voice 컨테이너, 서버 PC dashboard) · 정동휘
 
 패키지: `ros2_ws/src/rally_human`, `rally_voice`, `dashboard/` · 책임 모드: **모드 5 (건네고 받기)**
 참고: `docs/INTERFACES.md` 2.2 / 3

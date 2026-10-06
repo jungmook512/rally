@@ -1,4 +1,4 @@
-# TODO — 로봇 제어 (PC 1) · 정정인
+# TODO — 로봇 제어 (로봇·인식 PC, 네이티브) · 정정인
 
 패키지: `ros2_ws/src/rally_robot` · 책임 모드: **모드 1 (공 굴려주기)**
 참고: `docs/INTERFACES.md` 2.1 / 3 / 4, `rally_bringup/config/safety.yaml`, `skills.yaml`

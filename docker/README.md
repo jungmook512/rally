@@ -1,6 +1,6 @@
 # docker/
 
-- `docker-compose.yml` — PC2 (`--profile pc2`) / PC3 (`--profile pc3`)
+- `docker-compose.yml` — 로봇·인식 PC 의 추론 컨테이너 (`--profile pc2`, 로봇 노드와 같은 PC) / 서버 PC (`--profile pc3`). 프로필 이름은 역할이지 PC 번호가 아니다.
 - 서비스별 `Dockerfile` — 멀티 스테이지 (build: ros:jazzy-ros-base → runtime)
 
 ## Dockerfile 규칙 (한 번 당한 버그)
