@@ -16,7 +16,7 @@
 - [x] `schema.sql` 적용 확인, 하이퍼테이블 확인 → 벡터 인덱스 ivfflat 이 빈 테이블에서 만들어져 결과 누락 → HNSW 로 교체(`schema_002_hnsw.sql`)
 - [ ] 2 PC 토픽 상호 수신 테스트 (Discovery Server 경유), `ros2 topic hz`로 확인. 같은 PC 안(네이티브 ↔ 컨테이너 host 네트워크)도 확인
 - [x] `rally_bringup` launch 3종 골격 (pc1/pc2/pc3 — 역할 이름, pc1+pc2 는 같은 PC), Lifecycle 기동 순서 스크립트 → 준비 확인 방식(`readiness.yaml` + `wait_ready`), INTERFACES 5절
-- [ ] `scripts/measure_latency.py` 초안
+- [x] `scripts/measure_latency.py` 초안 — 토픽별 header.stamp 지연(평균·p50·p95·max), NFR-01 판정, CSV. 실측은 로봇·인식 PC 에서
 
 ## Day 2 — 행동 트리 골격 + 기록
 - [ ] `context_builder.py`: 토픽 구독 → `SceneContext` 5 Hz (가짜 발행기로 먼저 테스트)
