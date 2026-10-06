@@ -7,10 +7,16 @@
     from DSR_ROBOT2 import movel, movej, ... # 이제 import 가능
 """
 import os
+import time
+import warnings
+from contextlib import contextmanager
+
 import numpy as np
 from scipy.spatial.transform import Rotation
 import rclpy
 from ament_index_python.packages import get_package_share_directory
+
+warnings.filterwarnings("ignore", message="Gimbal lock detected")   # ry≈180 에서 ZYZ 분해 경고. 값은 유효하다.
 
 ROBOT_ID = "dsr01"
 ROBOT_MODEL = "m0609"
@@ -99,3 +105,92 @@ def apply_depth_offset(td_coord):
         td[2] += DEPTH_OFFSET
         td[2] = max(td[2], MIN_DEPTH)
     return td
+
+
+# ---------------------------------------------------------------- 스킬 공용: 안전 체크가 들어간 이동 · 정지 확인 · 순응 제어 컨텍스트
+STOP_MODES = (2, 1)          # 정지 재시도 순서: SSTOP(소프트) → QSTOP(퀵)
+STOP_VERIFY_S = 1.5          # 정지 명령 후 check_motion()==0 을 기다리는 시간 (시도당)
+
+
+class SkillAbort(Exception):
+    """안전 사유로 스킬 중단. stopped=False 면 정지 명령이 실패해 로봇이 아직 움직일 수 있다."""
+
+    def __init__(self, reason: str, stopped: bool = True):
+        super().__init__(reason)
+        self.reason, self.stopped = reason, stopped
+
+
+def force_mag(f6):
+    return float(np.linalg.norm(f6[:3]))
+
+
+def rotate_tool(pose6, axis_xyz, deg):
+    """posx(mm, ZYZ deg) 의 자세를 툴 좌표계 축(axis_xyz) 기준으로 deg 만큼 돌린 posx 를 돌려준다. 위치는 그대로."""
+    r = Rotation.from_euler("ZYZ", pose6[3:6], degrees=True) * Rotation.from_rotvec(np.deg2rad(deg) * np.array(axis_xyz, dtype=float))
+    rx, ry, rz = r.as_euler("ZYZ", degrees=True)
+    return [float(pose6[0]), float(pose6[1]), float(pose6[2]), float(rx), float(ry), float(rz)]
+
+
+def stop_robot(dsr_node, logger, why="safety"):
+    """정지 서비스 호출 → check_motion()==0 으로 실제 정지 확인. 실패하면 정지 모드를 올려 재시도. 멈춘 것이 확인되면 True."""
+    from DSR_ROBOT2 import check_motion
+    for attempt, mode in enumerate(STOP_MODES, 1):
+        ok = move_stop(dsr_node, stop_mode=mode) if dsr_node is not None else True
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < STOP_VERIFY_S:
+            if check_motion() == 0:
+                logger.warning(f"정지 확인 ({why}) mode={mode} 시도 {attempt} 서비스 응답={ok}")
+                return True
+            time.sleep(0.05)
+        logger.error(f"정지 확인 실패 ({why}) mode={mode} 시도 {attempt} 서비스 응답={ok} — 아직 움직임, 재시도")
+    logger.fatal(f"정지 실패 ({why}) — 로봇이 아직 움직일 수 있음. 티치펜던트/하드웨어 비상정지 사용")
+    return False
+
+
+def move_checked(node, pose6, vel, acc, timeout_s=20.0, poll_s=0.02, on_poll=None):
+    """amovel + check_motion 폴링. node 는 stop_requested()/speed_scale()/dsr/get_logger() 를 제공해야 한다.
+    - STOP → 정지 확인 후 SkillAbort(stopped=확인 여부)
+    - 감속 배율이 바뀌면 정지 확인 후 같은 자세로 재명령
+    - on_poll() 이 True 를 돌려주면(예: 접촉 감지) 정지하고 'interrupted' 를 돌려준다. 정상 도착이면 'done'."""
+    from DSR_ROBOT2 import amovel, check_motion, posx
+    logger = node.get_logger()
+    while True:
+        if node.stop_requested():
+            raise SkillAbort(node.safety_reason(), stopped=True)
+        scale = node.speed_scale()
+        slowed = scale < 1.0
+        amovel(posx(*pose6), vel=vel * scale, acc=acc * scale)
+        t0 = time.monotonic()
+        while check_motion() != 0:
+            time.sleep(poll_s)
+            if node.stop_requested():
+                raise SkillAbort(node.safety_reason(), stopped=stop_robot(node.dsr, logger, "safety STOP"))
+            if on_poll is not None and on_poll():
+                if not stop_robot(node.dsr, logger, "조건 충족(접촉)"):
+                    raise SkillAbort("stop_failed_on_contact", stopped=False)
+                return "interrupted"
+            if (node.speed_scale() < 1.0) != slowed:
+                if not stop_robot(node.dsr, logger, "감속 배율 변경"):
+                    raise SkillAbort("stop_failed_on_slow", stopped=False)
+                logger.info(f"안전 레벨 변경(speed_override={node.speed_scale():.2f}) — 같은 자세로 재이동")
+                break
+            if time.monotonic() - t0 > timeout_s:
+                stopped = stop_robot(node.dsr, logger, "이동 타임아웃")
+                raise SkillAbort(f"motion_timeout_{timeout_s:.0f}s", stopped=stopped)
+        else:
+            return "done"
+
+
+@contextmanager
+def compliance(stx, logger=None):
+    """task_compliance_ctrl(stx) 를 켜고, 블록을 어떻게 빠져나가든(예외·취소 포함) 반드시 해제한다."""
+    from DSR_ROBOT2 import task_compliance_ctrl, release_compliance_ctrl
+    task_compliance_ctrl(list(stx))
+    try:
+        yield
+    finally:
+        try:
+            release_compliance_ctrl()
+        except Exception as e:  # 해제 실패는 로그만 — 호출자의 예외를 덮지 않는다
+            if logger:
+                logger.error(f"release_compliance_ctrl 실패: {e}")

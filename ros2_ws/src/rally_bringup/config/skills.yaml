@@ -40,3 +40,25 @@ gripper:
   handle:      {open_mm: 110, force_n: 38}   # 모드 7
   close_timeout_s: 3.0
   # command_to_motion_ms: TODO scripts/check_gripper.py 결과(명령 → 폭 변화 지연) 기입
+
+# pick (PickCompliant 공통) — Z 는 table.yaml 평면 우선 (z_from_table). 접촉 힘 임계는 scripts/measure_wrench.py 노이즈로 확정
+pick:
+  approach_height_m: 0.08
+  below_target_m: 0.015           # 목표보다 이만큼 아래를 향해 하강 (접촉 전에 멈춘다)
+  lift_m: 0.10
+  contact_force_n: 8.0            # Z 힘 변화가 이 이상이면 접촉
+  open_mm: 90.0                   # 접근 전 열림 폭 (가이드 길 벽 10~12 cm 안)
+  descend_vel_scale: 0.3
+  z_from_table: true
+  grasp_above_table_m: 0.03       # 테이블 면 + 이만큼 = 파지 높이 (공 반지름 ≈ 3 cm)
+  z_stiffness_default: 300.0
+
+# handover (모드 5) — present_pose 는 티칭 후 기입 (posx mm·deg, 중앙선 앞 · 환자 팔 높이). 없으면 현재 자세에서 제시
+handover:
+  present_pose: null              # TODO(정정인) 예: [500.0, 0.0, 300.0, 0.0, 180.0, 0.0]
+  stiffness: [2000, 2000, 2000, 200, 200, 200]
+  pull_hold_s: 0.2                # 임계 이상 힘이 이 시간 유지되면 당김으로 판정
+  default_threshold_n: 6.0        # goal 에 없을 때. scripts/measure_wrench.py --pull 결과로 확정
+  default_timeout_s: 20.0
+  retreat_m: 0.10
+  release_wait_s: 0.3
