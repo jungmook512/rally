@@ -40,6 +40,7 @@ docs/ todo/ scripts/
 - **LLM 출력은 로봇에 직접 가지 않는다.** `rally_brain/llm_advisor.py` 결과는 pydantic 스키마 검증 → 범위 클램핑(`skills.yaml`) → 규칙 폴백을 거쳐야 action goal이 된다. 이 경로를 우회하는 코드를 쓰지 않는다.
 - **영상 원본은 외부로 보내지 않는다.** 외부 LLM API에는 `llm.yaml` 화이트리스트의 수치 특징값만. DB에도 영상은 저장하지 않는다.
 - **인터페이스 변경 = PR + `docs/INTERFACES.md` 동시 수정.** 필드 추가는 뒤에 붙이고, 이름 변경·삭제는 팀 합의 후.
+- **`docker/`를 고치기 전에 `docker/README.md`를 읽는다.** Dockerfile 규칙 3개(패키지별 COPY, `--symlink-install` 금지, Ubuntu 24.04 런타임 베이스)가 거기 있다.
 - **비밀값은 코드에 넣지 않는다.** `docker/.env`, `rally_voice/resource/.env`만 사용. 둘 다 `.gitignore`에 있다.
 - **모델·데이터는 커밋하지 않는다.** `models/`, `data/`는 git 제외. 패키지 `resource/`의 `.pt/.tflite/.npy`는 선생님이 준 것만 예외.
 
