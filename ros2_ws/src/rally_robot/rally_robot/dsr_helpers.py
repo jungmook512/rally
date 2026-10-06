@@ -10,7 +10,6 @@ import os
 import numpy as np
 from scipy.spatial.transform import Rotation
 import rclpy
-import DR_init
 from ament_index_python.packages import get_package_share_directory
 
 ROBOT_ID = "dsr01"
@@ -31,12 +30,28 @@ GRIPPER2CAM_PATH = os.path.join(PACKAGE_PATH, "resource", "T_gripper2camera.npy"
 
 
 def init_dsr(node_name="rally_dsr_node"):
-    """DR_init 전역 설정 후 dsr 네임스페이스 노드를 만들어 돌려준다. 프로세스당 한 번만."""
+    """DR_init 전역 설정 후 dsr 네임스페이스 노드를 만들어 돌려준다. 프로세스당 한 번만.
+    DR_init 은 여기서만 import 한다 — 이 모듈 자체는 두산 패키지 없이도 import 되어야 한다 (--dry-run, PC2/PC3 테스트)."""
+    import DR_init
     DR_init.__dsr__id = ROBOT_ID
     DR_init.__dsr__model = ROBOT_MODEL
     node = rclpy.create_node(node_name, namespace=ROBOT_ID)
     DR_init.__dsr__node = node
     return node
+
+
+def move_stop(node, stop_mode=2, timeout_s=1.0):
+    """진행 중인 모션 정지. DSR_ROBOT2 에 래퍼가 없어 /dsr01/motion/move_stop 서비스를 직접 부른다.
+    stop_mode: 0 QSTOP_STO · 1 QSTOP · 2 SSTOP(소프트, 기본) · 3 HOLD. 성공 여부 반환."""
+    from dsr_msgs2.srv import MoveStop
+    client = node.create_client(MoveStop, f"/{ROBOT_ID}/motion/move_stop")
+    if not client.wait_for_service(timeout_sec=timeout_s):
+        return False
+    req = MoveStop.Request()
+    req.stop_mode = int(stop_mode)
+    future = client.call_async(req)
+    rclpy.spin_until_future_complete(node, future, timeout_sec=timeout_s)
+    return bool(future.done() and future.result() is not None and future.result().success)
 
 
 def get_robot_pose_matrix(x, y, z, rx, ry, rz):

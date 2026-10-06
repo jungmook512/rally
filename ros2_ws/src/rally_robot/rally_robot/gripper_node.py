@@ -16,6 +16,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
+from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import JointState
 from rally_interfaces.srv import GripperCommand
 from rally_robot.onrobot import RG
@@ -42,7 +43,7 @@ class GripperNode(Node):
         else:
             self.get_logger().error(f"RG2 연결 실패 {ip}:{port} — 명령은 success=False 로 응답. scripts/check_gripper.py 로 점검")
         self.cb = ReentrantCallbackGroup()
-        self.pub = self.create_publisher(JointState, "/rally/gripper/state", 10)
+        self.pub = self.create_publisher(JointState, "/rally/gripper/state", qos_profile_sensor_data)
         self.create_service(GripperCommand, "/rally/gripper/command", self.on_cmd, callback_group=self.cb)
         self.create_timer(0.05, self.publish_state, callback_group=self.cb)
         self._last_width, self._last_grip = 0.0, 0
