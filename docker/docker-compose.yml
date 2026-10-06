@@ -7,9 +7,9 @@ x-ros: &ros
   network_mode: host
   ipc: host
   environment:
-    - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-7}
+    - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-10}
     - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-    - ROS_DISCOVERY_SERVER=${PC3_IP:-192.168.0.13}:11811
+    - ROS_DISCOVERY_SERVER=${PC3_IP:-172.24.3.122}:11811
     - FASTRTPS_DEFAULT_PROFILES_FILE=/ros2_ws/fastdds_client.xml
   volumes:
     - ../ros2_ws:/ros2_ws
@@ -85,7 +85,7 @@ services:
     profiles: [pc3]
     build: { context: .., dockerfile: docker/brain/Dockerfile }
     environment:
-      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-7}
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-10}
       - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
       - ROS_DISCOVERY_SERVER=127.0.0.1:11811
       - OPENAI_API_KEY=${OPENAI_API_KEY}
