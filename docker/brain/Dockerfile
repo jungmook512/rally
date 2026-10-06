@@ -3,7 +3,9 @@ FROM ros:jazzy-ros-base AS build
 RUN apt-get update && apt-get install -y python3-pip python3-colcon-common-extensions && rm -rf /var/lib/apt/lists/*
 WORKDIR /ros2_ws
 COPY ros2_ws/src/rally_interfaces src/rally_interfaces
-COPY ros2_ws/src/rally_brain ros2_ws/src/rally_db ros2_ws/src/rally_bringup src/
+COPY ros2_ws/src/rally_brain src/rally_brain
+COPY ros2_ws/src/rally_db src/rally_db
+COPY ros2_ws/src/rally_bringup src/rally_bringup
 RUN . /opt/ros/jazzy/setup.sh && colcon build --symlink-install
 
 FROM ros:jazzy-ros-base AS runtime
