@@ -488,7 +488,6 @@ rally/
 │   ├── 03_human_voice_정동휘.md
 │   └── 04_brain_infra_조정묵.md
 ├── ros2_ws/
-│   ├── fastdds_client.xml
 │   └── src/
 │       ├── rally_interfaces/      msg 8 · srv 6 · action 8
 │       ├── rally_bringup/         launch (pc1/pc2/pc3/full) · config yaml

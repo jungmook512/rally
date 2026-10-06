@@ -16,7 +16,7 @@
 
 실행 순서 (로봇·인식 PC, 네이티브): **모든 터미널에서 먼저 `source scripts/env_robot_pc.sh`** → `dsr_bringup2` → `safety_monitor` → `gripper_node` → `skill_server`(force_publisher 포함 권장)
 
-DDS: 컨테이너(compose `x-ros`)는 서버 PC 의 Fast DDS Discovery Server 클라이언트로 설정돼 있다. 호스트에서 직접 띄우는 노드(dsr_bringup2 포함)도 **같은 설정**이어야 같은 PC 안의 컨테이너와 서로를 찾는다. `scripts/env_robot_pc.sh` 가 `ROS_DOMAIN_ID` · `RMW_IMPLEMENTATION` · `ROS_DISCOVERY_SERVER` · `FASTRTPS_DEFAULT_PROFILES_FILE`(`ros2_ws/fastdds_client.xml`) · `ROS_SUPER_CLIENT`(CLI 용) 를 docker/.env 값으로 맞춘다. 환경을 바꾼 뒤에는 `ros2 daemon stop` 한 번.
+DDS: 컨테이너(compose `x-ros`)는 서버 PC 의 Fast DDS Discovery Server 클라이언트로 설정돼 있다. 호스트에서 직접 띄우는 노드(dsr_bringup2 포함)도 **같은 설정**이어야 같은 PC 안의 컨테이너와 서로를 찾는다. `scripts/env_robot_pc.sh` 가 `ROS_DOMAIN_ID` · `RMW_IMPLEMENTATION` · `ROS_DISCOVERY_SERVER` · `ROS_SUPER_CLIENT`(CLI 용) 를 docker/.env 값으로 맞춘다. 환경을 바꾼 뒤에는 `ros2 daemon stop` 한 번.
 기준선 확인: `ros2 run rally_robot legacy_pick_and_place` (rally_vision `detection`, rally_voice `get_keyword` 와 함께)
 
 ## 스킬 공용 규칙 (dsr_helpers)
