@@ -169,9 +169,10 @@ class SkillServer(Node):
         if self.stop_requested():
             res.success, res.message = False, f"safety STOP ({self.safety_reason()})"
             return res
-        movej(OBSERVE_POS, vel=VELOCITY * self.speed_scale(), acc=ACC * self.speed_scale())
+        posj = (self.cfg.get("observe_pose") or {}).get("posj") or OBSERVE_POS   # skills.yaml 티칭 값 우선
+        movej([float(v) for v in posj], vel=VELOCITY * self.speed_scale(), acc=ACC * self.speed_scale())
         mwait()
-        res.success, res.message = True, "observe pose"
+        res.success, res.message = True, f"observe pose {posj}"
         return res
 
 

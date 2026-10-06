@@ -1,5 +1,11 @@
 # config/skills.yaml — 값은 docs/INTERFACES.md 6절 참고
 
+# observe_pose (10/6 티칭) — 카메라가 테이블 작업 구역(x 0.23~0.68 m)·중앙선이 다 보이는 자세. 환자(+x) 쪽으로 약 11° 기울임.
+# 캘리브레이션 순회(calib_sweep --center) 중심이자 go_observe_pose 복귀 자세. posj 로 복귀(movej), posx 는 참고·순회용.
+observe_pose:
+  posx: [352.6, -29.3, 481.6, 146.9, -169.3, 147.3]      # mm · ZYZ deg
+  posj: [0.06, 9.06, 30.37, -7.68, 131.29, -5.15]         # deg
+
 # mode3 (던진 공 요격)
 #   catch_radius_m: Phase 1 초기 단계 0.35 (넓게 받아줌). Phase 2 에서 명중률에 따라 0.35 → 0.15 → 0(패드 고정)
 #   lead_time_s: scripts/measure_latency.py 결과(웹캠→skill_server) + 로봇 가속 시간
