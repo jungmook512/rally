@@ -30,7 +30,7 @@ ros2_ws/src/
   rally_db/           서버 PC(컨테이너 pc3) 기록·pgvector     (조정묵)
   _reference/         선생님 원본, COLCON_IGNORE   (수정 금지)
 docker/               compose(pc2/pc3 프로필), 서비스별 Dockerfile
-dashboard/            FastAPI + WebSocket          (정동휘)
+dashboard/            FastAPI + WebSocket (HMI)    (조정묵)
 docs/ todo/ scripts/
 ```
 
@@ -121,4 +121,4 @@ cd docker && docker compose --profile pc3 up --build     # 서버 PC
 
 ## 9. 팀
 
-정정인(로봇 제어, 모드 1) · 박성현(비전, 모드 3) · 정동휘(사람 인식·음성·대시보드, 모드 5) · 조정묵(지능·인프라, 세션 전체). 개발 기간 2026-10-06 ~ 10-13. 질문이 생기면 해당 담당자 `todo/` 파일의 "메모 / 막힌 것"에 적는다.
+정정인(로봇 제어, 모드 1) · 박성현(비전, 모드 3) · 정동휘(사람 인식·음성, 모드 5) · 조정묵(지능·인프라·HMI 대시보드, 세션 전체). 개발 기간 2026-10-06 ~ 10-13. 질문이 생기면 해당 담당자 `todo/` 파일의 "메모 / 막힌 것"에 적는다.

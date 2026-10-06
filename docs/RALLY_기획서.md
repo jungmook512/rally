@@ -6,7 +6,7 @@
 | 항목 | 내용 |
 |---|---|
 | 문서 버전 | v1.0 (2026-10-05) |
-| 팀 | 정정인(로봇 제어) · 박성현(비전) · 정동휘(사람 인식·음성·대시보드) · 조정묵(지능·인프라) |
+| 팀 | 정정인(로봇 제어) · 박성현(비전) · 정동휘(사람 인식·음성) · 조정묵(지능·인프라·HMI 대시보드) |
 | 로봇 | 두산 M0609 + OnRobot RG2 |
 | 센서 | RealSense D4xx (그리퍼 위 장착, eye-in-hand) · 웹캠(환자 측면) · USB 마이크 · 스피커 |
 | 환경 | Ubuntu 24.04 · ROS 2 Jazzy · Docker · PostgreSQL/TimescaleDB/pgvector/Redis |
@@ -364,7 +364,7 @@
 | FR-16 | 최근 시도와 유사 과거 시도를 바탕으로 LLM이 다음 파라미터를 제안하고 범위 클램핑 후 적용한다 | 1 (3 백업) | 조정묵 | 10회 시도 후 오차 ≥ 30 % 감소 |
 | FR-17 | 행동 트리로 세션(1→3→5)을 진행하고 실패 시 재탐지·재시도·대기로 복구한다 | 공통 | 조정묵 | 모의 실패 주입 테스트 |
 | FR-18 | 모든 시도·힘·관절·궤적을 DB에 기록하고 세션 리포트를 생성한다 | 공통 | 조정묵 | 세션 종료 후 리포트 자동 표시 |
-| FR-19 | 대시보드에 힘 그래프, 예측 vs 실제, 학습 곡선, 리포트를 실시간 표시한다 | 공통 | 정동휘 | 1 s 이내 갱신 |
+| FR-19 | 대시보드에 힘 그래프, 예측 vs 실제, 학습 곡선, 리포트를 실시간 표시한다 | 공통 | 조정묵 | 1 s 이내 갱신 |
 | FR-20 | 모드·훈련 동작·신체 부위·보상 동작·스킬·파라미터의 개념과 관계를 Ontology로 정의한다 | 공통 | 조정묵 | 활용 방식 확정 후 결정 (TBD) |
 | FR-21 | 주요 지표(성공률·피로도·개선율 등)를 시맨틱 레이어 한 곳에서 정의하고 규칙 레이어·LLM·대시보드·리포트가 공유한다 | 공통 | 조정묵 | 활용 방식 확정 후 결정 (TBD) |
 | FR-22 | 세션·시도·파라미터·관찰 결과를 Ontology에 맞춘 Knowledge Graph로 기록한다 | 공통 | 조정묵 | 활용 방식 확정 후 결정 (TBD) |
@@ -504,7 +504,7 @@ rally/
 │   ├── .env.example
 │   ├── entrypoint.sh
 │   └── vision/ hand_pose/ voice/ brain/ dashboard/ (Dockerfile + requirements.txt)
-├── dashboard/                     정동휘 — FastAPI app/ + web/
+├── dashboard/                     조정묵 — FastAPI app/ + web/ (HMI)
 ├── models/  data/                 git 제외 (가중치 · 데이터셋 · bag)
 ├── scripts/                       record_bag.sh · verify_calibration.py · measure_latency.py
 └── .github/workflows/build.yml    colcon build/test + 이미지 빌드
@@ -541,8 +541,8 @@ rally/
 |---|---|---|---|
 | 정정인 | 로봇 제어 (로봇·인식 PC, 네이티브) | 모드 1 · 7 | rally_robot |
 | 박성현 | 비전 (로봇·인식 PC, vision 컨테이너) | 모드 3 (챌린지) | rally_vision |
-| 정동휘 | 사람 인식·음성·대시보드 (로봇·인식 PC hand_pose/voice 컨테이너, 서버 PC dashboard) | 모드 5 | rally_human, rally_voice, dashboard |
-| 조정묵 | 지능·인프라 (서버 PC brain/db, compose, 인터페이스) | 세션 전체 | rally_brain, rally_db, rally_bringup, rally_interfaces, docker |
+| 정동휘 | 사람 인식·음성 (로봇·인식 PC hand_pose/voice 컨테이너) | 모드 5 | rally_human, rally_voice |
+| 조정묵 | 지능·인프라·HMI (서버 PC brain/db/dashboard, compose, 인터페이스) | 세션 전체 | rally_brain, rally_db, rally_bringup, rally_interfaces, docker, dashboard |
 
 ### 11.2 일정 (Day 0 = 10/5)
 
@@ -558,7 +558,7 @@ rally/
 | 7 | 10/12 | 전체 통합·안정화, 지연 측정, 안전 전수 점검, **기능 동결** | 리허설 데이터 축적 |
 | 8 | 10/13 | 리허설 3회, 발표 자료, 백업 영상 | 시연 준비 완료 |
 
-세부 할 일은 `todo/` 폴더. 매일 아침 10분 스탠드업, 저녁 main 머지 후 통합 실행.
+세부 할 일은 `todo/` 폴더. (10/6 변경: HMI 대시보드 담당 정동휘 → 조정묵. 정동휘는 손·몸 인식과 음성에 집중) 매일 아침 10분 스탠드업, 저녁 main 머지 후 통합 실행.
 
 ---
 
