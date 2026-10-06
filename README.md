@@ -2,7 +2,7 @@
 
 **R**ehabilitation **A**rm that **L**earns the ra**LLY** with you
 
-두산 M0609 + RG2 + RealSense(eye-in-hand)로, 환자 몸에 닿지 않고 공·벨크로 패드·컵으로만 상호작용하며 상지 재활 훈련의 상대 역할을 하는 반자율 협동로봇. 움직이는 공을 예측하고, 손 동작을 읽고, 접촉을 힘으로 느끼고, 시도할수록 스스로 정확해진다.
+두산 M0609 + RG2 + RealSense(eye-in-hand)로, 공·벨크로 패드·컵·손잡이 같은 물체를 통해서만 환자와 상호작용하며(로봇이 환자를 밀거나 잡지 않음) 상지 재활 훈련의 상대 역할을 하는 반자율 협동로봇. 움직이는 공을 예측하고, 손 동작을 읽고, 접촉을 힘으로 느끼고, 시도할수록 스스로 정확해진다.
 
 | 문서 | 내용 |
 |---|---|
@@ -14,10 +14,10 @@
 
 | 담당 | 영역 | 패키지 |
 |---|---|---|
-| 정정인 | 로봇 제어 (PC 1) · 모드 1 | `rally_robot` |
-| 박성현 | 비전 (PC 2) · 모드 3 | `rally_vision` |
-| 정동휘 | 사람 인식 · 음성 · 대시보드 · 모드 5 | `rally_human`, `rally_voice`, `dashboard/` |
-| 조정묵 | 지능 · 인프라 · 세션 전체 | `rally_brain`, `rally_db`, `rally_bringup`, `rally_interfaces`, `docker/` |
+| 정정인 | 로봇 제어 (로봇·인식 PC, 네이티브) · 모드 1 | `rally_robot` |
+| 박성현 | 비전 (로봇·인식 PC, 컨테이너) · 모드 3 | `rally_vision` |
+| 정동휘 | 사람 인식 · 음성 (로봇·인식 PC, 컨테이너) · 모드 5 | `rally_human`, `rally_voice` |
+| 조정묵 | 지능 · 인프라 · HMI 대시보드 (서버 PC) · 세션 전체 | `rally_brain`, `rally_db`, `rally_bringup`, `rally_interfaces`, `docker/`, `dashboard/` |
 
 ## 빠른 시작
 
@@ -25,14 +25,16 @@
 # 공통: 환경 변수
 cp docker/.env.example docker/.env   # IP, ROS_DOMAIN_ID, OPENAI_API_KEY 수정
 
-# PC 1 (로봇 제어, 호스트 네이티브)
+# 물리 PC 2대: 로봇·인식 PC(GPU) + 서버 PC. pc1/pc2/pc3 는 역할 이름(launch·compose 프로필)이다.
+
+# 로봇·인식 PC ① 로봇 제어 (호스트 네이티브)
 cd ros2_ws && colcon build --symlink-install && source install/setup.bash
 ros2 launch rally_bringup pc1_robot.launch.py
 
-# PC 2 (AI 추론, GPU)
+# 로봇·인식 PC ② AI 추론 컨테이너 (같은 PC, GPU)
 cd docker && docker compose --profile pc2 up --build
 
-# PC 3 (서버)
+# 서버 PC
 cd docker && docker compose --profile pc3 up --build
 # 대시보드: http://<PC3_IP>:8000
 ```
@@ -58,10 +60,11 @@ cd docker && docker compose --profile pc3 up --build
 | 모드 | 이름 | 재활 목적 | 핵심 로봇 스킬 |
 |---|---|---|---|
 | 1 | 공 굴려주기 | 팔 뻗기 | `PickCompliant` → `PushBall`, LLM 파라미터 학습 |
-| 3 | 움직이는 패드 맞히기 | 던지기 · 협응 | `MoveTarget` → `DetachBall` → `Handover` |
+| 3 (챌린지) | 던진 공 예측 요격 | 던지기 · 협응 | `CatchBall` → `DetachBall` → `Handover` — Day 6 성공률로 포함 여부 결정 |
 | 5 | 기울인 물체 건네고 받기 | 손목 회전 · 쥐기 | `Handover` (GIVE / RECEIVE, 손 추종) |
+| 7 | 저항 밀기 (팔씨름형) | 등척성 근력 | `ResistPush` — 순응 버티기 → 목표 힘 유지 시 져주기. 로봇은 절대 밀지 않음 |
 
-Phase 2 (범위 밖): 굴러오는 공 받기, 블록 번갈아 쌓기, VLA 비교.
+Phase 2 (범위 밖): 모드 3 중간·후기 단계(받아주는 반경 좁히기 → 패드 고정), 굴러오는 공 받기, 블록 번갈아 쌓기, VLA 비교.
 
 ## 저장소 구조
 

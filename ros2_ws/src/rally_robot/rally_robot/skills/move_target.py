@@ -1,4 +1,4 @@
-"""rally_robot/skills/move_target.py — 벨크로 패드 궤적 이동 (MoveTarget)
+"""rally_robot/skills/move_target.py — [Phase 2] 벨크로 패드 궤적 이동 (MoveTarget). Phase 1 모드 3은 catch_ball.py
 담당: 정정인 · 모드 3
 
 단계

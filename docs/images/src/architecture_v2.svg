@@ -1,0 +1,456 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2840 1830" width="2840" height="1830" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">
+<defs>
+<marker id="arr-action" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#2A7DA8"/></marker>
+<marker id="arr-service" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#7A4FB5"/></marker>
+<marker id="arr-topic" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#1E8A5A"/></marker>
+<marker id="arr-nonros" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#A0742A"/></marker>
+</defs>
+<rect width="2840" height="100%" fill="#F7F8F7"/>
+<text x="1420.0" y="58" text-anchor="middle" font-size="40" font-weight="700" fill="#15242A">RALLY 시스템 아키텍처 v2</text>
+<text x="1420.0" y="92" text-anchor="middle" font-size="18" fill="#566A70">2026-10-06 · PC 3대 · ROS 2 Jazzy · 노드 상자의 점 = 그 노드가 쓰는 인터페이스 · 선 = 같은 이름으로 오가는 데이터 (화살표 = 받는 쪽)</text>
+<rect x="60" y="130" width="740" height="1100" rx="18" fill="#EEF7F3" stroke="#1F6F5B" stroke-width="2"/>
+<path d="M78,130 H782 a18,18 0 0 1 18,18 V186 H60 V148 a18,18 0 0 1 18,-18 z" fill="#1F6F5B"/>
+<text x="84" y="167" font-size="24" font-weight="700" fill="#FFFFFF">② 인식 PC (PC2 · GPU · Docker)</text>
+<text x="776" y="167" text-anchor="end" font-size="18" fill="#FFFFFF" opacity="0.9">박성현 · 정동휘</text>
+<rect x="1010" y="300" width="820" height="1128" rx="18" fill="#EDF3FB" stroke="#2A5D9F" stroke-width="2"/>
+<path d="M1028,300 H1812 a18,18 0 0 1 18,18 V356 H1010 V318 a18,18 0 0 1 18,-18 z" fill="#2A5D9F"/>
+<text x="1034" y="337" font-size="24" font-weight="700" fill="#FFFFFF">③ 서버 PC (PC3 · Docker)</text>
+<text x="1806" y="337" text-anchor="end" font-size="18" fill="#FFFFFF" opacity="0.9">조정묵 · 정동휘</text>
+<rect x="2040" y="130" width="740" height="1194" rx="18" fill="#FBF3E6" stroke="#A8681E" stroke-width="2"/>
+<path d="M2058,130 H2762 a18,18 0 0 1 18,18 V186 H2040 V148 a18,18 0 0 1 18,-18 z" fill="#A8681E"/>
+<text x="2064" y="167" font-size="24" font-weight="700" fill="#FFFFFF">① 로봇 제어 PC (PC1 · 호스트 네이티브)</text>
+<text x="2756" y="167" text-anchor="end" font-size="18" fill="#FFFFFF" opacity="0.9">정정인</text>
+<rect x="90" y="216" width="680" height="160" rx="12" fill="#FFFFFF" stroke="#CBD5D1" stroke-width="1.5"/>
+<rect x="90" y="216" width="680" height="58" rx="12" fill="#EEF7F3"/>
+<rect x="90" y="262" width="680" height="12" fill="#EEF7F3"/>
+<rect x="90" y="216" width="7" height="160" rx="3" fill="#1F6F5B"/>
+<text x="112" y="246" font-size="24" font-weight="700" fill="#15242A">realsense2_camera · usb_cam</text>
+<text x="112" y="268" font-size="14" fill="#566A70">드라이버 · RealSense 그리퍼 위(eye-in-hand) · 웹캠 환자 측면 60 fps</text>
+<circle cx="90" cy="298" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="110" y="303" font-size="17" font-weight="700" fill="#15242A">/camera/color · aligned_depth · camera_info</text>
+<text x="110" y="319" font-size="12" font-weight="700" fill="#1E8A5A">sensor_msgs 30 Hz</text>
+<circle cx="90" cy="338" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="110" y="343" font-size="17" font-weight="700" fill="#15242A">/webcam/image_raw</text>
+<text x="110" y="359" font-size="12" font-weight="700" fill="#1E8A5A">sensor_msgs/Image 60 Hz</text>
+<circle cx="770" cy="298" r="7" fill="#A0742A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="750" y="303" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">RealSense D4xx (USB3)</text>
+<circle cx="770" cy="338" r="7" fill="#A0742A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="750" y="343" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">웹캠 (USB)</text>
+<rect x="90" y="402" width="680" height="200" rx="12" fill="#FFFFFF" stroke="#CBD5D1" stroke-width="1.5"/>
+<rect x="90" y="402" width="680" height="58" rx="12" fill="#EEF7F3"/>
+<rect x="90" y="448" width="680" height="12" fill="#EEF7F3"/>
+<rect x="90" y="402" width="7" height="200" rx="3" fill="#1F6F5B"/>
+<text x="112" y="432" font-size="24" font-weight="700" fill="#15242A">rally_vision</text>
+<text x="112" y="454" font-size="14" fill="#566A70">segmenter_node → tracker_node · calibration_node · YOLO-Seg(TensorRT) · ByteTrack · 칼만</text>
+<circle cx="90" cy="484" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="110" y="489" font-size="17" font-weight="700" fill="#15242A">/camera/*</text>
+<text x="110" y="505" font-size="12" font-weight="700" fill="#1E8A5A">구독</text>
+<circle cx="90" cy="524" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="110" y="529" font-size="17" font-weight="700" fill="#15242A">tf2 camera_link (hand_eye.yaml)</text>
+<text x="110" y="545" font-size="12" font-weight="700" fill="#1E8A5A">static tf</text>
+<circle cx="770" cy="484" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="750" y="489" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">/rally/perception/objects</text>
+<text x="750" y="505" text-anchor="end" font-size="12" font-weight="700" fill="#1E8A5A">TrackedObjectArray 30 Hz · BestEffort 1</text>
+<circle cx="770" cy="524" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="750" y="529" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">/rally/perception/objects/debug_image</text>
+<text x="750" y="545" text-anchor="end" font-size="12" font-weight="700" fill="#1E8A5A">Image 10 Hz</text>
+<circle cx="770" cy="564" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<text x="750" y="569" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">/rally/vision/run_calibration</text>
+<text x="750" y="585" text-anchor="end" font-size="12" font-weight="700" fill="#7A4FB5">RunCalibration 서버</text>
+<rect x="90" y="628" width="680" height="120" rx="12" fill="#FFFFFF" stroke="#CBD5D1" stroke-width="1.5"/>
+<rect x="90" y="628" width="680" height="58" rx="12" fill="#EEF7F3"/>
+<rect x="90" y="674" width="680" height="12" fill="#EEF7F3"/>
+<rect x="90" y="628" width="7" height="120" rx="3" fill="#1F6F5B"/>
+<text x="112" y="658" font-size="24" font-weight="700" fill="#15242A">rally_flight_predictor</text>
+<text x="112" y="680" font-size="14" fill="#566A70">모드 3 챌린지 · 릴리스 검출 → 포물선 피팅 → 착지 예측 (웹캠 60 Hz)</text>
+<circle cx="90" cy="710" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="110" y="715" font-size="17" font-weight="700" fill="#15242A">/webcam/image_raw</text>
+<text x="110" y="731" font-size="12" font-weight="700" fill="#1E8A5A">구독</text>
+<circle cx="770" cy="710" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="750" y="715" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">/rally/perception/landing</text>
+<text x="750" y="731" text-anchor="end" font-size="12" font-weight="700" fill="#1E8A5A">PointStamped 60 Hz · 비행 중만</text>
+<rect x="90" y="774" width="680" height="200" rx="12" fill="#FFFFFF" stroke="#CBD5D1" stroke-width="1.5"/>
+<rect x="90" y="774" width="680" height="58" rx="12" fill="#EEF7F3"/>
+<rect x="90" y="820" width="680" height="12" fill="#EEF7F3"/>
+<rect x="90" y="774" width="7" height="200" rx="3" fill="#1F6F5B"/>
+<text x="112" y="804" font-size="24" font-weight="700" fill="#15242A">rally_human</text>
+<text x="112" y="826" font-size="14" fill="#566A70">hand_pose_node · body_pose_node · MediaPipe + 깊이 → 3D 관절 · 제스처(주먹 = 정지)</text>
+<circle cx="90" cy="856" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="110" y="861" font-size="17" font-weight="700" fill="#15242A">/camera/*</text>
+<text x="110" y="877" font-size="12" font-weight="700" fill="#1E8A5A">구독</text>
+<circle cx="90" cy="896" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="110" y="901" font-size="17" font-weight="700" fill="#15242A">/webcam/image_raw</text>
+<text x="110" y="917" font-size="12" font-weight="700" fill="#1E8A5A">구독</text>
+<circle cx="770" cy="856" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="750" y="861" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">/rally/perception/hand</text>
+<text x="750" y="877" text-anchor="end" font-size="12" font-weight="700" fill="#1E8A5A">HandState 30 Hz · BestEffort 1</text>
+<circle cx="770" cy="896" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="750" y="901" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">/rally/perception/body</text>
+<text x="750" y="917" text-anchor="end" font-size="12" font-weight="700" fill="#1E8A5A">BodyPose 15 Hz</text>
+<circle cx="770" cy="936" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="750" y="941" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">/rally/safety/estop</text>
+<text x="750" y="957" text-anchor="end" font-size="12" font-weight="700" fill="#1E8A5A">Bool · 주먹 제스처 → TransientLocal</text>
+<rect x="90" y="1000" width="680" height="200" rx="12" fill="#FFFFFF" stroke="#CBD5D1" stroke-width="1.5"/>
+<rect x="90" y="1000" width="680" height="58" rx="12" fill="#EEF7F3"/>
+<rect x="90" y="1046" width="680" height="12" fill="#EEF7F3"/>
+<rect x="90" y="1000" width="7" height="200" rx="3" fill="#1F6F5B"/>
+<text x="112" y="1030" font-size="24" font-weight="700" fill="#15242A">rally_voice</text>
+<text x="112" y="1052" font-size="14" fill="#566A70">intent_node (openWakeWord · faster-whisper · LLM function calling) · tts_node (Piper)</text>
+<circle cx="90" cy="1082" r="7" fill="#A0742A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="110" y="1087" font-size="17" font-weight="700" fill="#15242A">USB 마이크 (/dev/snd)</text>
+<circle cx="90" cy="1122" r="7" fill="#A0742A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="110" y="1127" font-size="17" font-weight="700" fill="#15242A">스피커</text>
+<circle cx="770" cy="1082" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="750" y="1087" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">/rally/voice/intent</text>
+<text x="750" y="1103" text-anchor="end" font-size="12" font-weight="700" fill="#1E8A5A">VoiceIntent · Reliable · '그만' = is_emergency</text>
+<circle cx="770" cy="1122" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="750" y="1127" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">/rally/voice/transcript</text>
+<text x="750" y="1143" text-anchor="end" font-size="12" font-weight="700" fill="#1E8A5A">String</text>
+<circle cx="770" cy="1162" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<text x="750" y="1167" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">/rally/voice/speak</text>
+<text x="750" y="1183" text-anchor="end" font-size="12" font-weight="700" fill="#7A4FB5">Speak 서버 · 발화 중 마이크 차단</text>
+<rect x="1040" y="386" width="760" height="440" rx="12" fill="#FFFFFF" stroke="#CBD5D1" stroke-width="1.5"/>
+<rect x="1040" y="386" width="760" height="58" rx="12" fill="#EDF3FB"/>
+<rect x="1040" y="432" width="760" height="12" fill="#EDF3FB"/>
+<rect x="1040" y="386" width="7" height="440" rx="3" fill="#2A5D9F"/>
+<text x="1062" y="416" font-size="24" font-weight="700" fill="#15242A">rally_brain</text>
+<text x="1062" y="438" font-size="14" fill="#566A70">context_builder → rule_layer → llm_advisor(검증·클램핑·폴백) → py_trees bt_runner</text>
+<circle cx="1040" cy="468" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1060" y="473" font-size="17" font-weight="700" fill="#15242A">/rally/perception/objects</text>
+<text x="1060" y="489" font-size="12" font-weight="700" fill="#1E8A5A">구독</text>
+<circle cx="1040" cy="508" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1060" y="513" font-size="17" font-weight="700" fill="#15242A">/rally/perception/hand</text>
+<text x="1060" y="529" font-size="12" font-weight="700" fill="#1E8A5A">구독</text>
+<circle cx="1040" cy="548" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1060" y="553" font-size="17" font-weight="700" fill="#15242A">/rally/perception/body</text>
+<text x="1060" y="569" font-size="12" font-weight="700" fill="#1E8A5A">구독</text>
+<circle cx="1040" cy="588" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1060" y="593" font-size="17" font-weight="700" fill="#15242A">/rally/voice/intent</text>
+<text x="1060" y="609" font-size="12" font-weight="700" fill="#1E8A5A">구독</text>
+<circle cx="1040" cy="628" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1060" y="633" font-size="17" font-weight="700" fill="#15242A">/rally/brain/{context·trial_result·state}</text>
+<text x="1060" y="649" font-size="12" font-weight="700" fill="#1E8A5A">SceneContext 5 Hz · TrialResult · String</text>
+<circle cx="1040" cy="668" r="7" fill="#2A7DA8" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1060" y="673" font-size="17" font-weight="700" fill="#15242A">/rally/session/run</text>
+<text x="1060" y="689" font-size="12" font-weight="700" fill="#2A7DA8">RunSession 서버 (최상위)</text>
+<circle cx="1040" cy="708" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1060" y="713" font-size="17" font-weight="700" fill="#15242A">/rally/brain/set_mode</text>
+<text x="1060" y="729" font-size="12" font-weight="700" fill="#7A4FB5">SetMode 서버</text>
+<circle cx="1040" cy="748" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1060" y="753" font-size="17" font-weight="700" fill="#15242A">/rally/db/start_session</text>
+<text x="1060" y="769" font-size="12" font-weight="700" fill="#7A4FB5">클라이언트</text>
+<circle cx="1040" cy="788" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1060" y="793" font-size="17" font-weight="700" fill="#15242A">/rally/voice/speak</text>
+<text x="1060" y="809" font-size="12" font-weight="700" fill="#7A4FB5">클라이언트 → TTS</text>
+<circle cx="1800" cy="468" r="7" fill="#2A7DA8" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1780" y="473" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">/rally/skill/* (7종)</text>
+<text x="1780" y="489" text-anchor="end" font-size="12" font-weight="700" fill="#2A7DA8">클라이언트 · bt_runner 리프에서 호출</text>
+<circle cx="1800" cy="508" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1780" y="513" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">/rally/robot/go_observe_pose</text>
+<text x="1780" y="529" text-anchor="end" font-size="12" font-weight="700" fill="#7A4FB5">클라이언트 (Trigger)</text>
+<circle cx="1800" cy="548" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1780" y="553" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">/rally/safety/status</text>
+<text x="1780" y="569" text-anchor="end" font-size="12" font-weight="700" fill="#1E8A5A">구독 · STOP 이면 트리 중단</text>
+<circle cx="1800" cy="588" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1780" y="593" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">/rally/robot/wrench</text>
+<text x="1780" y="609" text-anchor="end" font-size="12" font-weight="700" fill="#1E8A5A">구독</text>
+<circle cx="1800" cy="628" r="7" fill="#A0742A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1780" y="633" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">LLM API (수치 특징만)</text>
+<text x="1780" y="649" text-anchor="end" font-size="12" font-weight="700" fill="#A0742A">llm.yaml 화이트리스트 · 3 s 타임아웃</text>
+<rect x="1040" y="852" width="760" height="240" rx="12" fill="#FFFFFF" stroke="#CBD5D1" stroke-width="1.5"/>
+<rect x="1040" y="852" width="760" height="58" rx="12" fill="#EDF3FB"/>
+<rect x="1040" y="898" width="760" height="12" fill="#EDF3FB"/>
+<rect x="1040" y="852" width="7" height="240" rx="3" fill="#2A5D9F"/>
+<text x="1062" y="882" font-size="24" font-weight="700" fill="#15242A">rally_db</text>
+<text x="1062" y="904" font-size="14" fill="#566A70">recorder_node · repository · embeddings(32차원 feature_vec)</text>
+<circle cx="1040" cy="934" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1060" y="939" font-size="17" font-weight="700" fill="#15242A">/rally/brain/{trial_result·context}</text>
+<text x="1060" y="955" font-size="12" font-weight="700" fill="#1E8A5A">구독 → trials · events</text>
+<circle cx="1040" cy="974" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1060" y="979" font-size="17" font-weight="700" fill="#15242A">/rally/perception/hand</text>
+<text x="1060" y="995" font-size="12" font-weight="700" fill="#1E8A5A">구독 → ts_hand</text>
+<circle cx="1040" cy="1014" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1060" y="1019" font-size="17" font-weight="700" fill="#15242A">/rally/perception/objects</text>
+<text x="1060" y="1035" font-size="12" font-weight="700" fill="#1E8A5A">구독 → ts_tracked</text>
+<circle cx="1040" cy="1054" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1060" y="1059" font-size="17" font-weight="700" fill="#15242A">/rally/db/start_session</text>
+<text x="1060" y="1075" font-size="12" font-weight="700" fill="#7A4FB5">Trigger 서버</text>
+<circle cx="1800" cy="934" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1780" y="939" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">/rally/robot/wrench</text>
+<text x="1780" y="955" text-anchor="end" font-size="12" font-weight="700" fill="#1E8A5A">구독 → ts_wrench</text>
+<circle cx="1800" cy="974" r="7" fill="#A0742A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1780" y="979" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">PostgreSQL 16 · TimescaleDB · pgvector</text>
+<circle cx="1800" cy="1014" r="7" fill="#A0742A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1780" y="1019" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">Redis rally:state · rally:events</text>
+<rect x="1040" y="1118" width="760" height="280" rx="12" fill="#FFFFFF" stroke="#CBD5D1" stroke-width="1.5"/>
+<rect x="1040" y="1118" width="760" height="58" rx="12" fill="#EDF3FB"/>
+<rect x="1040" y="1164" width="760" height="12" fill="#EDF3FB"/>
+<rect x="1040" y="1118" width="7" height="280" rx="3" fill="#2A5D9F"/>
+<text x="1062" y="1148" font-size="24" font-weight="700" fill="#15242A">dashboard</text>
+<text x="1062" y="1170" font-size="14" fill="#566A70">FastAPI + WebSocket · 힘 그래프 · 예측 vs 실제 · 학습 곡선 · 세션 리포트 · 안전 배너</text>
+<circle cx="1040" cy="1200" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1060" y="1205" font-size="17" font-weight="700" fill="#15242A">/rally/brain/{state·context·trial_result}</text>
+<text x="1060" y="1221" font-size="12" font-weight="700" fill="#1E8A5A">구독</text>
+<circle cx="1040" cy="1240" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1060" y="1245" font-size="17" font-weight="700" fill="#15242A">/rally/perception/objects/debug_image</text>
+<text x="1060" y="1261" font-size="12" font-weight="700" fill="#1E8A5A">구독</text>
+<circle cx="1040" cy="1280" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1060" y="1285" font-size="17" font-weight="700" fill="#15242A">/rally/voice/transcript</text>
+<text x="1060" y="1301" font-size="12" font-weight="700" fill="#1E8A5A">구독</text>
+<circle cx="1040" cy="1320" r="7" fill="#2A7DA8" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1060" y="1325" font-size="17" font-weight="700" fill="#15242A">/rally/session/run</text>
+<text x="1060" y="1341" font-size="12" font-weight="700" fill="#2A7DA8">클라이언트 (시작 버튼)</text>
+<circle cx="1040" cy="1360" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1060" y="1365" font-size="17" font-weight="700" fill="#15242A">/rally/brain/set_mode</text>
+<text x="1060" y="1381" font-size="12" font-weight="700" fill="#7A4FB5">클라이언트</text>
+<circle cx="1800" cy="1200" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1780" y="1205" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">/rally/safety/estop</text>
+<text x="1780" y="1221" text-anchor="end" font-size="12" font-weight="700" fill="#1E8A5A">발행 · 비상정지 버튼</text>
+<circle cx="1800" cy="1240" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1780" y="1245" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">/rally/robot/reset_safety</text>
+<text x="1780" y="1261" text-anchor="end" font-size="12" font-weight="700" fill="#7A4FB5">클라이언트 (운영자)</text>
+<circle cx="1800" cy="1280" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1780" y="1285" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">/rally/safety/status</text>
+<text x="1780" y="1301" text-anchor="end" font-size="12" font-weight="700" fill="#1E8A5A">구독</text>
+<circle cx="1800" cy="1320" r="7" fill="#A0742A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1780" y="1325" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">브라우저 HTTP · WebSocket :8000</text>
+<circle cx="1800" cy="1360" r="7" fill="#A0742A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1780" y="1365" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">Redis pub/sub</text>
+<rect x="2070" y="216" width="630" height="320" rx="12" fill="#FFFFFF" stroke="#CBD5D1" stroke-width="1.5"/>
+<rect x="2070" y="216" width="630" height="58" rx="12" fill="#FBF3E6"/>
+<rect x="2070" y="262" width="630" height="12" fill="#FBF3E6"/>
+<rect x="2070" y="216" width="7" height="320" rx="3" fill="#A8681E"/>
+<text x="2092" y="246" font-size="24" font-weight="700" fill="#15242A">rally_skill_server</text>
+<text x="2092" y="268" font-size="14" fill="#566A70">MultiThreadedExecutor · 안전/스킬 콜백 그룹 분리 · STOP 이면 goal 거부·abort · skills/*.py</text>
+<circle cx="2070" cy="298" r="7" fill="#2A7DA8" stroke="#FFFFFF" stroke-width="2"/>
+<text x="2090" y="303" font-size="17" font-weight="700" fill="#15242A">/rally/skill/* (7종)</text>
+<text x="2090" y="319" font-size="12" font-weight="700" fill="#2A7DA8">서버 · 진행률 피드백 · 취소</text>
+<circle cx="2070" cy="338" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<text x="2090" y="343" font-size="17" font-weight="700" fill="#15242A">/rally/robot/go_observe_pose</text>
+<text x="2090" y="359" font-size="12" font-weight="700" fill="#7A4FB5">Trigger 서버</text>
+<circle cx="2070" cy="378" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="2090" y="383" font-size="17" font-weight="700" fill="#15242A">/rally/safety/status</text>
+<text x="2090" y="399" font-size="12" font-weight="700" fill="#1E8A5A">구독 · speed_scale()</text>
+<circle cx="2070" cy="418" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="2090" y="423" font-size="17" font-weight="700" fill="#15242A">/rally/perception/hand</text>
+<text x="2090" y="439" font-size="12" font-weight="700" fill="#1E8A5A">구독 · handover 손 추종 servol</text>
+<circle cx="2070" cy="458" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="2090" y="463" font-size="17" font-weight="700" fill="#15242A">/rally/perception/landing</text>
+<text x="2090" y="479" font-size="12" font-weight="700" fill="#1E8A5A">구독 · catch_ball amovel/servol</text>
+<circle cx="2070" cy="498" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="2090" y="503" font-size="17" font-weight="700" fill="#15242A">/rally/perception/objects</text>
+<text x="2090" y="519" font-size="12" font-weight="700" fill="#1E8A5A">구독 · pick 목표</text>
+<circle cx="2700" cy="298" r="7" fill="#A0742A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="2680" y="303" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">DRL movel · servol · 순응 제어</text>
+<text x="2680" y="319" text-anchor="end" font-size="12" font-weight="700" fill="#A0742A">init_dsr() 후 import</text>
+<circle cx="2700" cy="338" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<text x="2680" y="343" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">/rally/gripper/command</text>
+<text x="2680" y="359" text-anchor="end" font-size="12" font-weight="700" fill="#7A4FB5">클라이언트</text>
+<rect x="2070" y="562" width="630" height="280" rx="12" fill="#FFFFFF" stroke="#CBD5D1" stroke-width="1.5"/>
+<rect x="2070" y="562" width="630" height="58" rx="12" fill="#FBF3E6"/>
+<rect x="2070" y="608" width="630" height="12" fill="#FBF3E6"/>
+<rect x="2070" y="562" width="7" height="280" rx="3" fill="#A8681E"/>
+<text x="2092" y="592" font-size="24" font-weight="700" fill="#15242A">rally_safety_monitor</text>
+<text x="2092" y="614" font-size="14" fill="#566A70">100 Hz · 손 0.25 m → SLOW 50 % · 0.15 m → STOP · 힘 25 N · nudge · 주먹 · '그만' · estop (safety.yaml)</text>
+<circle cx="2070" cy="644" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="2090" y="649" font-size="17" font-weight="700" fill="#15242A">/rally/safety/status</text>
+<text x="2090" y="665" font-size="12" font-weight="700" fill="#1E8A5A">발행 · Reliable depth 10</text>
+<circle cx="2070" cy="684" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="2090" y="689" font-size="17" font-weight="700" fill="#15242A">/rally/perception/hand</text>
+<text x="2090" y="705" font-size="12" font-weight="700" fill="#1E8A5A">구독 · 중앙선 거리</text>
+<circle cx="2070" cy="724" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="2090" y="729" font-size="17" font-weight="700" fill="#15242A">/rally/voice/intent</text>
+<text x="2090" y="745" font-size="12" font-weight="700" fill="#1E8A5A">구독 · is_emergency</text>
+<circle cx="2070" cy="764" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="2090" y="769" font-size="17" font-weight="700" fill="#15242A">/rally/safety/estop</text>
+<text x="2090" y="785" font-size="12" font-weight="700" fill="#1E8A5A">구독 · TransientLocal</text>
+<circle cx="2070" cy="804" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<text x="2090" y="809" font-size="17" font-weight="700" fill="#15242A">/rally/robot/reset_safety</text>
+<text x="2090" y="825" font-size="12" font-weight="700" fill="#7A4FB5">Trigger 서버 · STOP 해제는 여기서만</text>
+<circle cx="2700" cy="644" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="2680" y="649" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">/rally/robot/wrench</text>
+<text x="2680" y="665" text-anchor="end" font-size="12" font-weight="700" fill="#1E8A5A">구독 · 힘 한계</text>
+<circle cx="2700" cy="684" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="2680" y="689" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">/rally/robot/tcp_pose</text>
+<text x="2680" y="705" text-anchor="end" font-size="12" font-weight="700" fill="#1E8A5A">구독 · 작업 공간</text>
+<rect x="2070" y="868" width="630" height="280" rx="12" fill="#FFFFFF" stroke="#CBD5D1" stroke-width="1.5"/>
+<rect x="2070" y="868" width="630" height="58" rx="12" fill="#FBF3E6"/>
+<rect x="2070" y="914" width="630" height="12" fill="#FBF3E6"/>
+<rect x="2070" y="868" width="7" height="280" rx="3" fill="#A8681E"/>
+<text x="2092" y="898" font-size="24" font-weight="700" fill="#15242A">rally_force_publisher · rally_gripper_node</text>
+<text x="2092" y="920" font-size="14" fill="#566A70">get_tool_force → WrenchStamped 100 Hz · RG2 Pymodbus 비동기</text>
+<circle cx="2070" cy="950" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="2090" y="955" font-size="17" font-weight="700" fill="#15242A">/rally/robot/wrench</text>
+<text x="2090" y="971" font-size="12" font-weight="700" fill="#1E8A5A">발행 · SensorData 100 Hz</text>
+<circle cx="2700" cy="950" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="2680" y="955" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">/rally/robot/wrench</text>
+<text x="2680" y="971" text-anchor="end" font-size="12" font-weight="700" fill="#1E8A5A">발행</text>
+<circle cx="2700" cy="990" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="2680" y="995" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">/rally/robot/tcp_pose</text>
+<text x="2680" y="1011" text-anchor="end" font-size="12" font-weight="700" fill="#1E8A5A">발행 · PoseStamped 100 Hz</text>
+<circle cx="2700" cy="1030" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<text x="2680" y="1035" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">/rally/gripper/command</text>
+<text x="2680" y="1051" text-anchor="end" font-size="12" font-weight="700" fill="#7A4FB5">GripperCommand 서버</text>
+<circle cx="2700" cy="1070" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="2680" y="1075" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">/rally/gripper/state</text>
+<text x="2680" y="1091" text-anchor="end" font-size="12" font-weight="700" fill="#1E8A5A">JointState 20 Hz</text>
+<circle cx="2700" cy="1110" r="7" fill="#A0742A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="2680" y="1115" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">RG2 (Modbus TCP 192.168.1.1:502)</text>
+<rect x="2070" y="1174" width="630" height="120" rx="12" fill="#FFFFFF" stroke="#CBD5D1" stroke-width="1.5"/>
+<rect x="2070" y="1174" width="630" height="58" rx="12" fill="#FBF3E6"/>
+<rect x="2070" y="1220" width="630" height="12" fill="#FBF3E6"/>
+<rect x="2070" y="1174" width="7" height="120" rx="3" fill="#A8681E"/>
+<text x="2092" y="1204" font-size="24" font-weight="700" fill="#15242A">dsr_bringup2</text>
+<text x="2092" y="1226" font-size="14" fill="#566A70">두산 드라이버 · dsr01 네임스페이스</text>
+<circle cx="2070" cy="1256" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="2090" y="1261" font-size="17" font-weight="700" fill="#15242A">/joint_states</text>
+<text x="2090" y="1277" font-size="12" font-weight="700" fill="#1E8A5A">100 Hz</text>
+<circle cx="2700" cy="1256" r="7" fill="#A0742A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="2680" y="1261" text-anchor="end" font-size="17" font-weight="700" fill="#15242A">M0609 (이더넷)</text>
+<path d="M90,298 H78 V484 H90" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M90,298 H78 V856 H90" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M90,338 H60 V710 H90" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M90,338 H60 V896 H90" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M770,484 H824 V468 H1040" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M770,484 H824 V1014 H1040" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M770,524 H842 V1240 H1040" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M770,856 H860 V508 H1040" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M770,856 H860 V974 H1040" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M770,896 H878 V548 H1040" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M770,1082 H896 V588 H1040" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M770,1122 H914 V1280 H1040" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M1040,788 H986 V1162 H770" fill="none" stroke="#7A4FB5" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-service)" opacity="0.92"/>
+<path d="M770,856 H860 V150 H1854 V684 H2070" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M770,856 H860 V150 H1854 V418 H2070" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M770,936 H932 V168 H1872 V764 H2070" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M770,1082 H896 V186 H1890 V724 H2070" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M770,710 H950 V204 H1908 V458 H2070" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M770,484 H824 V222 H1926 V498 H2070" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M1040,628 H968 V934 H1040" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M1040,628 H968 V1200 H1040" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M1040,748 H986 V1054 H1040" fill="none" stroke="#7A4FB5" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-service)" opacity="0.92"/>
+<path d="M1040,1320 H1004 V668 H1040" fill="none" stroke="#2A7DA8" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-action)" opacity="0.92"/>
+<path d="M1040,1360 H1022 V708 H1040" fill="none" stroke="#7A4FB5" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-service)" opacity="0.92"/>
+<path d="M1800,468 H1944 V298 H2070" fill="none" stroke="#2A7DA8" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-action)" opacity="0.92"/>
+<path d="M1800,508 H1962 V338 H2070" fill="none" stroke="#7A4FB5" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-service)" opacity="0.92"/>
+<path d="M1800,1200 H1980 V764 H2070" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M1800,1240 H1998 V804 H2070" fill="none" stroke="#7A4FB5" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-service)" opacity="0.92"/>
+<path d="M2070,644 H2016 V548 H1800" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M2070,644 H2016 V1280 H1800" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M2070,950 H1998 V588 H1800" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M2070,950 H1998 V934 H1800" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M2070,644 H2016 V378 H2070" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M2700,950 H2712 V644 H2700" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M2700,990 H2730 V684 H2700" fill="none" stroke="#1E8A5A" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-topic)" opacity="0.92"/>
+<path d="M2700,338 H2748 V1030 H2700" fill="none" stroke="#7A4FB5" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arr-service)" opacity="0.92"/>
+<circle cx="90" cy="298" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="90" cy="338" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="770" cy="298" r="7" fill="#A0742A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="770" cy="338" r="7" fill="#A0742A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="90" cy="484" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="90" cy="524" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="770" cy="484" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="770" cy="524" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="770" cy="564" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="90" cy="710" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="770" cy="710" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="90" cy="856" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="90" cy="896" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="770" cy="856" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="770" cy="896" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="770" cy="936" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="90" cy="1082" r="7" fill="#A0742A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="90" cy="1122" r="7" fill="#A0742A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="770" cy="1082" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="770" cy="1122" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="770" cy="1162" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1040" cy="468" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1040" cy="508" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1040" cy="548" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1040" cy="588" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1040" cy="628" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1040" cy="668" r="7" fill="#2A7DA8" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1040" cy="708" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1040" cy="748" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1040" cy="788" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1800" cy="468" r="7" fill="#2A7DA8" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1800" cy="508" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1800" cy="548" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1800" cy="588" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1800" cy="628" r="7" fill="#A0742A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1040" cy="934" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1040" cy="974" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1040" cy="1014" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1040" cy="1054" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1800" cy="934" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1800" cy="974" r="7" fill="#A0742A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1800" cy="1014" r="7" fill="#A0742A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1040" cy="1200" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1040" cy="1240" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1040" cy="1280" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1040" cy="1320" r="7" fill="#2A7DA8" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1040" cy="1360" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1800" cy="1200" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1800" cy="1240" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1800" cy="1280" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1800" cy="1320" r="7" fill="#A0742A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="1800" cy="1360" r="7" fill="#A0742A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="2070" cy="298" r="7" fill="#2A7DA8" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="2070" cy="338" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="2070" cy="378" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="2070" cy="418" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="2070" cy="458" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="2070" cy="498" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="2700" cy="298" r="7" fill="#A0742A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="2700" cy="338" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="2070" cy="644" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="2070" cy="684" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="2070" cy="724" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="2070" cy="764" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="2070" cy="804" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="2700" cy="644" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="2700" cy="684" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="2070" cy="950" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="2700" cy="950" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="2700" cy="990" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="2700" cy="1030" r="7" fill="#7A4FB5" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="2700" cy="1070" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="2700" cy="1110" r="7" fill="#A0742A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="2070" cy="1256" r="7" fill="#1E8A5A" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="2700" cy="1256" r="7" fill="#A0742A" stroke="#FFFFFF" stroke-width="2"/>
+<text x="1420.0" y="136" text-anchor="middle" font-size="14" fill="#566A70">PC2 → PC1 직결 (안전·저지연 경로: 손 · 비상정지 · 음성 정지 · 착지 예측 · 물체)</text>
+<rect x="60.0" y="1468" width="1345.0" height="124" rx="10" fill="#FFFFFF" stroke="#1E8A5A" stroke-width="2"/>
+<rect x="60.0" y="1468" width="7" height="124" rx="3" fill="#1E8A5A"/>
+<text x="82.0" y="1498" font-size="18" font-weight="700" fill="#1E8A5A">/rally/safety/status 로 흐르는 데이터</text>
+<text x="82.0" y="1526" font-size="14" fill="#15242A" font-family="Noto Sans Mono CJK KR, Noto Sans CJK KR, monospace">level NORMAL | SLOW | STOP · reason · speed_override 0~1 · min_hand_distance</text>
+<text x="82.0" y="1551" font-size="14" fill="#15242A" font-family="Noto Sans Mono CJK KR, Noto Sans CJK KR, monospace">QoS Reliable depth 10 · 100 Hz · STOP 은 /rally/robot/reset_safety 로만 해제</text>
+<text x="82.0" y="1576" font-size="14" fill="#15242A" font-family="Noto Sans Mono CJK KR, Noto Sans CJK KR, monospace">skill_server: STOP → goal 거부·abort·순응 해제·후퇴 / SLOW → VELOCITY × speed_override</text>
+<rect x="1435.0" y="1468" width="1345.0" height="124" rx="10" fill="#FFFFFF" stroke="#2A7DA8" stroke-width="2"/>
+<rect x="1435.0" y="1468" width="7" height="124" rx="3" fill="#2A7DA8"/>
+<text x="1457.0" y="1498" font-size="18" font-weight="700" fill="#2A7DA8">/rally/skill/* 액션 공통 규약</text>
+<text x="1457.0" y="1526" font-size="14" fill="#15242A" font-family="Noto Sans Mono CJK KR, Noto Sans CJK KR, monospace">7종: push_ball · pick_compliant · handover · resist_push · catch_ball · detach_ball · move_target  ·  Goal 좌표 m·rad (mm·deg 변환은 rally_robot 안에서만)</text>
+<text x="1457.0" y="1551" font-size="14" fill="#15242A" font-family="Noto Sans Mono CJK KR, Noto Sans CJK KR, monospace">Feedback phase 문자열 + 진행률 · Result success · failure_reason · 측정값(힘 peak, 오차 mm …)</text>
+<text x="1457.0" y="1576" font-size="14" fill="#15242A" font-family="Noto Sans Mono CJK KR, Noto Sans CJK KR, monospace">ResistPush: 버티기·져주기(환자에게서 멀어짐)·저속 복귀만 · 능동 밀기 없음 · 힘 한계 15 N</text>
+<rect x="60.0" y="1622" width="1345.0" height="124" rx="10" fill="#FFFFFF" stroke="#1E8A5A" stroke-width="2"/>
+<rect x="60.0" y="1622" width="7" height="124" rx="3" fill="#1E8A5A"/>
+<text x="82.0" y="1652" font-size="18" font-weight="700" fill="#1E8A5A">/rally/perception/* 로 흐르는 데이터</text>
+<text x="82.0" y="1680" font-size="14" fill="#15242A" font-family="Noto Sans Mono CJK KR, Noto Sans CJK KR, monospace">objects: TrackedObject[] — track_id · class(ball·velcro_ball·pad·rod·cup·hand) · position · velocity · yaw · predicted_stop · in_flight</text>
+<text x="82.0" y="1705" font-size="14" fill="#15242A" font-family="Noto Sans Mono CJK KR, Noto Sans CJK KR, monospace">hand: HandState — landmarks[21] · palm_pose · wrist_angle_deg · grip_closure · gesture(FIST=정지) · distance_to_centerline</text>
+<text x="82.0" y="1730" font-size="14" fill="#15242A" font-family="Noto Sans Mono CJK KR, Noto Sans CJK KR, monospace">landing: PointStamped — 착지 예측점 · 비행 중만 60 Hz · 좌표는 모두 base_link · header.stamp 는 센서 원본 유지</text>
+<rect x="1435.0" y="1622" width="1345.0" height="124" rx="10" fill="#FFFFFF" stroke="#7A4FB5" stroke-width="2"/>
+<rect x="1435.0" y="1622" width="7" height="124" rx="3" fill="#7A4FB5"/>
+<text x="1457.0" y="1652" font-size="18" font-weight="700" fill="#7A4FB5">판단 경로 (LLM 은 로봇에 직접 가지 않는다)</text>
+<text x="1457.0" y="1680" font-size="14" fill="#15242A" font-family="Noto Sans Mono CJK KR, Noto Sans CJK KR, monospace">SceneContext(5 Hz) → rule_layer (규칙으로 끝나면 LLM 호출 안 함) → llm_advisor /rally/llm/suggest_params</text>
+<text x="1457.0" y="1705" font-size="14" fill="#15242A" font-family="Noto Sans Mono CJK KR, Noto Sans CJK KR, monospace">LLM 응답 → pydantic 스키마 검증 → skills.yaml 범위 클램핑 → 실패·3 s 타임아웃 시 규칙 폴백 → action goal</text>
+<text x="1457.0" y="1730" font-size="14" fill="#15242A" font-family="Noto Sans Mono CJK KR, Noto Sans CJK KR, monospace">DB: trials · sessions · events · ts_* 하이퍼테이블 · trials.feature_vec(pgvector) · 영상 원본은 저장·전송하지 않음</text>
+<rect x="60" y="1764" width="560" height="44" rx="10" fill="#FFFFFF" stroke="#CBD5D1"/>
+<circle cx="84" cy="1786" r="7" fill="#2A7DA8"/>
+<text x="100" y="1792" font-size="16" font-weight="700" fill="#15242A">Action</text>
+<circle cx="219" cy="1786" r="7" fill="#7A4FB5"/>
+<text x="235" y="1792" font-size="16" font-weight="700" fill="#15242A">Service</text>
+<circle cx="354" cy="1786" r="7" fill="#1E8A5A"/>
+<text x="370" y="1792" font-size="16" font-weight="700" fill="#15242A">Topic</text>
+<circle cx="489" cy="1786" r="7" fill="#A0742A"/>
+<text x="505" y="1792" font-size="16" font-weight="700" fill="#15242A">비ROS</text>
+<text x="660" y="1792" font-size="15" fill="#566A70">QoS: 스트림 BestEffort depth 1 · 안전·결과·명령 Reliable · /rally/safety/estop 만 TransientLocal  ·  3 PC 는 PC3 의 Fast DDS Discovery Server 로 서로를 찾는다  ·  기동 순서: db·redis → dsr → robot(safety 먼저) → camera → vision → human·voice → brain → dashboard  ·  로봇 없이: --fake / bag 재생</text>
+</svg>

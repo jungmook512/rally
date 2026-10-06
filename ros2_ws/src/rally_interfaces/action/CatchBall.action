@@ -1,0 +1,19 @@
+# 모드 3: 환자가 던진 벨크로 공을 패드로 예측 요격해 받는다
+# brain 이 goal 을 보내면 로봇은 패드를 들고 대기 자세로 가고, 비전의 predicted_landing 을 구독하며
+# 공이 날아오는 동안 amovel 로 선행 이동 → servol 로 미세 보정 → 패드 면을 착지점에 맞춘다.
+geometry_msgs/Point ready_pose           # 대기 위치 (패드 중심, base_link, m)
+float32 catch_radius                     # 받으러 가는 허용 반경 [m]. Phase 1 초기 단계 = 넓게(예: 0.35). 이 밖이면 추적하지 않음
+float32 lead_time_s                      # 예측 선행 시간 (전체 지연 보상)
+float32 timeout_s                        # 투구 대기 타임아웃
+---
+bool caught                              # 패드에 붙었는지 (비전 판정)
+geometry_msgs/Point landing_predicted    # 요격 직전 마지막 예측 착지점
+geometry_msgs/Point landing_actual       # 실제 착지점 (패드 위 공 위치 또는 테이블 낙하점)
+float32 prediction_error_mm
+float32 robot_travel_mm                  # 대기 위치에서 요격 위치까지 이동 거리
+float32 reaction_time_s                  # 릴리스 검출 → 로봇 이동 시작
+string failure_reason                    # timeout | out_of_radius | too_fast | missed
+---
+string phase                             # ready | tracking | intercept | caught | missed
+geometry_msgs/Point current_prediction
+float32 time_to_impact_s

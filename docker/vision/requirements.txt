@@ -1,6 +1,12 @@
 ultralytics>=8.3
-opencv-python-headless
-numpy
+# numpy 1.x 고정 — cv_bridge(apt)가 시스템 numpy 1.26 기준으로 빌드돼 있어 numpy 2 가 들어오면 import 가 깨진다 (#7, hand_pose #2 와 동일)
+numpy<2
+# opencv 4.12.0.88 부터 numpy>=2 를 요구. 4.11.0.86 은 numpy>=1.19.3 이라 1.26 과 호환 (wheel METADATA 확인, 2026-10-06)
+opencv-python-headless<4.12
+# ultralytics 가 opencv-python(GUI 빌드)을 의존성으로 끌어오므로 같은 상한을 걸어 numpy 2 가 뒷문으로 들어오지 않게 한다
+opencv-python<4.12
 filterpy
 scipy
 pyrealsense2
+torch
+tensorrt

@@ -5,3 +5,4 @@ sounddevice
 piper-tts
 openai>=1.40
 pydantic
+numpy<2  # 시스템(apt) numpy 1.26 을 그대로 사용 — pip 가 debian numpy 를 지우지 못함

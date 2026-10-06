@@ -9,12 +9,13 @@ setup(
         ('share/' + package_name, ['package.xml']),
     ],
     install_requires=['setuptools'],
+    extras_require={'test': ['pytest']},
     zip_safe=True,
     maintainer='조정묵',
     maintainer_email='team@rally.local',
     description='RALLY — TrialResult·시계열 기록, pgvector 검색, Redis 상태 발행',
     license='MIT',
     entry_points={'console_scripts': [
-        # 'skill_server = rally_db.skill_server:main',
+        'recorder = rally_db.recorder_node:main',
     ]},
 )

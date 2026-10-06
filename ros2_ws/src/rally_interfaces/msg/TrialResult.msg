@@ -2,6 +2,7 @@
 uint8 MODE_PUSH_BALL=1
 uint8 MODE_CATCH_PAD=3
 uint8 MODE_HANDOVER=5
+uint8 MODE_RESIST=7
 
 std_msgs/Header header
 string session_id

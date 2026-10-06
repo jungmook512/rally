@@ -29,7 +29,7 @@ webcam_link          측면 웹캠 (table_link 기준 static)
 | `/webcam/image_raw` | `sensor_msgs/Image` | usb_cam (측면) | 60 Hz | SensorData |
 | `/rally/robot/wrench` | `geometry_msgs/WrenchStamped` | rally_robot/force_publisher | 100 Hz | SensorData |
 | `/rally/robot/tcp_pose` | `geometry_msgs/PoseStamped` | rally_robot/force_publisher | 100 Hz | SensorData |
-| `/rally/gripper/state` | `sensor_msgs/JointState` (width, force) | rally_robot/gripper_node | 20 Hz | SensorData |
+| `/rally/gripper/state` | `sensor_msgs/JointState` — name `[rg2_width_mm, rg2_grip]`, position `[폭 mm, grip 감지 0/1]`, effort 미사용 | rally_robot/gripper_node | 20 Hz | SensorData |
 | `/joint_states` | `sensor_msgs/JointState` | dsr_bringup2 | 100 Hz | SensorData |
 | `/tf`, `/tf_static` | `tf2_msgs/TFMessage` | 여러 노드 | - | 표준 |
 
@@ -37,7 +37,8 @@ webcam_link          측면 웹캠 (table_link 기준 static)
 
 | 토픽 | 타입 | 발행 | 구독 | 주기 | QoS |
 |---|---|---|---|---|---|
-| `/rally/perception/objects` | `rally_interfaces/TrackedObjectArray` | rally_vision/tracker | brain, robot | 30 Hz | BestEffort, depth 1 |
+| `/rally/perception/objects` | `rally_interfaces/TrackedObjectArray` | rally_vision/tracker | brain, robot | 30 Hz (웹캠 비행 추적은 60 Hz) | BestEffort, depth 1 |
+| `/rally/perception/landing` | `geometry_msgs/PointStamped` (+ confidence는 objects에) | rally_vision/flight_predictor | robot(catch_ball) | 60 Hz, 비행 중만 | BestEffort, depth 1 |
 | `/rally/perception/objects/debug_image` | `sensor_msgs/Image` | rally_vision/tracker | dashboard | 10 Hz | BestEffort |
 | `/rally/perception/hand` | `rally_interfaces/HandState` | rally_human/hand_pose_node | brain, robot(safety), robot(handover) | 30 Hz | BestEffort, depth 1 |
 | `/rally/perception/body` | `rally_interfaces/BodyPose` | rally_human/body_pose_node | brain | 15 Hz | BestEffort |
@@ -50,6 +51,7 @@ webcam_link          측면 웹캠 (table_link 기준 static)
 |---|---|---|---|---|---|
 | `/rally/safety/status` | `rally_interfaces/SafetyStatus` | rally_robot/safety_monitor | brain, dashboard, skill_server | 100 Hz (변화 시 즉시) | **Reliable, depth 10** |
 | `/rally/safety/estop` | `std_msgs/Bool` | voice, hand_pose, 대시보드 버튼 | safety_monitor | 이벤트 | **Reliable, TransientLocal** |
+| `/rally/safety/contact_expected` | `std_msgs/Bool` | rally_robot/skill_server | safety_monitor | 접촉 예정 구간 동안 5 Hz 하트비트 (집기 하강 · 핸드오버 당김 대기 · 저항 밀기) | Reliable, depth 1 — 0.5 s 안에 갱신 없으면 꺼진 것으로 봄 |
 | `/rally/brain/context` | `rally_interfaces/SceneContext` | rally_brain/context_builder | llm_advisor, dashboard | 5 Hz | BestEffort |
 | `/rally/brain/trial_result` | `rally_interfaces/TrialResult` | rally_brain/bt_runner | rally_db/recorder, dashboard | 이벤트 | Reliable |
 | `/rally/brain/state` | `std_msgs/String` (BT 현재 노드) | rally_brain/bt_runner | dashboard | 2 Hz | Reliable |
@@ -77,28 +79,44 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 |---|---|---|---|
 | `/rally/skill/push_ball` | `rally_interfaces/PushBall` | 1 | movel 속도 프로파일, check_force_condition(접촉) |
 | `/rally/skill/pick_compliant` | `rally_interfaces/PickCompliant` | 1·3·5 공통 | task_compliance_ctrl(Z 저강성), 접촉 감지 후 파지 |
-| `/rally/skill/move_target` | `rally_interfaces/MoveTarget` | 3 | movec / movesx / moveb, 힘 피크 카운트 |
+| `/rally/skill/catch_ball` | `rally_interfaces/CatchBall` | 3 (챌린지) | 예측 착지점으로 amovel 선행 이동 + servol 보정, 패드 면 정렬 |
+| `/rally/skill/move_target` | `rally_interfaces/MoveTarget` | 3 (Phase 2) | movec / movesx / moveb 궤적, 환자가 맞혀야 하는 후기 단계 |
 | `/rally/skill/detach_ball` | `rally_interfaces/DetachBall` | 3 | 힘 제어 당김, 힘 급락으로 떼어짐 판정 |
 | `/rally/skill/handover` | `rally_interfaces/Handover` | 5 | 기울여 제시, 당김 힘 감지 해제, servol 손 추종 |
+| `/rally/skill/resist_push` | `rally_interfaces/ResistPush` | 7 | 순응 강성으로 버티기, 목표 힘 유지 시 져주기(밀려남), 저속 복귀. 로봇은 절대 밀지 않음 |
 | `/rally/session/run` | `rally_interfaces/RunSession` | 전체 | brain 최상위 action |
 
-## 5. Lifecycle 기동 순서
+## 4.1 모드 3 요격 타이밍
+
+릴리스 검출(손·공 마스크 분리, 웹캠 60 Hz) → 3~5 프레임 후 첫 착지 예측 발행 → `catch_ball`이 `lead_time_s`만큼 앞선 시각의 예측점으로 amovel → 매 프레임 갱신되는 예측으로 servol 보정 → 착지 → 패드 위 공 판정. 공 비행 시간이 보통 0.5~0.8 s(살살 토스)이므로 카메라→로봇 전체 지연을 100 ms 안쪽으로 맞추는 것이 핵심(`scripts/measure_latency.py`).
+
+## 5. 기동 순서 (준비 확인 방식)
+
+노드를 ROS 2 managed(Lifecycle) 노드로 바꾸지 않고, **앞 단계가 실제로 준비됐는지 확인한 뒤 다음 단계를 띄운다.** "준비"의 정의는 `rally_bringup/config/readiness.yaml` 한 곳에 그룹으로 둔다 (토픽: `max_age_s` 안에 메시지 수신 / 서비스·action: 서버 응답 가능).
 
 ```
-1. db, redis (healthcheck 통과)
-2. dsr_bringup2 → rally_robot (safety_monitor 먼저 active)
-3. realsense2_camera → rally_vision (hand_eye.yaml 로드 실패 시 unconfigured 유지)
-4. rally_human, rally_voice
-5. rally_brain (위 노드가 모두 active일 때만 activate)
-6. dashboard
+0. 서버 PC      compose pc3: discovery · db · redis (healthcheck)        ← 모든 노드가 discovery 에 의존
+1. 로봇·인식 PC source scripts/env_robot_pc.sh → dsr_bringup2 → pc1_robot.launch
+                  safety_monitor → [wait_ready --group safety] → force_publisher · gripper_node · skill_server
+                  확인 실패 시 로봇 노드를 켜지 않고 launch 종료
+2. 로봇·인식 PC compose pc2: vision · hand_pose · voice (pc2_perception.launch part:=...)
+3. 서버 PC      compose pc3: brain (pc3_brain.launch) · dashboard
+                  bt_runner 가 session 그룹(robot + perception + voice)을 1 s 마다 확인 → 준비 안 되면 세션을 시작하지 않음
 ```
 
-하나라도 `inactive`로 떨어지면 brain은 `RunSession`을 abort 하고 robot은 관측 자세에서 대기한다.
+| 도구 | 쓰임 |
+|---|---|
+| `rally_bringup/readiness.py` `ReadinessChecker` | 노드 안에서 그룹 준비 여부 확인 (bt_runner) |
+| `ros2 run rally_bringup wait_ready --group <g> [--timeout s]` | launch 단계 관문. 준비되면 0, 시간 초과면 1 |
+| `ros2 run rally_bringup wait_ready --group session --once` / `ros2 launch rally_bringup full_system.launch.py` | 시연 전 점검 |
+
+세션 도중 준비가 깨지면(토픽 끊김·서버 사라짐) brain 은 `RunSession` 을 abort 하고 robot 은 관측 자세에서 대기한다 (Day 2 bt_runner 구현).
 
 ## 6. 파라미터 파일 (rally_bringup/config)
 
 - `hand_eye.yaml` — tool0 → camera_link 변환
 - `table.yaml` — table_link 원점, 중앙선 위치, 작업 공간 한계(x,y,z min/max)
-- `safety.yaml` — 손 근접 감속 거리(기본 0.25 m → 50 %, 0.15 m → 정지), 힘 한계(기본 25 N), nudge 임계(8 N 급변)
-- `skills.yaml` — 관측 자세, 모드별 기본 파라미터와 허용 범위(LLM 클램핑 범위와 동일)
+- `safety.yaml` — 손 근접 감속 거리(기본 0.25 m → 50 %, 0.15 m → 정지), 힘 한계(기본 25 N, 항상 적용), nudge 임계(한 주기 |Δ|F|| 8 N — 로봇 정지 중이고 `/rally/safety/contact_expected` 가 아닐 때만 판정), 작업 공간(x·y·z min/max → 밖이면 STOP)
+- `skills.yaml` — 관측 자세, 모드별 기본 파라미터와 허용 범위(LLM 클램핑 범위와 동일), `gripper.<class>` 열림 폭·힘, `pick.*`, `handover.*`(제시 자세·당김 임계)
+- `table.yaml` — `table.z_m` 테이블 면 높이: 집기 Z 는 비전 깊이가 아니라 이 평면 + 물체 반지름으로 계산
 - `llm.yaml` — 모델, 타임아웃(3 s), 프롬프트 템플릿 경로, 전송 필드 화이트리스트(익명화)

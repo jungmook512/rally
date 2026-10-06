@@ -1,4 +1,4 @@
-# 모드 3: 벨크로 패드를 들고 궤적을 그리며 이동 (환자가 공을 던지는 동안)
+# [Phase 2] 모드 3 후기 단계: 벨크로 패드를 들고 궤적을 그리며 이동 (환자가 맞혀야 함). Phase 1은 CatchBall 사용.
 uint8 PATTERN_HOLD=0
 uint8 PATTERN_LINE=1
 uint8 PATTERN_CIRCLE=2

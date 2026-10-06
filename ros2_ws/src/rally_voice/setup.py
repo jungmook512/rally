@@ -9,7 +9,8 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/resource', glob.glob('resource/*.tflite') + glob.glob('resource/*.onnx') + glob.glob('resource/.env')),
     ],
-    install_requires=['setuptools'], zip_safe=True,
+    install_requires=['setuptools'],
+    extras_require={'test': ['pytest']}, zip_safe=True,
     maintainer='정동휘', maintainer_email='team@rally.local',
     description='RALLY — 음성: 웨이크워드, STT, 의도, TTS', license='MIT',
     entry_points={'console_scripts': [
