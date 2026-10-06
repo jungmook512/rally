@@ -6,7 +6,7 @@
 
 두산 M0609 + RG2 + RealSense(그리퍼 위, eye-in-hand)로, 물체(공·패드·컵·손잡이)를 통해서만 환자와 상호작용하는 **상지 재활 파트너 로봇**. 로봇이 환자 쪽으로 능동적으로 미는 동작은 설계상 없다.
 
-물리 PC는 **2대**다. **로봇·인식 PC**(GPU, 이 저장소의 `cobot2_ws`·두산·RealSense·추론 컨테이너가 모두 여기)와 **서버 PC**(brain·DB·대시보드). `pc1_robot.launch` / compose 프로필 `pc2` / `pc3` 는 **역할 이름**이지 PC 번호가 아니다 — 로봇·인식 PC에서 `pc1`(네이티브)과 `pc2`(컨테이너)를 같이 띄운다. (2026-10-06 결정: GPU가 한 대뿐이고, 카메라→인식→로봇 경로를 한 PC 안에 두는 편이 지연·대역 면에서 낫다.) 훈련 모드는 1(가이드 길 공 굴려주기) · 5(기울인 물체 건네고 받기) · 7(저항 밀기, 팔씨름형)이 확정이고, 3(던진 공을 패드로 예측 요격)은 챌린지(Day 6 결정). Phase 2(모드 3 반경 좁히기·패드 고정, 공 받기, 블록 쌓기)는 범위 밖.
+물리 PC는 **2대**다. **로봇·인식 PC**(GPU. 두산 작업 공간 `~/cobot2_ws`(이 저장소 밖)·RealSense·추론 컨테이너가 모두 여기)와 **서버 PC**(brain·DB·대시보드). `pc1_robot.launch` / compose 프로필 `pc2` / `pc3` 는 **역할 이름**이지 PC 번호가 아니다 — 로봇·인식 PC에서 `pc1`(네이티브)과 `pc2`(컨테이너)를 같이 띄운다. (2026-10-06 결정: GPU가 한 대뿐이고, 카메라→인식→로봇 경로를 한 PC 안에 두는 편이 지연·대역 면에서 낫다.) 훈련 모드는 1(가이드 길 공 굴려주기) · 5(기울인 물체 건네고 받기) · 7(저항 밀기, 팔씨름형)이 확정이고, 3(던진 공을 패드로 예측 요격)은 챌린지(Day 6 결정). Phase 2(모드 3 반경 좁히기·패드 고정, 공 받기, 블록 쌓기)는 범위 밖.
 
 ## 2. 먼저 읽을 것 (순서대로)
 
@@ -87,6 +87,7 @@ cd ros2_ws && colcon test --packages-select <pkg> && colcon test-result --verbos
 ros2 launch rally_bringup legacy_baseline.launch.py
 
 # 컨테이너 — 로봇·인식 PC: 네이티브 로봇 노드 + pc2 프로필 / 서버 PC: pc3 프로필
+source scripts/env_robot_pc.sh                           # 네이티브 노드·ros2 CLI 터미널마다 먼저 (Discovery Server 클라이언트 설정, 없으면 컨테이너와 서로 못 찾음)
 ros2 launch rally_bringup pc1_robot.launch.py            # 로봇·인식 PC (네이티브)
 cd docker && docker compose --profile pc2 up --build     # 로봇·인식 PC (추론 컨테이너, 같은 PC)
 cd docker && docker compose --profile pc3 up --build     # 서버 PC
