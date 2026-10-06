@@ -4,11 +4,11 @@
 참고: `docs/INTERFACES.md` 전체, `rally_db/schema.sql`
 
 ## Day 0 (10/5)
-- [ ] 레포 초기화·push, 브랜치 규칙 공지, `.github/workflows/build.yml` 첫 실행 확인
-- [ ] 인터페이스 합의 회의 주도 → `rally_interfaces` 수정·커밋 (이후 변경은 PR로)
-- [ ] `docker/.env` 작성(IP, DOMAIN_ID, API 키), 팀원 배포
-- [ ] PC 2대 고정 IP (로봇·인식 PC 172.24.0.136, 서버 PC 172.24.3.122), `fastdds_client.xml` 서버 주소 확정 — Wi-Fi Rokey_A 로 확정(유선 스위치 안 씀). PC 간 토픽 지연을 `scripts/measure_latency.py` 로 한 번 재서 기록
-- [ ] LLM API 키 발급·한도 확인
+- [x] 레포 초기화·push, 브랜치 규칙 공지, `.github/workflows/build.yml` 첫 실행 확인 → CI 첫 통과 (#2), 브랜치 규칙은 CLAUDE.md·AGENTS.md 7절
+- [x] 인터페이스 합의 회의 주도 → `rally_interfaces` 수정·커밋 (이후 변경은 PR로) → 기존 정의 그대로 사용
+- [x] `docker/.env` 작성(IP, DOMAIN_ID, API 키), 팀원 배포 → 작성·팀원 전달 완료
+- [x] PC 2대 고정 IP (로봇·인식 PC 172.24.0.136, 서버 PC 172.24.3.122), `fastdds_client.xml` 서버 주소 확정 — Wi-Fi Rokey_A 로 확정(유선 스위치 안 씀). PC 간 토픽 지연을 `scripts/measure_latency.py` 로 한 번 재서 기록
+- [x] LLM API 키 발급·한도 확인 → 강사 제공 키, 허용 모델 gpt-4o·whisper-1, 한도는 직접 관리
 
 ## Day 1 — 인프라 기반 ✅
 - [ ] `rally_interfaces` colcon build 통과, 2 PC에 배포
