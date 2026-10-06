@@ -21,16 +21,16 @@
 
 ## Day 2 — 모드 5 스킬
 - [x] `skill_server.py` 골격: MultiThreadedExecutor, 콜백 그룹(안전 / 스킬 / 상태) 분리
-- [ ] `pick_compliant.py`: `task_compliance_ctrl` Z 저강성 → 하강 → `check_force_condition` 접촉 → 파지 → 들기
-- [ ] `handover.py` GIVE: 물체를 `tilt_deg`로 기울여 중앙선 앞 제시 → 당김 힘 임계 감지 → RG2 해제 → 후퇴
+- [x] `pick_compliant.py`: `task_compliance_ctrl` Z 저강성 → 하강 → Z 힘 변화로 접촉 감지 → 파지 → 들기 — 코드 완료(가짜 모드 통과), 로봇 확인 필요. Z 는 table.yaml 평면 우선
+- [x] `handover.py` GIVE: 물체를 `tilt_deg`로 기울여 중앙선 앞 제시 → 당김 힘 임계 감지 → RG2 해제 → 후퇴 — 코드 완료(가짜 모드 통과). `skills.yaml handover.present_pose` 티칭 값 필요
 - [ ] 당김 힘 임계값 실험 (사람이 당길 때 힘 곡선 10회 기록)
 
 ## Day 3 — 모드 5 완성 + 안전 ✅
 - [ ] `handover.py` RECEIVE: `HandState.palm_pose`를 `servol`로 추종(30 Hz, One-Euro 필터) → 순응 상태로 받기 → 파지 판정
 - [ ] (정동휘와) 손 토픽 → 로봇 반응 지연 측정, 추종 게인 튜닝
-- [ ] `safety_monitor.py`: 작업 공간 제한(중앙선), 손 근접 감속(0.25 m → 50 %, 0.15 m → 정지), 힘 한계 25 N → 해제·후퇴, nudge(힘 급변) 정지, `/rally/safety/estop` 구독
-- [ ] `SafetyStatus` Reliable 발행, `LEVEL_STOP` 시 실행 중 action abort 확인
-- [ ] `/rally/robot/reset_safety`
+- [x] `safety_monitor.py`: 작업 공간 제한, 손 근접 감속, 힘 한계 25 N, nudge(정지 중·접촉 예정 아닐 때만), `/rally/safety/estop` 구독 — 코드 완료. 접촉 예정 플래그 `/rally/safety/contact_expected` 는 skill_server 가 발행. 임계값 실측 후 확정
+- [x] `SafetyStatus` Reliable 발행, `LEVEL_STOP` 시 실행 중 action abort — 가짜 모드에서 확인(estop → 이동 중 abort, STOP 중 goal 거부). 로봇에서 재확인
+- [x] `/rally/robot/reset_safety`
 - [ ] 3중 정지 전수 테스트 10회
 
 ## Day 4 — 모드 7 완성 ✅ (오전) + 모드 3 착수
@@ -71,4 +71,5 @@
 - [ ] 발표: 힘·순응 제어 파트 (힘 곡선 그래프 준비)
 
 ## 메모 / 막힌 것
+- 10/6: 로봇 없이 스킬 흐름 테스트: `RALLY_FAKE=1 ros2 run rally_robot skill_server --fake` (가짜 DSR, 테이블 Z 250 mm). 모드 7 nudge 오탐 대비로 접촉 예정 플래그 도입.
 - 10/6: 그리퍼·로봇이 모드 3 검토에 쓰이는 동안 코드 먼저 진행. 물체별 파지 폭은 안 재기로 (폭 0 + 물체별 힘으로 닫음, `skills.yaml gripper`). safety.yaml 값 채움(INTERFACES 6절 기준), nudge·작업 공간 값은 실측 후 확정.

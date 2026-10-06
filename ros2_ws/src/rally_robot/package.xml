@@ -14,6 +14,8 @@
   <depend>std_srvs</depend>
   <depend>python3-numpy</depend>
   <depend>python3-scipy</depend>
+  <depend>python3-yaml</depend>
+  <depend>rally_bringup</depend>
   <!-- DSR_ROBOT2, DR_init: 두산 dsr_common2 (ROS 2 Jazzy) / pymodbus: pip -->
   <test_depend>ament_copyright</test_depend>
   <test_depend>pytest</test_depend>
