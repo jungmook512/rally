@@ -20,6 +20,6 @@ setup(
     description='RALLY — launch 파일, 파라미터(yaml), Lifecycle 기동 순서',
     license='MIT',
     entry_points={'console_scripts': [
-        # 'skill_server = rally_bringup.skill_server:main',
+        'wait_ready = rally_bringup.wait_ready:main',
     ]},
 )

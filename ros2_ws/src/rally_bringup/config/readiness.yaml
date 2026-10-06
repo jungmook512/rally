@@ -1,0 +1,40 @@
+# config/readiness.yaml — 기동 순서·세션 시작 조건에서 "준비됐다"의 정의 (docs/INTERFACES.md 5절)
+# 그룹 단위로 확인한다. 쓰는 곳:
+#   - launch 단계 사이 관문 (pc1_robot: safety 가 준비돼야 skill_server 기동)
+#   - bt_runner 세션 시작 조건 (session 그룹이 준비 안 되면 RunSession 시작 안 함, NFR-08)
+#   - 시연 전 점검: ros2 run rally_bringup wait_ready --group session --once
+#
+# topics:   메시지가 max_age_s 안에 한 번이라도 와야 준비 (발행자만 있고 메시지가 없으면 미준비)
+# services: 서버가 요청을 받을 수 있어야 준비
+# actions:  action 서버가 goal 을 받을 수 있어야 준비
+# include:  다른 그룹을 포함
+# type 을 꼭 적는다 — Discovery Server 클라이언트는 자기가 구독하지 않은 토픽의 타입을 그래프에서 볼 수 없다
+
+safety:
+  topics:
+    - {name: /rally/safety/status, type: rally_interfaces/msg/SafetyStatus, max_age_s: 0.5}   # 100 Hz
+
+robot:
+  include: [safety]
+  topics:
+    - {name: /rally/robot/wrench, type: geometry_msgs/msg/WrenchStamped, max_age_s: 0.5}
+  services:
+    - {name: /rally/gripper/command, type: rally_interfaces/srv/GripperCommand}
+  actions:
+    - {name: /rally/skill/push_ball, type: rally_interfaces/action/PushBall}
+    - {name: /rally/skill/pick_compliant, type: rally_interfaces/action/PickCompliant}
+    - {name: /rally/skill/handover, type: rally_interfaces/action/Handover}
+    - {name: /rally/skill/resist_push, type: rally_interfaces/action/ResistPush}
+
+perception:
+  topics:
+    - {name: /rally/perception/objects, type: rally_interfaces/msg/TrackedObjectArray, max_age_s: 1.0}
+    - {name: /rally/perception/hand, type: rally_interfaces/msg/HandState, max_age_s: 1.0}
+
+voice:
+  services:
+    - {name: /rally/voice/speak, type: rally_interfaces/srv/Speak}
+
+# 세션 시작 조건. 모드 3 스킬(catch_ball, detach_ball)은 mode3_challenge.enabled 일 때 bt_runner 가 따로 확인한다
+session:
+  include: [robot, perception, voice]
