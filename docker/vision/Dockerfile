@@ -3,7 +3,8 @@ FROM ros:jazzy-ros-base AS build
 RUN apt-get update && apt-get install -y python3-pip python3-colcon-common-extensions && rm -rf /var/lib/apt/lists/*
 WORKDIR /ros2_ws
 COPY ros2_ws/src/rally_interfaces src/rally_interfaces
-COPY ros2_ws/src/rally_vision ros2_ws/src/rally_bringup src/
+COPY ros2_ws/src/rally_vision src/rally_vision
+COPY ros2_ws/src/rally_bringup src/rally_bringup
 RUN . /opt/ros/jazzy/setup.sh && colcon build --symlink-install
 
 FROM nvcr.io/nvidia/tensorrt:24.08-py3 AS runtime
