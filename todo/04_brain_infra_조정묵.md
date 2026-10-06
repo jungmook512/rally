@@ -24,11 +24,13 @@
 - [ ] `trees/mode5_handover.py` (가짜 action 서버로 흐름 검증)
 - [ ] `recorder_node.py`: `TrialResult` → `trials`, `WrenchStamped` → `ts_wrench`, `HandState` → `ts_hand`, 이벤트 → `events`
 - [ ] Redis `rally:state` 갱신, `rally:events` publish
+- [ ] **Ontology** `rally_brain/knowledge/ontology.yaml` 초안: 모드 → 훈련 동작 → 신체 부위, 보상 동작 → 피로 신호, 스킬 → 파라미터·허용 범위 (기획서 4.10, 필수 · 활용 방식 TBD)
 
 ## Day 3 — 모드 5 통합 ✅
 - [ ] 모드 5 서브트리를 실제 skill 서버에 연결, 실패 분기(손 결측 → 대기, 파지 실패 → 재시도 1회)
 - [ ] `rule_layer.py` 1차: 안전 레벨 반영, 연속 성공 3회 → 난이도 상승, 음성 `tired` → 휴식 제안
 - [ ] `SetMode` srv, 음성 intent → 트리 이벤트 연결
+- [ ] **시맨틱 레이어** `rally_bringup/config/metrics.yaml` 지표 정의(성공률·피로도·개선율) + SQL 뷰 `schema_003_*.sql`, `rule_layer`가 이 정의를 쓰게 (기획서 4.10, 필수 · 활용 방식 TBD)
 
 ## Day 4 — 모드 7 통합 ✅ + 모드 3 착수
 - [ ] `trees/mode7_resist.py`: ResistPush(지난 peak_force 60 % 에서 시작) → 성공 3연속 +10 % / 실패 2회 -10 % → TrialResult(peak, hold, smoothness) → TTS
@@ -45,6 +47,7 @@
 - [ ] `embeddings.py`: 시도 특징 32차원 벡터(파라미터·오차·속도·방향 정규화) → `feature_vec`, pgvector 코사인 검색 `repository.find_similar_trials`
 - [ ] `llm.yaml` 전송 필드 화이트리스트(익명화)
 - [ ] 문맥 유무 비교 사례 10개 시나리오 작성 (평가용)
+- [ ] **Knowledge Graph** PostgreSQL 노드·엣지 테이블 `schema_002_*.sql` (노드 타입은 ontology.yaml), recorder가 시도마다 기록 (기획서 4.10, 필수 · 활용 방식 TBD)
 
 ## Day 6 — 학습 루프 + 세션 전체 ✅
 - [ ] **CP13 최종 결정**: 모드 3 요격 성공률 ≥ 70 % 면 포함, 아니면 `mode3_challenge.enabled: false` 로 빼고 시도 데이터는 발표 "도전 과제" 슬라이드로
@@ -52,6 +55,7 @@
 - [ ] `trees/session_tree.py`: 1 → 3 → 5 연속, `RunSession` action, 세션 시작·종료 DB
 - [ ] `prompts/session_report.md`: 회차별 변화 해석 → `sessions.report_md`
 - [ ] LLM 피로·교정 판단 (규칙으로 애매한 케이스만)
+- [ ] **Graph RAG** `rally_brain/graph_rag.py`: pgvector 유사 시도 + 그래프 맥락 → `llm_advisor` 입력, 보내는 필드는 `llm.yaml` 화이트리스트 (기획서 4.10, 필수 · 활용 방식 TBD)
 
 ## Day 7 — 통합·안정화 · 기능 동결
 - [ ] `full_system.launch.py`, 2 PC 일괄 기동 문서 (README)
@@ -66,4 +70,4 @@
 - [ ] 백업 영상 녹화 주관
 
 ## 메모 / 막힌 것
-- 
+- 지식 계층(Ontology · KG · Graph RAG · 시맨틱 레이어)은 **반드시 사용**. 구체적인 활용 방식은 추후 결정 → 정해지면 기획서 4.10·FR-20~23 갱신
