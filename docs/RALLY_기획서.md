@@ -383,7 +383,7 @@
 ### 7.3 데이터 요구사항
 
 - `patients` → `sessions` → `trials` → `events` 관계형 구조 (`rally_db/schema.sql`)
-- `trials.params/metrics/decision` JSONB, `trials.feature_vec vector(32)` (pgvector ivfflat)
+- `trials.params/metrics/decision` JSONB, `trials.feature_vec vector(32)` (pgvector HNSW, `schema_002_hnsw.sql`)
 - `ts_wrench`(100 Hz), `ts_tracked`(30 Hz), `ts_hand`(30 Hz) 하이퍼테이블, 보관 14일
 - Redis: `rally:state`(로봇·세션 상태), `rally:dialog`(최근 대화, TTL 5분), 채널 `rally:events`
 - 지식 그래프: PostgreSQL 노드·엣지 테이블(`schema_002_*.sql`), 노드 타입은 `ontology.yaml`을 따른다

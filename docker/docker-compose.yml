@@ -71,6 +71,7 @@ services:
     volumes:
       - pgdata:/home/postgres/pgdata/data
       - ../ros2_ws/src/rally_db/rally_db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ../ros2_ws/src/rally_db/rally_db/schema_002_hnsw.sql:/docker-entrypoint-initdb.d/02_hnsw.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U rally"]
       interval: 5s

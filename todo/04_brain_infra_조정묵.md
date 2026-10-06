@@ -12,8 +12,8 @@
 
 ## Day 1 — 인프라 기반 ✅
 - [ ] `rally_interfaces` colcon build 통과, 2 PC에 배포
-- [ ] `docker compose --profile pc3 up`: discovery, db(Timescale+pgvector), redis 기동, healthcheck 통과
-- [ ] `schema.sql` 적용 확인, 하이퍼테이블·ivfflat 인덱스 생성 확인
+- [x] `docker compose --profile pc3 up`: discovery, db(Timescale+pgvector), redis 기동, healthcheck 통과
+- [x] `schema.sql` 적용 확인, 하이퍼테이블 확인 → 벡터 인덱스 ivfflat 이 빈 테이블에서 만들어져 결과 누락 → HNSW 로 교체(`schema_002_hnsw.sql`)
 - [ ] 2 PC 토픽 상호 수신 테스트 (Discovery Server 경유), `ros2 topic hz`로 확인. 같은 PC 안(네이티브 ↔ 컨테이너 host 네트워크)도 확인
 - [ ] `rally_bringup` launch 3종 골격 (pc1/pc2/pc3 — 역할 이름, pc1+pc2 는 같은 PC), Lifecycle 기동 순서 스크립트
 - [ ] `scripts/measure_latency.py` 초안
