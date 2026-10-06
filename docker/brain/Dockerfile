@@ -12,7 +12,7 @@ RUN . /opt/ros/jazzy/setup.sh && colcon build --merge-install --packages-up-to r
 # 빌드된 패키지 수 확인용: docker build --target build ... 2>&1 | grep Summary
 
 FROM ros:jazzy-ros-base AS runtime
-RUN apt-get update && apt-get install -y --no-install-recommends python3-pip && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends python3-pip ros-jazzy-py-trees-ros && rm -rf /var/lib/apt/lists/*
 COPY --from=build /ros2_ws/install /ros2_ws/install
 COPY docker/brain/requirements.txt /tmp/requirements.txt
 RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
