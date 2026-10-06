@@ -73,6 +73,7 @@ def execute(node):
             return False
 
         try:
+            node.check_controller()
             threshold = goal.release_force_threshold_n if goal.release_force_threshold_n > 0 else cfg["default_threshold_n"]
             timeout_s = goal.timeout_s if goal.timeout_s > 0 else cfg["default_timeout_s"]
             open_mm, grip_force = node.gripper_cfg(goal.object_class or "rod")

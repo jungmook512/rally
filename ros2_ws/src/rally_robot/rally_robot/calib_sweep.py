@@ -93,7 +93,7 @@ def run_sweep(poses, out_dir, no_camera=False):
     from rclpy.qos import qos_profile_sensor_data, QoSProfile, ReliabilityPolicy, HistoryPolicy
     from sensor_msgs.msg import Image
     from rally_interfaces.msg import SafetyStatus
-    from rally_robot.dsr_helpers import ACC, VELOCITY, SkillAbort, init_dsr, move_checked
+    from rally_robot.dsr_helpers import ACC, VELOCITY, SkillAbort, controller_alive, init_dsr, move_checked
 
     class Sweep(Node):
         def __init__(self):
@@ -147,6 +147,9 @@ def run_sweep(poses, out_dir, no_camera=False):
 
         dsr = init_dsr("rally_calib_sweep_dsr")
         from DSR_ROBOT2 import get_current_posx
+        if not controller_alive(dsr, 2.0):
+            node.get_logger().error("두산 컨트롤러 motion 서비스(check_motion)가 2 s 안에 응답하지 않음 — bringup 재시작 필요. 중단")
+            return 5
         import cv2
 
         node.dsr = dsr                                   # move_checked / stop_robot 이 정지 서비스에 쓴다

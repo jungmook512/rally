@@ -30,7 +30,7 @@ from std_srvs.srv import Trigger
 from rally_interfaces.action import CatchBall, DetachBall, Handover, MoveTarget, PickCompliant, PushBall, ResistPush
 from rally_interfaces.msg import HandState, SafetyStatus
 from rally_interfaces.srv import GripperCommand
-from rally_robot.dsr_helpers import ACC, OBSERVE_POS, VELOCITY, SkillAbort, init_dsr
+from rally_robot.dsr_helpers import ACC, OBSERVE_POS, ROBOT_ID, VELOCITY, SkillAbort, init_dsr
 
 CONTACT_HZ = 5.0
 CONFIG_FILES = ("skills.yaml", "table.yaml")
@@ -69,6 +69,7 @@ class SkillServer(Node):
         self.safety = SafetyStatus()
         self.last_hand = None
         self._contact = False
+        self._cm_client = None
 
         reliable = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=10)
         reliable1 = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=1)
@@ -120,6 +121,25 @@ class SkillServer(Node):
             raise SkillAbort(self.safety_reason(), stopped=True)
         if goal_handle is not None and goal_handle.is_cancel_requested:
             raise SkillAbort("canceled", stopped=True)
+
+    def check_controller(self, timeout_s=2.0):
+        """두산 motion 서비스가 응답하는지 (fake 면 통과). 무응답이면 SkillAbort('controller_unresponsive') — bringup 재시작 안내."""
+        if self.fake:
+            return
+        import DSR_ROBOT2
+        from dsr_msgs2.srv import CheckMotion
+        prefix = getattr(DSR_ROBOT2, "_srv_name_prefix", "dsr_controller2/")
+        if self._cm_client is None:
+            self._cm_client = self.create_client(CheckMotion, f"/{ROBOT_ID}/{prefix}motion/check_motion", callback_group=self.cb_state)
+        if not self._cm_client.wait_for_service(timeout_sec=timeout_s):
+            raise SkillAbort("controller_unresponsive", stopped=True)
+        fut = self._cm_client.call_async(CheckMotion.Request())
+        t0 = time.monotonic()
+        while not fut.done():
+            time.sleep(0.02)
+            if time.monotonic() - t0 > timeout_s:
+                self.get_logger().error("두산 컨트롤러 motion 서비스 무응답 — bringup 재시작 필요")
+                raise SkillAbort("controller_unresponsive", stopped=True)
 
     # ----- 접촉 예정 플래그 -----
     def set_contact(self, on: bool):
