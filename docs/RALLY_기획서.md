@@ -280,6 +280,10 @@
 
 ![RALLY 시스템 아키텍처](images/architecture.png)
 
+노드별 토픽·서비스·액션 상세(v2, `docs/images/src/architecture_v2.py`로 생성):
+
+![RALLY 시스템 아키텍처 v2 — 노드별 인터페이스](images/architecture_v2.png)
+
 ### 6.1 배치 원칙
 
 - **PC 1 (로봇 제어)**: 호스트에서 ROS 2 네이티브 실행. 실시간성이 중요한 안전 감시와 스킬 실행을 컨테이너 오버헤드 없이 돌린다.
@@ -441,7 +445,7 @@ rally/
 ├── docs/
 │   ├── RALLY_기획서.md            ← 이 문서
 │   ├── INTERFACES.md              ← 토픽·서비스·액션·tf·QoS 명세
-│   └── images/ (flowchart.png, architecture.png, src/*.svg)
+│   └── images/ (flowchart.png, architecture.png, architecture_v2.png, src/*.svg, src/architecture_v2.py)
 ├── todo/                          ← 역할별 할 일 (Day 0 ~ 8)
 │   ├── TEAM.md
 │   ├── 01_robot_정정인.md
