@@ -16,6 +16,8 @@ setup(
     description='RALLY — 상황 요약, 규칙 레이어, LLM advisor, py_trees 행동 트리',
     license='MIT',
     entry_points={'console_scripts': [
-        # 'skill_server = rally_brain.skill_server:main',
+        'bt_runner = rally_brain.bt_runner:main',
+        'context_builder = rally_brain.context_builder:main',
+        'llm_advisor = rally_brain.llm_advisor:main',
     ]},
 )

@@ -15,7 +15,7 @@
 - [x] `docker compose --profile pc3 up`: discovery, db(Timescale+pgvector), redis 기동, healthcheck 통과
 - [x] `schema.sql` 적용 확인, 하이퍼테이블 확인 → 벡터 인덱스 ivfflat 이 빈 테이블에서 만들어져 결과 누락 → HNSW 로 교체(`schema_002_hnsw.sql`)
 - [ ] 2 PC 토픽 상호 수신 테스트 (Discovery Server 경유), `ros2 topic hz`로 확인. 같은 PC 안(네이티브 ↔ 컨테이너 host 네트워크)도 확인
-- [ ] `rally_bringup` launch 3종 골격 (pc1/pc2/pc3 — 역할 이름, pc1+pc2 는 같은 PC), Lifecycle 기동 순서 스크립트
+- [x] `rally_bringup` launch 3종 골격 (pc1/pc2/pc3 — 역할 이름, pc1+pc2 는 같은 PC), Lifecycle 기동 순서 스크립트 → 준비 확인 방식(`readiness.yaml` + `wait_ready`), INTERFACES 5절
 - [ ] `scripts/measure_latency.py` 초안
 
 ## Day 2 — 행동 트리 골격 + 기록
@@ -65,7 +65,7 @@
 - [ ] 오후부터 기능 추가 금지, 버그 수정만
 
 ## Day 8 — 시연
-- [ ] 시연 직전 Lifecycle 전 노드 active 확인 스크립트
+- [ ] 시연 직전 전 노드 준비 확인 — `ros2 launch rally_bringup full_system.launch.py` (Day 1 에 골격 완료, 리허설 때 그룹 목록 점검)
 - [ ] 발표: 시스템 아키텍처, ROS 2/Docker/DB 깊이, LLM 학습 루프 그래프
 - [ ] 백업 영상 녹화 주관
 

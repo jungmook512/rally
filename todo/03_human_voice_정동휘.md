@@ -58,4 +58,5 @@
 - [ ] 발표: 손 관절·음성 파트, 대시보드 시연
 
 ## 메모 / 막힌 것
+- (조정묵, 10/6) `rally_human/setup.py` 에 `hand_pose`, `body_pose` 실행 등록(console_scripts)이 없어 `pc2_perception.launch.py part:=human` 이 두 노드를 건너뛴다. 노드 이름을 이 두 개로 등록하면 launch 가 바로 띄운다. `intent_node`·`tts_node` 는 등록돼 있지만 아직 `main()` 이 없어 켜자마자 종료됨
 - 
