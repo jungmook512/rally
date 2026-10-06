@@ -9,8 +9,9 @@
 3. 런타임 베이스는 **Ubuntu 24.04 계열**만 (ROS 2 Jazzy). `nvcr.io/nvidia/tensorrt:*` 는 22.04 라 ros-jazzy apt 가 없다 → `nvidia/cuda:*-ubuntu24.04` + ROS apt 저장소 추가 + TensorRT 는 pip.
 
 ## 컨테이너 규칙 (한 번 당한 버그)
-1. `ros2_ws` 를 **폴더째 마운트하지 않는다.** 이미지 안의 `/ros2_ws/install` 을 가려 rally 패키지를 못 찾는다. 필요한 파일만 마운트 (`fastdds_client.xml`). 코드를 바꾸면 `up --build`.
+1. `ros2_ws` 를 **폴더째 마운트하지 않는다.** 이미지 안의 `/ros2_ws/install` 을 가려 rally 패키지를 못 찾는다. 코드를 바꾸면 `up --build`.
 2. 디버깅용으로 컨테이너를 따로 띄울 때도 `--network host --ipc host`. Fast DDS 는 같은 호스트끼리 공유 메모리로 데이터를 보내서, `--ipc host` 가 없으면 discovery(서비스 확인 등)는 되는데 **토픽 데이터만 안 온다.**
+3. DDS 는 `ROS_DISCOVERY_SERVER` 환경변수만 쓴다. Fast DDS XML 프로필(`FASTRTPS_DEFAULT_PROFILES_FILE`)을 같이 주면 XML 의 CLIENT 설정이 `ROS_SUPER_CLIENT` 를 덮어써 `ros2 topic list` 가 비어 나온다.
 
 ## CI
 - `build.yml`: colcon build·test + 이미지 4종(hand_pose · voice · brain · dashboard)

@@ -19,13 +19,12 @@ if [ "${RALLY_LOCAL:-0}" = "1" ]; then
   echo "[rally] RALLY_LOCAL=1 — Discovery Server 없이 로컬(멀티캐스트) 모드. ROS_DOMAIN_ID=$ROS_DOMAIN_ID  RMW=$RMW_IMPLEMENTATION"
 else
   export ROS_DISCOVERY_SERVER="${PC3_IP}:11811"
-  export FASTRTPS_DEFAULT_PROFILES_FILE="$RALLY_ROOT/ros2_ws/fastdds_client.xml"
+  # XML 프로필(FASTRTPS_DEFAULT_PROFILES_FILE)은 쓰지 않는다 — XML 의 CLIENT 설정이 ROS_SUPER_CLIENT 를 덮어써서
+  # ros2 topic list 가 비어 나왔다 (10/6). 서버 주소는 ROS_DISCOVERY_SERVER 하나로 충분하다
+  unset FASTRTPS_DEFAULT_PROFILES_FILE
   export ROS_SUPER_CLIENT=TRUE          # ros2 topic list / echo 가 Discovery Server 환경에서 전체 그래프를 보게
-  echo "[rally] ROS_DOMAIN_ID=$ROS_DOMAIN_ID  ROS_DISCOVERY_SERVER=$ROS_DISCOVERY_SERVER  RMW=$RMW_IMPLEMENTATION  profiles=$FASTRTPS_DEFAULT_PROFILES_FILE"
+  echo "[rally] ROS_DOMAIN_ID=$ROS_DOMAIN_ID  ROS_DISCOVERY_SERVER=$ROS_DISCOVERY_SERVER  RMW=$RMW_IMPLEMENTATION"
   echo "[rally] 서버 PC 에 discovery 컨테이너가 떠 있어야 노드끼리 보인다 (같은 PC 안이라도). 안 떠 있으면: RALLY_LOCAL=1 source scripts/env_robot_pc.sh"
-  if ! grep -q "<address>${PC3_IP}</address>" "$FASTRTPS_DEFAULT_PROFILES_FILE" 2>/dev/null; then
-    echo "[rally] 경고: ros2_ws/fastdds_client.xml 의 서버 주소가 PC3_IP(${PC3_IP})와 다릅니다 — 둘을 맞추세요" >&2
-  fi
 fi
 unset _env
 # 두산 작업 공간과 rally 작업 공간도 같이 올린다 (있을 때만)

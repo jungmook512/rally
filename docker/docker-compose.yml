@@ -10,9 +10,6 @@ x-ros: &ros
     - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-10}
     - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
     - ROS_DISCOVERY_SERVER=${PC3_IP:-172.24.3.122}:11811
-    - FASTRTPS_DEFAULT_PROFILES_FILE=/ros2_ws/fastdds_client.xml
-  volumes:
-    - ../ros2_ws/fastdds_client.xml:/ros2_ws/fastdds_client.xml:ro   # 파일만. 폴더째 마운트하면 이미지의 /ros2_ws/install 을 가린다
   restart: unless-stopped
 
 services:
@@ -25,7 +22,6 @@ services:
     devices: ["/dev/bus/usb:/dev/bus/usb"]        # RealSense
     deploy: { resources: { reservations: { devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }] } } }
     volumes:
-      - ../ros2_ws/fastdds_client.xml:/ros2_ws/fastdds_client.xml:ro
       - ../models:/models:ro
     command: ros2 launch rally_bringup pc2_perception.launch.py part:=vision
 
@@ -48,7 +44,6 @@ services:
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     volumes:
-      - ../ros2_ws/fastdds_client.xml:/ros2_ws/fastdds_client.xml:ro
       - ../models:/models:ro
     command: ros2 launch rally_bringup pc2_perception.launch.py part:=voice
 
