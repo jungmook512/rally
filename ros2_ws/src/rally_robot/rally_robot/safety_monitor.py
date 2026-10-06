@@ -21,6 +21,10 @@ class SafetyMonitor(Node):
         self.declare_parameter("stop_distance_m", 0.15)
         self.declare_parameter("force_limit_n", 25.0)
         self.declare_parameter("nudge_dfdt_n", 8.0)
+        self.declare_parameter("slow_override", 0.5)
+        for k, v in dict(x_min=0.25, x_max=0.80, y_min=-0.45, y_max=0.45, z_min=0.0, z_max=0.60).items():
+            self.declare_parameter(f"workspace_{k}_m", v)        # TODO(정정인): tcp_pose 로 작업 공간 감시에 사용
+        self.declare_parameter("return_speed_mm_s", 30.0)
         reliable = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=10)
         latched = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL, history=HistoryPolicy.KEEP_LAST, depth=1)
         self.pub = self.create_publisher(SafetyStatus, "/rally/safety/status", reliable)
@@ -54,7 +58,7 @@ class SafetyMonitor(Node):
         if not self.latched_stop:
             slow = self.get_parameter("slow_distance_m").value; stop = self.get_parameter("stop_distance_m").value
             if self.min_hand < stop: self.level, self.reason, self.override = SafetyStatus.LEVEL_STOP, "hand_near_centerline", 0.0
-            elif self.min_hand < slow: self.level, self.reason, self.override = SafetyStatus.LEVEL_SLOW, "hand_near_centerline", 0.5
+            elif self.min_hand < slow: self.level, self.reason, self.override = SafetyStatus.LEVEL_SLOW, "hand_near_centerline", self.get_parameter("slow_override").value
             else: self.level, self.reason, self.override = SafetyStatus.LEVEL_NORMAL, "", 1.0
         msg = SafetyStatus(); msg.header.stamp = self.get_clock().now().to_msg()
         msg.level, msg.reason, msg.speed_override, msg.min_hand_distance = self.level, self.reason, self.override, float(self.min_hand)

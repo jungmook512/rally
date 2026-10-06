@@ -19,5 +19,6 @@ setup(
         'safety_monitor = rally_robot.safety_monitor:main',
         'gripper_node = rally_robot.gripper_node:main',
         'force_publisher = rally_robot.force_publisher:main',
+        'calib_sweep = rally_robot.calib_sweep:main',             # 캘리브레이션 자세 순회·촬영
     ]},
 )
