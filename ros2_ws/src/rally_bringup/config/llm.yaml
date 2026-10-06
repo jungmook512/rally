@@ -1,1 +1,10 @@
 # config/llm.yaml — 값은 docs/INTERFACES.md 6절 참고
+# API 키는 docker/.env 의 OPENAI_API_KEY 에서만 읽는다 (이 파일·코드에 넣지 않는다)
+rally_llm_advisor:
+  ros__parameters:
+    model: gpt-4o        # 키에 허용된 모델은 gpt-4o, whisper-1 뿐 (강사 제공 키)
+    timeout_s: 3.0       # 초과 시 규칙 폴백. 실측 1.6~2.2 s (function calling, 2026-10-06)
+    temperature: 0.2     # 파라미터 제안은 일관성 우선
+    prompt_suggest_params: prompts/suggest_params.md
+    prompt_session_report: prompts/session_report.md
+    # send_fields: 전송 필드 화이트리스트(익명화) — Day 5 에서 채운다. 목록에 없는 필드는 보내지 않는다
