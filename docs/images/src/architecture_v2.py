@@ -3,15 +3,10 @@
 
 사용법:
     python3 docs/images/src/architecture_v2.py            # → docs/images/src/architecture_v2.svg
-    google-chrome --headless=new --screenshot=docs/images/architecture_v2.png \
-        --window-size=2840,<svg height> --force-device-scale-factor=1 docs/images/src/architecture_v2.svg
+    google-chrome --headless --screenshot=docs/images/architecture_v2.png \
+        --window-size=2840,1900 --force-device-scale-factor=1 docs/images/src/architecture_v2.svg
 
 노드·포트·연결을 아래 NODES / EDGES 에 선언하면 배선은 자동이다. 인터페이스 이름은 docs/INTERFACES.md 와 같아야 한다.
-
-배치 (2026-10-06, PC1+PC2 통합): 물리 PC 2대.
-    A 로봇·인식 PC(GPU) = 인식 컨테이너(역할 pc2, 왼쪽 열) + 로봇 네이티브 노드(역할 pc1, 가운데 열)
-    B 서버 PC = 역할 pc3 (오른쪽 열)
-"pc1/pc2/pc3" 는 이 파일 안에서 열(column) 이름이자 launch·compose 프로필의 역할 이름이다.
 """
 from __future__ import annotations
 
@@ -32,34 +27,29 @@ MUTED = "#566A70"
 BG = "#F7F8F7"
 
 PC_STYLE = {
-    "pc2": dict(title="인식 — Docker · profile pc2 (GPU 추론)", owner="박성현 · 정동휘", bar="#1F6F5B", fill="#EEF7F3", stroke="#1F6F5B"),
-    "pc1": dict(title="로봇 제어 — 호스트 네이티브 · pc1_robot.launch", owner="정정인", bar="#A8681E", fill="#FBF3E6", stroke="#A8681E"),
-    "pc3": dict(title="B · 서버 PC — Docker · profile pc3", owner="조정묵 · 정동휘", bar="#2A5D9F", fill="#EDF3FB", stroke="#2A5D9F"),
+    "pc2": dict(title="② 인식 PC (PC2 · GPU · Docker)", owner="박성현 · 정동휘", bar="#1F6F5B", fill="#EEF7F3", stroke="#1F6F5B"),
+    "pc3": dict(title="③ 서버 PC (PC3 · Docker)", owner="조정묵 · 정동휘", bar="#2A5D9F", fill="#EDF3FB", stroke="#2A5D9F"),
+    "pc1": dict(title="① 로봇 제어 PC (PC1 · 호스트 네이티브)", owner="정정인", bar="#A8681E", fill="#FBF3E6", stroke="#A8681E"),
 }
-HOST_A = dict(title="A · 로봇·인식 PC — GPU 1대 (RTX 4060 8 GB · 16코어) · 두산 이더넷 + RealSense·웹캠·마이크 USB",
-              note="인식 컨테이너와 로봇 노드가 같은 호스트(network_mode host) · 영상은 이 PC 안에서만 소비 · 손·착지 예측·비상정지는 홉 없이 로봇 노드로",
-              bar="#3B4A52", fill="#F1F3F2", stroke="#3B4A52")
 
 # ---------------------------------------------------------------- 레이아웃 상수
 W = 2840
-COL = {  # 열 x 범위
-    "pc2": (110, 820),
-    "pc1": (1030, 1800),
-    "pc3": (2040, 2780),
+COL = {  # 컬럼 x 범위 (PC 상자)
+    "pc2": (60, 800),
+    "pc3": (1010, 1830),
+    "pc1": (2040, 2780),
 }
-RIGHT_PAD = {"pc1": 84, "pc3": 96}   # 오른쪽 안쪽 배선 채널(같은 열 안의 연결) 자리
-GAP1 = (820, 1030)    # 인식 ↔ 로봇 (A 안)
-GAP2 = (1800, 2040)   # 로봇 ↔ 서버 (PC 사이)
-GAP_BASE = {"gap1": 24, "gap2": 70}   # 틈 안 채널 시작 오프셋 (gap2 는 pc1 오른쪽 안쪽 채널 뒤에서 시작)
-HOST_TOP = 130
-PC_TOP = {"pc2": 236, "pc1": 400, "pc3": 130}   # pc1 은 위에 '교차 통로'(인식 → 서버)를 두려고 낮게 시작
-CROSS_Y0 = 250
-NODE_PAD = 30
-NODE_GAP = 26
-HEAD_H = 68
-ROW_H = 40
+RIGHT_PAD = {"pc1": 80}   # PC1 은 오른쪽 안쪽 배선 채널(힘·그리퍼) 자리를 더 둔다
+GAP1 = (800, 1010)   # PC2 ↔ PC3 사이 배선 채널 영역
+GAP2 = (1830, 2040)  # PC3 ↔ PC1
+PC_TOP = {"pc2": 130, "pc3": 300, "pc1": 130}   # PC3 은 위에 '교차 통로'를 두려고 낮게 시작
+CROSS_Y0 = 150                                   # PC2 → PC1 직결 배선이 지나는 통로 (PC3 위)
+NODE_PAD = 30       # PC 상자 안쪽 여백
+NODE_GAP = 26       # 노드 사이 세로 간격
+HEAD_H = 68         # 노드 제목 영역
+ROW_H = 40          # 포트 한 줄
 FOOT = 12
-CH_SP = 18
+CH_SP = 18          # 배선 채널 간격
 
 
 @dataclass
@@ -67,7 +57,7 @@ class Port:
     key: str
     label: str
     kind: str
-    note: str = ""
+    note: str = ""      # 라벨 아래 작은 글씨 (타입·역할)
     y: float = 0.0
 
 
@@ -98,11 +88,9 @@ def P(key, label, kind, note=""):
     return Port(key, label, kind, note)
 
 
-# ---------------------------------------------------------------- 노드 선언 (열 안에서 위 → 아래)
-# 포트 면: 인식(pc2)은 오른쪽으로 내보냄 · 로봇(pc1)은 왼쪽 = 인식에서 받음, 오른쪽 = 서버와 주고받음 + 같은 열 연결
-#          서버(pc3)는 왼쪽 = 로봇·인식과 주고받음, 오른쪽 = 같은 열 연결 + 비ROS
+# ---------------------------------------------------------------- 노드 선언 (위에서 아래 순서)
 NODES: list[NodeBox] = [
-    # ---------------- 인식 (pc2 컨테이너)
+    # ---------------- PC2 인식
     NodeBox("cam", "pc2", "realsense2_camera · usb_cam", "드라이버 · RealSense 그리퍼 위(eye-in-hand) · 웹캠 환자 측면 60 fps",
             left=[P("cam", "/camera/color · aligned_depth · camera_info", "topic", "sensor_msgs 30 Hz"),
                   P("web", "/webcam/image_raw", "topic", "sensor_msgs/Image 60 Hz")],
@@ -130,104 +118,106 @@ NODES: list[NodeBox] = [
                    P("transcript", "/rally/voice/transcript", "topic", "String"),
                    P("speak", "/rally/voice/speak", "service", "Speak 서버 · 발화 중 마이크 차단")]),
 
-    # ---------------- 로봇 (pc1 네이티브)
-    NodeBox("skill", "pc1", "rally_skill_server", "MultiThreadedExecutor · 안전/스킬 콜백 그룹 분리 · STOP 이면 goal 거부·abort · skills/*.py",
-            left=[P("hand", "/rally/perception/hand", "topic", "구독 · handover 손 추종 servol"),
-                  P("landing", "/rally/perception/landing", "topic", "구독 · catch_ball amovel/servol"),
-                  P("objects", "/rally/perception/objects", "topic", "구독 · pick 목표")],
-            right=[P("skills", "/rally/skill/* (7종)", "action", "서버 · 진행률 피드백 · 취소"),
-                   P("observe", "/rally/robot/go_observe_pose", "service", "Trigger 서버"),
-                   P("status", "/rally/safety/status", "topic", "구독 · speed_scale()"),
-                   P("gripcmd", "/rally/gripper/command", "service", "클라이언트"),
-                   P("drl", "DRL movel · servol · 순응 제어", "nonros", "init_dsr() 후 import")]),
-    NodeBox("safety", "pc1", "rally_safety_monitor", "100 Hz · 손 0.25 m → SLOW 50 % · 0.15 m → STOP · 힘 25 N · nudge · 주먹 · '그만' · estop (safety.yaml)",
-            left=[P("hand", "/rally/perception/hand", "topic", "구독 · 중앙선 거리"),
-                  P("intent", "/rally/voice/intent", "topic", "구독 · is_emergency"),
-                  P("estop", "/rally/safety/estop", "topic", "구독 · TransientLocal (주먹 · 대시보드 버튼)")],
-            right=[P("status", "/rally/safety/status", "topic", "발행 · Reliable depth 10"),
-                   P("reset", "/rally/robot/reset_safety", "service", "Trigger 서버 · STOP 해제는 여기서만"),
-                   P("wrench", "/rally/robot/wrench", "topic", "구독 · 힘 한계"),
-                   P("tcp", "/rally/robot/tcp_pose", "topic", "구독 · 작업 공간")]),
-    NodeBox("force", "pc1", "rally_force_publisher · rally_gripper_node", "get_tool_force → WrenchStamped 100 Hz · RG2 Pymodbus (Lock)",
-            right=[P("wrench", "/rally/robot/wrench", "topic", "발행 · SensorData 100 Hz"),
-                   P("tcp", "/rally/robot/tcp_pose", "topic", "발행 · PoseStamped 100 Hz"),
-                   P("gripcmd", "/rally/gripper/command", "service", "GripperCommand 서버"),
-                   P("gripstate", "/rally/gripper/state", "topic", "JointState 20 Hz · [폭 mm, grip]"),
-                   P("rg2", "RG2 (Modbus TCP 192.168.1.1:502)", "nonros")]),
-    NodeBox("dsr", "pc1", "dsr_bringup2", "두산 드라이버 · dsr01 네임스페이스",
-            right=[P("joints", "/joint_states", "topic", "100 Hz"),
-                   P("m0609", "M0609 (이더넷)", "nonros")]),
-
-    # ---------------- 서버 (pc3)
+    # ---------------- PC3 서버
     NodeBox("brain", "pc3", "rally_brain", "context_builder → rule_layer → llm_advisor(검증·클램핑·폴백) → py_trees bt_runner",
-            left=[P("skills", "/rally/skill/* (7종)", "action", "클라이언트 · bt_runner 리프에서 호출"),
-                  P("observe", "/rally/robot/go_observe_pose", "service", "클라이언트 (Trigger)"),
-                  P("status", "/rally/safety/status", "topic", "구독 · STOP 이면 트리 중단"),
-                  P("wrench", "/rally/robot/wrench", "topic", "구독"),
-                  P("objects", "/rally/perception/objects", "topic", "구독"),
+            left=[P("objects", "/rally/perception/objects", "topic", "구독"),
                   P("hand", "/rally/perception/hand", "topic", "구독"),
                   P("body", "/rally/perception/body", "topic", "구독"),
                   P("intent", "/rally/voice/intent", "topic", "구독"),
+                  P("out", "/rally/brain/{context·trial_result·state}", "topic", "SceneContext 5 Hz · TrialResult · String"),
+                  P("session", "/rally/session/run", "action", "RunSession 서버 (최상위)"),
+                  P("set_mode", "/rally/brain/set_mode", "service", "SetMode 서버"),
+                  P("start_session", "/rally/db/start_session", "service", "클라이언트"),
                   P("speak", "/rally/voice/speak", "service", "클라이언트 → TTS")],
-            right=[P("out", "/rally/brain/{context·trial_result·state}", "topic", "SceneContext 5 Hz · TrialResult · String"),
-                   P("session", "/rally/session/run", "action", "RunSession 서버 (최상위)"),
-                   P("set_mode", "/rally/brain/set_mode", "service", "SetMode 서버"),
-                   P("start_session", "/rally/db/start_session", "service", "클라이언트"),
+            right=[P("skills", "/rally/skill/* (7종)", "action", "클라이언트 · bt_runner 리프에서 호출"),
+                   P("observe", "/rally/robot/go_observe_pose", "service", "클라이언트 (Trigger)"),
+                   P("status", "/rally/safety/status", "topic", "구독 · STOP 이면 트리 중단"),
+                   P("wrench", "/rally/robot/wrench", "topic", "구독"),
                    P("llm", "LLM API (수치 특징만)", "nonros", "llm.yaml 화이트리스트 · 3 s 타임아웃")]),
     NodeBox("db", "pc3", "rally_db", "recorder_node · repository · embeddings(32차원 feature_vec)",
-            left=[P("wrench", "/rally/robot/wrench", "topic", "구독 → ts_wrench"),
+            left=[P("out", "/rally/brain/{trial_result·context}", "topic", "구독 → trials · events"),
                   P("hand", "/rally/perception/hand", "topic", "구독 → ts_hand"),
-                  P("objects", "/rally/perception/objects", "topic", "구독 → ts_tracked")],
-            right=[P("out", "/rally/brain/{trial_result·context}", "topic", "구독 → trials · events"),
-                   P("start_session", "/rally/db/start_session", "service", "Trigger 서버"),
+                  P("objects", "/rally/perception/objects", "topic", "구독 → ts_tracked"),
+                  P("start_session", "/rally/db/start_session", "service", "Trigger 서버")],
+            right=[P("wrench", "/rally/robot/wrench", "topic", "구독 → ts_wrench"),
                    P("pg", "PostgreSQL 16 · TimescaleDB · pgvector", "nonros"),
                    P("redis", "Redis rally:state · rally:events", "nonros")]),
     NodeBox("dash", "pc3", "dashboard", "FastAPI + WebSocket · 힘 그래프 · 예측 vs 실제 · 학습 곡선 · 세션 리포트 · 안전 배너",
-            left=[P("estop", "/rally/safety/estop", "topic", "발행 · 비상정지 버튼"),
-                  P("reset", "/rally/robot/reset_safety", "service", "클라이언트 (운영자)"),
-                  P("status", "/rally/safety/status", "topic", "구독"),
+            left=[P("out", "/rally/brain/{state·context·trial_result}", "topic", "구독"),
                   P("debug", "/rally/perception/objects/debug_image", "topic", "구독"),
-                  P("transcript", "/rally/voice/transcript", "topic", "구독")],
-            right=[P("out", "/rally/brain/{state·context·trial_result}", "topic", "구독"),
-                   P("session", "/rally/session/run", "action", "클라이언트 (시작 버튼)"),
-                   P("set_mode", "/rally/brain/set_mode", "service", "클라이언트"),
-                   P("redis", "Redis pub/sub", "nonros"),
-                   P("browser", "브라우저 HTTP · WebSocket :8000", "nonros")]),
+                  P("transcript", "/rally/voice/transcript", "topic", "구독"),
+                  P("session", "/rally/session/run", "action", "클라이언트 (시작 버튼)"),
+                  P("set_mode", "/rally/brain/set_mode", "service", "클라이언트")],
+            right=[P("estop", "/rally/safety/estop", "topic", "발행 · 비상정지 버튼"),
+                   P("reset", "/rally/robot/reset_safety", "service", "클라이언트 (운영자)"),
+                   P("status", "/rally/safety/status", "topic", "구독"),
+                   P("browser", "브라우저 HTTP · WebSocket :8000", "nonros"),
+                   P("redis", "Redis pub/sub", "nonros")]),
+
+    # ---------------- PC1 로봇
+    NodeBox("skill", "pc1", "rally_skill_server", "MultiThreadedExecutor · 안전/스킬 콜백 그룹 분리 · STOP 이면 goal 거부·abort · skills/*.py",
+            left=[P("skills", "/rally/skill/* (7종)", "action", "서버 · 진행률 피드백 · 취소"),
+                  P("observe", "/rally/robot/go_observe_pose", "service", "Trigger 서버"),
+                  P("status", "/rally/safety/status", "topic", "구독 · speed_scale()"),
+                  P("hand", "/rally/perception/hand", "topic", "구독 · handover 손 추종 servol"),
+                  P("landing", "/rally/perception/landing", "topic", "구독 · catch_ball amovel/servol"),
+                  P("objects", "/rally/perception/objects", "topic", "구독 · pick 목표")],
+            right=[P("drl", "DRL movel · servol · 순응 제어", "nonros", "init_dsr() 후 import"),
+                   P("gripcmd", "/rally/gripper/command", "service", "클라이언트")]),
+    NodeBox("safety", "pc1", "rally_safety_monitor", "100 Hz · 손 0.25 m → SLOW 50 % · 0.15 m → STOP · 힘 25 N · nudge · 주먹 · '그만' · estop (safety.yaml)",
+            left=[P("status", "/rally/safety/status", "topic", "발행 · Reliable depth 10"),
+                  P("hand", "/rally/perception/hand", "topic", "구독 · 중앙선 거리"),
+                  P("intent", "/rally/voice/intent", "topic", "구독 · is_emergency"),
+                  P("estop", "/rally/safety/estop", "topic", "구독 · TransientLocal"),
+                  P("reset", "/rally/robot/reset_safety", "service", "Trigger 서버 · STOP 해제는 여기서만")],
+            right=[P("wrench", "/rally/robot/wrench", "topic", "구독 · 힘 한계"),
+                   P("tcp", "/rally/robot/tcp_pose", "topic", "구독 · 작업 공간")]),
+    NodeBox("force", "pc1", "rally_force_publisher · rally_gripper_node", "get_tool_force → WrenchStamped 100 Hz · RG2 Pymodbus 비동기",
+            left=[P("wrench", "/rally/robot/wrench", "topic", "발행 · SensorData 100 Hz")],
+            right=[P("wrench_r", "/rally/robot/wrench", "topic", "발행"),
+                   P("tcp", "/rally/robot/tcp_pose", "topic", "발행 · PoseStamped 100 Hz"),
+                   P("gripcmd", "/rally/gripper/command", "service", "GripperCommand 서버"),
+                   P("gripstate", "/rally/gripper/state", "topic", "JointState 20 Hz"),
+                   P("rg2", "RG2 (Modbus TCP 192.168.1.1:502)", "nonros")]),
+    NodeBox("dsr", "pc1", "dsr_bringup2", "두산 드라이버 · dsr01 네임스페이스",
+            left=[P("joints", "/joint_states", "topic", "100 Hz")],
+            right=[P("m0609", "M0609 (이더넷)", "nonros")]),
 ]
 
 # ---------------------------------------------------------------- 연결 선언 (src 노드.포트 → dst 노드.포트)
-# route: "auto" | "cross" (인식 열 ↔ 서버 열: 로봇 열 위 통로로 우회)
+# route: "auto" | "cross" (PC2 → PC1 직결, PC3 위 통로로 우회)
 EDGES = [
-    # 센서 → 인식 (같은 컨테이너 그룹)
+    # 센서 → 인식 (PC2 내부)
     ("cam.cam", "vision.cam", "auto"), ("cam.cam", "human.cam", "auto"),
     ("cam.web", "flight.web", "auto"), ("cam.web", "human.web", "auto"),
-    # 인식 → 로봇 (같은 PC, 홉 없음)
-    ("human.hand", "skill.hand", "auto"), ("human.hand", "safety.hand", "auto"),
-    ("human.estop", "safety.estop", "auto"),
-    ("voice.intent", "safety.intent", "auto"),
-    ("flight.landing", "skill.landing", "auto"),
-    ("vision.objects", "skill.objects", "auto"),
-    # 인식 → 서버 (PC 사이)
-    ("vision.objects", "brain.objects", "cross"), ("vision.objects", "db.objects", "cross"),
-    ("vision.debug", "dash.debug", "cross"),
-    ("human.hand", "brain.hand", "cross"), ("human.hand", "db.hand", "cross"),
-    ("human.body", "brain.body", "cross"),
-    ("voice.intent", "brain.intent", "cross"),
-    ("voice.transcript", "dash.transcript", "cross"),
-    ("brain.speak", "voice.speak", "cross"),
-    # 서버 ↔ 로봇 (PC 사이)
-    ("brain.skills", "skill.skills", "auto"), ("brain.observe", "skill.observe", "auto"),
-    ("dash.estop", "safety.estop", "auto"), ("dash.reset", "safety.reset", "auto"),
-    ("safety.status", "brain.status", "auto"), ("safety.status", "dash.status", "auto"),
-    ("force.wrench", "brain.wrench", "auto"), ("force.wrench", "db.wrench", "auto"),
-    # 로봇 열 내부
-    ("safety.status", "skill.status", "auto"),
-    ("force.wrench", "safety.wrench", "auto"), ("force.tcp", "safety.tcp", "auto"),
-    ("skill.gripcmd", "force.gripcmd", "auto"),
-    # 서버 열 내부
+    # PC2 → PC3
+    ("vision.objects", "brain.objects", "auto"), ("vision.objects", "db.objects", "auto"),
+    ("vision.debug", "dash.debug", "auto"),
+    ("human.hand", "brain.hand", "auto"), ("human.hand", "db.hand", "auto"),
+    ("human.body", "brain.body", "auto"),
+    ("voice.intent", "brain.intent", "auto"),
+    ("voice.transcript", "dash.transcript", "auto"),
+    ("brain.speak", "voice.speak", "auto"),
+    # PC2 → PC1 직결 (안전·저지연)
+    ("human.hand", "safety.hand", "cross"), ("human.hand", "skill.hand", "cross"),
+    ("human.estop", "safety.estop", "cross"),
+    ("voice.intent", "safety.intent", "cross"),
+    ("flight.landing", "skill.landing", "cross"),
+    ("vision.objects", "skill.objects", "cross"),
+    # PC3 내부
     ("brain.out", "db.out", "auto"), ("brain.out", "dash.out", "auto"),
     ("brain.start_session", "db.start_session", "auto"),
     ("dash.session", "brain.session", "auto"), ("dash.set_mode", "brain.set_mode", "auto"),
+    # PC3 → PC1
+    ("brain.skills", "skill.skills", "auto"), ("brain.observe", "skill.observe", "auto"),
+    ("dash.estop", "safety.estop", "auto"), ("dash.reset", "safety.reset", "auto"),
+    # PC1 → PC3
+    ("safety.status", "brain.status", "auto"), ("safety.status", "dash.status", "auto"),
+    ("force.wrench", "brain.wrench", "auto"), ("force.wrench", "db.wrench", "auto"),
+    # PC1 내부
+    ("safety.status", "skill.status", "auto"),
+    ("force.wrench_r", "safety.wrench", "auto"), ("force.tcp", "safety.tcp", "auto"),
+    ("skill.gripcmd", "force.gripcmd", "auto"),
 ]
 
 # ---------------------------------------------------------------- 설명 상자 (오가는 데이터)
@@ -244,10 +234,10 @@ CALLOUTS = [
      ["objects: TrackedObject[] — track_id · class(ball·velcro_ball·pad·rod·cup·hand) · position · velocity · yaw · predicted_stop · in_flight",
       "hand: HandState — landmarks[21] · palm_pose · wrist_angle_deg · grip_closure · gesture(FIST=정지) · distance_to_centerline",
       "landing: PointStamped — 착지 예측점 · 비행 중만 60 Hz · 좌표는 모두 base_link · header.stamp 는 센서 원본 유지"]),
-    ("service", "판단 경로 (LLM 은 로봇에 직접 가지 않는다) · 배치",
-     ["SceneContext(5 Hz) → rule_layer (규칙으로 끝나면 LLM 호출 안 함) → llm_advisor → pydantic 검증 → skills.yaml 클램핑 → 폴백 → action goal",
-      "DB: trials · sessions · events · ts_* 하이퍼테이블 · trials.feature_vec(pgvector) · 영상 원본은 저장·전송하지 않음",
-      "PC 2대 (10/6): GPU 는 YOLO-Seg 30 Hz 추론용 → 로봇·인식 한 PC. 추론 컨테이너 cpus 상한(6/4/2)으로 100 Hz 안전 감시와 CPU 분리"]),
+    ("service", "판단 경로 (LLM 은 로봇에 직접 가지 않는다)",
+     ["SceneContext(5 Hz) → rule_layer (규칙으로 끝나면 LLM 호출 안 함) → llm_advisor /rally/llm/suggest_params",
+      "LLM 응답 → pydantic 스키마 검증 → skills.yaml 범위 클램핑 → 실패·3 s 타임아웃 시 규칙 폴백 → action goal",
+      "DB: trials · sessions · events · ts_* 하이퍼테이블 · trials.feature_vec(pgvector) · 영상 원본은 저장·전송하지 않음"]),
 ]
 
 
@@ -268,7 +258,8 @@ def layout() -> None:
 
 
 def pc_bottom(pc: str) -> float:
-    return max(n.y + n.h for n in NODES if n.pc == pc) + NODE_PAD
+    ys = [n.y + n.h for n in NODES if n.pc == pc]
+    return max(ys) + NODE_PAD
 
 
 # ---------------------------------------------------------------- 배선
@@ -293,42 +284,51 @@ def node_by(id_: str) -> NodeBox:
     return next(n for n in NODES if n.id == id_)
 
 
-def port_xy(ref: str):
+def port_xy(ref: str) -> tuple[NodeBox, Port, str, float, float]:
     nid, pkey = ref.split(".")
     n = node_by(nid)
     p, side = n.port(pkey)
-    return n, p, side, (n.x if side == "L" else n.x + n.w), p.y
-
-
-def gap_x(bucket: str, ch: Channels, key: str) -> float:
-    gap = GAP1 if bucket == "gap1" else GAP2
-    return ch.x(bucket, gap[0] + GAP_BASE[bucket], key)
+    x = n.x if side == "L" else n.x + n.w
+    return n, p, side, x, p.y
 
 
 def route(src: str, dst: str, mode: str, ch: Channels, cross_slots: dict[str, int]) -> tuple[str, str]:
     sn, sp, ss, sx, sy = port_xy(src)
     dn, dp, ds, dx, dy = port_xy(dst)
-    kind, key = sp.kind, src   # 같은 source 포트에서 나가는 선은 채널을 공유
+    kind = sp.kind
+    key = src  # 같은 source 포트에서 나가는 선은 채널을 공유
 
     if mode == "cross":
-        # 인식(pc2) ↔ 서버(pc3): 가까운 틈 → 로봇 열 위 통로 → 반대쪽 틈 → 포트
-        near, far = ("gap1", "gap2") if sn.pc == "pc2" else ("gap2", "gap1")
-        cx1, cx2 = gap_x(near, ch, key), gap_x(far, ch, key)
+        # PC2 오른쪽 포트 → GAP1 채널 → 위 통로 → GAP2 채널 → PC1 왼쪽 포트
+        cx1 = ch.x("gap1", GAP1[0] + 24, key)
+        cx2 = ch.x("gap2", GAP2[0] + 24, key)
         if key not in cross_slots:
             cross_slots[key] = len(cross_slots)
         cy = CROSS_Y0 + cross_slots[key] * CH_SP
-        return f"M{sx},{sy} H{cx1} V{cy} H{cx2} V{dy} H{dx}", kind
+        d = f"M{sx},{sy} H{cx1} V{cy} H{cx2} V{dy} H{dx}"
+        return d, kind
 
-    if sn.pc != dn.pc:                                   # 이웃한 열 사이: 그 틈의 채널
-        bucket = "gap1" if {sn.pc, dn.pc} == {"pc2", "pc1"} else "gap2"
-        cx = gap_x(bucket, ch, key)
-    elif ss == "L" and ds == "L":                        # 같은 열, 둘 다 왼쪽: 왼쪽 안쪽 여백
-        cx = ch.x(f"in-{sn.pc}", min(sx, dx) - 12, key, direction=-1)
-    elif ss == "R" and ds == "R":                        # 같은 열, 둘 다 오른쪽: 오른쪽 안쪽 여백 (RIGHT_PAD)
-        cx = ch.x(f"out-{sn.pc}", max(sx, dx) + 12, key)
+    if ss == "R" and ds == "L" and dx > sx:            # 앞으로 (왼쪽 컬럼 → 오른쪽 컬럼)
+        bucket, base = ("gap1", GAP1[0] + 24) if sx <= GAP1[1] else ("gap2", GAP2[0] + 24)
+        cx = ch.x(bucket, base, key)
+    elif ss == "L" and ds == "R" and dx < sx:          # 뒤로 (오른쪽 컬럼 → 왼쪽 컬럼)
+        bucket, base = ("gap2r", GAP2[1] - 24) if sx >= GAP2[0] else ("gap1r", GAP1[1] - 24)
+        cx = ch.x(bucket, base, key, direction=-1)
+    elif ss == "L" and ds == "L":                      # 둘 다 왼쪽 포트: 왼쪽 여백 채널
+        left = min(sx, dx)
+        if sn.pc == "pc2":
+            cx = ch.x("in-pc2", left - 12, key, direction=-1)
+        elif sn.pc == "pc3":
+            cx = ch.x("gap1", GAP1[0] + 24, key)
+        else:
+            cx = ch.x("gap2", GAP2[0] + 24, key)
+    elif ss == "R" and ds == "R":                      # 둘 다 오른쪽 포트: 오른쪽 여백 채널
+        right = max(sx, dx)
+        cx = ch.x(f"out-{sn.pc}", right + 12, key)
     else:
-        raise ValueError(f"같은 열에서 좌↔우 연결은 지원 안 함: {src} → {dst}")
-    return f"M{sx},{sy} H{cx} V{dy} H{dx}", kind
+        raise ValueError(f"route? {src} → {dst} ({ss}->{ds})")
+    d = f"M{sx},{sy} H{cx} V{dy} H{dx}"
+    return d, kind
 
 
 # ---------------------------------------------------------------- SVG 출력
@@ -346,24 +346,15 @@ def svg() -> str:
     # 제목
     a(f'<text x="{W/2}" y="58" text-anchor="middle" font-size="40" font-weight="700" fill="{INK}">RALLY 시스템 아키텍처 v2</text>')
     a(f'<text x="{W/2}" y="92" text-anchor="middle" font-size="18" fill="{MUTED}">'
-      f'2026-10-06 · 물리 PC 2대 (A 로봇·인식 GPU PC · B 서버 PC) · ROS 2 Jazzy · 노드 상자의 점 = 그 노드가 쓰는 인터페이스 · 선 = 같은 이름으로 오가는 데이터 (화살표 = 받는 쪽)</text>')
+      f'2026-10-06 · PC 3대 · ROS 2 Jazzy · 노드 상자의 점 = 그 노드가 쓰는 인터페이스 · 선 = 같은 이름으로 오가는 데이터 (화살표 = 받는 쪽)</text>')
 
-    # 호스트 A 바깥 상자 (인식 + 로봇)
-    hx0, hx1 = COL["pc2"][0] - 30, COL["pc1"][1] + 30
-    hy0, hy1 = HOST_TOP, max(pc_bottom("pc2"), pc_bottom("pc1")) + 30
-    a(f'<rect x="{hx0}" y="{hy0}" width="{hx1-hx0}" height="{hy1-hy0}" rx="22" fill="{HOST_A["fill"]}" stroke="{HOST_A["stroke"]}" stroke-width="2.5"/>')
-    a(f'<path d="M{hx0+22},{hy0} H{hx1-22} a22,22 0 0 1 22,22 V{hy0+56} H{hx0} V{hy0+22} a22,22 0 0 1 22,-22 z" fill="{HOST_A["bar"]}"/>')
-    a(f'<text x="{hx0+26}" y="{hy0+37}" font-size="24" font-weight="700" fill="#FFFFFF">{esc(HOST_A["title"])}</text>')
-    a(f'<text x="{hx1-26}" y="{hy0+37}" text-anchor="end" font-size="18" fill="#FFFFFF" opacity="0.9">정정인 · 박성현 · 정동휘</text>')
-    a(f'<text x="{hx0+26}" y="{hy0+80}" font-size="15" fill="{MUTED}">{esc(HOST_A["note"])}</text>')
-
-    # 역할 상자 3개
+    # PC 상자
     for pc, (x0, x1) in COL.items():
         st = PC_STYLE[pc]
         y0, y1 = PC_TOP[pc], pc_bottom(pc)
         a(f'<rect x="{x0}" y="{y0}" width="{x1-x0}" height="{y1-y0}" rx="18" fill="{st["fill"]}" stroke="{st["stroke"]}" stroke-width="2"/>')
         a(f'<path d="M{x0+18},{y0} H{x1-18} a18,18 0 0 1 18,18 V{y0+56} H{x0} V{y0+18} a18,18 0 0 1 18,-18 z" fill="{st["bar"]}"/>')
-        a(f'<text x="{x0+24}" y="{y0+37}" font-size="23" font-weight="700" fill="#FFFFFF">{esc(st["title"])}</text>')
+        a(f'<text x="{x0+24}" y="{y0+37}" font-size="24" font-weight="700" fill="#FFFFFF">{esc(st["title"])}</text>')
         a(f'<text x="{x1-24}" y="{y0+37}" text-anchor="end" font-size="18" fill="#FFFFFF" opacity="0.9">{esc(st["owner"])}</text>')
 
     # 노드 상자
@@ -377,24 +368,29 @@ def svg() -> str:
         a(f'<text x="{n.x+22}" y="{n.y+52}" font-size="14" fill="{MUTED}">{esc(n.sub)}</text>')
         for p in n.left:
             c = KIND[p.kind]
+            a(f'<circle cx="{n.x}" cy="{p.y}" r="7" fill="{c}" stroke="#FFFFFF" stroke-width="2"/>')
             a(f'<text x="{n.x+20}" y="{p.y+5}" font-size="17" font-weight="700" fill="{INK}">{esc(p.label)}</text>')
             if p.note:
                 a(f'<text x="{n.x+20}" y="{p.y+21}" font-size="12" font-weight="700" fill="{c}">{esc(p.note)}</text>')
         for p in n.right:
             c = KIND[p.kind]
             xr = n.x + n.w
+            a(f'<circle cx="{xr}" cy="{p.y}" r="7" fill="{c}" stroke="#FFFFFF" stroke-width="2"/>')
             a(f'<text x="{xr-20}" y="{p.y+5}" text-anchor="end" font-size="17" font-weight="700" fill="{INK}">{esc(p.label)}</text>')
             if p.note:
                 a(f'<text x="{xr-20}" y="{p.y+21}" text-anchor="end" font-size="12" font-weight="700" fill="{c}">{esc(p.note)}</text>')
 
-    # 배선
+    # 배선 (노드 위에 그려서 점과 겹치지 않게 끝을 7px 전에 멈춘다)
     ch = Channels()
     cross_slots: dict[str, int] = {}
+    paths: list[str] = []
     for src, dst, mode in EDGES:
         d, kind = route(src, dst, mode, ch, cross_slots)
-        a(f'<path d="{d}" fill="none" stroke="{KIND[kind]}" stroke-width="2.4" stroke-linejoin="round" '
-          f'marker-end="url(#arr-{kind})" opacity="0.92"/>')
-    # 포트 점은 선 위에
+        c = KIND[kind]
+        paths.append(f'<path d="{d}" fill="none" stroke="{c}" stroke-width="2.4" stroke-linejoin="round" '
+                     f'marker-end="url(#arr-{kind})" opacity="0.92"/>')
+    o.extend(paths)
+    # 포트 점을 선 위에 다시 그림
     for n in NODES:
         for p in n.left:
             a(f'<circle cx="{n.x}" cy="{p.y}" r="7" fill="{KIND[p.kind]}" stroke="#FFFFFF" stroke-width="2"/>')
@@ -402,11 +398,11 @@ def svg() -> str:
             a(f'<circle cx="{n.x+n.w}" cy="{p.y}" r="7" fill="{KIND[p.kind]}" stroke="#FFFFFF" stroke-width="2"/>')
 
     # 교차 통로 라벨
-    a(f'<text x="{COL["pc1"][0]+90}" y="{CROSS_Y0-12}" font-size="14" fill="{MUTED}">'
-      f'인식 → 서버 PC (PC 사이를 넘는 것은 인식 결과·음성뿐, 영상은 넘기지 않음) · 서버 → 인식: TTS 요청</text>')
+    a(f'<text x="{(GAP1[1]+GAP2[0])/2}" y="{CROSS_Y0-14}" text-anchor="middle" font-size="14" fill="{MUTED}">'
+      f'PC2 → PC1 직결 (안전·저지연 경로: 손 · 비상정지 · 음성 정지 · 착지 예측 · 물체)</text>')
 
-    # 설명 상자 2×2
-    cy_base = max(pc_bottom(pc) for pc in COL) + 70
+    # 설명 상자
+    cy_base = max(pc_bottom(pc) for pc in COL) + 40
     cw, chh, cgap = (W - 120 - 30) / 2, 124, 30
     for i, (kind, title, lines) in enumerate(CALLOUTS):
         c = KIND[kind]
@@ -428,8 +424,8 @@ def svg() -> str:
         lx += 135
     a(f'<text x="660" y="{ly+2}" font-size="15" fill="{MUTED}">'
       f'QoS: 스트림 BestEffort depth 1 · 안전·결과·명령 Reliable · /rally/safety/estop 만 TransientLocal  ·  '
-      f'두 PC 는 서버 PC 의 Fast DDS Discovery Server(11811) 로 서로를 찾는다  ·  기동 순서: db·redis → dsr → robot(safety 먼저) → camera → vision → human·voice → brain → dashboard  ·  '
-      f'로봇 없이: --dry-run / --fake / bag 재생</text>')
+      f'3 PC 는 PC3 의 Fast DDS Discovery Server 로 서로를 찾는다  ·  기동 순서: db·redis → dsr → robot(safety 먼저) → camera → vision → human·voice → brain → dashboard  ·  '
+      f'로봇 없이: --fake / bag 재생</text>')
     a("</svg>")
     height = int(ly + 40)
     head = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {height}" width="{W}" height="{height}" '

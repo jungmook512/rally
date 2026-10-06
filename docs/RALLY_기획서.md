@@ -278,11 +278,13 @@
 
 ## 6. 시스템 아키텍처
 
-현행 배치(2026-10-06, 물리 PC 2대). 노드별 토픽·서비스·액션 상세는 `docs/images/src/architecture_v2.py`로 생성:
+현행 배치 **v3** (2026-10-06, 물리 PC 2대 — PC1+PC2 통합). 노드별 토픽·서비스·액션 상세는 `docs/images/src/architecture_v3.py`로 생성:
 
-![RALLY 시스템 아키텍처 v2 — 노드별 인터페이스](images/architecture_v2.png)
+![RALLY 시스템 아키텍처 v3 — PC 2대, 노드별 인터페이스](images/architecture_v3.png)
 
-<details><summary>v1 (10/5, PC 3대 구성 — 참고용)</summary>
+<details><summary>이전 버전 — v2 (10/6 오전, PC 3대 노드별 배선도) · v1 (10/5, 개요)</summary>
+
+![RALLY 시스템 아키텍처 v2](images/architecture_v2.png)
 
 ![RALLY 시스템 아키텍처 v1](images/architecture.png)
 
@@ -451,7 +453,7 @@ rally/
 ├── docs/
 │   ├── RALLY_기획서.md            ← 이 문서
 │   ├── INTERFACES.md              ← 토픽·서비스·액션·tf·QoS 명세
-│   └── images/ (flowchart.png, architecture.png, architecture_v2.png, src/*.svg, src/architecture_v2.py)
+│   └── images/ (flowchart.png, architecture.png, architecture_v2.png, architecture_v3.png, src/*.svg, src/architecture_v*.py) — 그림은 덮어쓰지 않고 버전을 올린다
 ├── todo/                          ← 역할별 할 일 (Day 0 ~ 8)
 │   ├── TEAM.md
 │   ├── 01_robot_정정인.md
