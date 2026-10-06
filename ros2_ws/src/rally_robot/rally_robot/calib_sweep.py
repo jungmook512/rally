@@ -18,7 +18,7 @@
   4. 이동은 amovel + check_motion 폴링. 이동 중 STOP → 정지 서비스(소프트 → 퀵 순으로 재시도) 호출 후 check_motion 으로
      **실제로 멈췄는지 확인**해야 '정지'로 기록. 확인 실패면 에러 로그 + 종료 코드 4 (하드웨어 비상정지 안내).
      SLOW 로 바뀌면 같은 절차로 정지 확인 후 감속 배율로 재이동.
-  5. 속도 = VELOCITY × 0.3 × speed_override.
+  5. 속도 = VELOCITY × 0.5 × speed_override (30 mm/s). 이동 타임아웃은 거리/속도 ×2 + 5 s 로 계산 (저속·장거리 오탐 방지).
 """
 import argparse
 import json
@@ -36,8 +36,8 @@ warnings.filterwarnings("ignore", message="Gimbal lock detected")   # ry≈180 �
 SETTLE_S = 0.7
 FRAME_TIMEOUT_S = 2.0
 SAFETY_TIMEOUT_S = 5.0
-SPEED_SCALE = 0.3
-MOTION_TIMEOUT_S = 20.0
+SPEED_SCALE = 0.5            # VELOCITY 60 mm/s × 0.5 = 30 mm/s (movel 의 vel 은 mm/s)
+MOTION_TIMEOUT_FLOOR_S = 10.0  # 실제 타임아웃은 거리/속도 ×2 + 5 s (dsr_helpers.motion_timeout_s)
 STOP_MODES = (2, 1)          # 정지 재시도 순서: 2 SSTOP(소프트) → 1 QSTOP(퀵)
 STOP_VERIFY_S = 1.5          # 정지 명령 후 check_motion()==0 을 기다리는 시간 (시도당)
 WORKSPACE_DEFAULT_M = dict(x_min=0.25, x_max=0.80, y_min=-0.45, y_max=0.45, z_min=0.0, z_max=0.60)  # safety.yaml 과 동일
@@ -104,7 +104,7 @@ def run_sweep(poses, out_dir, no_camera=False):
     from rclpy.qos import qos_profile_sensor_data, QoSProfile, ReliabilityPolicy, HistoryPolicy
     from sensor_msgs.msg import Image
     from rally_interfaces.msg import SafetyStatus
-    from rally_robot.dsr_helpers import init_dsr, move_stop, VELOCITY, ACC
+    from rally_robot.dsr_helpers import init_dsr, move_stop, motion_timeout_s, VELOCITY, ACC
 
     class Sweep(Node):
         def __init__(self):
@@ -187,6 +187,7 @@ def run_sweep(poses, out_dir, no_camera=False):
                     raise SafetyStop(reason(), stopped=True)          # 아직 명령 전이라 움직이지 않음
                 scale = SPEED_SCALE * node.speed_scale()
                 slowed = node.speed_scale() < 1.0
+                timeout_s = motion_timeout_s(get_current_posx()[0], p, VELOCITY * scale, MOTION_TIMEOUT_FLOOR_S)
                 amovel(posx(*p), vel=VELOCITY * scale, acc=ACC * scale)
                 t0 = time.monotonic()
                 while check_motion() != 0:
@@ -198,9 +199,9 @@ def run_sweep(poses, out_dir, no_camera=False):
                             raise SafetyStop("stop_failed_on_slow", stopped=False)
                         node.get_logger().info(f"안전 레벨 변경(speed_override={node.speed_scale():.2f}) — 같은 자세로 재이동")
                         break                                              # 바깥 while 이 STOP 을 다시 확인하고 재명령
-                    if time.monotonic() - t0 > MOTION_TIMEOUT_S:
+                    if time.monotonic() - t0 > timeout_s:
                         stopped = stop_robot("이동 타임아웃")
-                        raise SafetyStop(f"motion_timeout_{MOTION_TIMEOUT_S:.0f}s", stopped=stopped)
+                        raise SafetyStop(f"motion_timeout_{timeout_s:.0f}s", stopped=stopped)
                 else:
                     return
 

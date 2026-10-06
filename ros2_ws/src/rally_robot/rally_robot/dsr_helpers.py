@@ -47,10 +47,12 @@ def init_dsr(node_name="rally_dsr_node"):
 
 
 def move_stop(node, stop_mode=2, timeout_s=1.0):
-    """진행 중인 모션 정지. DSR_ROBOT2 에 래퍼가 없어 /dsr01/motion/move_stop 서비스를 직접 부른다.
+    """진행 중인 모션 정지. DSR_ROBOT2 에 래퍼가 없어 /dsr01/dsr_controller2/motion/move_stop 서비스를 직접 부른다.
     stop_mode: 0 QSTOP_STO · 1 QSTOP · 2 SSTOP(소프트, 기본) · 3 HOLD. 성공 여부 반환."""
     from dsr_msgs2.srv import MoveStop
-    client = node.create_client(MoveStop, f"/{ROBOT_ID}/motion/move_stop")
+    import DSR_ROBOT2
+    prefix = getattr(DSR_ROBOT2, "_srv_name_prefix", "dsr_controller2/")   # dsr_controller2 는 자기 이름을 서비스 앞에 붙인다
+    client = node.create_client(MoveStop, f"/{ROBOT_ID}/{prefix}motion/move_stop")
     if not client.wait_for_service(timeout_sec=timeout_s):
         return False
     req = MoveStop.Request()
@@ -147,18 +149,27 @@ def stop_robot(dsr_node, logger, why="safety"):
     return False
 
 
-def move_checked(node, pose6, vel, acc, timeout_s=20.0, poll_s=0.02, on_poll=None):
+def motion_timeout_s(from6, to6, vel_mm_s, floor_s=10.0):
+    """거리/속도 ×2 + 5 s. movel 의 vel 은 mm/s 라 60×0.3=18 mm/s 같은 저속이면 수십 초가 정상이다 — 고정 20 s 는 오탐."""
+    dist = float(np.linalg.norm(np.array(to6[:3], dtype=float) - np.array(from6[:3], dtype=float)))
+    return max(floor_s, dist / max(float(vel_mm_s), 1.0) * 2.0 + 5.0)
+
+
+def move_checked(node, pose6, vel, acc, timeout_s=None, poll_s=0.02, on_poll=None):
     """amovel + check_motion 폴링. node 는 stop_requested()/speed_scale()/dsr/get_logger() 를 제공해야 한다.
+    timeout_s 가 None 이면 현재 자세 → 목표 거리와 속도로 계산(motion_timeout_s).
     - STOP → 정지 확인 후 SkillAbort(stopped=확인 여부)
     - 감속 배율이 바뀌면 정지 확인 후 같은 자세로 재명령
     - on_poll() 이 True 를 돌려주면(예: 접촉 감지) 정지하고 'interrupted' 를 돌려준다. 정상 도착이면 'done'."""
-    from DSR_ROBOT2 import amovel, check_motion, posx
+    from DSR_ROBOT2 import amovel, check_motion, get_current_posx, posx
     logger = node.get_logger()
     while True:
         if node.stop_requested():
             raise SkillAbort(node.safety_reason(), stopped=True)
         scale = node.speed_scale()
         slowed = scale < 1.0
+        if timeout_s is None:
+            timeout_s = motion_timeout_s(get_current_posx()[0], pose6, vel * scale)
         amovel(posx(*pose6), vel=vel * scale, acc=acc * scale)
         t0 = time.monotonic()
         while check_motion() != 0:
