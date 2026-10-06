@@ -22,8 +22,8 @@
 - [ ] `context_builder.py`: 토픽 구독 → `SceneContext` 5 Hz (가짜 발행기로 먼저 테스트)
 - [ ] `bt_runner.py`: py_trees 세션 트리 골격 (모드 선택 → 시도 루프 → 종료), action client 래퍼
 - [ ] `trees/mode5_handover.py` (가짜 action 서버로 흐름 검증)
-- [ ] `recorder_node.py`: `TrialResult` → `trials`, `WrenchStamped` → `ts_wrench`, `HandState` → `ts_hand`, 이벤트 → `events`
-- [ ] Redis `rally:state` 갱신, `rally:events` publish
+- [x] `recorder_node.py`: `TrialResult` → `trials`, `WrenchStamped` → `ts_wrench`, `HandState` → `ts_hand`, 이벤트 → `events`
+- [x] Redis `rally:state` 갱신, `rally:events` publish (+ `rally:dialog`)
 - [ ] **Ontology** `rally_brain/knowledge/ontology.yaml` 초안: 모드 → 훈련 동작 → 신체 부위, 보상 동작 → 피로 신호, 스킬 → 파라미터·허용 범위 (기획서 4.10, 필수 · 활용 방식 TBD)
 
 ## Day 3 — 모드 5 통합 ✅
