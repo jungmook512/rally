@@ -9,7 +9,8 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/resource', glob.glob('resource/*.pt') + glob.glob('resource/*.engine') + glob.glob('resource/*.json')),
     ],
-    install_requires=['setuptools'], zip_safe=True,
+    install_requires=['setuptools'],
+    extras_require={'test': ['pytest']}, zip_safe=True,
     maintainer='박성현', maintainer_email='team@rally.local',
     description='RALLY — 비전: 캘리브레이션, YOLO-Seg, 추적·예측', license='MIT',
     entry_points={'console_scripts': [
