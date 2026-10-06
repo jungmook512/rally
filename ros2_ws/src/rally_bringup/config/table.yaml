@@ -1,7 +1,7 @@
 # config/table.yaml — 테이블·중앙선·작업 공간 (base_link 기준, m). 값은 docs/INTERFACES.md 6절 참고
 # 비전 깊이 Z 는 믿지 않는다: 테이블 위 물체의 파지 높이는 z_m + 물체 반지름(skills.yaml pick.grasp_above_table_m) 으로 계산한다.
 table:
-  z_m: null                       # TODO(정정인) TCP 를 테이블 면에 대고 posx Z 읽어 기입 (m). null 이면 스킬이 goal 의 Z 를 쓴다
+  z_m: 0.0144                     # 10/6 실측: 그리퍼 닫고 상판 접촉, (x 231, z 13.5) · (x 682, z 15.3) mm → 평균 14.4 mm, 기울기 1.8 mm/450 mm (수평). 펠트 깔면 +2~3 mm 재측정
   centerline_y_m: 0.0             # TODO 실측. 중앙선 테이프 위 한 점의 base y (환자 구역은 x 가 큰 쪽)
   centerline_x_m: 0.60            # TODO 실측. 로봇이 넘지 않는 x (safety.yaml workspace_x_max_m 과 맞춘다)
   origin_xyz_m: [0.30, 0.0, null] # table_link 원점 (로봇 쪽 모서리 가운데)
