@@ -93,6 +93,14 @@ def servol(pos, vel=None, acc=None, time=None, **kw):
     return 0
 
 
+def fake_move_stop(stop_mode=2):
+    """정지 서비스 흉내: 진행 중 이동을 현재 보간 위치에서 멈춘다. dsr_helpers.stop_robot 이 fake 모드에서 부른다."""
+    S.pose = _cur()
+    S.target = list(S.pose)
+    S.move_until = 0.0
+    return True
+
+
 def mwait(t=0):
     while _moving():
         time.sleep(0.02)

@@ -41,6 +41,7 @@ def execute(node):
             log.info(f"[pick_compliant] {name}")
 
         try:
+            node.check_controller()
             cur = get_current_posx()[0]
             x, y = goal.target.pose.position.x * 1000.0, goal.target.pose.position.y * 1000.0
             if cfg["z_from_table"] and table_z is not None:
