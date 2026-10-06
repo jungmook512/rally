@@ -62,6 +62,22 @@ def transform_to_base(camera_coords, robot_posx, gripper2cam=None):
     return (base2cam @ coord)[:3]
 
 
+def posx_to_pose(posx):
+    """DRL posx [x,y,z mm, rx,ry,rz deg(ZYZ)] → geometry_msgs/Pose (m, quaternion). 메시지에 실을 때는 항상 이걸 거친다."""
+    from geometry_msgs.msg import Pose
+    pose = Pose()
+    pose.position.x, pose.position.y, pose.position.z = posx[0] / 1000.0, posx[1] / 1000.0, posx[2] / 1000.0
+    qx, qy, qz, qw = Rotation.from_euler("ZYZ", posx[3:6], degrees=True).as_quat()
+    pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w = float(qx), float(qy), float(qz), float(qw)
+    return pose
+
+
+def pose_to_posx(position_m, quat_xyzw):
+    """geometry_msgs 좌표 (m, quaternion) → DRL posx (mm, ZYZ deg). DRL 호출 직전에만 쓴다."""
+    rx, ry, rz = Rotation.from_quat(list(quat_xyzw)).as_euler("ZYZ", degrees=True)
+    return [position_m[0] * 1000.0, position_m[1] * 1000.0, position_m[2] * 1000.0, float(rx), float(ry), float(rz)]
+
+
 def apply_depth_offset(td_coord):
     td = list(td_coord)
     if td[2] and sum(td) != 0:

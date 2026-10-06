@@ -27,3 +27,16 @@ mode7:
   force_limit_n: 15.0               # safety.yaml 25 N 보다 낮음
 mode3_challenge:
   enabled: true                     # CP13 결정에 따라 false 로 시연에서 제외
+
+# gripper — 물체별 열림 폭·파지 힘. 파지는 "폭 0 + 힘" 으로 닫아 물체에서 멈추게 하므로 목표 폭은 두지 않는다.
+#   open_mm: 접근 전 열림 폭. 모드 1 공은 가이드 길(폭 10~12 cm) 안에서 집으므로 벽에 안 걸리게 좁게 연다.
+#   force_n: RG2 3~40 N. 공·벨크로 공은 눌리지 않게 약하게, 모드 7 손잡이는 밀기 중 안 빠지게 세게.
+#   값은 추정치 — Day 2 당김 힘 실험 때 확정 (scripts/check_gripper.py --measure 로 공 지름만 확인하면 됨)
+gripper:
+  ball:        {open_mm: 90,  force_n: 12}
+  velcro_ball: {open_mm: 110, force_n: 12}
+  rod:         {open_mm: 110, force_n: 20}
+  cup:         {open_mm: 110, force_n: 20}
+  handle:      {open_mm: 110, force_n: 38}   # 모드 7
+  close_timeout_s: 3.0
+  # command_to_motion_ms: TODO scripts/check_gripper.py 결과(명령 → 폭 변화 지연) 기입

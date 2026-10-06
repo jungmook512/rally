@@ -1,1 +1,17 @@
-# config/safety.yaml — 값은 docs/INTERFACES.md 6절 참고
+# config/safety.yaml — rally_safety_monitor 파라미터. 근거는 docs/INTERFACES.md 6절 · 기획서 CP10 · CP14.
+# 임계값은 여기서만 바꾼다 (코드 하드코딩 금지). 바꾸면 커밋 메시지에 이유(실험 데이터)를 적는다.
+rally_safety_monitor:
+  ros__parameters:
+    slow_distance_m: 0.25      # 손이 중앙선에서 이 안으로 오면 SLOW (speed_override 0.5)
+    stop_distance_m: 0.15      # 이 안이면 STOP
+    slow_override: 0.5
+    force_limit_n: 25.0        # 합력 |F| 초과 → STOP (모드 7 은 스킬 자체 한계 15 N 이 먼저 걸림)
+    nudge_dfdt_n: 8.0          # 정지 구간 힘 급변 (N, 한 주기 10 ms 기준) → STOP. TODO(정정인) Day 0 3번 노이즈 측정값으로 확정
+    # 작업 공간 (base_link, m) — table.yaml 중앙선과 맞춘다. TODO(정정인) 관측 자세 티칭 후 실측
+    workspace_x_min_m: 0.25
+    workspace_x_max_m: 0.80
+    workspace_y_min_m: -0.45
+    workspace_y_max_m: 0.45
+    workspace_z_min_m: 0.00
+    workspace_z_max_m: 0.60
+    return_speed_mm_s: 30.0    # 모드 7 복귀·STOP 후 후퇴 속도 상한 (CP14)
