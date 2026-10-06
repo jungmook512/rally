@@ -1,9 +1,12 @@
-"""로봇 없이 도는 단위 테스트: 좌표 변환·툴 회전·후퇴 방향·가짜 DSR 흐름."""
+"""로봇 없이 도는 단위 테스트: 좌표 변환·툴 회전·후퇴 방향·가짜 DSR 흐름.
+CI(ros:jazzy-ros-base)에는 scipy 가 없다 → 그 환경에서는 건너뛴다. 로봇·인식 PC 에서는 전부 돈다."""
 import math
 
-import numpy as np
 import pytest
-from scipy.spatial.transform import Rotation
+
+np = pytest.importorskip("numpy")
+pytest.importorskip("scipy")
+from scipy.spatial.transform import Rotation  # noqa: E402
 
 
 def test_posx_pose_round_trip():
