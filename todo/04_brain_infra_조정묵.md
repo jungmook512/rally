@@ -7,7 +7,7 @@
 - [ ] 레포 초기화·push, 브랜치 규칙 공지, `.github/workflows/build.yml` 첫 실행 확인
 - [ ] 인터페이스 합의 회의 주도 → `rally_interfaces` 수정·커밋 (이후 변경은 PR로)
 - [ ] `docker/.env` 작성(IP, DOMAIN_ID, API 키), 팀원 배포
-- [ ] PC 2대 고정 IP (로봇·인식 PC 172.24.0.136, 서버 PC 172.24.3.122), `fastdds_client.xml` 서버 주소 확정
+- [ ] PC 2대 고정 IP (로봇·인식 PC 172.24.0.136, 서버 PC 172.24.3.122), `fastdds_client.xml` 서버 주소 확정 — Wi-Fi Rokey_A 로 확정(유선 스위치 안 씀). PC 간 토픽 지연을 `scripts/measure_latency.py` 로 한 번 재서 기록
 - [ ] LLM API 키 발급·한도 확인
 
 ## Day 1 — 인프라 기반 ✅
@@ -15,8 +15,8 @@
 - [x] `docker compose --profile pc3 up`: discovery, db(Timescale+pgvector), redis 기동, healthcheck 통과
 - [x] `schema.sql` 적용 확인, 하이퍼테이블 확인 → 벡터 인덱스 ivfflat 이 빈 테이블에서 만들어져 결과 누락 → HNSW 로 교체(`schema_002_hnsw.sql`)
 - [ ] 2 PC 토픽 상호 수신 테스트 (Discovery Server 경유), `ros2 topic hz`로 확인. 같은 PC 안(네이티브 ↔ 컨테이너 host 네트워크)도 확인
-- [ ] `rally_bringup` launch 3종 골격 (pc1/pc2/pc3 — 역할 이름, pc1+pc2 는 같은 PC), Lifecycle 기동 순서 스크립트
-- [ ] `scripts/measure_latency.py` 초안
+- [x] `rally_bringup` launch 3종 골격 (pc1/pc2/pc3 — 역할 이름, pc1+pc2 는 같은 PC), Lifecycle 기동 순서 스크립트 → 준비 확인 방식(`readiness.yaml` + `wait_ready`), INTERFACES 5절
+- [x] `scripts/measure_latency.py` 초안 — 토픽별 header.stamp 지연(평균·p50·p95·max), NFR-01 판정, CSV. 실측은 로봇·인식 PC 에서
 
 ## Day 2 — 행동 트리 골격 + 기록
 - [ ] `context_builder.py`: 토픽 구독 → `SceneContext` 5 Hz (가짜 발행기로 먼저 테스트)
@@ -65,7 +65,7 @@
 - [ ] 오후부터 기능 추가 금지, 버그 수정만
 
 ## Day 8 — 시연
-- [ ] 시연 직전 Lifecycle 전 노드 active 확인 스크립트
+- [ ] 시연 직전 전 노드 준비 확인 — `ros2 launch rally_bringup full_system.launch.py` (Day 1 에 골격 완료, 리허설 때 그룹 목록 점검)
 - [ ] 발표: 시스템 아키텍처, ROS 2/Docker/DB 깊이, LLM 학습 루프 그래프
 - [ ] 백업 영상 녹화 주관
 

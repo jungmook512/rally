@@ -90,18 +90,27 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 
 릴리스 검출(손·공 마스크 분리, 웹캠 60 Hz) → 3~5 프레임 후 첫 착지 예측 발행 → `catch_ball`이 `lead_time_s`만큼 앞선 시각의 예측점으로 amovel → 매 프레임 갱신되는 예측으로 servol 보정 → 착지 → 패드 위 공 판정. 공 비행 시간이 보통 0.5~0.8 s(살살 토스)이므로 카메라→로봇 전체 지연을 100 ms 안쪽으로 맞추는 것이 핵심(`scripts/measure_latency.py`).
 
-## 5. Lifecycle 기동 순서
+## 5. 기동 순서 (준비 확인 방식)
+
+노드를 ROS 2 managed(Lifecycle) 노드로 바꾸지 않고, **앞 단계가 실제로 준비됐는지 확인한 뒤 다음 단계를 띄운다.** "준비"의 정의는 `rally_bringup/config/readiness.yaml` 한 곳에 그룹으로 둔다 (토픽: `max_age_s` 안에 메시지 수신 / 서비스·action: 서버 응답 가능).
 
 ```
-1. db, redis (healthcheck 통과)
-2. dsr_bringup2 → rally_robot (safety_monitor 먼저 active)
-3. realsense2_camera → rally_vision (hand_eye.yaml 로드 실패 시 unconfigured 유지)
-4. rally_human, rally_voice
-5. rally_brain (위 노드가 모두 active일 때만 activate)
-6. dashboard
+0. 서버 PC      compose pc3: discovery · db · redis (healthcheck)        ← 모든 노드가 discovery 에 의존
+1. 로봇·인식 PC source scripts/env_robot_pc.sh → dsr_bringup2 → pc1_robot.launch
+                  safety_monitor → [wait_ready --group safety] → force_publisher · gripper_node · skill_server
+                  확인 실패 시 로봇 노드를 켜지 않고 launch 종료
+2. 로봇·인식 PC compose pc2: vision · hand_pose · voice (pc2_perception.launch part:=...)
+3. 서버 PC      compose pc3: brain (pc3_brain.launch) · dashboard
+                  bt_runner 가 session 그룹(robot + perception + voice)을 1 s 마다 확인 → 준비 안 되면 세션을 시작하지 않음
 ```
 
-하나라도 `inactive`로 떨어지면 brain은 `RunSession`을 abort 하고 robot은 관측 자세에서 대기한다.
+| 도구 | 쓰임 |
+|---|---|
+| `rally_bringup/readiness.py` `ReadinessChecker` | 노드 안에서 그룹 준비 여부 확인 (bt_runner) |
+| `ros2 run rally_bringup wait_ready --group <g> [--timeout s]` | launch 단계 관문. 준비되면 0, 시간 초과면 1 |
+| `ros2 run rally_bringup wait_ready --group session --once` / `ros2 launch rally_bringup full_system.launch.py` | 시연 전 점검 |
+
+세션 도중 준비가 깨지면(토픽 끊김·서버 사라짐) brain 은 `RunSession` 을 abort 하고 robot 은 관측 자세에서 대기한다 (Day 2 bt_runner 구현).
 
 ## 6. 파라미터 파일 (rally_bringup/config)
 
