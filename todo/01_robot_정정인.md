@@ -71,6 +71,11 @@
 - [ ] 발표: 힘·순응 제어 파트 (힘 곡선 그래프 준비)
 
 ## 메모 / 막힌 것
+
+- [x] 10/7 소개 일러스트 v7 — RealSense 시선을 그리퍼 집기점으로 수정하고 혼동을 주던 레인 목표 번호 1~4 제거 (`docs/images/rally_intro_topview_v7.png`, 생성 프롬프트: `docs/images/src/rally_intro_topview_v7.prompt.txt`).
+- [x] 10/7 소개 일러스트 v6 — 환자를 윤곽선·색면 일러스트로 변경하고 추가 실물 사진에 맞춰 RealSense 가로형 본체·손목 장착 형태 수정 (`docs/images/rally_intro_topview_v6.png`, 생성 프롬프트: `docs/images/src/rally_intro_topview_v6.prompt.txt`).
+- [x] 10/7 소개 일러스트 v5 — 모드 1·3·5·7 설명, 작업대를 향한 손목 RealSense, 우측에 앉은 환자 추가 (`docs/images/rally_intro_topview_v5.png`, 생성 프롬프트: `docs/images/src/rally_intro_topview_v5.prompt.txt`).
+- [x] 10/7 프로젝트 소개용 배치 일러스트 제작 — PR #42·현장 사진 반영. 공 4개 자동 공급, 3개 레인의 목표 4곳, 보라색 이동 한계선, 모드 3 패드 거치 예정 위치 표시 (`docs/images/rally_intro_topview_v4.png`, 생성 프롬프트: `docs/images/src/rally_intro_topview_v4.prompt.txt`).
 - 10/7 (정동휘): `hand_pose` 노드 동작. ① `HandState.gesture` 는 5 프레임(약 0.17 s) 연속일 때만 FIST 로 내보냄 (safety_monitor 가 한 프레임 FIST 에도 STOP 하므로). 모드 5 에서 물체 쥔 손이 주먹으로 보이면 `fist_estop_enabled:=false` 로 끌 수 있음 — 같이 정하기. ② 손은 보이는데 위치를 못 구하면(깊이·tf 없음) `distance_to_centerline = NaN` = "거리 모름" (INTERFACES 2.2). #44 리뷰대로 safety_monitor 에서 `detected && NaN` 이면 SLOW (정정인)
 - [!] 10/7 `get_tool_force` 가 전부 0 (관절 외력 토크는 정상). 재부팅·툴 재적용으로 안 풀림. 우회: `scripts/ejt_wrench.py`(관절 외력 토크 → 자코비안). 선생님·다른 조 로봇과 비교 필요. 접촉 검출·당김 해제·nudge 는 이 문제가 풀리거나 우회 경로를 force_publisher 에 넣어야 실로봇 가능
 - 소프트 비상정지는 `scripts/estop.sh` (QoS TransientLocal 맞춤), 해제는 `scripts/estop.sh reset`
