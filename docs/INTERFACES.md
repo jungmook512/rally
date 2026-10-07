@@ -27,8 +27,8 @@ webcam_link          측면 웹캠 (table_link 기준 static)
 | `/camera/aligned_depth_to_color/image_raw` | `sensor_msgs/Image` | realsense2_camera | 30 Hz | SensorData |
 | `/camera/color/camera_info` | `sensor_msgs/CameraInfo` | realsense2_camera | 30 Hz | SensorData |
 | `/webcam/image_raw` | `sensor_msgs/Image` | usb_cam (측면) | 60 Hz | SensorData |
-| `/rally/robot/wrench` | `geometry_msgs/WrenchStamped` | rally_robot/force_publisher | 100 Hz | SensorData |
-| `/rally/robot/tcp_pose` | `geometry_msgs/PoseStamped` | rally_robot/force_publisher | 100 Hz | SensorData |
+| `/rally/robot/wrench` | `geometry_msgs/WrenchStamped` | rally_robot/force_publisher | 50 Hz (두산 서비스 폴링 — 100 Hz 면 컨트롤러 서비스가 막힘) | SensorData |
+| `/rally/robot/tcp_pose` | `geometry_msgs/PoseStamped` | rally_robot/force_publisher | 10 Hz | SensorData |
 | `/rally/gripper/state` | `sensor_msgs/JointState` — name `[rg2_width_mm, rg2_grip]`, position `[폭 mm, grip 감지 0/1]`, effort 미사용 | rally_robot/gripper_node | 20 Hz | SensorData |
 | `/joint_states` | `sensor_msgs/JointState` | dsr_bringup2 | 100 Hz | SensorData |
 | `/tf`, `/tf_static` | `tf2_msgs/TFMessage` | 여러 노드 | - | 표준 |
@@ -44,6 +44,8 @@ webcam_link          측면 웹캠 (table_link 기준 static)
 | `/rally/perception/body` | `rally_interfaces/BodyPose` | rally_human/body_pose_node | brain | 15 Hz | BestEffort |
 | `/rally/voice/intent` | `rally_interfaces/VoiceIntent` | rally_voice/intent_node | brain, safety | 이벤트 | Reliable |
 | `/rally/voice/transcript` | `std_msgs/String` | rally_voice/stt_node | dashboard | 이벤트 | Reliable |
+
+**음성으로 훈련 고르기** (`VoiceIntent` 슬롯 약속, 메시지 변경 없음): "공 굴리기 하자"처럼 훈련 이름을 말하면 `intent: next_mode` + `slot_keys: [mode]`, `slot_values: ["1"]` (1 공 굴리기 · 3 캐치볼 · 5 건네고 받기 · 7 팔씨름). 세션 시작과 같이 말하면 `start_session` 에 같은 슬롯. 슬롯이 없으면 순서상 다음 모드. 모드 3 이 꺼져 있으면(`mode3_challenge.enabled: false`) brain 이 무시하고 TTS 로 안내.
 
 ### 2.3 판단·안전·기록 (커스텀)
 
