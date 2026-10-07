@@ -50,6 +50,7 @@ def build_trial(session: Session) -> py_trees.behaviour.Behaviour:
 
     def mark_start() -> None:
         state["t0"] = time.monotonic()
+        session.begin_trial()   # 여기부터 기록까지 모드 전환 안 함 (손 대기 중엔 됨)
 
     def on_result(result: Handover.Result) -> None:
         session.record(trial_from_result(result, time.monotonic() - state["t0"]))

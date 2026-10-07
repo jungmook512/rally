@@ -43,6 +43,7 @@ class Session:
     level_changed_at: dict[int, int] = field(default_factory=dict)  # 모드 → 난이도가 바뀐 시점의 len(trials)
     modes: list[int] = field(default_factory=list)                  # 지금 트리의 모드 순서 (전환하면 바뀜)
     current_mode: int | None = None                                 # 지금 진행 중인 모드
+    trial_active: bool = False                                      # 로봇이 시도 중 (begin_trial ~ record). 모드 전환은 이때 안 함
 
     def safe(self) -> bool:
         ctx = self.get_context()
@@ -52,8 +53,13 @@ class Session:
         ctx = self.get_context()
         return ctx is not None and ctx.hand.detected
 
+    def begin_trial(self) -> None:
+        """시도 서브트리가 로봇 동작을 시작할 때 부른다 (손 대기 뒤). record 까지는 모드 전환을 미룬다."""
+        self.trial_active = True
+
     def record(self, trial: TrialResult) -> None:
         """session_id·trial_index·stamp 를 채워 발행. 모든 시도는 여기를 거친다 (rally_brain/CLAUDE.md)."""
+        self.trial_active = False
         trial.session_id = self.session_id
         trial.trial_index = len(self.trials) + 1
         trial.header.stamp = self.node.get_clock().now().to_msg()
