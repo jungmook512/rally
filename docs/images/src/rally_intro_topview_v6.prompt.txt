@@ -1,0 +1,25 @@
+Precise edit of the existing RALLY project illustration, using the two most recent images: the RALLY infographic is the EDIT TARGET; the close-up real photograph of the gripper and RealSense is a HARDWARE MOUNT REFERENCE ONLY. Do not inherit photographic human rendering from either image. Make two corrections, preserve everything else.
+
+1. PATIENT MUST LOOK DRAWN, NOT PHOTOGRAPHED.
+Completely redraw the seated human on the right as a clear 2D editorial/cartoon illustration: confident clean dark teal contour lines, flat muted teal shirt, simple peach skin color with only one or two flat shadow shapes, hair as a single stylized dark shape with a few broad drawn locks. Simple drawn hands with correct five-finger anatomy. No skin pores, no hairs, no arm hair, no realistic scalp, no fabric texture, no glossy or photographic skin, no 3D human render. Think a friendly person in an illustrated healthcare explainer. Also simplify chair into drawn contours and flat colors. Keep adult proportions and the existing overhead pose: person seated outside right table edge facing left, one arm reaching toward upper lane, other arm resting at right table edge. Keep all hands right of the purple robot limit. Human should visibly and unambiguously be an ILLUSTRATION. Robot can retain realistic mechanical shape and shaded technical-illustration detail, as user explicitly wants a realistic-looking robot arm.
+
+2. MATCH REALSENSE HARDWARE TO THE ATTACHED CLOSE-UP PHOTO.
+Study actual assembly: robot wrist above -> white/light gray short mounting bracket curving outward from immediately ABOVE the metallic BLUE circular coupling -> wide slim silver rectangular RealSense stereo camera mounted HORIZONTALLY beside the wrist, just ABOVE and alongside the top of the RG2 gripper. It is NOT a tiny cube on a long pivoting stalk. Camera resembles a wide silver horizontal bar, rounded rectangular body roughly as wide as the gripper housing or a little wider, black long optical face containing multiple round lens windows, vent slots along silver case, short black USB cable leading back up wrist. The short pale curved/offset support fastens it snugly to side of wrist above blue ring as visible in reference. Long camera bar transverse to gripper length, side by side with wrist, not centered over fingertips. Camera optical face is angled down toward table, roughly along gripper approach direction. In this overhead diagram, top and side silver body are most visible, black lens face only visible obliquely on lower/front edge. Do not make camera lens face look up at viewer. Do not copy the close-up's upward camera view into entire diagram: transform assembly faithfully into the existing overhead diagram view. Keep RG2 separate, long gray gripper body below blue ring with two black articulated fingers. Remove old blue triangular camera projection graphic; camera mount alone is sufficient. Correct label "RealSense · 작업대 관측" leader to touch the actual camera, preserve separate "RG2 그리퍼" callout.
+
+LOCK ALL OTHER PARTS:
+Keep landscape 16:9 composition, RALLY header, white background, wooden tabletop, left-mounted Doosan M0609 robot, top-center blue sloped rack containing exactly FOUR orange balls at mode start, fixed pickup position at left end, automatic supply arrow. Exactly THREE horizontal lanes (six long narrow rails: top pair green, middle pair blue, bottom pair green). Preserve hollow dashed numbered target markers 1 upper lane, 2 and 3 middle lane, 4 lower lane. Purple dashed vertical robot limit slightly beyond entrances. Red dashed EMPTY footprint for planned unbuilt pad holder lower-center, no actual stand. Do not add return ball arrows or change robot side. Keep all FOUR mode cards at bottom, title and text clearly readable and unchanged. Patient stays right without occluding cards.
+
+Preserve Korean text:
+"RALLY", "상지 재활 파트너 로봇", "공·패드·컵·손잡이를 통한 상호작용"
+"두산 M0609", "RealSense · 작업대 관측", "RG2 그리퍼"
+"공 거치대 · 모드 1", "공 4개 · 기울기로 자동 공급", "고정 집기 위치"
+"로봇 이동 한계선", "패드 거치 예정 위치", "모드 3 · 3D 프린팅 전", "환자"
+
+Bottom cards:
+"모드 1 | 공 굴려주기", "팔 뻗기", "집기 → 놓기 → 굴리기", "공 4개 · 서로 다른 목표로 4회 = 한 사이클", "환자에게 돌려받지 않음"
+"모드 3 | 던진 공 받기", "던지기·협응 · 챌린지", "공의 착지점을 예측해", "로봇이 패드를 옮겨 받아요"
+"모드 5 | 기울여 건네고 받기", "손목 회전·쥐기", "컵·막대를 기울여 건네고", "당기면 놓고, 내밀면 받아요"
+"모드 7 | 저항 밀기", "등척성 근력", "손잡이를 쥐고 버티다가", "목표 힘을 유지하면 져줘요", "로봇은 환자 쪽으로 밀지 않아요"
+"배치 개념도 · 실제 치수와 다를 수 있음"
+
+The highest priority is a CLEARLY DRAWN FLAT ILLUSTRATED HUMAN and the accurately shaped wide-bar RealSense with its actual short wrist-side bracket. No photorealistic people.
