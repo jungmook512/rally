@@ -31,6 +31,17 @@ mode7:
   hold_time_s: 2.0
   yield_distance_m: 0.05
   force_limit_n: 15.0               # safety.yaml 25 N 보다 낮음
+# brain 규칙 레이어 (rally_brain/rule_layer.py) — 시도가 끝날 때마다 행동 하나를 고른다. 행동은 actions 목록 안에서만
+#   difficulty: 모드별 난이도 단계 (0 = 시작). 단계 → 실제 값(목표 거리·힘 등) 변환은 각 모드 서브트리가 한다
+brain:
+  actions: [continue, harder, easier, suggest_rest, wait, ask_llm]
+  success_streak: 3                 # 같은 모드 연속 성공 → harder
+  failure_streak: 2                 # 같은 모드 연속 실패 → easier
+  llm_signal_count: 2               # 약한·중간 피로 신호가 이만큼 겹치면 ask_llm (ontology.yaml fatigue_signals)
+  success_drop_rate: 0.4            # 최근 시도 성공률이 이 이하면 '성공률 하락' 신호 (최소 3회)
+  slowing_ratio: 1.5                # 마지막 시도 시간이 앞선 시도 평균의 이 배 이상이면 '시도 시간 증가' 신호
+  difficulty_range: [-3, 3]
+
 mode3_challenge:
   enabled: true                     # CP13 결정에 따라 false 로 시연에서 제외
 

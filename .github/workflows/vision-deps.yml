@@ -5,6 +5,7 @@
 name: vision-deps
 on:
   push:
+    branches: [main]          # 브랜치 push 는 PR 과 중복이라 main 만 (2026-10-07)
     paths:
       - docker/vision/**
       - docker/entrypoint.sh
@@ -20,6 +21,10 @@ on:
       - ros2_ws/src/rally_interfaces/**
       - ros2_ws/src/rally_bringup/**
       - .github/workflows/vision-deps.yml
+  workflow_dispatch:
+concurrency:
+  group: vision-deps-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   build-stage:
     runs-on: ubuntu-24.04

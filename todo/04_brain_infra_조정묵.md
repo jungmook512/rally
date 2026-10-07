@@ -20,15 +20,15 @@
 
 ## Day 2 — 행동 트리 골격 + 기록
 - [x] `context_builder.py`: 토픽 구독 → `SceneContext` 5 Hz (가짜 발행기로 먼저 테스트) → 신선도 판정(손·몸·물체 1 s, 안전 0.5 s 넘으면 STOP 간주), 최근 시도 5개(`recent_n`), 단위 테스트 7개
-- [ ] `bt_runner.py`: py_trees 세션 트리 골격 (모드 선택 → 시도 루프 → 종료), action client 래퍼
-- [ ] `trees/mode5_handover.py` (가짜 action 서버로 흐름 검증)
+- [x] `bt_runner.py`: py_trees 세션 트리 골격 (모드 선택 → 시도 루프 → 종료), action client 래퍼 → `RunSession` 서버, `behaviours.py`(WaitUntil·SkillCall·Do), 안전 STOP·취소 시 스킬 goal 취소 + 중단 시도도 기록
+- [x] `trees/mode5_handover.py` (가짜 action 서버로 흐름 검증) → 손 대기 → Handover GIVE → TrialResult 1단계. `scripts/fake_skills.py` 로 성공·실패·STOP·취소 확인
 - [x] `recorder_node.py`: `TrialResult` → `trials`, `WrenchStamped` → `ts_wrench`, `HandState` → `ts_hand`, 이벤트 → `events`
 - [x] Redis `rally:state` 갱신, `rally:events` publish (+ `rally:dialog`)
-- [ ] **Ontology** `rally_brain/knowledge/ontology.yaml` 초안: 모드 → 훈련 동작 → 신체 부위, 보상 동작 → 피로 신호, 스킬 → 파라미터·허용 범위 (기획서 4.10, 필수 · 활용 방식 TBD)
+- [x] **Ontology** `rally_brain/knowledge/ontology.yaml` 초안: 모드 → 훈련 동작 → 신체 부위, 보상 동작 → 피로 신호, 스킬 → 파라미터·허용 범위 (기획서 4.10, 필수 · 활용 방식 TBD) → 재활 해석은 `verified: false`(가정) 표시, 범위는 skills.yaml 참조만. `ontology.py` 로 LLM 맥락 문장·한국어 이름
 
 ## Day 3 — 모드 5 통합 ✅
 - [ ] 모드 5 서브트리를 실제 skill 서버에 연결, 실패 분기(손 결측 → 대기, 파지 실패 → 재시도 1회)
-- [ ] `rule_layer.py` 1차: 안전 레벨 반영, 연속 성공 3회 → 난이도 상승, 음성 `tired` → 휴식 제안
+- [x] `rule_layer.py` 1차: 안전 레벨 반영, 연속 성공 3회 → 난이도 상승, 음성 `tired` → 휴식 제안 → 규칙 7개(STOP 대기 · tired · harder/easier 음성 · 연속 성공/실패 · 약한 피로 신호 2개↑ → ask_llm · 계속), 설정은 skills.yaml `brain`, bt_runner 가 시도마다 호출. suggest_rest·ask_llm 은 아직 로그만
 - [ ] `SetMode` srv, 음성 intent → 트리 이벤트 연결
 - [ ] **시맨틱 레이어** `rally_bringup/config/metrics.yaml` 지표 정의(성공률·피로도·개선율) + SQL 뷰 `schema_003_*.sql`, `rule_layer`가 이 정의를 쓰게 (기획서 4.10, 필수 · 활용 방식 TBD)
 - [ ] **HMI** 대시보드 골격: FastAPI + WebSocket(Redis `rally:events` 구독), 페이지 레이아웃(힘 그래프 / 예측 vs 실제 / 학습 곡선 / 세션 리포트), 안전 상태 배너(SLOW/STOP 사유)

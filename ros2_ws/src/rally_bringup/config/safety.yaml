@@ -6,7 +6,7 @@ rally_safety_monitor:
     stop_distance_m: 0.15      # 이 안이면 STOP
     slow_override: 0.5
     force_limit_n: 25.0        # 합력 |F| 초과 → STOP (모드 7 은 스킬 자체 한계 15 N 이 먼저 걸림)
-    nudge_dfdt_n: 5.0          # 정지 구간 힘 급변 (N, 한 주기 10 ms 기준) → STOP. 10/6 실측: 정지 노이즈 |ΔF| ≤ 0.25 N, |F| ≤ 2.5 N → 노이즈 20배. 실제 톡 쳐서 안 걸리면 3.0 으로
+    nudge_dfdt_n: 5.0          # 정지 구간 힘 급변 (N, wrench 한 샘플 = 20 ms @ 50 Hz 기준) → STOP. 10/6 실측: 정지 노이즈 |ΔF| ≤ 0.25 N, |F| ≤ 2.5 N → 노이즈 20배. 실제 톡 쳐서 안 걸리면 3.0 으로
     nudge_speed_max_mps: 0.02  # TCP 가 이보다 빨리 움직이는 중에는 nudge 판정 안 함 (가속 관성 오탐, CP7)
     contact_timeout_s: 0.5     # skill_server 의 /rally/safety/contact_expected 하트비트 유효 시간. 접촉 예정 동안 nudge 만 끔, 힘 한계는 유지
     workspace_enabled: true    # tcp_pose 가 아래 범위 밖이면 STOP (workspace_limit)

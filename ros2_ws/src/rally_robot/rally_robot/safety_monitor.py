@@ -29,7 +29,7 @@ class SafetyMonitor(Node):
         self.declare_parameter("stop_distance_m", 0.15)
         self.declare_parameter("slow_override", 0.5)
         self.declare_parameter("force_limit_n", 25.0)
-        self.declare_parameter("nudge_dfdt_n", 8.0)          # 한 주기(10 ms) |F| 변화량 [N]. scripts/measure_wrench.py 로 확정
+        self.declare_parameter("nudge_dfdt_n", 8.0)          # wrench 한 샘플(50 Hz = 20 ms) 사이 |F| 변화량 [N]. scripts/measure_wrench.py 로 확정
         self.declare_parameter("nudge_speed_max_mps", 0.02)  # 이보다 빨리 움직이는 중에는 nudge 판정 안 함 (가속 관성 오탐, CP7)
         self.declare_parameter("contact_timeout_s", 0.5)     # contact_expected 하트비트 유효 시간
         for k, v in dict(x_min=0.25, x_max=0.80, y_min=-0.45, y_max=0.45, z_min=0.0, z_max=0.60).items():
