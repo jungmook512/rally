@@ -42,8 +42,8 @@
 - [ ] 명중 판정 정확도 테스트 20회 (≥ 95 %)
 
 ## Day 5 — 모드 1 예측
-- [ ] `predictor.py`: 칼만 필터(위치·속도) + 마찰 감속 모델 → `predicted_stop`, `predicted_stop_time`
-- [ ] 마찰 계수 온라인 추정 (매 시도 실제 궤적으로 갱신)
+- [ ] `predictor.py`: 칼만 필터(위치·속도) + 마찰 감속 모델 → `predicted_stop`, `predicted_stop_time` — **정동휘가 맡음** (10/7, `todo/03` Day 5). `tracker_node` 연결은 박성현
+- [ ] 마찰 계수 온라인 추정 (매 시도 실제 궤적으로 갱신) — 정동휘가 `predictor.py` 와 같이
 - [ ] 실제 정지 위치 측정 (속도 0 판정 → `is_moving=false`)
 - [ ] (정정인과) 밀기 파라미터 ↔ 정지 거리 사전 실험 20회 측정 담당
 
@@ -64,4 +64,6 @@
 
 ## 메모 / 막힌 것
 - 10/7 (정동휘): `flight_predictor` 관련 실측 → 이슈 #38. C270 웹캠은 640×480 에서 약 20 fps (60 fps 아님), 색 기반 검출은 하늘색 옷·테이블 오검출. 실험 bag·분석 도구 `scripts/catch_lab` (PR #32)
+- 10/7 (정동휘): 모드 1 `predictor.py`(칼만 + 마찰 감속, 마찰 계수 온라인 추정)를 정동휘가 구현. 브랜치 `feat/rally_vision/kalman-predictor`, 순수 Python 클래스로 만들어 `tracker_node` 에서 import 하게 함. 인터페이스 변경 없음 (`TrackedObject` 필드 그대로). PR 리뷰어 박성현
+- 10/7 (정동휘): 모드 3 제안 — 웹캠이 20 fps 라 포물선 피팅 프레임이 적고 잡음이 큼 → 피팅 전에 칼만(등가속, z 중력)으로 위치 정리·결측 프레임 보간을 넣는 것 검토. 모드 1 칼만 검증 후 이슈 #38 에서 논의
 - 
