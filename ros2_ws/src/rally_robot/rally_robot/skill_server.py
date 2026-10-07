@@ -70,6 +70,7 @@ class SkillServer(Node):
         self.last_hand = None
         self._contact = False
         self._cm_client = None
+        self.holding = False                 # 물체를 쥐고 있는지 — gripper() 가 닫힘+감지면 True, 열면 False
 
         reliable = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=10)
         reliable1 = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=1)
@@ -158,6 +159,12 @@ class SkillServer(Node):
 
     def gripper(self, width_mm: float, force_n: float, wait: bool = True, timeout_s: float = 4.0):
         """/rally/gripper/command 호출 → (success, actual_width_mm, object_detected). fake 면 닫을 때 물체 있음으로 흉내."""
+        ok, width, detected = self._gripper_call(width_mm, force_n, wait, timeout_s)
+        if ok:
+            self.holding = bool(detected) if width_mm < 50.0 else False
+        return ok, width, detected
+
+    def _gripper_call(self, width_mm, force_n, wait, timeout_s):
         if self.fake:
             time.sleep(0.3)
             closing = width_mm < 50.0

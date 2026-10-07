@@ -82,9 +82,22 @@ def amovel(pos, vel=None, acc=None, **kw):
 
 
 def movej(pos, vel=None, acc=None, **kw):
+    S.joints = [float(v) for v in pos]
     S.move_until = time.monotonic() + 0.5
     mwait()
     return 0
+
+
+def amovej(pos, vel=None, acc=None, **kw):
+    """관절 이동 흉내 — 관절값만 바꾸고 TCP 자세는 그대로 둔다 (FK 없음). 1 s 동안 이동 중."""
+    S.joints = [float(v) for v in pos]
+    S.move_start = time.monotonic()
+    S.move_until = S.move_start + 1.0
+    return 0
+
+
+def get_current_posj():
+    return list(getattr(S, "joints", [0.0] * 6))
 
 
 def servol(pos, vel=None, acc=None, time=None, **kw):

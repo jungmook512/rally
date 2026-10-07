@@ -242,6 +242,39 @@ def move_checked(node, pose6, vel, acc, timeout_s=None, poll_s=0.02, on_poll=Non
             return "done"
 
 
+def movej_checked(node, posj6, vel, acc, timeout_s=30.0, poll_s=0.02):
+    """amovej + 폴링 (관절 이동판 move_checked). 관측 자세 복귀처럼 팔 형태를 바꿔야 하는 이동에 쓴다.
+    STOP → stop_robot → SkillAbort. 출발 못 하면(이미 그 자세가 아닌데 3 s 동안 check_motion 0) 'not_started'.
+    반환 "done". posj6: deg."""
+    from DSR_ROBOT2 import amovej, check_motion, get_current_posj
+    logger = node.get_logger()
+    target = [float(v) for v in posj6]
+    if max(abs(a - b) for a, b in zip([float(v) for v in get_current_posj()], target)) < 0.5:
+        return "done"
+    if node.stop_requested():
+        raise SkillAbort(node.safety_reason(), stopped=True)
+    scale = node.speed_scale()
+    ret = amovej(target, vel=vel * scale, acc=acc * scale)
+    if ret is not None and ret < 0:
+        raise SkillAbort(f"amovej_failed({ret})", stopped=True)
+    t0 = time.monotonic()
+    started = False
+    while True:
+        time.sleep(poll_s)
+        if node.stop_requested():
+            raise SkillAbort(node.safety_reason(), stopped=stop_robot(node.dsr, logger, "safety STOP"))
+        moving = check_motion() != 0
+        started = started or moving
+        if not started and time.monotonic() - t0 > START_GRACE_S:
+            if max(abs(a - b) for a, b in zip([float(v) for v in get_current_posj()], target)) < 0.5:
+                return "done"
+            raise SkillAbort("not_started", stopped=stop_robot(node.dsr, logger, "출발 없음"))
+        if started and not moving:
+            return "done"
+        if time.monotonic() - t0 > timeout_s:
+            raise SkillAbort("timeout", stopped=stop_robot(node.dsr, logger, "관절 이동 시간 초과"))
+
+
 def controller_alive(node, timeout_s=2.0):
     """두산 motion 서비스(check_motion)가 timeout 안에 응답하는지. 컨트롤러 노드가 반쯤 멈추면(aux 는 답하고 motion 은 무응답) 여기서 걸린다.
     node 는 rclpy 노드(스핀 중이 아닌 것). 응답 없으면 False."""

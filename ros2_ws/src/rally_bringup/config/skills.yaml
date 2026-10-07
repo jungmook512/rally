@@ -16,12 +16,22 @@ mode3:
   max_ball_speed_mps: 3.0
 
 # mode1 (공 굴려주기) — 가이드 길 3개 (폭 10~12 cm, 높이 ≤ 공 반지름)
+#   start: 공을 놓는 자리 (base, m). 공 위에 TCP 를 대고 scripts/print_pose.py 로 읽는다. z 는 안 쓴다(table.yaml 사용)
+#   dir_deg: base XY 에서 +x(환자 쪽)로부터 반시계 [deg]. 0 = 정면. 길이 비스듬하면 그 각도
 mode1:
   lanes:
-    - {name: left,   start: [0.45, -0.20, 0.02], dir_deg: 100}   # TODO 실측
-    - {name: center, start: [0.45,  0.00, 0.02], dir_deg: 90}
-    - {name: right,  start: [0.45,  0.20, 0.02], dir_deg: 80}
-  push_speed_range: [0.05, 0.35]
+    - {name: left,   start: [0.40, -0.20, 0.0], dir_deg: 0}    # TODO 실측
+    - {name: center, start: [0.40,  0.00, 0.0], dir_deg: 0}    # TODO 실측
+    - {name: right,  start: [0.40,  0.20, 0.0], dir_deg: 0}    # TODO 실측
+  push_speed_range: [0.05, 0.35]  # m/s — 공이 굴러가는 속도 ≈ 미는 속도
+  ball_radius_m: 0.03             # TODO 실측 (공 지름 / 2)
+  back_off_m: 0.05                # 공 뒤 이만큼에서 내려간다
+  stroke_m: 0.06                  # 공 뒤면을 지나 이만큼 더 민다 (= 손가락이 공을 미는 거리)
+  approach_height_m: 0.10
+  push_acc_mm_s2: 1000.0
+  tool_down_zyz: [174.8, -177.0, 175.1]   # 10/6 테이블 접촉 자세 (툴 수직 아래)
+  push_yaw_deg: 0.0               # 닫힌 손가락 면이 미는 방향을 보게 툴 Z 회전 보정
+  gripper_close_force_n: 10.0
 
 # mode7 (저항 밀기) — 로봇은 버티거나 져주기만, 절대 밀지 않음
 mode7:

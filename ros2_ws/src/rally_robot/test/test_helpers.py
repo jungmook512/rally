@@ -58,3 +58,21 @@ def test_check_joint_limits():
     bad = check_joint_limits([(0, ok), (1, over), (2, None), (3, neg)], j5_max=133.0)
     assert [i for i, _ in bad] == [1, 2, 3]
     assert check_joint_limits([(0, over)], j5_max=145.0) == []
+
+
+def test_push_ball_plan():
+    """공 뒤에서 내려가 +x 로 밀고, 끝점은 공 뒤면 + stroke, 높이는 테이블 + 반지름."""
+    pytest.importorskip("rally_interfaces")
+    from types import SimpleNamespace
+    from rally_robot.skills.push_ball import DEFAULTS, _plan
+    lanes = [{"name": "center", "start": [0.40, 0.0, 0.0], "dir_deg": 0}]
+    goal = SimpleNamespace(lane=0, push_dir_deg=0.0)
+    pts, info = _plan(goal, dict(DEFAULTS), lanes, {"z_m": 0.0144})
+    assert pts["behind"][0] == pytest.approx(400 - 80)          # 공 중심 − (반지름 30 + back_off 50)
+    assert pts["end"][0] == pytest.approx(400 - 30 + 60)        # 공 뒤면 + stroke 60
+    assert pts["behind"][2] == pytest.approx(14.4 + 30)
+    assert pts["above"][2] == pytest.approx(14.4 + 100)
+    assert pts["end"][1] == pytest.approx(0.0)
+    goal90 = SimpleNamespace(lane=0, push_dir_deg=90.0)          # +y 로 밀기
+    pts90, _ = _plan(goal90, dict(DEFAULTS), lanes, {"z_m": 0.0})
+    assert pts90["end"][1] > pts90["behind"][1] and pts90["end"][0] == pytest.approx(400)
