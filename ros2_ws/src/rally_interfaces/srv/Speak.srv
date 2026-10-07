@@ -1,5 +1,5 @@
 string text
-bool block_mic                       # 발화 중 마이크 차단 (기본 true)
+bool block_mic                       # 발화 중 마이크 차단. ROS bool 기본값은 false → 부를 때 true 를 명시
 ---
 bool done
 float32 duration_s

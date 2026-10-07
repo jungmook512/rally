@@ -13,9 +13,16 @@
 
 ```bash
 mkdir -p ~/rally/models/piper && cd ~/rally/models/piper
-base=https://huggingface.co/rhasspy/piper-voices/resolve/main/ko/ko_KR/kss/medium
+# 버전 고정 (rhasspy/piper-voices 커밋 c10ece1) + 해시 확인
+base=https://huggingface.co/rhasspy/piper-voices/resolve/c10ece1aade47bb51c153c893d14e5bf8e5b7117/ko/ko_KR/kss/medium
 wget $base/ko_KR-kss-medium.onnx $base/ko_KR-kss-medium.onnx.json
+sha256sum -c <<'SUM'
+624fd774e26895f24bebae1bd9a3379e3394baeade4b584924f83e414096e2c9  ko_KR-kss-medium.onnx
+153b5619d0580f824a59108d83ca19434de410eb8e4fe80325b58684fdc8a1df  ko_KR-kss-medium.onnx.json
+SUM
 ```
+
+TTS 문구에 비상어(`intent_rules.EMERGENCY_WORDS` — 그만·멈춰·아프·위험 등)가 있으면 말하지 않고 `done=false`. brain 문구는 `rally_voice.tts_node.phrase_problem()` 으로 미리 검사 (`test/test_tts.py` 참고).
 
 컨테이너는 `../models` 를 `/models` 로 마운트하므로 같은 파일을 쓴다. 확인:
 
