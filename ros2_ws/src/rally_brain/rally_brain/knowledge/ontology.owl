@@ -5,611 +5,611 @@
    xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
    xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
 >
-  <rdf:Description rdf:about="https://rally.local/ontology#cue_failure_streak">
-    <rdf:type rdf:resource="https://rally.local/ontology#Cue"/>
-    <rally:key>failure_streak</rally:key>
-    <rdfs:label xml:lang="ko">연속 실패</rdfs:label>
-    <rally:triggers rdf:resource="https://rally.local/ontology#act_easier"/>
-    <rally:source>todo Day 4(모드 7 실패 2회 → -10 %)</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#mode5">
-    <rdf:type rdf:resource="https://rally.local/ontology#Mode"/>
-    <rally:modeNumber rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">5</rally:modeNumber>
-    <rdfs:label xml:lang="ko">건네고 받기</rdfs:label>
-    <rally:source>기획서 3.4, 5.2</rally:source>
-    <rally:trains rdf:resource="https://rally.local/ontology#wrist_grasp"/>
-    <rally:next rdf:resource="https://rally.local/ontology#mode7"/>
-    <rally:usesSkill rdf:resource="https://rally.local/ontology#pick_compliant"/>
-    <rally:usesSkill rdf:resource="https://rally.local/ontology#handover"/>
-    <rally:difficultyParam rdf:resource="https://rally.local/ontology#tilt_deg"/>
-    <rally:measures rdf:resource="https://rally.local/ontology#wrist_angle_at_grasp"/>
-    <rally:measures rdf:resource="https://rally.local/ontology#handover_time"/>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#target_force_n">
-    <rdf:type rdf:resource="https://rally.local/ontology#Parameter"/>
-    <rally:key>target_force_n</rally:key>
-    <rdfs:label xml:lang="ko">목표 힘</rdfs:label>
-    <rally:unit>N</rally:unit>
-    <rally:source>ResistPush.action</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#trains">
+  <rdf:Description rdf:about="https://rally.local/ontology#next">
     <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
-    <rdfs:label xml:lang="ko">훈련한다</rdfs:label>
     <rdfs:domain rdf:resource="https://rally.local/ontology#Mode"/>
-    <rdfs:range rdf:resource="https://rally.local/ontology#Motion"/>
-    <rally:source>기획서 3.1~3.5</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#detach_ball">
-    <rdf:type rdf:resource="https://rally.local/ontology#Skill"/>
-    <rally:key>/rally/skill/detach_ball</rally:key>
-    <rdfs:label xml:lang="ko">공 떼어내기</rdfs:label>
-    <rally:source>INTERFACES 4절</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#release_force_threshold_n">
-    <rdf:type rdf:resource="https://rally.local/ontology#Parameter"/>
-    <rally:key>release_force_threshold_n</rally:key>
-    <rdfs:label xml:lang="ko">당김 감지 힘</rdfs:label>
-    <rally:unit>N</rally:unit>
-    <rally:source>Handover.action</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#SafetyLevel">
-    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
-    <rdfs:label xml:lang="ko">안전 단계</rdfs:label>
-    <rally:source>SafetyStatus.msg</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#throw">
-    <rdf:type rdf:resource="https://rally.local/ontology#Motion"/>
-    <rdfs:label xml:lang="ko">던지기·협응</rdfs:label>
-    <rally:source>기획서 3.3</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#target">
-    <rdf:type rdf:resource="https://rally.local/ontology#Parameter"/>
-    <rally:key>target</rally:key>
-    <rdfs:label xml:lang="ko">목표 정지 위치</rdfs:label>
-    <rally:unit>m</rally:unit>
-    <rally:source>PushBall.action</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#level_slow">
-    <rdf:type rdf:resource="https://rally.local/ontology#SafetyLevel"/>
-    <rally:level rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">1</rally:level>
-    <rally:key>slow</rally:key>
-    <rdfs:label xml:lang="ko">느리게</rdfs:label>
-    <rally:source>SafetyStatus.msg</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#handover">
-    <rdf:type rdf:resource="https://rally.local/ontology#Skill"/>
-    <rally:key>/rally/skill/handover</rally:key>
-    <rdfs:label xml:lang="ko">건네기·받기</rdfs:label>
-    <rally:source>INTERFACES 4절, Handover.action</rally:source>
-    <rally:adjusts rdf:resource="https://rally.local/ontology#tilt_deg"/>
-    <rally:adjusts rdf:resource="https://rally.local/ontology#release_force_threshold_n"/>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#lane">
-    <rdf:type rdf:resource="https://rally.local/ontology#Parameter"/>
-    <rally:key>lane</rally:key>
-    <rdfs:label xml:lang="ko">가이드 길</rdfs:label>
-    <rally:source>PushBall.action</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#SafetyTrigger">
-    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
-    <rdfs:label xml:lang="ko">안전 계기</rdfs:label>
-    <rdfs:comment xml:lang="ko">key = SafetyStatus.reason 값</rdfs:comment>
-    <rally:source>기획서 3.6, SafetyStatus.msg</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#wrist_grasp">
-    <rdf:type rdf:resource="https://rally.local/ontology#Motion"/>
-    <rdfs:label xml:lang="ko">손목 회전·쥐기</rdfs:label>
-    <rally:source>기획서 3.4</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#measures">
-    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
-    <rdfs:label xml:lang="ko">판정한다</rdfs:label>
-    <rdfs:domain rdf:resource="https://rally.local/ontology#Mode"/>
-    <rdfs:range rdf:resource="https://rally.local/ontology#Measure"/>
-    <rally:source>기획서 3.2~3.5 판정</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#mode7">
-    <rdf:type rdf:resource="https://rally.local/ontology#Mode"/>
-    <rally:modeNumber rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">7</rally:modeNumber>
-    <rdfs:label xml:lang="ko">팔씨름</rdfs:label>
-    <rally:source>기획서 3.5</rally:source>
-    <rally:trains rdf:resource="https://rally.local/ontology#isometric_push"/>
-    <rally:usesSkill rdf:resource="https://rally.local/ontology#resist_push"/>
-    <rally:difficultyParam rdf:resource="https://rally.local/ontology#stiffness"/>
-    <rally:difficultyParam rdf:resource="https://rally.local/ontology#target_force_n"/>
-    <rally:measures rdf:resource="https://rally.local/ontology#peak_force"/>
-    <rally:measures rdf:resource="https://rally.local/ontology#hold_time"/>
-    <rally:measures rdf:resource="https://rally.local/ontology#force_smoothness"/>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#Cue">
-    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
-    <rdfs:label xml:lang="ko">판단 계기</rdfs:label>
-    <rdfs:comment xml:lang="ko">규칙 레이어가 행동을 고르는 근거가 되는 관찰</rdfs:comment>
-    <rally:source>기획서 4.7</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#prediction_error">
-    <rdf:type rdf:resource="https://rally.local/ontology#Measure"/>
-    <rally:key>prediction_error_mm</rally:key>
-    <rdfs:label xml:lang="ko">착지 예측 오차</rdfs:label>
-    <rally:unit>mm</rally:unit>
-    <rally:source>기획서 3.3, CatchBall.action</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#safe_fist">
-    <rdf:type rdf:resource="https://rally.local/ontology#SafetyTrigger"/>
-    <rally:key>fist_gesture</rally:key>
-    <rdfs:label xml:lang="ko">주먹 제스처</rdfs:label>
-    <rally:triggersLevel rdf:resource="https://rally.local/ontology#level_stop"/>
-    <rally:source>기획서 3.6</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#catch_ball">
-    <rdf:type rdf:resource="https://rally.local/ontology#Skill"/>
-    <rally:key>/rally/skill/catch_ball</rally:key>
-    <rdfs:label xml:lang="ko">공 받기</rdfs:label>
-    <rally:source>INTERFACES 4절, CatchBall.action</rally:source>
-    <rally:adjusts rdf:resource="https://rally.local/ontology#catch_radius"/>
-    <rally:adjusts rdf:resource="https://rally.local/ontology#lead_time_s"/>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#push_ball">
-    <rdf:type rdf:resource="https://rally.local/ontology#Skill"/>
-    <rally:key>/rally/skill/push_ball</rally:key>
-    <rdfs:label xml:lang="ko">공 밀기</rdfs:label>
-    <rally:source>INTERFACES 4절, PushBall.action</rally:source>
-    <rally:adjusts rdf:resource="https://rally.local/ontology#target"/>
-    <rally:adjusts rdf:resource="https://rally.local/ontology#push_speed"/>
-    <rally:adjusts rdf:resource="https://rally.local/ontology#lane"/>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#observed">
-    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
-    <rdfs:label xml:lang="ko">관찰된 보상 동작</rdfs:label>
-    <rdfs:domain rdf:resource="https://rally.local/ontology#Trial"/>
-    <rdfs:range rdf:resource="https://rally.local/ontology#Compensation"/>
-    <rally:source>기획서 4.10</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#hasTrial">
-    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
-    <rdfs:label xml:lang="ko">시도</rdfs:label>
-    <rdfs:domain rdf:resource="https://rally.local/ontology#Session"/>
-    <rdfs:range rdf:resource="https://rally.local/ontology#Trial"/>
-    <rally:source>기획서 4.10</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#mode3">
-    <rdf:type rdf:resource="https://rally.local/ontology#Mode"/>
-    <rally:modeNumber rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">3</rally:modeNumber>
-    <rdfs:label xml:lang="ko">캐치볼</rdfs:label>
-    <rally:challenge rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean">true</rally:challenge>
-    <rally:source>기획서 3.3</rally:source>
-    <rally:trains rdf:resource="https://rally.local/ontology#throw"/>
-    <rally:next rdf:resource="https://rally.local/ontology#mode5"/>
-    <rally:usesSkill rdf:resource="https://rally.local/ontology#catch_ball"/>
-    <rally:usesSkill rdf:resource="https://rally.local/ontology#detach_ball"/>
-    <rally:usesSkill rdf:resource="https://rally.local/ontology#handover"/>
-    <rally:difficultyParam rdf:resource="https://rally.local/ontology#catch_radius"/>
-    <rally:measures rdf:resource="https://rally.local/ontology#caught"/>
-    <rally:measures rdf:resource="https://rally.local/ontology#prediction_error"/>
-    <rally:measures rdf:resource="https://rally.local/ontology#reaction_time"/>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#catch_radius">
-    <rdf:type rdf:resource="https://rally.local/ontology#Parameter"/>
-    <rally:key>catch_radius</rally:key>
-    <rdfs:label xml:lang="ko">받으러 가는 반경</rdfs:label>
-    <rally:unit>m</rally:unit>
-    <rally:source>CatchBall.action</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#act_harder">
-    <rdf:type rdf:resource="https://rally.local/ontology#Action"/>
-    <rally:key>harder</rally:key>
-    <rdfs:label xml:lang="ko">어렵게</rdfs:label>
-    <rally:source>기획서 4.7</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#level_normal">
-    <rdf:type rdf:resource="https://rally.local/ontology#SafetyLevel"/>
-    <rally:level rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">0</rally:level>
-    <rally:key>normal</rally:key>
-    <rdfs:label xml:lang="ko">정상</rdfs:label>
-    <rally:source>SafetyStatus.msg</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#Skill">
-    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
-    <rdfs:label xml:lang="ko">로봇 스킬</rdfs:label>
-    <rdfs:comment xml:lang="ko">rally_robot skill_server 의 action</rdfs:comment>
-    <rally:source>INTERFACES 4절</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#safe_hand_close">
-    <rdf:type rdf:resource="https://rally.local/ontology#SafetyTrigger"/>
-    <rally:key>hand_near_centerline</rally:key>
-    <rdfs:label xml:lang="ko">손이 중앙선 아주 가까이(0.15 m)</rdfs:label>
-    <rally:threshold rdf:datatype="http://www.w3.org/2001/XMLSchema#decimal">0.15</rally:threshold>
-    <rally:unit>m</rally:unit>
-    <rally:triggersLevel rdf:resource="https://rally.local/ontology#level_stop"/>
-    <rally:source>기획서 3.6</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#difficultyParam">
-    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
-    <rdfs:label xml:lang="ko">난이도 값</rdfs:label>
-    <rdfs:domain rdf:resource="https://rally.local/ontology#Mode"/>
-    <rdfs:range rdf:resource="https://rally.local/ontology#Parameter"/>
-    <rally:source>기획서 3.2, 3.3, 3.5, 5.2</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#triggersLevel">
-    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
-    <rdfs:label xml:lang="ko">안전 단계로</rdfs:label>
-    <rdfs:domain rdf:resource="https://rally.local/ontology#SafetyTrigger"/>
-    <rdfs:range rdf:resource="https://rally.local/ontology#SafetyLevel"/>
-    <rally:source>기획서 3.6</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#force_smoothness">
-    <rdf:type rdf:resource="https://rally.local/ontology#Measure"/>
-    <rally:key>force_smoothness</rally:key>
-    <rdfs:label xml:lang="ko">힘 떨림</rdfs:label>
-    <rally:source>기획서 3.5 측정, ResistPush.action</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#cue_voice_harder">
-    <rdf:type rdf:resource="https://rally.local/ontology#Cue"/>
-    <rally:key>harder</rally:key>
-    <rdfs:label xml:lang="ko">"어렵게" 음성</rdfs:label>
-    <rally:triggers rdf:resource="https://rally.local/ontology#act_harder"/>
-    <rally:source>VoiceIntent.msg</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#level_stop">
-    <rdf:type rdf:resource="https://rally.local/ontology#SafetyLevel"/>
-    <rally:level rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">2</rally:level>
-    <rally:key>stop</rally:key>
-    <rdfs:label xml:lang="ko">정지</rdfs:label>
-    <rally:source>SafetyStatus.msg</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#trunk_lean">
-    <rdf:type rdf:resource="https://rally.local/ontology#Compensation"/>
-    <rally:key>trunk_lean</rally:key>
-    <rdfs:label xml:lang="ko">몸통 기울이기</rdfs:label>
-    <rally:threshold rdf:datatype="http://www.w3.org/2001/XMLSchema#decimal">15.0</rally:threshold>
-    <rally:unit>deg</rally:unit>
-    <rally:source>BodyPose.msg, FR-05(임계 15°)</rally:source>
-    <rally:indicatesFatigue rdf:resource="https://rally.local/ontology#fatigue"/>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#cue_voice_tired">
-    <rdf:type rdf:resource="https://rally.local/ontology#Cue"/>
-    <rally:key>tired</rally:key>
-    <rdfs:label xml:lang="ko">"힘들어" 음성</rdfs:label>
-    <rally:triggers rdf:resource="https://rally.local/ontology#act_suggest_rest"/>
-    <rally:source>기획서 3.5 음성, VoiceIntent.msg</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#hasSession">
-    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
-    <rdfs:label xml:lang="ko">세션</rdfs:label>
-    <rdfs:domain rdf:resource="https://rally.local/ontology#Patient"/>
-    <rdfs:range rdf:resource="https://rally.local/ontology#Session"/>
-    <rally:source>기획서 4.10</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#hold_time">
-    <rdf:type rdf:resource="https://rally.local/ontology#Measure"/>
-    <rally:key>hold_time_achieved_s</rally:key>
-    <rdfs:label xml:lang="ko">버틴 시간</rdfs:label>
-    <rally:unit>s</rally:unit>
-    <rally:source>기획서 3.5 측정, ResistPush.action</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#adjusts">
-    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
-    <rdfs:label xml:lang="ko">조절한다</rdfs:label>
-    <rdfs:domain rdf:resource="https://rally.local/ontology#Skill"/>
-    <rdfs:range rdf:resource="https://rally.local/ontology#Parameter"/>
-    <rally:source>rally_interfaces/action</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#tilt_deg">
-    <rdf:type rdf:resource="https://rally.local/ontology#Parameter"/>
-    <rally:key>tilt_deg</rally:key>
-    <rdfs:label xml:lang="ko">제시 기울기</rdfs:label>
-    <rally:unit>deg</rally:unit>
-    <rally:source>Handover.action</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#usedParam">
-    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
-    <rdfs:label xml:lang="ko">사용한 파라미터</rdfs:label>
-    <rdfs:domain rdf:resource="https://rally.local/ontology#Trial"/>
-    <rdfs:range rdf:resource="https://rally.local/ontology#Parameter"/>
-    <rally:source>기획서 4.10</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#act_suggest_rest">
-    <rdf:type rdf:resource="https://rally.local/ontology#Action"/>
-    <rally:key>suggest_rest</rally:key>
-    <rdfs:label xml:lang="ko">휴식 제안</rdfs:label>
-    <rally:source>기획서 3.5, 5.1</rally:source>
+    <rdfs:label xml:lang="ko">다음 모드</rdfs:label>
+    <rdfs:range rdf:resource="https://rally.local/ontology#Mode"/>
+    <rally:source>기획서 3.1</rally:source>
   </rdf:Description>
   <rdf:Description rdf:about="https://rally.local/ontology#safe_hand_near">
     <rdf:type rdf:resource="https://rally.local/ontology#SafetyTrigger"/>
-    <rally:key>hand_near_centerline</rally:key>
     <rdfs:label xml:lang="ko">손이 중앙선 가까이(0.25 m)</rdfs:label>
+    <rally:key>hand_near_centerline</rally:key>
+    <rally:source>기획서 3.6</rally:source>
     <rally:threshold rdf:datatype="http://www.w3.org/2001/XMLSchema#decimal">0.25</rally:threshold>
-    <rally:unit>m</rally:unit>
     <rally:triggersLevel rdf:resource="https://rally.local/ontology#level_slow"/>
-    <rally:source>기획서 3.6</rally:source>
+    <rally:unit>m</rally:unit>
   </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#act_continue">
-    <rdf:type rdf:resource="https://rally.local/ontology#Action"/>
-    <rally:key>continue</rally:key>
-    <rdfs:label xml:lang="ko">계속</rdfs:label>
-    <rally:source>skills.yaml brain.actions</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#act_ask_llm">
-    <rdf:type rdf:resource="https://rally.local/ontology#Action"/>
-    <rally:key>ask_llm</rally:key>
-    <rdfs:label xml:lang="ko">LLM 판단</rdfs:label>
-    <rally:source>기획서 4.7(애매하면 LLM)</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#safe_voice_stop">
-    <rdf:type rdf:resource="https://rally.local/ontology#SafetyTrigger"/>
-    <rally:key>voice_stop</rally:key>
-    <rdfs:label xml:lang="ko">"그만" 음성</rdfs:label>
-    <rally:triggersLevel rdf:resource="https://rally.local/ontology#level_stop"/>
-    <rally:source>기획서 3.6, 4.8</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#cue_voice_easier">
-    <rdf:type rdf:resource="https://rally.local/ontology#Cue"/>
-    <rally:key>easier</rally:key>
-    <rdfs:label xml:lang="ko">"쉽게" 음성</rdfs:label>
-    <rally:triggers rdf:resource="https://rally.local/ontology#act_easier"/>
-    <rally:source>VoiceIntent.msg</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#wrist_angle_at_grasp">
-    <rdf:type rdf:resource="https://rally.local/ontology#Measure"/>
-    <rally:key>wrist_angle_at_grasp_deg</rally:key>
-    <rdfs:label xml:lang="ko">잡을 때 손목 각도</rdfs:label>
-    <rally:unit>deg</rally:unit>
-    <rally:source>기획서 3.4 판정, Handover.action</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#push_speed">
-    <rdf:type rdf:resource="https://rally.local/ontology#Parameter"/>
-    <rally:key>push_speed</rally:key>
-    <rdfs:label xml:lang="ko">밀기 속도</rdfs:label>
-    <rally:unit>m/s</rally:unit>
-    <rally:source>PushBall.action</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#patient_grasped">
-    <rdf:type rdf:resource="https://rally.local/ontology#Measure"/>
-    <rdfs:label xml:lang="ko">환자가 잡았는지</rdfs:label>
-    <rally:source>기획서 3.2 판정</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#safe_force_limit">
-    <rdf:type rdf:resource="https://rally.local/ontology#SafetyTrigger"/>
-    <rally:key>force_limit</rally:key>
-    <rdfs:label xml:lang="ko">힘 한계(25 N)</rdfs:label>
-    <rally:threshold rdf:datatype="http://www.w3.org/2001/XMLSchema#decimal">25.0</rally:threshold>
-    <rally:unit>N</rally:unit>
-    <rally:triggersLevel rdf:resource="https://rally.local/ontology#level_stop"/>
-    <rally:source>기획서 3.6</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#inMode">
-    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
-    <rdfs:label xml:lang="ko">모드</rdfs:label>
-    <rdfs:domain rdf:resource="https://rally.local/ontology#Trial"/>
-    <rdfs:range rdf:resource="https://rally.local/ontology#Mode"/>
-    <rally:source>기획서 4.10</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#handover_time">
-    <rdf:type rdf:resource="https://rally.local/ontology#Measure"/>
-    <rally:key>handover_time_s</rally:key>
-    <rdfs:label xml:lang="ko">건네받는 시간</rdfs:label>
-    <rally:unit>s</rally:unit>
-    <rally:source>기획서 3.4 판정, Handover.action</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#reach">
-    <rdf:type rdf:resource="https://rally.local/ontology#Motion"/>
-    <rdfs:label xml:lang="ko">팔 뻗기</rdfs:label>
-    <rally:source>기획서 3.2</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#Action">
+  <rdf:Description rdf:about="https://rally.local/ontology#SafetyTrigger">
     <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
-    <rdfs:label xml:lang="ko">규칙 행동</rdfs:label>
-    <rdfs:comment xml:lang="ko">key = skills.yaml brain.actions 의 이름</rdfs:comment>
-    <rally:source>기획서 4.7, skills.yaml brain</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#reaction_time">
-    <rdf:type rdf:resource="https://rally.local/ontology#Measure"/>
-    <rally:key>reaction_time_s</rally:key>
-    <rdfs:label xml:lang="ko">반응 시간</rdfs:label>
-    <rally:unit>s</rally:unit>
-    <rally:source>기획서 3.3, CatchBall.action</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#Patient">
-    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
-    <rdfs:label xml:lang="ko">환자</rdfs:label>
-    <rdfs:comment xml:lang="ko">익명 ID 만</rdfs:comment>
-    <rally:source>기획서 4.10 Knowledge Graph</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#triggers">
-    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
-    <rdfs:label xml:lang="ko">일으킨다</rdfs:label>
-    <rdfs:domain rdf:resource="https://rally.local/ontology#Cue"/>
-    <rdfs:range rdf:resource="https://rally.local/ontology#Action"/>
-    <rally:source>기획서 4.7</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#caught">
-    <rdf:type rdf:resource="https://rally.local/ontology#Measure"/>
-    <rally:key>caught</rally:key>
-    <rdfs:label xml:lang="ko">받았는지</rdfs:label>
-    <rally:source>기획서 3.3 판정, CatchBall.action</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#safe_workspace">
-    <rdf:type rdf:resource="https://rally.local/ontology#SafetyTrigger"/>
-    <rally:key>workspace_limit</rally:key>
-    <rdfs:label xml:lang="ko">작업 공간 밖</rdfs:label>
-    <rally:triggersLevel rdf:resource="https://rally.local/ontology#level_stop"/>
-    <rally:source>기획서 3.6</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#Mode">
-    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
-    <rdfs:label xml:lang="ko">훈련 모드</rdfs:label>
-    <rally:source>기획서 3.1</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#next">
-    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
-    <rdfs:label xml:lang="ko">다음 모드</rdfs:label>
-    <rdfs:domain rdf:resource="https://rally.local/ontology#Mode"/>
-    <rdfs:range rdf:resource="https://rally.local/ontology#Mode"/>
-    <rally:source>기획서 3.1</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#act_easier">
-    <rdf:type rdf:resource="https://rally.local/ontology#Action"/>
-    <rally:key>easier</rally:key>
-    <rdfs:label xml:lang="ko">쉽게</rdfs:label>
-    <rally:source>기획서 3.5(목표 하향)</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#Parameter">
-    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
-    <rdfs:label xml:lang="ko">스킬 파라미터</rdfs:label>
-    <rdfs:comment xml:lang="ko">action goal 필드. 값·범위는 skills.yaml</rdfs:comment>
-    <rally:source>rally_interfaces/action</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#isometric_push">
-    <rdf:type rdf:resource="https://rally.local/ontology#Motion"/>
-    <rdfs:label xml:lang="ko">등척성 밀기</rdfs:label>
-    <rdfs:comment xml:lang="ko">근력 훈련</rdfs:comment>
-    <rally:source>기획서 3.5</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#FatigueSignal">
-    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
-    <rdfs:label xml:lang="ko">피로 신호</rdfs:label>
-    <rally:source>기획서 4.10</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#usesSkill">
-    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
-    <rdfs:label xml:lang="ko">사용한다</rdfs:label>
-    <rdfs:domain rdf:resource="https://rally.local/ontology#Mode"/>
-    <rdfs:range rdf:resource="https://rally.local/ontology#Skill"/>
-    <rally:source>기획서 3.2~3.5 로봇 기능, 5.2</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#Measure">
-    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
-    <rdfs:label xml:lang="ko">판정 값</rdfs:label>
-    <rdfs:comment xml:lang="ko">시도 결과에서 재는 값. 계산법은 metrics.yaml</rdfs:comment>
-    <rally:source>기획서 3.2~3.5 판정</rally:source>
+    <rdfs:comment xml:lang="ko">key = SafetyStatus.reason 값</rdfs:comment>
+    <rdfs:label xml:lang="ko">안전 계기</rdfs:label>
+    <rally:source>기획서 3.6, SafetyStatus.msg</rally:source>
   </rdf:Description>
   <rdf:Description rdf:about="https://rally.local/ontology#mode1">
     <rdf:type rdf:resource="https://rally.local/ontology#Mode"/>
-    <rally:modeNumber rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">1</rally:modeNumber>
     <rdfs:label xml:lang="ko">공 굴리기</rdfs:label>
+    <rally:difficultyParam rdf:resource="https://rally.local/ontology#target"/>
+    <rally:measures rdf:resource="https://rally.local/ontology#patient_grasped"/>
+    <rally:measures rdf:resource="https://rally.local/ontology#stop_error"/>
+    <rally:modeNumber rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">1</rally:modeNumber>
+    <rally:next rdf:resource="https://rally.local/ontology#mode3"/>
     <rally:source>기획서 3.2</rally:source>
     <rally:trains rdf:resource="https://rally.local/ontology#reach"/>
-    <rally:next rdf:resource="https://rally.local/ontology#mode3"/>
     <rally:usesSkill rdf:resource="https://rally.local/ontology#pick_compliant"/>
     <rally:usesSkill rdf:resource="https://rally.local/ontology#push_ball"/>
-    <rally:difficultyParam rdf:resource="https://rally.local/ontology#target"/>
-    <rally:measures rdf:resource="https://rally.local/ontology#stop_error"/>
-    <rally:measures rdf:resource="https://rally.local/ontology#patient_grasped"/>
   </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#cue_success_streak">
-    <rdf:type rdf:resource="https://rally.local/ontology#Cue"/>
-    <rally:key>success_streak</rally:key>
-    <rdfs:label xml:lang="ko">연속 성공</rdfs:label>
-    <rally:triggers rdf:resource="https://rally.local/ontology#act_harder"/>
-    <rally:source>기획서 4.7, 3.5</rally:source>
+  <rdf:Description rdf:about="https://rally.local/ontology#detach_ball">
+    <rdf:type rdf:resource="https://rally.local/ontology#Skill"/>
+    <rdfs:label xml:lang="ko">공 떼어내기</rdfs:label>
+    <rally:key>/rally/skill/detach_ball</rally:key>
+    <rally:source>INTERFACES 4절</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#safe_nudge">
+    <rdf:type rdf:resource="https://rally.local/ontology#SafetyTrigger"/>
+    <rdfs:label xml:lang="ko">로봇 툭 치기</rdfs:label>
+    <rally:key>nudge</rally:key>
+    <rally:source>기획서 3.6</rally:source>
+    <rally:triggersLevel rdf:resource="https://rally.local/ontology#level_stop"/>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#push_speed">
+    <rdf:type rdf:resource="https://rally.local/ontology#Parameter"/>
+    <rdfs:label xml:lang="ko">밀기 속도</rdfs:label>
+    <rally:key>push_speed</rally:key>
+    <rally:source>PushBall.action</rally:source>
+    <rally:unit>m/s</rally:unit>
   </rdf:Description>
   <rdf:Description rdf:about="https://rally.local/ontology#fatigue">
     <rdf:type rdf:resource="https://rally.local/ontology#FatigueSignal"/>
     <rdfs:label xml:lang="ko">피로</rdfs:label>
     <rally:source>기획서 4.10</rally:source>
   </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#stiffness">
-    <rdf:type rdf:resource="https://rally.local/ontology#Parameter"/>
-    <rally:key>stiffness</rally:key>
-    <rdfs:label xml:lang="ko">버티는 강성</rdfs:label>
-    <rally:unit>N/m</rally:unit>
-    <rally:source>ResistPush.action</rally:source>
+  <rdf:Description rdf:about="https://rally.local/ontology#mode3">
+    <rdf:type rdf:resource="https://rally.local/ontology#Mode"/>
+    <rdfs:label xml:lang="ko">캐치볼</rdfs:label>
+    <rally:challenge rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean">true</rally:challenge>
+    <rally:difficultyParam rdf:resource="https://rally.local/ontology#catch_radius"/>
+    <rally:measures rdf:resource="https://rally.local/ontology#caught"/>
+    <rally:measures rdf:resource="https://rally.local/ontology#prediction_error"/>
+    <rally:measures rdf:resource="https://rally.local/ontology#reaction_time"/>
+    <rally:modeNumber rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">3</rally:modeNumber>
+    <rally:next rdf:resource="https://rally.local/ontology#mode5"/>
+    <rally:source>기획서 3.3</rally:source>
+    <rally:trains rdf:resource="https://rally.local/ontology#throw"/>
+    <rally:usesSkill rdf:resource="https://rally.local/ontology#catch_ball"/>
+    <rally:usesSkill rdf:resource="https://rally.local/ontology#detach_ball"/>
+    <rally:usesSkill rdf:resource="https://rally.local/ontology#handover"/>
   </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#shoulder_hike">
-    <rdf:type rdf:resource="https://rally.local/ontology#Compensation"/>
-    <rally:key>shoulder_hike</rally:key>
-    <rdfs:label xml:lang="ko">어깨 들기</rdfs:label>
-    <rally:source>BodyPose.msg</rally:source>
-    <rally:indicatesFatigue rdf:resource="https://rally.local/ontology#fatigue"/>
+  <rdf:Description rdf:about="https://rally.local/ontology#adjusts">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
+    <rdfs:domain rdf:resource="https://rally.local/ontology#Skill"/>
+    <rdfs:label xml:lang="ko">조절한다</rdfs:label>
+    <rdfs:range rdf:resource="https://rally.local/ontology#Parameter"/>
+    <rally:source>rally_interfaces/action</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#Mode">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label xml:lang="ko">훈련 모드</rdfs:label>
+    <rally:source>기획서 3.1</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#SafetyLevel">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label xml:lang="ko">안전 단계</rdfs:label>
+    <rally:source>SafetyStatus.msg</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#safe_workspace">
+    <rdf:type rdf:resource="https://rally.local/ontology#SafetyTrigger"/>
+    <rdfs:label xml:lang="ko">작업 공간 밖</rdfs:label>
+    <rally:key>workspace_limit</rally:key>
+    <rally:source>기획서 3.6</rally:source>
+    <rally:triggersLevel rdf:resource="https://rally.local/ontology#level_stop"/>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#release_force_threshold_n">
+    <rdf:type rdf:resource="https://rally.local/ontology#Parameter"/>
+    <rdfs:label xml:lang="ko">당김 감지 힘</rdfs:label>
+    <rally:key>release_force_threshold_n</rally:key>
+    <rally:source>Handover.action</rally:source>
+    <rally:unit>N</rally:unit>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#act_wait">
+    <rdf:type rdf:resource="https://rally.local/ontology#Action"/>
+    <rdfs:label xml:lang="ko">대기</rdfs:label>
+    <rally:key>wait</rally:key>
+    <rally:source>skills.yaml brain.actions</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#level_slow">
+    <rdf:type rdf:resource="https://rally.local/ontology#SafetyLevel"/>
+    <rdfs:label xml:lang="ko">느리게</rdfs:label>
+    <rally:key>slow</rally:key>
+    <rally:level rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">1</rally:level>
+    <rally:source>SafetyStatus.msg</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#mode5">
+    <rdf:type rdf:resource="https://rally.local/ontology#Mode"/>
+    <rdfs:label xml:lang="ko">건네고 받기</rdfs:label>
+    <rally:difficultyParam rdf:resource="https://rally.local/ontology#tilt_deg"/>
+    <rally:measures rdf:resource="https://rally.local/ontology#handover_time"/>
+    <rally:measures rdf:resource="https://rally.local/ontology#wrist_angle_at_grasp"/>
+    <rally:modeNumber rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">5</rally:modeNumber>
+    <rally:next rdf:resource="https://rally.local/ontology#mode7"/>
+    <rally:source>기획서 3.4, 5.2</rally:source>
+    <rally:trains rdf:resource="https://rally.local/ontology#wrist_grasp"/>
+    <rally:usesSkill rdf:resource="https://rally.local/ontology#handover"/>
+    <rally:usesSkill rdf:resource="https://rally.local/ontology#pick_compliant"/>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#safe_force_limit">
+    <rdf:type rdf:resource="https://rally.local/ontology#SafetyTrigger"/>
+    <rdfs:label xml:lang="ko">힘 한계(25 N)</rdfs:label>
+    <rally:key>force_limit</rally:key>
+    <rally:source>기획서 3.6</rally:source>
+    <rally:threshold rdf:datatype="http://www.w3.org/2001/XMLSchema#decimal">25.0</rally:threshold>
+    <rally:triggersLevel rdf:resource="https://rally.local/ontology#level_stop"/>
+    <rally:unit>N</rally:unit>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#cue_voice_harder">
+    <rdf:type rdf:resource="https://rally.local/ontology#Cue"/>
+    <rdfs:label xml:lang="ko">"어렵게" 음성</rdfs:label>
+    <rally:key>harder</rally:key>
+    <rally:source>VoiceIntent.msg</rally:source>
+    <rally:triggers rdf:resource="https://rally.local/ontology#act_harder"/>
   </rdf:Description>
   <rdf:Description rdf:about="https://rally.local/ontology#Trial">
     <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
     <rdfs:label xml:lang="ko">시도</rdfs:label>
     <rally:source>기획서 4.10 Knowledge Graph</rally:source>
   </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#cue_success_streak">
+    <rdf:type rdf:resource="https://rally.local/ontology#Cue"/>
+    <rdfs:label xml:lang="ko">연속 성공</rdfs:label>
+    <rally:key>success_streak</rally:key>
+    <rally:source>기획서 4.7, 3.5</rally:source>
+    <rally:triggers rdf:resource="https://rally.local/ontology#act_harder"/>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#throw">
+    <rdf:type rdf:resource="https://rally.local/ontology#Motion"/>
+    <rdfs:label xml:lang="ko">던지기·협응</rdfs:label>
+    <rally:source>기획서 3.3</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#cue_safety_stop">
+    <rdf:type rdf:resource="https://rally.local/ontology#Cue"/>
+    <rdfs:label xml:lang="ko">안전 정지</rdfs:label>
+    <rally:key>safety_stop</rally:key>
+    <rally:source>기획서 5.3, NFR-08</rally:source>
+    <rally:triggers rdf:resource="https://rally.local/ontology#act_wait"/>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#reaction_time">
+    <rdf:type rdf:resource="https://rally.local/ontology#Measure"/>
+    <rdfs:label xml:lang="ko">반응 시간</rdfs:label>
+    <rally:key>reaction_time_s</rally:key>
+    <rally:source>기획서 3.3, CatchBall.action</rally:source>
+    <rally:unit>s</rally:unit>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#triggersLevel">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
+    <rdfs:domain rdf:resource="https://rally.local/ontology#SafetyTrigger"/>
+    <rdfs:label xml:lang="ko">안전 단계로</rdfs:label>
+    <rdfs:range rdf:resource="https://rally.local/ontology#SafetyLevel"/>
+    <rally:source>기획서 3.6</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#catch_ball">
+    <rdf:type rdf:resource="https://rally.local/ontology#Skill"/>
+    <rdfs:label xml:lang="ko">공 받기</rdfs:label>
+    <rally:adjusts rdf:resource="https://rally.local/ontology#catch_radius"/>
+    <rally:adjusts rdf:resource="https://rally.local/ontology#lead_time_s"/>
+    <rally:key>/rally/skill/catch_ball</rally:key>
+    <rally:source>INTERFACES 4절, CatchBall.action</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#Patient">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:comment xml:lang="ko">익명 ID 만</rdfs:comment>
+    <rdfs:label xml:lang="ko">환자</rdfs:label>
+    <rally:source>기획서 4.10 Knowledge Graph</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#Measure">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:comment xml:lang="ko">시도 결과에서 재는 값. 계산법은 metrics.yaml</rdfs:comment>
+    <rdfs:label xml:lang="ko">판정 값</rdfs:label>
+    <rally:source>기획서 3.2~3.5 판정</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#wrist_angle_at_grasp">
+    <rdf:type rdf:resource="https://rally.local/ontology#Measure"/>
+    <rdfs:label xml:lang="ko">잡을 때 손목 각도</rdfs:label>
+    <rally:key>wrist_angle_at_grasp_deg</rally:key>
+    <rally:source>기획서 3.4 판정, Handover.action</rally:source>
+    <rally:unit>deg</rally:unit>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Ontology"/>
+    <rdfs:comment xml:lang="ko">근거가 있는 것만 담는다. 모든 개념·관계에 source(출처). evidence=weak 은 문서에 적혀 있지만 임상 근거가 없는 것. 추측(신체 부위 목록, 보상 동작의 뜻, 피로 강도, 보상 동작 → 대응)은 넣지 않는다 — 근거가 생기면 추가 (기획서 4.10, 2026-10-07).</rdfs:comment>
+    <rdfs:label xml:lang="ko">RALLY 개념 사전</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#catch_radius">
+    <rdf:type rdf:resource="https://rally.local/ontology#Parameter"/>
+    <rdfs:label xml:lang="ko">받으러 가는 반경</rdfs:label>
+    <rally:key>catch_radius</rally:key>
+    <rally:source>CatchBall.action</rally:source>
+    <rally:unit>m</rally:unit>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#difficultyParam">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
+    <rdfs:domain rdf:resource="https://rally.local/ontology#Mode"/>
+    <rdfs:label xml:lang="ko">난이도 값</rdfs:label>
+    <rdfs:range rdf:resource="https://rally.local/ontology#Parameter"/>
+    <rally:source>기획서 3.2, 3.3, 3.5, 5.2</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#triggers">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
+    <rdfs:domain rdf:resource="https://rally.local/ontology#Cue"/>
+    <rdfs:label xml:lang="ko">일으킨다</rdfs:label>
+    <rdfs:range rdf:resource="https://rally.local/ontology#Action"/>
+    <rally:source>기획서 4.7</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#observed">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
+    <rdfs:domain rdf:resource="https://rally.local/ontology#Trial"/>
+    <rdfs:label xml:lang="ko">관찰된 보상 동작</rdfs:label>
+    <rdfs:range rdf:resource="https://rally.local/ontology#Compensation"/>
+    <rally:source>기획서 4.10</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#peak_force">
+    <rdf:type rdf:resource="https://rally.local/ontology#Measure"/>
+    <rdfs:label xml:lang="ko">최대 힘</rdfs:label>
+    <rally:key>peak_force_n</rally:key>
+    <rally:source>기획서 3.5 측정, ResistPush.action</rally:source>
+    <rally:unit>N</rally:unit>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#act_easier">
+    <rdf:type rdf:resource="https://rally.local/ontology#Action"/>
+    <rdfs:label xml:lang="ko">쉽게</rdfs:label>
+    <rally:key>easier</rally:key>
+    <rally:source>기획서 3.5(목표 하향)</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#lane">
+    <rdf:type rdf:resource="https://rally.local/ontology#Parameter"/>
+    <rdfs:label xml:lang="ko">가이드 길</rdfs:label>
+    <rally:key>lane</rally:key>
+    <rally:source>PushBall.action</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#mode7">
+    <rdf:type rdf:resource="https://rally.local/ontology#Mode"/>
+    <rdfs:label xml:lang="ko">팔씨름</rdfs:label>
+    <rally:difficultyParam rdf:resource="https://rally.local/ontology#stiffness"/>
+    <rally:difficultyParam rdf:resource="https://rally.local/ontology#target_force_n"/>
+    <rally:measures rdf:resource="https://rally.local/ontology#force_smoothness"/>
+    <rally:measures rdf:resource="https://rally.local/ontology#hold_time"/>
+    <rally:measures rdf:resource="https://rally.local/ontology#peak_force"/>
+    <rally:modeNumber rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">7</rally:modeNumber>
+    <rally:source>기획서 3.5</rally:source>
+    <rally:trains rdf:resource="https://rally.local/ontology#isometric_push"/>
+    <rally:usesSkill rdf:resource="https://rally.local/ontology#resist_push"/>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#target">
+    <rdf:type rdf:resource="https://rally.local/ontology#Parameter"/>
+    <rdfs:label xml:lang="ko">목표 정지 위치</rdfs:label>
+    <rally:key>target</rally:key>
+    <rally:source>PushBall.action</rally:source>
+    <rally:unit>m</rally:unit>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#level_normal">
+    <rdf:type rdf:resource="https://rally.local/ontology#SafetyLevel"/>
+    <rdfs:label xml:lang="ko">정상</rdfs:label>
+    <rally:key>normal</rally:key>
+    <rally:level rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">0</rally:level>
+    <rally:source>SafetyStatus.msg</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#force_smoothness">
+    <rdf:type rdf:resource="https://rally.local/ontology#Measure"/>
+    <rdfs:label xml:lang="ko">힘 떨림</rdfs:label>
+    <rally:key>force_smoothness</rally:key>
+    <rally:source>기획서 3.5 측정, ResistPush.action</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#Compensation">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:comment xml:lang="ko">BodyPose.compensation_type 값</rdfs:comment>
+    <rdfs:label xml:lang="ko">보상 동작</rdfs:label>
+    <rally:source>BodyPose.msg</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#prediction_error">
+    <rdf:type rdf:resource="https://rally.local/ontology#Measure"/>
+    <rdfs:label xml:lang="ko">착지 예측 오차</rdfs:label>
+    <rally:key>prediction_error_mm</rally:key>
+    <rally:source>기획서 3.3, CatchBall.action</rally:source>
+    <rally:unit>mm</rally:unit>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#Action">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:comment xml:lang="ko">key = skills.yaml brain.actions 의 이름</rdfs:comment>
+    <rdfs:label xml:lang="ko">규칙 행동</rdfs:label>
+    <rally:source>기획서 4.7, skills.yaml brain</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#indicatesFatigue">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
+    <rdfs:comment xml:lang="ko">기획서에 '보상 동작 → 피로 신호'로 적혀 있으나 임상 근거는 확인 전</rdfs:comment>
+    <rdfs:domain rdf:resource="https://rally.local/ontology#Compensation"/>
+    <rdfs:label xml:lang="ko">피로를 나타낸다</rdfs:label>
+    <rdfs:range rdf:resource="https://rally.local/ontology#FatigueSignal"/>
+    <rally:evidence>weak</rally:evidence>
+    <rally:source>기획서 4.10</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#usedParam">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
+    <rdfs:domain rdf:resource="https://rally.local/ontology#Trial"/>
+    <rdfs:label xml:lang="ko">사용한 파라미터</rdfs:label>
+    <rdfs:range rdf:resource="https://rally.local/ontology#Parameter"/>
+    <rally:source>기획서 4.10</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#pick_compliant">
+    <rdf:type rdf:resource="https://rally.local/ontology#Skill"/>
+    <rdfs:label xml:lang="ko">순응 집기</rdfs:label>
+    <rally:key>/rally/skill/pick_compliant</rally:key>
+    <rally:source>INTERFACES 4절</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#safe_hand_close">
+    <rdf:type rdf:resource="https://rally.local/ontology#SafetyTrigger"/>
+    <rdfs:label xml:lang="ko">손이 중앙선 아주 가까이(0.15 m)</rdfs:label>
+    <rally:key>hand_near_centerline</rally:key>
+    <rally:source>기획서 3.6</rally:source>
+    <rally:threshold rdf:datatype="http://www.w3.org/2001/XMLSchema#decimal">0.15</rally:threshold>
+    <rally:triggersLevel rdf:resource="https://rally.local/ontology#level_stop"/>
+    <rally:unit>m</rally:unit>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#trains">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
+    <rdfs:domain rdf:resource="https://rally.local/ontology#Mode"/>
+    <rdfs:label xml:lang="ko">훈련한다</rdfs:label>
+    <rdfs:range rdf:resource="https://rally.local/ontology#Motion"/>
+    <rally:source>기획서 3.1~3.5</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#Parameter">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:comment xml:lang="ko">action goal 필드. 값·범위는 skills.yaml</rdfs:comment>
+    <rdfs:label xml:lang="ko">스킬 파라미터</rdfs:label>
+    <rally:source>rally_interfaces/action</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#caught">
+    <rdf:type rdf:resource="https://rally.local/ontology#Measure"/>
+    <rdfs:label xml:lang="ko">받았는지</rdfs:label>
+    <rally:key>caught</rally:key>
+    <rally:source>기획서 3.3 판정, CatchBall.action</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#measures">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
+    <rdfs:domain rdf:resource="https://rally.local/ontology#Mode"/>
+    <rdfs:label xml:lang="ko">판정한다</rdfs:label>
+    <rdfs:range rdf:resource="https://rally.local/ontology#Measure"/>
+    <rally:source>기획서 3.2~3.5 판정</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#hold_time">
+    <rdf:type rdf:resource="https://rally.local/ontology#Measure"/>
+    <rdfs:label xml:lang="ko">버틴 시간</rdfs:label>
+    <rally:key>hold_time_achieved_s</rally:key>
+    <rally:source>기획서 3.5 측정, ResistPush.action</rally:source>
+    <rally:unit>s</rally:unit>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#handover_time">
+    <rdf:type rdf:resource="https://rally.local/ontology#Measure"/>
+    <rdfs:label xml:lang="ko">건네받는 시간</rdfs:label>
+    <rally:key>handover_time_s</rally:key>
+    <rally:source>기획서 3.4 판정, Handover.action</rally:source>
+    <rally:unit>s</rally:unit>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#tilt_deg">
+    <rdf:type rdf:resource="https://rally.local/ontology#Parameter"/>
+    <rdfs:label xml:lang="ko">제시 기울기</rdfs:label>
+    <rally:key>tilt_deg</rally:key>
+    <rally:source>Handover.action</rally:source>
+    <rally:unit>deg</rally:unit>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#usesSkill">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
+    <rdfs:domain rdf:resource="https://rally.local/ontology#Mode"/>
+    <rdfs:label xml:lang="ko">사용한다</rdfs:label>
+    <rdfs:range rdf:resource="https://rally.local/ontology#Skill"/>
+    <rally:source>기획서 3.2~3.5 로봇 기능, 5.2</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#level_stop">
+    <rdf:type rdf:resource="https://rally.local/ontology#SafetyLevel"/>
+    <rdfs:label xml:lang="ko">정지</rdfs:label>
+    <rally:key>stop</rally:key>
+    <rally:level rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">2</rally:level>
+    <rally:source>SafetyStatus.msg</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#cue_failure_streak">
+    <rdf:type rdf:resource="https://rally.local/ontology#Cue"/>
+    <rdfs:label xml:lang="ko">연속 실패</rdfs:label>
+    <rally:key>failure_streak</rally:key>
+    <rally:source>todo Day 4(모드 7 실패 2회 → -10 %)</rally:source>
+    <rally:triggers rdf:resource="https://rally.local/ontology#act_easier"/>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#reach">
+    <rdf:type rdf:resource="https://rally.local/ontology#Motion"/>
+    <rdfs:label xml:lang="ko">팔 뻗기</rdfs:label>
+    <rally:source>기획서 3.2</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#stiffness">
+    <rdf:type rdf:resource="https://rally.local/ontology#Parameter"/>
+    <rdfs:label xml:lang="ko">버티는 강성</rdfs:label>
+    <rally:key>stiffness</rally:key>
+    <rally:source>ResistPush.action</rally:source>
+    <rally:unit>N/m</rally:unit>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#Skill">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:comment xml:lang="ko">rally_robot skill_server 의 action</rdfs:comment>
+    <rdfs:label xml:lang="ko">로봇 스킬</rdfs:label>
+    <rally:source>INTERFACES 4절</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#safe_voice_stop">
+    <rdf:type rdf:resource="https://rally.local/ontology#SafetyTrigger"/>
+    <rdfs:label xml:lang="ko">"그만" 음성</rdfs:label>
+    <rally:key>voice_stop</rally:key>
+    <rally:source>기획서 3.6, 4.8</rally:source>
+    <rally:triggersLevel rdf:resource="https://rally.local/ontology#level_stop"/>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#target_force_n">
+    <rdf:type rdf:resource="https://rally.local/ontology#Parameter"/>
+    <rdfs:label xml:lang="ko">목표 힘</rdfs:label>
+    <rally:key>target_force_n</rally:key>
+    <rally:source>ResistPush.action</rally:source>
+    <rally:unit>N</rally:unit>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#shoulder_hike">
+    <rdf:type rdf:resource="https://rally.local/ontology#Compensation"/>
+    <rdfs:label xml:lang="ko">어깨 들기</rdfs:label>
+    <rally:indicatesFatigue rdf:resource="https://rally.local/ontology#fatigue"/>
+    <rally:key>shoulder_hike</rally:key>
+    <rally:source>BodyPose.msg</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#Cue">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:comment xml:lang="ko">규칙 레이어가 행동을 고르는 근거가 되는 관찰</rdfs:comment>
+    <rdfs:label xml:lang="ko">판단 계기</rdfs:label>
+    <rally:source>기획서 4.7</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#trunk_lean">
+    <rdf:type rdf:resource="https://rally.local/ontology#Compensation"/>
+    <rdfs:label xml:lang="ko">몸통 기울이기</rdfs:label>
+    <rally:indicatesFatigue rdf:resource="https://rally.local/ontology#fatigue"/>
+    <rally:key>trunk_lean</rally:key>
+    <rally:source>BodyPose.msg, FR-05(임계 15°)</rally:source>
+    <rally:threshold rdf:datatype="http://www.w3.org/2001/XMLSchema#decimal">15.0</rally:threshold>
+    <rally:unit>deg</rally:unit>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#handover">
+    <rdf:type rdf:resource="https://rally.local/ontology#Skill"/>
+    <rdfs:label xml:lang="ko">건네기·받기</rdfs:label>
+    <rally:adjusts rdf:resource="https://rally.local/ontology#release_force_threshold_n"/>
+    <rally:adjusts rdf:resource="https://rally.local/ontology#tilt_deg"/>
+    <rally:key>/rally/skill/handover</rally:key>
+    <rally:source>INTERFACES 4절, Handover.action</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#push_ball">
+    <rdf:type rdf:resource="https://rally.local/ontology#Skill"/>
+    <rdfs:label xml:lang="ko">공 밀기</rdfs:label>
+    <rally:adjusts rdf:resource="https://rally.local/ontology#lane"/>
+    <rally:adjusts rdf:resource="https://rally.local/ontology#push_speed"/>
+    <rally:adjusts rdf:resource="https://rally.local/ontology#target"/>
+    <rally:key>/rally/skill/push_ball</rally:key>
+    <rally:source>INTERFACES 4절, PushBall.action</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#lead_time_s">
+    <rdf:type rdf:resource="https://rally.local/ontology#Parameter"/>
+    <rdfs:label xml:lang="ko">예측 선행 시간</rdfs:label>
+    <rally:key>lead_time_s</rally:key>
+    <rally:source>CatchBall.action</rally:source>
+    <rally:unit>s</rally:unit>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#hasTrial">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
+    <rdfs:domain rdf:resource="https://rally.local/ontology#Session"/>
+    <rdfs:label xml:lang="ko">시도</rdfs:label>
+    <rdfs:range rdf:resource="https://rally.local/ontology#Trial"/>
+    <rally:source>기획서 4.10</rally:source>
+  </rdf:Description>
   <rdf:Description rdf:about="https://rally.local/ontology#stop_error">
     <rdf:type rdf:resource="https://rally.local/ontology#Measure"/>
-    <rally:key>error_mm</rally:key>
     <rdfs:label xml:lang="ko">정지 위치 오차</rdfs:label>
-    <rally:unit>mm</rally:unit>
+    <rally:key>error_mm</rally:key>
     <rally:source>기획서 3.2 판정</rally:source>
+    <rally:unit>mm</rally:unit>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#inMode">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
+    <rdfs:domain rdf:resource="https://rally.local/ontology#Trial"/>
+    <rdfs:label xml:lang="ko">모드</rdfs:label>
+    <rdfs:range rdf:resource="https://rally.local/ontology#Mode"/>
+    <rally:source>기획서 4.10</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#resist_push">
+    <rdf:type rdf:resource="https://rally.local/ontology#Skill"/>
+    <rdfs:label xml:lang="ko">저항 밀기</rdfs:label>
+    <rally:adjusts rdf:resource="https://rally.local/ontology#stiffness"/>
+    <rally:adjusts rdf:resource="https://rally.local/ontology#target_force_n"/>
+    <rally:key>/rally/skill/resist_push</rally:key>
+    <rally:source>INTERFACES 4절, ResistPush.action</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#act_continue">
+    <rdf:type rdf:resource="https://rally.local/ontology#Action"/>
+    <rdfs:label xml:lang="ko">계속</rdfs:label>
+    <rally:key>continue</rally:key>
+    <rally:source>skills.yaml brain.actions</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#safe_fist">
+    <rdf:type rdf:resource="https://rally.local/ontology#SafetyTrigger"/>
+    <rdfs:label xml:lang="ko">주먹 제스처</rdfs:label>
+    <rally:key>fist_gesture</rally:key>
+    <rally:source>기획서 3.6</rally:source>
+    <rally:triggersLevel rdf:resource="https://rally.local/ontology#level_stop"/>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#FatigueSignal">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label xml:lang="ko">피로 신호</rdfs:label>
+    <rally:source>기획서 4.10</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#isometric_push">
+    <rdf:type rdf:resource="https://rally.local/ontology#Motion"/>
+    <rdfs:comment xml:lang="ko">근력 훈련</rdfs:comment>
+    <rdfs:label xml:lang="ko">등척성 밀기</rdfs:label>
+    <rally:source>기획서 3.5</rally:source>
   </rdf:Description>
   <rdf:Description rdf:about="https://rally.local/ontology#Session">
     <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
     <rdfs:label xml:lang="ko">세션</rdfs:label>
     <rally:source>기획서 4.10 Knowledge Graph</rally:source>
   </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#peak_force">
+  <rdf:Description rdf:about="https://rally.local/ontology#act_harder">
+    <rdf:type rdf:resource="https://rally.local/ontology#Action"/>
+    <rdfs:label xml:lang="ko">어렵게</rdfs:label>
+    <rally:key>harder</rally:key>
+    <rally:source>기획서 4.7</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#cue_voice_easier">
+    <rdf:type rdf:resource="https://rally.local/ontology#Cue"/>
+    <rdfs:label xml:lang="ko">"쉽게" 음성</rdfs:label>
+    <rally:key>easier</rally:key>
+    <rally:source>VoiceIntent.msg</rally:source>
+    <rally:triggers rdf:resource="https://rally.local/ontology#act_easier"/>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#hasSession">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
+    <rdfs:domain rdf:resource="https://rally.local/ontology#Patient"/>
+    <rdfs:label xml:lang="ko">세션</rdfs:label>
+    <rdfs:range rdf:resource="https://rally.local/ontology#Session"/>
+    <rally:source>기획서 4.10</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#wrist_grasp">
+    <rdf:type rdf:resource="https://rally.local/ontology#Motion"/>
+    <rdfs:label xml:lang="ko">손목 회전·쥐기</rdfs:label>
+    <rally:source>기획서 3.4</rally:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#cue_voice_tired">
+    <rdf:type rdf:resource="https://rally.local/ontology#Cue"/>
+    <rdfs:label xml:lang="ko">"힘들어" 음성</rdfs:label>
+    <rally:key>tired</rally:key>
+    <rally:source>기획서 3.5 음성, VoiceIntent.msg</rally:source>
+    <rally:triggers rdf:resource="https://rally.local/ontology#act_suggest_rest"/>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#patient_grasped">
     <rdf:type rdf:resource="https://rally.local/ontology#Measure"/>
-    <rally:key>peak_force_n</rally:key>
-    <rdfs:label xml:lang="ko">최대 힘</rdfs:label>
-    <rally:unit>N</rally:unit>
-    <rally:source>기획서 3.5 측정, ResistPush.action</rally:source>
+    <rdfs:label xml:lang="ko">환자가 잡았는지</rdfs:label>
+    <rally:source>기획서 3.2 판정</rally:source>
   </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#lead_time_s">
-    <rdf:type rdf:resource="https://rally.local/ontology#Parameter"/>
-    <rally:key>lead_time_s</rally:key>
-    <rdfs:label xml:lang="ko">예측 선행 시간</rdfs:label>
-    <rally:unit>s</rally:unit>
-    <rally:source>CatchBall.action</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#pick_compliant">
-    <rdf:type rdf:resource="https://rally.local/ontology#Skill"/>
-    <rally:key>/rally/skill/pick_compliant</rally:key>
-    <rdfs:label xml:lang="ko">순응 집기</rdfs:label>
-    <rally:source>INTERFACES 4절</rally:source>
+  <rdf:Description rdf:about="https://rally.local/ontology#act_ask_llm">
+    <rdf:type rdf:resource="https://rally.local/ontology#Action"/>
+    <rdfs:label xml:lang="ko">LLM 판단</rdfs:label>
+    <rally:key>ask_llm</rally:key>
+    <rally:source>기획서 4.7(애매하면 LLM)</rally:source>
   </rdf:Description>
   <rdf:Description rdf:about="https://rally.local/ontology#Motion">
     <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
     <rdfs:label xml:lang="ko">훈련 동작</rdfs:label>
     <rally:source>기획서 3.1</rally:source>
   </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#cue_safety_stop">
-    <rdf:type rdf:resource="https://rally.local/ontology#Cue"/>
-    <rally:key>safety_stop</rally:key>
-    <rdfs:label xml:lang="ko">안전 정지</rdfs:label>
-    <rally:triggers rdf:resource="https://rally.local/ontology#act_wait"/>
-    <rally:source>기획서 5.3, NFR-08</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#act_wait">
+  <rdf:Description rdf:about="https://rally.local/ontology#act_suggest_rest">
     <rdf:type rdf:resource="https://rally.local/ontology#Action"/>
-    <rally:key>wait</rally:key>
-    <rdfs:label xml:lang="ko">대기</rdfs:label>
-    <rally:source>skills.yaml brain.actions</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#Compensation">
-    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
-    <rdfs:label xml:lang="ko">보상 동작</rdfs:label>
-    <rdfs:comment xml:lang="ko">BodyPose.compensation_type 값</rdfs:comment>
-    <rally:source>BodyPose.msg</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#resist_push">
-    <rdf:type rdf:resource="https://rally.local/ontology#Skill"/>
-    <rally:key>/rally/skill/resist_push</rally:key>
-    <rdfs:label xml:lang="ko">저항 밀기</rdfs:label>
-    <rally:source>INTERFACES 4절, ResistPush.action</rally:source>
-    <rally:adjusts rdf:resource="https://rally.local/ontology#stiffness"/>
-    <rally:adjusts rdf:resource="https://rally.local/ontology#target_force_n"/>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#safe_nudge">
-    <rdf:type rdf:resource="https://rally.local/ontology#SafetyTrigger"/>
-    <rally:key>nudge</rally:key>
-    <rdfs:label xml:lang="ko">로봇 툭 치기</rdfs:label>
-    <rally:triggersLevel rdf:resource="https://rally.local/ontology#level_stop"/>
-    <rally:source>기획서 3.6</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#">
-    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Ontology"/>
-    <rdfs:label xml:lang="ko">RALLY 개념 사전</rdfs:label>
-    <rdfs:comment xml:lang="ko">근거가 있는 것만 담는다. 모든 개념·관계에 source(출처). evidence=weak 은 문서에 적혀 있지만 임상 근거가 없는 것. 추측(신체 부위 목록, 보상 동작의 뜻, 피로 강도, 보상 동작 → 대응)은 넣지 않는다 — 근거가 생기면 추가 (기획서 4.10, 2026-10-07).</rdfs:comment>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#indicatesFatigue">
-    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
-    <rdfs:label xml:lang="ko">피로를 나타낸다</rdfs:label>
-    <rdfs:domain rdf:resource="https://rally.local/ontology#Compensation"/>
-    <rdfs:range rdf:resource="https://rally.local/ontology#FatigueSignal"/>
-    <rally:source>기획서 4.10</rally:source>
-    <rally:evidence>weak</rally:evidence>
-    <rdfs:comment xml:lang="ko">기획서에 '보상 동작 → 피로 신호'로 적혀 있으나 임상 근거는 확인 전</rdfs:comment>
+    <rdfs:label xml:lang="ko">휴식 제안</rdfs:label>
+    <rally:key>suggest_rest</rally:key>
+    <rally:source>기획서 3.5, 5.1</rally:source>
   </rdf:Description>
 </rdf:RDF>

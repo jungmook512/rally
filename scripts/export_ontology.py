@@ -9,11 +9,15 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
 from rdflib import Graph
 from rdflib.compare import isomorphic
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "ros2_ws" / "src" / "rally_brain"))
+from rally_brain.knowledge.ontology import parse_jsonld  # noqa: E402
 
 KNOWLEDGE = Path(__file__).resolve().parents[1] / "ros2_ws" / "src" / "rally_brain" / "rally_brain" / "knowledge"
 SOURCE = KNOWLEDGE / "ontology.jsonld"
@@ -26,12 +30,16 @@ COPIES = {  # 파일 → (rdflib 형식, 주석 줄 만들기)
 
 def load_source() -> Graph:
     g = Graph()
-    g.parse(str(SOURCE), format="json-ld")
     g.bind("rally", "https://rally.local/ontology#")
+    for triple in sorted(parse_jsonld(SOURCE)):
+        g.add(triple)
     return g
 
 
 def main() -> int:
+    if os.environ.get("PYTHONHASHSEED") != "0":
+        # rdflib 의 RDF/XML 출력 순서는 파이썬 해시 순서를 따른다 → 고정해서 다시 실행 (.owl diff 가 매번 바뀌지 않게, #60 리뷰 4)
+        os.execve(sys.executable, [sys.executable, *sys.argv], {**os.environ, "PYTHONHASHSEED": "0"})
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="사본이 원본과 같은지만 확인")
     args = ap.parse_args()

@@ -24,7 +24,7 @@
 - [x] `trees/mode5_handover.py` (가짜 action 서버로 흐름 검증) → 손 대기 → Handover GIVE → TrialResult 1단계. `scripts/fake_skills.py` 로 성공·실패·STOP·취소 확인
 - [x] `recorder_node.py`: `TrialResult` → `trials`, `WrenchStamped` → `ts_wrench`, `HandState` → `ts_hand`, 이벤트 → `events`
 - [x] Redis `rally:state` 갱신, `rally:events` publish (+ `rally:dialog`)
-- [x] **Ontology** `rally_brain/knowledge/ontology.yaml` 초안: 모드 → 훈련 동작 → 신체 부위, 보상 동작 → 피로 신호, 스킬 → 파라미터·허용 범위 (기획서 4.10, 필수 · 활용 방식 TBD) → 재활 해석은 `verified: false`(가정) 표시, 범위는 skills.yaml 참조만. `ontology.py` 로 LLM 맥락 문장·한국어 이름
+- [x] **Ontology** `rally_brain/knowledge/ontology.yaml` 초안: 모드 → 훈련 동작 → 신체 부위, 보상 동작 → 피로 신호, 스킬 → 파라미터·허용 범위 (기획서 4.10, 필수 · 활용 방식 TBD) → 재활 해석은 `verified: false`(가정) 표시, 범위는 skills.yaml 참조만. `ontology.py` 로 LLM 맥락 문장·한국어 이름 → #60 에서 `ontology.jsonld`(RDF 관계 그래프, 근거 있는 것만)로 교체
 
 ## Day 3 — 모드 5 통합 ✅
 - [ ] 모드 5 서브트리를 실제 skill 서버에 연결, 실패 분기(손 결측 → 대기, 파지 실패 → 재시도 1회)
@@ -49,7 +49,7 @@
 - [ ] `embeddings.py`: 시도 특징 32차원 벡터(파라미터·오차·속도·방향 정규화) → `feature_vec`, pgvector 코사인 검색 `repository.find_similar_trials`
 - [ ] `llm.yaml` 전송 필드 화이트리스트(익명화)
 - [ ] 문맥 유무 비교 사례 10개 시나리오 작성 (평가용)
-- [ ] **Knowledge Graph** PostgreSQL 노드·엣지 테이블 `schema_002_*.sql` (노드 타입은 ontology.yaml), recorder가 시도마다 기록 (기획서 4.10, 필수 · 활용 방식 TBD)
+- [ ] **Knowledge Graph** PostgreSQL 노드·엣지 테이블 `schema_002_*.sql` (노드 타입은 ontology.jsonld 클래스), recorder가 시도마다 기록 (기획서 4.10, 필수 · 활용 방식 TBD)
 - [ ] **HMI** 예측 vs 실제 정지 위치 산점도, 시도별 오차 추이(학습 곡선)
 
 ## Day 6 — 학습 루프 + 세션 전체 ✅

@@ -35,6 +35,7 @@ from std_msgs.msg import String
 
 from rally_brain import rule_layer
 from rally_brain.config import load_skills
+from rally_brain.knowledge import ontology
 from rally_brain.trees.session_tree import Session, build_session_tree
 from rally_bringup.readiness import ReadinessChecker
 from rally_interfaces.action import RunSession
@@ -79,6 +80,12 @@ class BtRunner(Node):
         self._client_group = ReentrantCallbackGroup()
         self._skills_cfg = load_skills()
         self._rule_cfg = rule_layer.rule_config(self._skills_cfg)
+        if problems := rule_layer.check_graph(self._rule_cfg):   # 파일 읽기 실패도 여기서 문제로 나온다
+            # 세션 도중 after_trial 에서 터지지 않게, 켤 때 막는다 (#60 리뷰 3)
+            for p in problems:
+                self.get_logger().fatal(f"ontology 문제: {p}")
+            raise RuntimeError(f"ontology 검사 실패 {len(problems)}건 — knowledge/ontology.jsonld 확인")
+        self._graph = ontology.load()
         self._pending_intent: str | None = None
 
         reliable = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, depth=10)
@@ -112,7 +119,7 @@ class BtRunner(Node):
 
     def _after_trial(self, session: Session, trial: TrialResult) -> None:
         intent, self._pending_intent = self._pending_intent, None
-        d = rule_layer.decide(self._context, session.trials_for_rules(trial.mode), intent, self._rule_cfg)
+        d = rule_layer.decide(self._context, session.trials_for_rules(trial.mode), intent, self._rule_cfg, self._graph)
         log = self.get_logger()
         if d.action in ("harder", "easier"):
             old = session.difficulty.get(trial.mode, 0)

@@ -108,3 +108,13 @@ def test_repeated_utterance_does_not_extend_hold(node):
     assert node.build().last_intent.intent == ""                        # 유지 시간이 다시 늘지 않음
     node._on_intent(intent(text="stop_session", sec=105))               # 새 발화
     assert node.build().last_intent.intent == "stop_session"
+
+
+def test_fatigue_score_connected(node):
+    # 같은 모드 최근 시도 + 음성 tired → metrics.fatigue_score (#52 리뷰 3)
+    assert node.build().fatigue_score == 0.0
+    for i in range(1, 4):
+        node._on_trial(trial(index=i, success=False))     # 성공률 0 → success_drop (0.25)
+    assert node.build().fatigue_score == pytest.approx(0.25)
+    node._intent = (intent("tired", sec=5), node._now_ns())
+    assert node.build().fatigue_score == 1.0

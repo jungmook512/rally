@@ -52,6 +52,15 @@ def test_validate_catches_bad_link():
     assert any("no_such_skill" in p for p in problems)
 
 
+def test_validate_one_action_per_cue():
+    # 계기 하나에 행동이 둘이면 어느 쪽이 될지 정해지지 않는다 (#60 리뷰 2)
+    g = type(G)()
+    for t in G:
+        g.add(t)
+    g.add((RALLY.cue_success_streak, RALLY.triggers, RALLY.act_continue))
+    assert any("행동이 2개" in p for p in ontology.validate(g))
+
+
 def test_modes_match_trial_result():
     msg = (MSG / "TrialResult.msg").read_text(encoding="utf-8")
     numbers = {int(n) for n in re.findall(r"MODE_\w+=(\d+)", msg)}

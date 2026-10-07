@@ -8,10 +8,12 @@ ontology.jsonld 는 "무엇 —관계→ 무엇"(트리플)으로 적은 개념 
   action_for_cue(cue_key)              판단 계기 → 규칙 행동 key (규칙 레이어가 행동을 여기서 찾는다)
   compensation(key)                    보상 동작 이름·임계·피로 신호 여부(근거 약함 표시)
   describe_compensation(mode, key)     LLM 맥락 문장 — 연결을 따라가 만든다
-  validate()                           관계가 정해진 종류끼리만 잇는지(domain·range), 모든 개념에 이름·출처가 있는지
+  validate()                           관계가 정해진 종류끼리만 잇는지(domain·range), 모든 개념에 이름·출처가 있는지,
+                                       판단 계기마다 행동이 정확히 하나인지
 """
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -25,11 +27,18 @@ OWL_OBJECT_PROPERTY = URIRef("http://www.w3.org/2002/07/owl#ObjectProperty")
 PREFIXES = "PREFIX rally: <https://rally.local/ontology#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> "
 
 
+def parse_jsonld(path: str | Path) -> Graph:
+    g = Graph()
+    with warnings.catch_warnings():
+        # rdflib 7 의 JSON-LD 파서 내부가 ConjunctiveGraph 를 써서 내는 경고 — 우리 코드와 무관 (#60 리뷰 6)
+        warnings.filterwarnings("ignore", message="ConjunctiveGraph is deprecated", category=DeprecationWarning)
+        g.parse(str(path), format="json-ld")
+    return g
+
+
 @lru_cache(maxsize=1)
 def load(path: str | None = None) -> Graph:
-    g = Graph()
-    g.parse(str(path or ONTOLOGY_PATH), format="json-ld")
-    return g
+    return parse_jsonld(path or ONTOLOGY_PATH)
 
 
 def _str(value) -> str | None:
@@ -157,4 +166,8 @@ def validate(g: Graph | None = None) -> list[str]:
             problems.append(f"{s} : 이름(label) 없음")
         if g.value(s, RALLY.source) is None:
             problems.append(f"{s} : 출처(source) 없음")
+    for cue in g.subjects(RDF.type, RALLY.Cue):
+        # 행동이 둘이면 어느 쪽이 될지 정해지지 않는다 (#60 리뷰 2)
+        if (n := len(set(g.objects(cue, RALLY.triggers)))) != 1:
+            problems.append(f"{label(cue, g)} : 판단 계기의 행동이 {n}개 (정확히 1개여야 함)")
     return problems
