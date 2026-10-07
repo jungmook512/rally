@@ -11,9 +11,14 @@ RUN . /opt/ros/jazzy/setup.sh && colcon build --merge-install --packages-up-to r
 # 빌드된 패키지 수 확인용: docker build --target build ... 2>&1 | grep Summary
 
 FROM ros:jazzy-ros-base AS runtime
-RUN apt-get update && apt-get install -y --no-install-recommends python3-pip ros-jazzy-cv-bridge ros-jazzy-usb-cam ros-jazzy-tf2-ros && rm -rf /var/lib/apt/lists/*
+# libgl1·libglib2.0-0: opencv-contrib-python(GUI 판, mediapipe 의존성)이 import 할 때 필요
+RUN apt-get update && apt-get install -y --no-install-recommends python3-pip ros-jazzy-cv-bridge ros-jazzy-usb-cam ros-jazzy-tf2-ros libgl1 libglib2.0-0 && rm -rf /var/lib/apt/lists/*
 COPY --from=build /ros2_ws/install /ros2_ws/install
 COPY docker/hand_pose/requirements.txt /tmp/requirements.txt
 RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
+# MediaPipe 모델 (git 에 안 넣음). hand_pose_node 가 /opt/mediapipe 를 먼저 찾는다
+RUN mkdir -p /opt/mediapipe && python3 -c "import urllib.request as u; \
+u.urlretrieve('https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task', '/opt/mediapipe/hand_landmarker.task'); \
+u.urlretrieve('https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task', '/opt/mediapipe/pose_landmarker_full.task')"
 COPY docker/entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
