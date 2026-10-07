@@ -16,3 +16,7 @@ docker/.env
 
 # 측정 원본 (scripts/measure_wrench.py 출력) — 요약 숫자만 yaml/PR 에 적고 CSV 는 커밋하지 않는다
 data/measure/
+
+# 하위 폴더 모델 (models/piper/ 의 TTS 음성 등)
+models/**/*.onnx
+models/**/*.onnx.json
