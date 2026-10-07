@@ -48,6 +48,17 @@ def test_trial_to_row():
     assert row["started_at"].timestamp() == 1_760_000_000.5 - 4.0
 
 
+def test_trial_to_event_is_json_and_has_end_time():
+    import json
+    msg = NS(header=header(), session_id=SID, mode=5, trial_index=2, success=False, error_mm=0.0,
+             duration_s=4.0, param_keys=[], param_values=[],
+             metric_keys=["handover_time_s"], metric_values=[3.25], notes="interrupted")
+    ev = convert.trial_to_event(convert.trial_to_row(msg, SID), trial_id=7)
+    assert json.loads(json.dumps(ev))["trial_id"] == 7
+    assert ev["notes"] == "interrupted" and ev["metrics"] == {"handover_time_s": 3.25}
+    assert ev["ended_at"].startswith("2025-10-09T08:53:20.5")   # header.stamp 그대로
+
+
 def test_wrench_row_matches_columns():
     msg = NS(header=header(), wrench=NS(force=vec(1, 2, 3), torque=vec(4, 5, 6)))
     row = convert.wrench_to_row(msg, SID)

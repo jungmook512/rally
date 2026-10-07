@@ -71,6 +71,7 @@
 - [ ] 발표: 힘·순응 제어 파트 (힘 곡선 그래프 준비)
 
 ## 메모 / 막힌 것
+- 10/7 (정동휘): `hand_pose` 노드 동작. ① `HandState.gesture` 는 5 프레임(약 0.17 s) 연속일 때만 FIST 로 내보냄 (safety_monitor 가 한 프레임 FIST 에도 STOP 하므로). 모드 5 에서 물체 쥔 손이 주먹으로 보이면 `fist_estop_enabled:=false` 로 끌 수 있음 — 같이 정하기. ② 손은 보이는데 위치를 못 구하면(깊이·tf 없음) `distance_to_centerline = NaN` = "거리 모름" (INTERFACES 2.2). #44 리뷰대로 safety_monitor 에서 `detected && NaN` 이면 SLOW (정정인)
 - [!] 10/7 `get_tool_force` 가 전부 0 (관절 외력 토크는 정상). 재부팅·툴 재적용으로 안 풀림. 우회: `scripts/ejt_wrench.py`(관절 외력 토크 → 자코비안). 선생님·다른 조 로봇과 비교 필요. 접촉 검출·당김 해제·nudge 는 이 문제가 풀리거나 우회 경로를 force_publisher 에 넣어야 실로봇 가능
 - 소프트 비상정지는 `scripts/estop.sh` (QoS TransientLocal 맞춤), 해제는 `scripts/estop.sh reset`
 - 10/7 (정동휘): `catch_ball` 관련 실측 → 이슈 #38. 가속 1000 mm/s² 면 0.5 s 에 6~12 cm 라 `catch_radius_m: 0.35` 불가, M0609 `servol_stream` 연속 추종 중 알람 → 제어함 전원 차단 보고(doosan-robot2 #393). 패드 거치대는 정동휘가 3D 출력(Day 4) — 거치 위치·높이 같이 정하기
