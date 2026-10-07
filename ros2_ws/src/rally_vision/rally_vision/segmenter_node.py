@@ -8,7 +8,8 @@ camera → base_link 변환 (projection.py):
   1) tf2  base_link ← 이미지 frame_id (이미지 시각)      ← INTERFACES 1절. camera_link static tf 가 있을 때
   2) 폴백 /rally/robot/tcp_pose × T_gripper2camera.npy    ← 과도기 (선생님 방식). tf 가 없고 tcp_pose 가 0.5 s 안이면
   3) 둘 다 없으면 카메라 좌표 그대로 (header.frame_id = 카메라 프레임). 가짜 base 좌표를 만들지 않는다
-모델: model_path 가 비면 COCO yolov8n-seg (sports ball → ball, cup → cup 으로 이름 바꿈) — 학습 모델이 나오기 전 임시.
+모델: model_path 가 비면 /models(컨테이너 볼륨)·~/rally/models 에서 yolov8n-seg_rally.pt → yolov8n-seg_ball.pt 를 찾고,
+      없으면 COCO yolov8n-seg (sports ball → ball, cup → cup) 임시. 컨테이너에서 base_link 변환을 쓰려면 T_gripper2camera.npy 도 models/ 에 복사.
       class_alias 로 모델 클래스 이름을 INTERFACES 이름(ball, velcro_ball, rod, cup)으로 바꾼다.
 검증: 로봇·카메라 없이 — python3 -m pytest ros2_ws/src/rally_vision/test, scripts/segment_offline.py (저장 사진+깊이)
 """
@@ -51,13 +52,34 @@ def parse_alias(s: str) -> dict[str, str]:
     return out
 
 
+MODEL_SEARCH = ("yolov8n-seg_rally.pt", "yolov8n-seg_ball.pt")      # model_path 가 비면 이 순서로 찾는다
+MODEL_DIRS = ("/models", os.path.expanduser("~/rally/models"), "models")  # 컨테이너 볼륨(compose ../models:/models) → 네이티브
+
+
+def default_model_path() -> str:
+    """학습 모델을 찾으면 그 경로, 없으면 "yolov8n-seg.pt"(COCO 임시, 인터넷 필요)."""
+    for d in MODEL_DIRS:
+        for name in MODEL_SEARCH:
+            p = os.path.join(d, name)
+            if os.path.isfile(p):
+                return p
+    return "yolov8n-seg.pt"
+
+
 def default_gripper2cam_path() -> str:
+    """rally_robot 패키지의 npy, 없으면(컨테이너) /models 또는 ~/rally/models 에 복사해 둔 npy."""
     try:
         from ament_index_python.packages import get_package_share_directory
         p = os.path.join(get_package_share_directory("rally_robot"), "resource", "T_gripper2camera.npy")
-        return p if os.path.isfile(p) else ""
+        if os.path.isfile(p):
+            return p
     except Exception:  # noqa: BLE001  rally_robot 이 없는 컨테이너
-        return ""
+        pass
+    for d in MODEL_DIRS:
+        p = os.path.join(d, "T_gripper2camera.npy")
+        if os.path.isfile(p):
+            return p
+    return ""
 
 
 def masks_from_result(res, shape_hw) -> list[np.ndarray]:
@@ -145,7 +167,7 @@ class SegmenterNode(Node):
     def __init__(self):
         super().__init__("rally_segmenter")
         d = self.declare_parameter
-        d("model_path", "")                       # 비면 COCO yolov8n-seg (임시). 학습 모델: models/yolov8n-seg_rally.pt 또는 .engine
+        d("model_path", "")                       # 비면 /models·~/rally/models 의 yolov8n-seg_rally.pt → _ball.pt → COCO 임시 순으로 찾음
         d("class_alias", DEFAULT_ALIAS)           # "모델이름:INTERFACES이름,..."
         d("conf", 0.5)
         d("imgsz", 640)
@@ -178,7 +200,7 @@ class SegmenterNode(Node):
                 self.get_logger().warn(f"npy 로드 실패 {g('gripper2cam_path')}: {e}")
 
         from ultralytics import YOLO  # 무거운 import 는 여기서
-        path = g("model_path") or "yolov8n-seg.pt"
+        path = g("model_path") or default_model_path()
         self.model = YOLO(path)
         self.names = dict(self.model.names)
         self.get_logger().info(f"모델 {path} 클래스 {sorted(set(self.alias.get(v, v) for v in self.names.values()))[:12]}…")
