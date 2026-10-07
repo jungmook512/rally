@@ -4,8 +4,8 @@
   WaitUntil  조건이 참이 될 때까지 RUNNING (timeout_s 넘으면 FAILURE)
   SkillCall  스킬 action 을 비동기로 보내고 결과가 오면 SUCCESS — 로봇이 움직이는 동안 트리·안전 감시가 막히지 않는다.
              결과 메시지는 on_result 로 넘긴다 (스킬의 success=false 도 SUCCESS: 시도는 끝났고 판정은 기록 쪽에서).
-             서버 없음·goal 거절·abort·취소는 FAILURE. 트리가 중단되면(terminate) 진행 중 goal 을 취소하고 on_interrupt 호출
-             (중단된 시도도 TrialResult 로 남기기 위해).
+             서버 없음·goal 거절·abort·취소는 FAILURE. 트리가 중단되면(terminate) goal 을 보낸 시도는 반드시 기록하고
+             (이미 끝났으면 그 결과, 아니면 on_interrupt), 아직 돌고 있거나 수락 전이면 취소한다.
   Do         함수 한 번 실행 후 SUCCESS (TrialResult 발행 등). 함수가 False 를 돌려주면 FAILURE
 """
 from __future__ import annotations
@@ -44,28 +44,39 @@ class WaitUntil(py_trees.behaviour.Behaviour):
 
 class SkillCall(py_trees.behaviour.Behaviour):
     def __init__(self, name: str, node: Node, client: ActionClient, make_goal: Callable[[], Any],
-                 on_result: Callable[[Any], None], on_interrupt: Callable[[], None] | None = None,
+                 on_result: Callable[[Any], None], on_interrupt: Callable[[str], None] | None = None,
                  server_timeout_s: float = 3.0):
         super().__init__(name)
         self.node = node
         self.client = client
         self.make_goal = make_goal
         self.on_result = on_result
-        self.on_interrupt = on_interrupt
+        self.on_interrupt = on_interrupt   # 인자: interrupted | aborted | canceled ...
         self.server_timeout_s = server_timeout_s
+        self._reset()
+
+    def _reset(self) -> None:
         self._send_future = None
         self._result_future = None
         self._goal_handle = None
-        self._t0 = 0.0
+        self._handled = False          # 결과(또는 거절)를 update 에서 처리했는지
+        self._cancel_on_accept = False  # 수락 전에 중단됨 → 수락되자마자 취소
+        self._t0 = time.monotonic()
 
     def initialise(self) -> None:
-        self._send_future = self._result_future = self._goal_handle = None
-        self._t0 = time.monotonic()
+        self._reset()
 
     @property
     def goal_sent(self) -> bool:
         """이번 실행에서 goal 을 보냈는지 (실패 시 시도로 기록할지 판단용)."""
         return self._send_future is not None
+
+    def _on_goal_response(self, future) -> None:
+        # executor 스레드. 수락 전에 중단됐으면 수락되자마자 취소 (리뷰 #41-2)
+        goal_handle = future.result()
+        if self._cancel_on_accept and goal_handle is not None and goal_handle.accepted:
+            self.node.get_logger().info(f"[{self.name}] 중단 뒤 수락됨 — 바로 취소")
+            goal_handle.cancel_goal_async()
 
     def update(self) -> Status:
         if self._send_future is None:
@@ -76,18 +87,21 @@ class SkillCall(py_trees.behaviour.Behaviour):
                     return Status.FAILURE
                 return Status.RUNNING
             self._send_future = self.client.send_goal_async(self.make_goal())
+            self._send_future.add_done_callback(self._on_goal_response)
             return Status.RUNNING
         if self._goal_handle is None:
             if not self._send_future.done():
                 return Status.RUNNING
             self._goal_handle = self._send_future.result()
             if not self._goal_handle.accepted:
+                self._handled = True
                 self.feedback_message = "goal 거절"
                 self.node.get_logger().warn(f"[{self.name}] goal 거절")
                 return Status.FAILURE
             self._result_future = self._goal_handle.get_result_async()
         if not self._result_future.done():
             return Status.RUNNING
+        self._handled = True
         response = self._result_future.result()
         if response.status != GoalStatus.STATUS_SUCCEEDED:
             self.feedback_message = GOAL_STATUS_NAMES.get(response.status, f"status_{response.status}")
@@ -97,13 +111,36 @@ class SkillCall(py_trees.behaviour.Behaviour):
         return Status.SUCCESS
 
     def terminate(self, new_status: Status) -> None:
-        # 실행 중에 트리가 중단되면(세션 취소·안전 정지) 로봇 스킬도 취소
-        if new_status == Status.INVALID and self._goal_handle is not None and self._result_future is not None \
-                and not self._result_future.done():
+        """트리가 중단되면(세션 취소·안전 정지): goal 을 보냈고 결과를 아직 처리 안 했으면 반드시 기록하고,
+        스킬이 아직 돌고 있으면 취소한다. 실로봇에선 skill_server 가 STOP 을 먼저 보고 abort 해서
+        중단 시점에 결과가 이미 와 있는 경우가 흔하다 (리뷰 #41-1)."""
+        if new_status != Status.INVALID or not self.goal_sent or self._handled:
+            return
+        self._handled = True
+        if self._result_future is None and self._send_future.done():
+            goal_handle = self._send_future.result()
+            if goal_handle is not None and goal_handle.accepted:
+                self._goal_handle = goal_handle
+                self._result_future = goal_handle.get_result_async()
+        if self._result_future is not None and self._result_future.done():
+            response = self._result_future.result()
+            if response.status == GoalStatus.STATUS_SUCCEEDED:
+                self.on_result(response.result)           # 중단 직전에 끝난 시도는 실제 결과로
+            else:
+                self._interrupted(GOAL_STATUS_NAMES.get(response.status, f"status_{response.status}"))
+            return
+        if self._goal_handle is not None:
             self.node.get_logger().info(f"[{self.name}] 중단 — goal 취소 요청")
             self._goal_handle.cancel_goal_async()
-            if self.on_interrupt is not None:
-                self.on_interrupt()
+        else:
+            self._cancel_on_accept = True                  # 아직 수락 전 → _on_goal_response 에서 취소
+            if self._send_future.done():                   # 그 사이 응답이 왔으면 직접
+                self._on_goal_response(self._send_future)
+        self._interrupted("interrupted")
+
+    def _interrupted(self, reason: str) -> None:
+        if self.on_interrupt is not None:
+            self.on_interrupt(reason)
 
 
 class Do(py_trees.behaviour.Behaviour):

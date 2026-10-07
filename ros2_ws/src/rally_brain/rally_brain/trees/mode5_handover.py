@@ -59,7 +59,8 @@ def build_trial(session: Session) -> py_trees.behaviour.Behaviour:
                                    duration_s=time.monotonic() - state["t0"], notes=notes))
 
     skill = SkillCall("건네기 GIVE", session.node, client, handover_goal, on_result,
-                      on_interrupt=lambda: record_failure("interrupted"))
+                      on_interrupt=lambda reason: record_failure(
+                          reason if reason == "interrupted" else f"skill_{reason}"))
 
     def record_skill_failure() -> bool:
         if not skill.goal_sent:
