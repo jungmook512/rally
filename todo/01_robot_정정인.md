@@ -72,7 +72,7 @@
 
 ## 메모 / 막힌 것
 
-- [!] 10/7 `get_tool_force` 가 전부 0 (관절 외력 토크는 정상). 재부팅·툴 재적용으로 안 풀림. 우회: `scripts/ejt_wrench.py`(관절 외력 토크 → 자코비안). 선생님·다른 조 로봇과 비교 필요. 접촉 검출·당김 해제·nudge 는 이 문제가 풀리거나 우회 경로를 force_publisher 에 넣어야 실로봇 가능
+- [!] 10/7 `get_tool_force` 전부 0 → **원인: 특이점 근처(베이스 위로 접힌) 자세**. 두산 에뮬레이터에서 접힌 자세(자코비안 조건수 ~300)에서만 정확히 0, 관측 자세면 정상으로 재현. 10/7 오후 실로봇 홈 근처(조건수 11)에서 정상값 확인 — 해결. 로봇을 접힌 자세로 세워 두지 말 것
 - 소프트 비상정지는 `scripts/estop.sh` (QoS TransientLocal 맞춤), 해제는 `scripts/estop.sh reset`
 - 10/6: 로봇 없이 스킬 흐름 테스트: `RALLY_FAKE=1 ros2 run rally_robot skill_server --fake` (가짜 DSR, 테이블 Z 250 mm). 모드 7 nudge 오탐 대비로 접촉 예정 플래그 도입.
 - 10/6: 그리퍼·로봇이 모드 3 검토에 쓰이는 동안 코드 먼저 진행. 물체별 파지 폭은 안 재기로 (폭 0 + 물체별 힘으로 닫음, `skills.yaml gripper`). safety.yaml 값 채움(INTERFACES 6절 기준), nudge·작업 공간 값은 실측 후 확정.

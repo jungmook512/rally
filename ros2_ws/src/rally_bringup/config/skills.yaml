@@ -19,12 +19,13 @@ mode3:
 #   start: 공을 놓는 자리 (base, m). 공 위에 TCP 를 대고 scripts/print_pose.py 로 읽는다. z 는 안 쓴다(table.yaml 사용)
 #   dir_deg: base XY 에서 +x(환자 쪽)로부터 반시계 [deg]. 0 = 정면. 길이 비스듬하면 그 각도
 mode1:
+  # 10/7 실측: 공을 쥐고 입구 점·20 cm 앞 점 (scripts/print_pose.py). goal.lane 0/1/2 = 현장 레인 1/2/3. 간격 ≈ 15 cm
   lanes:
-    - {name: left,   start: [0.40, -0.20, 0.0], dir_deg: 0}    # TODO 실측
-    - {name: center, start: [0.40,  0.00, 0.0], dir_deg: 0}    # TODO 실측
-    - {name: right,  start: [0.40,  0.20, 0.0], dir_deg: 0}    # TODO 실측
+    - {name: lane1_plus_y, start: [0.4339, +0.1416, 0.0], dir_deg: -0.9}
+    - {name: lane2_center, start: [0.4324, -0.0058, 0.0], dir_deg: +0.3}
+    - {name: lane3_minus_y, start: [0.4319, -0.1562, 0.0], dir_deg: -0.7}
   push_speed_range: [0.05, 0.35]  # m/s — 공이 굴러가는 속도 ≈ 미는 속도
-  ball_radius_m: 0.03             # TODO 실측 (공 지름 / 2)
+  ball_radius_m: 0.0315           # 10/7 실측 지름 63 mm
   back_off_m: 0.05                # 공 뒤 이만큼에서 내려간다
   stroke_m: 0.06                  # 공 뒤면을 지나 이만큼 더 민다 (= 손가락이 공을 미는 거리)
   approach_height_m: 0.10
@@ -32,6 +33,10 @@ mode1:
   tool_down_zyz: [174.8, -177.0, 175.1]   # 10/6 테이블 접촉 자세 (툴 수직 아래)
   push_yaw_deg: 0.0               # 닫힌 손가락 면이 미는 방향을 보게 툴 Z 회전 보정
   gripper_close_force_n: 10.0
+  # 공 거치대 (10/7 확정: 기울어진 레일에 공 4개, 늘 같은 자리로 내려옴 → 4번 밀기가 한 사이클)
+  pickup_posx: null               # TODO 실측: 거치대 맨 앞 공을 쥔 자세 그대로 scripts/print_pose.py 의 posx (z 포함)
+  pickup_approach_m: 0.08         # 집는 자리 위 접근 높이
+  balls_per_cycle: 4
 
 # mode7 (저항 밀기) — 로봇은 버티거나 져주기만, 절대 밀지 않음
 mode7:
@@ -66,7 +71,7 @@ pick:
   open_mm: 90.0                   # 접근 전 열림 폭 (가이드 길 벽 10~12 cm 안)
   descend_vel_scale: 0.3
   z_from_table: true
-  grasp_above_table_m: 0.03       # 테이블 면 + 이만큼 = 파지 높이 (공 반지름 ≈ 3 cm)
+  grasp_above_table_m: 0.0315     # 테이블 면 + 이만큼 = 파지 높이 (공 반지름 31.5 mm, 10/7 실측 지름 63 mm)
   z_stiffness_default: 300.0
 
 # handover (모드 5) — present_pose 는 티칭 후 기입 (posx mm·deg, 중앙선 앞 · 환자 팔 높이). 없으면 현재 자세에서 제시

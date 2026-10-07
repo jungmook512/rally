@@ -1,10 +1,14 @@
 """rally_robot/skills/push_ball.py — 공 밀기 (PushBall)
 담당: 정정인 · 모드 1
 
-모드 1 흐름: PickCompliant(공 집기) → PushBall(이 스킬: 레인 입구에 놓기 → 밀기). brain 이 두 액션을 차례로 부른다.
+모드 1 흐름 (10/7 확정): 공 거치대(기울어진 레일, 볼링공 리필처럼 늘 같은 자리로 공이 내려옴)에 공 4개 →
+  PushBall 한 번 = 거치대에서 집기 → 레인 입구에 놓기 → 밀기. 4번이 한 사이클. 환자에게 돌려받지 않는다.
+  skills.yaml mode1.pickup_posx 가 없으면 집기를 건너뛴다 (PickCompliant 로 이미 쥐었거나, 사람이 레인 입구에 공을 놓은 경우).
 
 단계 (feedback.phase)
-  approach : 관측 자세(movej)
+  approach : 관측 자세(movej) — 공을 이미 쥐고 있으면 생략
+  pickup   : (공을 안 쥐었고 mode1.pickup_posx 가 있으면) 그리퍼 열기 → 거치대 집는 자리 위 → 하강 → 닫기 → 공 감지 → 위로
+             공이 감지 안 되면 pickup_failed (거치대가 비었는지 확인)
   place    : (공을 쥐고 있을 때만 — node.holding) 레인 입구 위 → 공이 테이블에 닿는 높이로 하강 → 그리퍼 열기 → 위로
              쥐고 있지 않으면 "공이 이미 레인 입구에 있다"고 보고 건너뛴다 (require_held_ball: true 면 중단)
   approach : 그리퍼 닫기(닫힌 손가락 등을 미는 면으로) → 공 뒤쪽 위(approach_height) → 공 뒤로 하강(공 적도 높이)
@@ -44,6 +48,9 @@ DEFAULTS = dict(
     place_clear_m=0.005,           # 놓을 때 공 바닥과 테이블 사이 여유 (살짝 떨어뜨림)
     place_vel_scale=0.3,
     require_held_ball=False,       # True 면 공을 안 쥐고 시작할 때 중단
+    pickup_posx=None,              # 거치대에서 공을 쥔 자세 (mm, ZYZ deg) — 공을 쥔 채 print_pose 로 실측
+    pickup_approach_m=0.08,        # 집는 자리 위 접근 높이 (그 자세의 z 기준 +)
+    pickup_vel_scale=0.3,
 )
 
 
@@ -112,6 +119,22 @@ def execute(node):
             posj = (node.cfg.get("observe_pose") or {}).get("posj")
             if posj and not getattr(node, "holding", False):   # 공을 쥐고 있으면 PickCompliant 의 들기 자세에서 곧장 레인 입구로
                 movej_checked(node, posj, VELOCITY * 0.5, ACC * 0.5)
+
+            if not getattr(node, "holding", False) and cfg["pickup_posx"]:
+                phase("pickup", 0.1)
+                open_mm, grip_n = node.gripper_cfg("ball")
+                pick = [float(v) for v in cfg["pickup_posx"]]
+                pick_above = [pick[0], pick[1], pick[2] + cfg["pickup_approach_m"] * 1000.0, *pick[3:]]
+                ok, _, _ = node.gripper(open_mm, grip_n)
+                if not ok:
+                    raise SkillAbort("gripper_unavailable")
+                move_checked(node, pick_above, VELOCITY, ACC)
+                move_checked(node, pick, VELOCITY * cfg["pickup_vel_scale"], ACC * cfg["pickup_vel_scale"])
+                ok, width, detected = node.gripper(0.0, grip_n)
+                move_checked(node, pick_above, VELOCITY * cfg["pickup_vel_scale"], ACC * cfg["pickup_vel_scale"])
+                if not (ok and detected):
+                    raise SkillAbort(f"pickup_failed (공 감지 없음, 폭 {width:.0f} mm — 거치대가 비었는지 확인)")
+                log.info(f"[push_ball] 거치대에서 공 집음 (폭 {width:.0f} mm)")
 
             if getattr(node, "holding", False):
                 phase("place", 0.15)
