@@ -22,7 +22,8 @@ from rally_interfaces.action import PickCompliant
 from rally_robot.dsr_helpers import ACC, VELOCITY, SkillAbort, compliance, move_checked, rotate_tool
 
 DEFAULTS = dict(approach_height_m=0.08, below_target_m=0.015, lift_m=0.10, contact_force_n=8.0, open_mm=90.0,
-                descend_vel_scale=0.3, z_from_table=True, grasp_above_table_m=0.03, z_stiffness_default=300.0)
+                descend_vel_scale=0.3, z_from_table=True, grasp_above_table_m=0.03, z_stiffness_default=300.0,
+                tool_down_zyz=None)   # 집는 자세 기준(툴 수직 아래). 없으면 현재 자세 — 관측 자세(11° 기울어짐)에서 부르면 기울어진 채 집는다
 
 
 def execute(node):
@@ -48,7 +49,8 @@ def execute(node):
                 z, z_src = (float(table_z) + cfg["grasp_above_table_m"]) * 1000.0, "table.yaml"
             else:
                 z, z_src = goal.target.pose.position.z * 1000.0, "goal"
-            orient = rotate_tool(cur, (0, 0, 1), math.degrees(goal.yaw))[3:] if abs(goal.yaw) > 1e-3 else cur[3:]
+            base = [*cur[:3], *cfg["tool_down_zyz"]] if cfg["tool_down_zyz"] else list(cur)
+            orient = rotate_tool(base, (0, 0, 1), math.degrees(goal.yaw))[3:] if abs(goal.yaw) > 1e-3 else base[3:]
             above = [x, y, z + cfg["approach_height_m"] * 1000.0, *orient]
             below = [x, y, z - cfg["below_target_m"] * 1000.0, *orient]
             lift = [x, y, z + cfg["lift_m"] * 1000.0, *orient]
@@ -90,6 +92,8 @@ def execute(node):
             phase("lift", 0.9)
             move_checked(node, lift, VELOCITY, ACC)
             res.success, res.grip_width_mm = bool(ok and detected), float(width)
+            if res.success:                      # 모드 5: 건네받은 물체를 이 자리에 다시 내려놓는다 (handover RECEIVE 후)
+                node.last_pick = dict(pose=[x, y, z, *orient], grip_force=grip_force)
             fb.phase, fb.progress = "lift", 1.0
             goal_handle.publish_feedback(fb)
             if res.success:

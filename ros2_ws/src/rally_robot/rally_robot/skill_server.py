@@ -71,6 +71,7 @@ class SkillServer(Node):
         self.last_hand = None
         self._contact = False
         self._cm_client = None
+        self.last_pick = None                # PickCompliant 성공 자세 {pose(mm·deg), grip_force} — 모드 5 내려놓기 자리
         self.holding = False                 # 물체를 쥐고 있는지 — gripper() 가 닫힘+감지면 True, 열면 False
 
         reliable = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=10)

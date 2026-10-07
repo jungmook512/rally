@@ -85,10 +85,25 @@ pick:
   z_from_table: true
   grasp_above_table_m: 0.0315     # 테이블 면 + 이만큼 = 파지 높이 (공 반지름 31.5 mm, 10/7 실측 지름 63 mm)
   z_stiffness_default: 300.0
+  tool_down_zyz: [174.8, -177.0, 175.1]   # 집는 자세 기준(툴 수직 아래, 10/6 실측). 마스크 yaw 는 이 자세에서 툴 Z 회전
 
 # handover (모드 5) — present_pose 는 티칭 후 기입 (posx mm·deg, 중앙선 앞 · 환자 팔 높이). 없으면 현재 자세에서 제시
 handover:
-  present_pose: null              # TODO(정정인) 예: [500.0, 0.0, 300.0, 0.0, 180.0, 0.0]
+  # 제시 자세 — present_pose(posx 티칭값)가 있으면 그것, 없으면 계산: x = table.centerline_x_m − present_margin_m,
+  #   y = present_y_m, z = 테이블 + present_height_m, 자세 = 집었을 때 자세(물체를 쥔 그대로). 교시 없이 동작.
+  present_pose: null
+  present_margin_m: 0.06          # 한계선(중앙선)에서 로봇 쪽으로 이만큼 앞
+  present_y_m: 0.0
+  present_height_m: 0.22          # 테이블 위 높이 (환자 팔 높이 근처)
+  # 기울이기 — goal.tilt_deg 를 tilt_range_deg 로 클램프, 베이스 tilt_axis 축으로 돌린다.
+  #   x = 환자를 향한 축 → 물체가 환자 기준 좌우로 기울어짐 (손목 회전 훈련). y = 앞뒤로 기울어짐
+  tilt_axis: x
+  tilt_range_deg: [-45.0, 45.0]
+  receive_tilt_deg: 0.0           # RECEIVE 때 그리퍼 자세 (돌려받을 땐 똑바로)
+  place_after_receive: true       # RECEIVE 성공 후 마지막 PickCompliant 자리에 내려놓기
+  place_above_m: 0.08
+  place_contact_force_n: 6.0      # 내려놓으며 테이블 접촉 판정 (Z 힘 변화)
+  place_below_m: 0.02             # 집었던 높이보다 이만큼 아래를 향해 순응 하강 (접촉에서 멈춤)
   stiffness: [2000, 2000, 2000, 200, 200, 200]
   pull_hold_s: 0.2                # 임계 이상 힘이 이 시간 유지되면 당김으로 판정
   default_threshold_n: 6.0        # goal 에 없을 때. scripts/measure_wrench.py --pull 결과로 확정

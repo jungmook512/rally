@@ -94,3 +94,19 @@ def test_push_ball_strike_arc():
     pivot = np.array(tips["mid"]) - L * z_mid
     for k in ("start", "end"):
         assert float(np.linalg.norm(np.array(tips[k]) - pivot)) == pytest.approx(L, abs=1e-6)
+def test_handover_present_pose_and_tilt():
+    """제시 자세: 중앙선 − 여유, 테이블 + 높이, 쥔 자세 유지. tilt 는 범위로 클램프되고 베이스 x 축 회전 → 툴 z 축이 y 방향으로 기운다."""
+    pytest.importorskip("rally_interfaces")
+    from rally_robot.skills.handover import DEFAULTS, present_pose
+    cfg = dict(DEFAULTS)
+    table = {"centerline_x_m": 0.52, "z_m": 0.0144}
+    cur = [300.0, 0.0, 400.0, 0.0, 180.0, 0.0]                     # 툴 수직 아래
+    pose, tilt = present_pose(cfg, table, cur, 0.0)
+    assert pose[0] == pytest.approx(460.0) and pose[1] == pytest.approx(0.0) and pose[2] == pytest.approx(234.4)
+    pose30, tilt30 = present_pose(cfg, table, cur, 30.0)
+    assert tilt30 == 30.0 and pose30[:3] == pose[:3]
+    z_axis = Rotation.from_euler("ZYZ", pose30[3:6], degrees=True).apply([0, 0, 1])
+    assert math.degrees(math.acos(-z_axis[2])) == pytest.approx(30.0, abs=0.1)   # 수직에서 30° 기울어짐
+    assert abs(z_axis[0]) < 1e-6                                                   # x 축 회전이라 x 성분 없음
+    _, tilt_c = present_pose(cfg, table, cur, 80.0)
+    assert tilt_c == 45.0                                                          # 범위 클램프

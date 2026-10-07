@@ -139,6 +139,14 @@ def rotate_tool(pose6, axis_xyz, deg):
     return [float(pose6[0]), float(pose6[1]), float(pose6[2]), float(rx), float(ry), float(rz)]
 
 
+def rotate_base(pose6, axis_xyz, deg):
+    """posx 의 자세를 베이스 좌표계 축(axis_xyz) 기준으로 deg 만큼 돌린 posx. 위치는 그대로.
+    예: 환자 쪽(+x) 축으로 돌리면 쥔 물체가 환자 기준 좌우로 기울어진다 (모드 5 손목 회전)."""
+    r = Rotation.from_rotvec(np.deg2rad(deg) * np.array(axis_xyz, dtype=float)) * Rotation.from_euler("ZYZ", pose6[3:6], degrees=True)
+    rx, ry, rz = r.as_euler("ZYZ", degrees=True)
+    return [float(pose6[0]), float(pose6[1]), float(pose6[2]), float(rx), float(ry), float(rz)]
+
+
 def stop_robot(dsr_node, logger, why="safety"):
     """정지 서비스 호출 → check_motion()==0 으로 실제 정지 확인. 실패하면 정지 모드를 올려 재시도. 멈춘 것이 확인되면 True."""
     import DSR_ROBOT2
