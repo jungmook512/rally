@@ -4,25 +4,25 @@
 참고: `docs/INTERFACES.md` 2.2 / 3
 
 ## Day 0 (10/5)
-- [ ] 웹캠 60 fps 확인(`v4l2-ctl`), 환자 측면 위치 가설정
-- [ ] MediaPipe Hands·Pose 단독 실행, RealSense 컬러에서 손 검출 확인
-- [ ] USB 마이크·스피커 장치 확인(`arecord -l`, `aplay -l`), 컨테이너 `/dev/snd` 패스스루 테스트
+- [x] 웹캠 60 fps 확인(`v4l2-ctl`), 환자 측면 위치 가설정 — C270 640×480 은 약 20 fps (이슈 #38)
+- [x] MediaPipe Hands·Pose 단독 실행, RealSense 컬러에서 손 검출 확인 — `scripts/check_mediapipe.py`. 손은 잘 잡힘, 전신은 상반신만 보이면 약함
+- [!] USB 마이크·스피커 장치 확인(`arecord -l`, `aplay -l`), 컨테이너 `/dev/snd` 패스스루 테스트 — USB 마이크 없음. 노트북 내장 마이크는 잡음·깨짐 심함 (`scripts/check_voice.py mic`)
 - [ ] openWakeWord·faster-whisper·Piper 설치, 한국어 Piper 음성 모델 다운로드 → `models/`
 - [ ] 웨이크워드 "랠리야" 녹음 샘플 수집 시작 (팀원 4명 × 20회)
 
 ## Day 1 — 손 관절 · STT 기반
-- [ ] `hand_pose_node.py`: MediaPipe 2D 21점 + 정렬 깊이 → 3D (결측 픽셀 주변 보간) → tf2로 base_link 변환 → `HandState` 30 Hz
-- [ ] 손바닥 좌표계(손목·검지 기저·새끼 기저), `palm_pose`
-- [ ] `distance_to_centerline` 계산 (table.yaml 중앙선 기준)
-- [ ] **기준선**: `ros2 run rally_voice get_keyword` (선생님 코드, `resource/.env` 에 API 키) 동작 확인
-- [ ] `intent_node.py`: 선생님 `WakeupWord`·`STT` 그대로 쓰고 LLM 프롬프트만 RALLY 의도 목록으로 → `VoiceIntent` 토픽, "그만/멈춰" 즉시 `is_emergency`
+- [x] `hand_pose_node.py`: MediaPipe 2D 21점 + 정렬 깊이 → 3D (결측 픽셀 주변 보간) → tf2로 base_link 변환 → `HandState` 30 Hz — bag 재생 19~26 Hz(노트북 CPU), base_link 변환은 로봇·인식 PC에서 확인 필요
+- [x] 손바닥 좌표계(손목·검지 기저·새끼 기저), `palm_pose`
+- [x] `distance_to_centerline` 계산 (table.yaml 중앙선 기준) — tf 없으면 NaN
+- [x] **기준선**: `ros2 run rally_voice get_keyword` (선생님 코드, `resource/.env` 에 API 키) 동작 확인 — 키 확인됨. 팀 키는 gpt-4o·whisper-1 만 허용
+- [x] `intent_node.py`: 선생님 `WakeupWord`·`STT` 그대로 쓰고 LLM 프롬프트만 RALLY 의도 목록으로 → `VoiceIntent` 토픽, "그만/멈춰" 즉시 `is_emergency` — 규칙 먼저, 애매한 말만 gpt-4o (0.8~2 s)
 
 ## Day 2 — 제스처 · 의도 · TTS
-- [ ] `gesture.py`: 손가락 굽힘 각도 → `grip_closure`, 주먹/펼침/가리키기 분류, 주먹 → `/rally/safety/estop` 직결
-- [ ] `wrist_angle_deg`: 전완 방향 대비 손바닥 회전각
-- [ ] `intent_node.py`: LLM function calling → `VoiceIntent` (intent 목록은 msg 주석), "그만/멈춰" 키워드 스팟팅은 STT 전에 처리 → `is_emergency`
+- [x] `gesture.py`: 손가락 굽힘 각도 → `grip_closure`, 주먹/펼침/가리키기 분류, 주먹 → `/rally/safety/estop` 직결 — 5 프레임일 때만 확정 (손 놓친 프레임은 건너뜀, 3 프레임 넘게 놓치면 초기화)
+- [x] `wrist_angle_deg`: 전완 방향 대비 손바닥 회전각 — 팔꿈치가 없어 손 방향을 아래팔 축으로 근사 (0 손바닥 아래 · 90 옆 · 180 위)
+- [ ] `intent_node.py`: LLM function calling → `VoiceIntent` (intent 목록은 msg 주석), "그만/멈춰" 키워드 스팟팅은 STT 전에 처리 → `is_emergency` — function calling 완료. STT 전 비상어(호출어 없이 항상 듣기)는 별도 모델 필요로 미룸
 - [ ] `tts_node.py`: `Speak` srv, Piper TTS, 발화 중 마이크 차단 플래그
-- [ ] 한국어 웨이크워드 모델 학습, 오탐 측정 (목표 ≤ 1회/10분)
+- [ ] 한국어 웨이크워드 모델 학습, 오탐 측정 (목표 ≤ 1회/10분) — **비상어 "그만"·"멈춰" 키워드 모델도 같이** (기획 CP9·FR-07: STT 없이 키워드 스팟팅, 0.3 s 이내, 네트워크 안 탐). 10/7 미착수 → 착수. 지금 intent_node 는 호출어 뒤 STT 로 판정(약 6 s)이라 교체 필요
 
 ## Day 3 — 모드 5 ✅
 - [ ] (정정인과) `HandState` → servol 추종 통합: 지연 측정, 필터 파라미터 공유
@@ -43,6 +43,11 @@
 
 ## Day 6 — 음성 피드백 ✅
 - [ ] 음성 피드백 문구 세트: 난이도 상승/하향, 휴식 제안, 자세 교정("몸을 덜 기울여 보세요")
+- [ ] 음성 의도 고도화 (10/7 인터뷰로 정한 요구사항, 조정묵 Day 3 피로도 지표 정의 후):
+  - 슬롯 추가: `fatigue`(말투로 본 피로 0~1), `mood`(기분, 정동휘 신규), `body_part`(통증 부위), `pain_level`(약함/심함). 말에 나왔을 때만. DB `events.payload.slots` 에 자동 저장되므로 스키마 변경 없음. 슬롯 이름은 조정묵과 맞춘 뒤 INTERFACES 에
+  - 되묻기: 훈련 바꾸기·세션 끝내기만, GPT 확신이 낮을 때 "○○ 할까요?" → 네/아니요 (tts_node 필요). 난이도·휴식은 바로, 비상 정지는 절대 되묻지 않음
+  - 화자: 어르신 환자 + 시연 팀원. 정확도 우선 (반응 2~3 s 허용)
+  - (선택) 지금 훈련 상황을 GPT 에 같이 주기 (brain 상태 필요)
 
 ## Day 7 — 통합·안정화
 - [ ] 시연장 소음에서 호출어·STT 재측정, 임계 조정

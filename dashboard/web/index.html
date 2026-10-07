@@ -1,1 +1,188 @@
-<!doctype html><title>RALLY dashboard</title><p>TODO: 힘 그래프 · 예측 vs 실제 · 학습 곡선 · 리포트</p>
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RALLY 대시보드</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #6b7385; --line: #e3e6ec;
+    --ok: #1f9d55; --ok-bg: #e7f6ee; --warn: #b7791f; --warn-bg: #fdf3e1; --stop: #c53030; --stop-bg: #fdeaea;
+    --accent: #2b6cb0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --panel: #1b2029; --text: #e6e9ef; --muted: #9aa3b5; --line: #2a313d;
+      --ok: #48bb78; --ok-bg: #16301f; --warn: #ecc94b; --warn-bg: #352b10; --stop: #fc8181; --stop-bg: #3a1616;
+      --accent: #63b3ed;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; }
+  header h1 { margin: 0; font-size: 18px; letter-spacing: .02em; }
+  #conn { font-size: 13px; color: var(--muted); }
+  #conn.off { color: var(--stop); }
+  main { padding: 0 20px 24px; display: grid; gap: 14px; max-width: 1280px; margin: 0 auto; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+  .panel h2 { margin: 0 0 10px; font-size: 14px; color: var(--muted); font-weight: 600; }
+
+  #safety { border-radius: 10px; padding: 12px 16px; font-weight: 600; display: flex; gap: 12px; align-items: baseline; }
+  #safety.normal { background: var(--ok-bg); color: var(--ok); }
+  #safety.slow { background: var(--warn-bg); color: var(--warn); }
+  #safety.stop { background: var(--stop-bg); color: var(--stop); }
+  #safety.unknown { background: var(--panel); color: var(--muted); border: 1px solid var(--line); }
+  #safety small { font-weight: 400; }
+
+  .cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+  .card .label { font-size: 13px; color: var(--muted); }
+  .card .value { font-size: 26px; font-weight: 700; margin-top: 2px; overflow-wrap: anywhere; }
+  .card .sub { font-size: 13px; color: var(--muted); }
+
+  .two { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; }
+  td.notes { white-space: normal; color: var(--muted); }
+  .scroll { max-height: 340px; overflow: auto; }
+  .ok { color: var(--ok); font-weight: 600; } .fail { color: var(--stop); font-weight: 600; }
+  ul#events { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+  ul#events li { padding: 6px 0; border-bottom: 1px solid var(--line); display: flex; gap: 10px; }
+  ul#events time { color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
+  .empty { color: var(--muted); font-size: 14px; padding: 8px 0; }
+  .placeholders { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+  .placeholder { min-height: 140px; display: flex; flex-direction: column; }
+  .placeholder p { margin: auto 0; color: var(--muted); font-size: 13px; text-align: center; }
+  .new { animation: flash 1.2s ease-out; }
+  @keyframes flash { from { background: color-mix(in srgb, var(--accent) 18%, transparent); } to { background: transparent; } }
+
+  @media (max-width: 860px) {
+    .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .two, .placeholders { grid-template-columns: 1fr; }
+    header, main { padding-left: 16px; padding-right: 16px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>RALLY 대시보드</h1>
+  <span id="conn" class="off">연결 중…</span>
+</header>
+<main>
+  <div id="safety" class="unknown">안전 상태 모름 <small>상황판 수신 전</small></div>
+
+  <section class="cards">
+    <div class="panel card"><div class="label">지금 모드</div><div class="value" id="mode">—</div><div class="sub" id="robot">로봇 —</div></div>
+    <div class="panel card"><div class="label">시도</div><div class="value" id="trial">—</div><div class="sub" id="session">세션 —</div></div>
+    <div class="panel card"><div class="label">최근 성공률</div><div class="value" id="rate">—</div><div class="sub">같은 세션 최근 5회</div></div>
+    <div class="panel card"><div class="label">피로도</div><div class="value" id="fatigue">—</div><div class="sub" id="hand">손 —</div></div>
+  </section>
+
+  <section class="two">
+    <div class="panel">
+      <h2>최근 시도</h2>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>#</th><th>모드</th><th>결과</th><th>오차</th><th>시간</th><th>메모</th></tr></thead>
+          <tbody id="trials"></tbody>
+        </table>
+        <div class="empty" id="trials-empty">아직 시도 없음</div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>사건 기록</h2>
+      <div class="scroll"><ul id="events"></ul><div class="empty" id="events-empty">아직 사건 없음</div></div>
+    </div>
+  </section>
+
+  <section class="placeholders">
+    <div class="panel placeholder"><h2>힘 그래프</h2><p>Day 4 — 모드 7 실시간 힘 게이지 · 최근 10 s</p></div>
+    <div class="panel placeholder"><h2>학습 곡선</h2><p>Day 5 — 예측 vs 실제 정지 위치 · 시도별 오차</p></div>
+    <div class="panel placeholder"><h2>세션 리포트</h2><p>Day 6 — LLM 리포트 (sessions.report_md)</p></div>
+  </section>
+</main>
+<script>
+const MODES = {1: "공 굴리기", 3: "캐치볼", 5: "건네고 받기", 7: "팔씨름"};
+const LEVELS = {normal: ["normal", "정상"], slow: ["slow", "느리게"], stop: ["stop", "정지"]};   // rally_db convert.SAFETY_LEVELS
+const ROBOT = {idle: "대기", moving: "움직이는 중", holding: "잡고 있음", stopped: "멈춤"};
+const KINDS = {safety_change: "안전", voice_intent: "음성", mode_change: "모드", trial: "시도"};
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const modeName = (m) => m ? `${m} ${MODES[m] ?? ""}`.trim() : "—";
+const clock = (iso) => iso ? new Date(iso).toLocaleTimeString("ko-KR", {hour12: false}) : "";
+const pct = (x) => x == null ? "—" : `${Math.round(x * 100)}%`;
+const seenTrials = new Set();
+
+function renderState(s) {
+  if (!s) return;
+  const [cls, word] = LEVELS[s.safety?.level] ?? ["unknown", "모름"];
+  $("safety").className = cls;
+  $("safety").innerHTML = `안전: ${word}` + (s.safety?.reason ? ` <small>${esc(s.safety.reason)}</small>` : "");
+  $("mode").textContent = modeName(s.mode);
+  $("robot").textContent = `로봇 ${ROBOT[s.robot_state] ?? s.robot_state ?? "—"}`;
+  $("trial").textContent = s.trial_index ? `${s.trial_index}회째` : "—";
+  $("session").textContent = s.session_id ? `세션 ${s.session_id.slice(0, 8)}` : "세션 없음";
+  $("rate").textContent = pct(s.recent_success_rate);
+  $("fatigue").textContent = pct(s.fatigue_score);
+  $("hand").textContent = s.hand_detected ? "손 보임" : "손 안 보임";
+}
+
+function addTrial(t, flash) {
+  if (seenTrials.has(t.trial_id)) return;
+  seenTrials.add(t.trial_id);
+  $("trials-empty").hidden = true;
+  const tr = document.createElement("tr");
+  if (flash) tr.className = "new";
+  const err = t.mode === 1 || t.mode === 3 ? `${Number(t.error_mm).toFixed(0)} mm` : "—";
+  tr.innerHTML = `<td>${t.trial_index}</td><td>${esc(modeName(t.mode))}</td>` +
+    `<td class="${t.success ? "ok" : "fail"}">${t.success ? "성공" : "실패"}</td>` +
+    `<td>${err}</td><td>${t.duration_s != null ? Number(t.duration_s).toFixed(1) + " s" : "—"}</td>` +
+    `<td class="notes">${esc(t.notes)}</td>`;
+  $("trials").prepend(tr);
+}
+
+function describe(e) {
+  switch (e.kind) {
+    case "safety_change": return `${(LEVELS[e.level] ?? [, e.level])[1]}${e.reason ? " — " + e.reason : ""}`;
+    case "voice_intent": return `"${e.text || e.intent}" → ${e.intent}${e.is_emergency ? " (비상)" : ""}`;
+    case "mode_change": return `${modeName(e.from)} → ${modeName(e.to)}`;
+    case "trial": return `${e.trial_index}회째 ${modeName(e.mode)} ${e.success ? "성공" : "실패"}`;
+    default: return JSON.stringify(e);
+  }
+}
+
+function addEvent(e, flash, atEnd) {
+  $("events-empty").hidden = true;
+  const li = document.createElement("li");
+  if (flash) li.className = "new";
+  li.innerHTML = `<time>${clock(e.time || e.ended_at)}</time><span><b>${KINDS[e.kind] ?? esc(e.kind)}</b> ${esc(describe(e))}</span>`;
+  atEnd ? $("events").append(li) : $("events").prepend(li);
+  while ($("events").children.length > 100) $("events").lastChild.remove();
+}
+
+async function load() {
+  const get = async (url) => { const r = await fetch(url); if (!r.ok) throw new Error(await r.text()); return r.json(); };
+  try { renderState(await get("/api/state")); } catch (e) { console.warn(e); }
+  try { (await get("/api/trials")).trials.reverse().forEach((t) => addTrial(t, false)); } catch (e) { console.warn(e); }
+  try { (await get("/api/events")).forEach((e) => addEvent(e, false, true)); } catch (e) { console.warn(e); }
+}
+
+function connect() {
+  const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
+  ws.onopen = () => { $("conn").textContent = "실시간 연결됨"; $("conn").className = ""; };
+  ws.onclose = () => { $("conn").textContent = "연결 끊김 — 다시 연결 중"; $("conn").className = "off"; setTimeout(connect, 2000); };
+  ws.onmessage = (m) => {
+    const msg = JSON.parse(m.data);
+    if (msg.type === "state") renderState(msg.data);
+    else if (msg.type === "event") {
+      addEvent(msg.data, true, false);
+      if (msg.data.kind === "trial") addTrial(msg.data, true);
+    }
+  };
+}
+
+load().then(connect);
+</script>
+</body>
+</html>

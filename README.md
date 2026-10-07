@@ -77,7 +77,7 @@ rally/
 ├── dashboard/       FastAPI + WebSocket
 ├── models/ data/    가중치 · 데이터셋 · bag (git 제외)
 ├── scripts/         캘리브레이션 검증 · 지연 측정 · bag 기록
-└── .github/         CI (colcon build/test, 이미지 빌드)
+└── .github/         CI (build: colcon build/test · images: 이미지 빌드 · vision-deps)
 ```
 
 ## 브랜치 규칙

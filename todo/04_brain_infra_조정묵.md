@@ -24,14 +24,14 @@
 - [x] `trees/mode5_handover.py` (가짜 action 서버로 흐름 검증) → 손 대기 → Handover GIVE → TrialResult 1단계. `scripts/fake_skills.py` 로 성공·실패·STOP·취소 확인
 - [x] `recorder_node.py`: `TrialResult` → `trials`, `WrenchStamped` → `ts_wrench`, `HandState` → `ts_hand`, 이벤트 → `events`
 - [x] Redis `rally:state` 갱신, `rally:events` publish (+ `rally:dialog`)
-- [x] **Ontology** `rally_brain/knowledge/ontology.yaml` 초안: 모드 → 훈련 동작 → 신체 부위, 보상 동작 → 피로 신호, 스킬 → 파라미터·허용 범위 (기획서 4.10, 필수 · 활용 방식 TBD) → 재활 해석은 `verified: false`(가정) 표시, 범위는 skills.yaml 참조만. `ontology.py` 로 LLM 맥락 문장·한국어 이름
+- [x] **Ontology** `rally_brain/knowledge/ontology.yaml` 초안: 모드 → 훈련 동작 → 신체 부위, 보상 동작 → 피로 신호, 스킬 → 파라미터·허용 범위 (기획서 4.10, 필수 · 활용 방식 TBD) → 재활 해석은 `verified: false`(가정) 표시, 범위는 skills.yaml 참조만. `ontology.py` 로 LLM 맥락 문장·한국어 이름 → #60 에서 `ontology.jsonld`(RDF 관계 그래프, 근거 있는 것만)로 교체
 
 ## Day 3 — 모드 5 통합 ✅
 - [ ] 모드 5 서브트리를 실제 skill 서버에 연결, 실패 분기(손 결측 → 대기, 파지 실패 → 재시도 1회)
 - [x] `rule_layer.py` 1차: 안전 레벨 반영, 연속 성공 3회 → 난이도 상승, 음성 `tired` → 휴식 제안 → 규칙 7개(STOP 대기 · tired · harder/easier 음성 · 연속 성공/실패 · 약한 피로 신호 2개↑ → ask_llm · 계속), 설정은 skills.yaml `brain`, bt_runner 가 시도마다 호출. suggest_rest·ask_llm 은 아직 로그만
 - [x] `SetMode` srv, 음성 intent → 트리 이벤트 연결 → `/rally/brain/set_mode` + 음성 `next_mode`(슬롯 mode). 로봇 스킬이 끝난 뒤 전환, 고른 모드부터 원래 순서대로
-- [ ] **시맨틱 레이어** `rally_bringup/config/metrics.yaml` 지표 정의(성공률·피로도·개선율) + SQL 뷰 `schema_003_*.sql`, `rule_layer`가 이 정의를 쓰게 (기획서 4.10, 필수 · 활용 방식 TBD)
-- [ ] **HMI** 대시보드 골격: FastAPI + WebSocket(Redis `rally:events` 구독), 페이지 레이아웃(힘 그래프 / 예측 vs 실제 / 학습 곡선 / 세션 리포트), 안전 상태 배너(SLOW/STOP 사유)
+- [x] **시맨틱 레이어** `rally_bringup/config/metrics.yaml` 지표 정의(성공률·피로도·개선율) + SQL 뷰 `schema_003_*.sql`, `rule_layer`가 이 정의를 쓰게 (기획서 4.10, 필수 · 활용 방식 TBD) → 성공률(최근 5회)·개선율(처음 5 vs 마지막 5)·피로도, `metrics.py` + `schema_003_metrics.sql` 뷰 3개(DB 에서 파이썬과 같은 값 확인), 테스트가 yaml↔SQL 숫자 일치 검사
+- [x] **HMI** 대시보드 골격: FastAPI + WebSocket(Redis `rally:events` 구독), 페이지 레이아웃(힘 그래프 / 예측 vs 실제 / 학습 곡선 / 세션 리포트), 안전 상태 배너(SLOW/STOP 사유) → `dashboard/app/main.py`(상태·시도·사건 API + WebSocket), `web/index.html`(안전 띠·카드·시도·사건, 그래프 자리), recorder 가 시도마다 rally:events 알림. 모드 전환·비상정지 버튼은 ROS 다리 필요(Day 6)
 
 ## Day 4 — 모드 7 통합 ✅ + 모드 3 착수
 - [ ] `trees/mode7_resist.py`: ResistPush(지난 peak_force 60 % 에서 시작) → 성공 3연속 +10 % / 실패 2회 -10 % → TrialResult(peak, hold, smoothness) → TTS
@@ -49,7 +49,7 @@
 - [ ] `embeddings.py`: 시도 특징 32차원 벡터(파라미터·오차·속도·방향 정규화) → `feature_vec`, pgvector 코사인 검색 `repository.find_similar_trials`
 - [ ] `llm.yaml` 전송 필드 화이트리스트(익명화)
 - [ ] 문맥 유무 비교 사례 10개 시나리오 작성 (평가용)
-- [ ] **Knowledge Graph** PostgreSQL 노드·엣지 테이블 `schema_002_*.sql` (노드 타입은 ontology.yaml), recorder가 시도마다 기록 (기획서 4.10, 필수 · 활용 방식 TBD)
+- [ ] **Knowledge Graph** PostgreSQL 노드·엣지 테이블 `schema_002_*.sql` (노드 타입은 ontology.jsonld 클래스), recorder가 시도마다 기록 (기획서 4.10, 필수 · 활용 방식 TBD)
 - [ ] **HMI** 예측 vs 실제 정지 위치 산점도, 시도별 오차 추이(학습 곡선)
 
 ## Day 6 — 학습 루프 + 세션 전체 ✅
@@ -76,6 +76,7 @@
 - [ ] **HMI** 대시보드 모니터 세팅, 리허설 중 화면 운영, 발표 때 대시보드 시연
 
 ## 메모 / 막힌 것
+- (10/7) ontology 를 JSON-LD(관계 그래프)로 바꾸면서 근거 없는 내용(신체 부위 목록, 보상 동작의 뜻, 피로 강도)을 뺐다. **보상 동작 감지 → 무엇을 할지(대응)는 근거가 없어 비어 있음** — 강사님 확인 또는 재활 자료로 채우기. 채우면 `ontology.jsonld` 에 관계 + `source` 로
 - (10/7, 정동휘) 모드 3 `lead_time_s`·CP13 관련 실측 → 이슈 #38 (비행 0.40~0.55 s, 로봇 이동 거리 한계)
 - (10/6) HMI 대시보드를 정동휘에게서 가져옴. 골격은 하루 당겨 Day 3 (Day 2 recorder·Redis 와 바로 연결)
 - 지식 계층(Ontology · KG · Graph RAG · 시맨틱 레이어)은 **반드시 사용**. 구체적인 활용 방식은 추후 결정 → 정해지면 기획서 4.10·FR-20~23 갱신
