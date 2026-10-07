@@ -22,7 +22,7 @@ sha256sum -c <<'SUM'
 SUM
 ```
 
-TTS 문구에 비상어(`intent_rules.EMERGENCY_WORDS` — 그만·멈춰·아프·위험 등)가 있으면 말하지 않고 `done=false`. brain 문구는 `rally_voice.tts_node.phrase_problem()` 으로 미리 검사 (`test/test_tts.py` 참고).
+TTS 문구에 비상어(`intent_rules.EMERGENCY_WORDS` — 그만·멈춰·아프·위험 등)가 있으면 말하지 않고 `done=false`. brain 문구는 `rally_voice.tts_node.phrase_problem()` 으로 미리 검사.
 
 컨테이너는 `../models` 를 `/models` 로 마운트하므로 같은 파일을 쓴다. 확인:
 
