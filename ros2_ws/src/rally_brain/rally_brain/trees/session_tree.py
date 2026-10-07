@@ -7,6 +7,7 @@
    └─ ...
 시도 서브트리는 build_trial(session) → Behaviour 를 내놓는다. 한 번 SUCCESS = 시도 1회 끝 (성공·실패는 TrialResult 에).
 아직 서브트리가 없는 모드는 로그만 남기고 건너뛴다.
+모드마다 맨 앞에서 session.current_mode 를 기록한다 — 모드 전환(SetMode·음성)은 modes_after_switch 로 남은 순서를 다시 만든다.
 """
 from __future__ import annotations
 
@@ -43,6 +44,9 @@ class Session:
     trials: list[TrialResult] = field(default_factory=list)
     difficulty: dict[int, int] = field(default_factory=dict)        # 모드 → 난이도 단계 (0 = 시작)
     level_changed_at: dict[int, int] = field(default_factory=dict)  # 모드 → 난이도가 바뀐 시점의 len(trials)
+    modes: list[int] = field(default_factory=list)                  # 지금 트리의 모드 순서 (전환하면 바뀜)
+    current_mode: int | None = None                                 # 지금 진행 중인 모드
+    trial_active: bool = False                                      # 로봇이 시도 중 (begin_trial ~ record). 모드 전환은 이때 안 함
 
     def safe(self) -> bool:
         ctx = self.get_context()
@@ -52,8 +56,13 @@ class Session:
         ctx = self.get_context()
         return ctx is not None and ctx.hand.detected
 
+    def begin_trial(self) -> None:
+        """시도 서브트리가 로봇 동작을 시작할 때 부른다 (손 대기 뒤). record 까지는 모드 전환을 미룬다."""
+        self.trial_active = True
+
     def record(self, trial: TrialResult) -> None:
         """session_id·trial_index·stamp 를 채워 발행. 모든 시도는 여기를 거친다 (rally_brain/CLAUDE.md)."""
+        self.trial_active = False
         trial.session_id = self.session_id
         trial.trial_index = len(self.trials) + 1
         trial.header.stamp = self.node.get_clock().now().to_msg()
@@ -79,14 +88,34 @@ class Session:
         return sum(t.success for t in self.trials) / len(self.trials) if self.trials else 0.0
 
 
+def modes_after_switch(modes: list[int], current: int | None, target: int | None) -> list[int]:
+    """모드 전환 뒤 남은 순서. target None = 다음 모드로. 고른 모드부터 원래 순서대로 이어 간다.
+    예) [1, 5, 7] 에서 5 진행 중: None → [7], 7 → [7], 1 → [1, 5, 7]. 순서에 없던 모드는 그 모드 뒤에 원래 남은 순서."""
+    after_current = modes[modes.index(current) + 1:] if current in modes else list(modes)
+    if target is None:
+        return after_current
+    if target in modes:
+        return modes[modes.index(target):]
+    return [target] + [m for m in after_current if m != target]
+
+
 def build_session_tree(session: Session, modes: list[int], trials_per_mode: int) -> py_trees.behaviour.Behaviour:
+    session.modes = list(modes)
     root = py_trees.composites.Sequence("세션", memory=True)
     for mode in modes:
         name = f"모드 {mode} {MODE_NAMES.get(mode, '?')}"
+
+        def enter(m: int = mode, n: str = name) -> None:
+            session.current_mode = m
+            session.node.get_logger().info(f"{n} 시작")
+
         builder = TRIAL_BUILDERS.get(mode)
         if builder is None:
             root.add_child(Do(f"{name} 건너뜀",
                               lambda n=name: session.node.get_logger().warn(f"{n} — 시도 서브트리가 아직 없어 건너뜀")))
             continue
-        root.add_child(py_trees.decorators.Repeat(f"{name} × {trials_per_mode}", builder(session), trials_per_mode))
+        root.add_child(py_trees.composites.Sequence(name, memory=True, children=[
+            Do(f"{name} 시작", enter),
+            py_trees.decorators.Repeat(f"{name} × {trials_per_mode}", builder(session), trials_per_mode),
+        ]))
     return root

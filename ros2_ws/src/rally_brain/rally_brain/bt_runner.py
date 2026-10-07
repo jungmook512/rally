@@ -16,7 +16,12 @@
 시도가 기록될 때마다 rule_layer 가 다음 행동을 고른다 (/rally/voice/intent 의 tired·harder·easier 도 여기서 소비).
   harder/easier → 모드별 난이도 단계만 바꾼다 (값 반영은 각 모드 서브트리). suggest_rest → 지금은 로그만 (TTS 노드 전).
   ask_llm → llm_advisor 가 생기기 전까지 continue 로 대체.
-TODO: 준비가 도중에 깨지면 중단 + 관측 자세 대기, SetMode·음성 next_mode, suggest_rest → TTS·일시정지
+모드 전환: /rally/brain/set_mode (SetMode, 대시보드) · 음성 next_mode (+ 슬롯 mode, INTERFACES 2.2).
+  요청은 바로 답하고, 실제 전환은 시도와 시도 사이(또는 손 대기 중)에만 한다 — 로봇이 물체를 건네는 도중에 끊지 않음.
+  고른 모드부터 원래 순서대로 이어 간다 (session_tree.modes_after_switch). 슬롯 없는 next_mode = 다음 모드.
+  같은 발화(header.stamp 같음)는 한 번만 처리. 안전 STOP 중 요청은 거절. 대기 중 요청은 새 요청이 덮어쓴다.
+  요청 저장·소비는 _switch_lock 으로 (서비스·구독 콜백 스레드 ↔ tick 스레드).
+TODO: 준비가 도중에 깨지면 중단 + 관측 자세 대기, 음성 start_session(+모드), suggest_rest → TTS·일시정지
 """
 from __future__ import annotations
 
@@ -35,11 +40,12 @@ from std_msgs.msg import String
 
 from rally_brain import rule_layer
 from rally_brain.config import load_skills
-from rally_brain.trees.session_tree import Session, build_session_tree
+from rally_brain.behaviours import SkillCall
+from rally_brain.trees.session_tree import MODE_NAMES, Session, build_session_tree, modes_after_switch
 from rally_bringup.readiness import ReadinessChecker
 from rally_interfaces.action import RunSession
 from rally_interfaces.msg import SafetyStatus, SceneContext, TrialResult, VoiceIntent
-from rally_interfaces.srv import Speak
+from rally_interfaces.srv import SetMode, Speak
 
 CHECK_PERIOD_S = 1.0
 STATE_PERIOD_S = 0.5
@@ -81,12 +87,18 @@ class BtRunner(Node):
         self._skills_cfg = load_skills()
         self._rule_cfg = rule_layer.rule_config(self._skills_cfg)
         self._pending_intent: str | None = None
+        self._session: Session | None = None
+        self._pending_switch: tuple[int | None, str] | None = None   # (목표 모드 또는 None=다음, 요청한 곳)
+        self._switch_lock = threading.Lock()                          # _session·_pending_switch 보호
+        self._last_intent_stamp: tuple[int, int] = (0, 0)             # 마지막으로 처리한 발화
 
         reliable = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, depth=10)
         self.create_subscription(SceneContext, "/rally/brain/context", self._on_context, qos_profile_sensor_data)
         self.create_subscription(VoiceIntent, "/rally/voice/intent", self._on_intent, reliable)
         self._trial_pub = self.create_publisher(TrialResult, "/rally/brain/trial_result", reliable)
         self._state_pub = self.create_publisher(String, "/rally/brain/state", reliable)
+        self.create_service(SetMode, "/rally/brain/set_mode", self._on_set_mode,
+                            callback_group=MutuallyExclusiveCallbackGroup())
         if self.readiness is not None:
             self.create_timer(CHECK_PERIOD_S, self._check_ready)
         self.create_timer(STATE_PERIOD_S, self._publish_state)
@@ -108,9 +120,74 @@ class BtRunner(Node):
         return time.monotonic() - max(self._context_rx, since) > self.context_timeout_s
 
     def _on_intent(self, msg: VoiceIntent) -> None:
+        # 같은 발화가 다시 오면(header.stamp 같음) 무시 — "다음" 한 번에 모드 두 칸 건너뛰지 않게 (#51 리뷰 1)
+        stamp = (msg.header.stamp.sec, msg.header.stamp.nanosec)
+        if stamp != (0, 0):
+            if stamp == self._last_intent_stamp:
+                return
+            self._last_intent_stamp = stamp
         # 상황판의 last_intent 는 3 s 만 남아 시도 끝까지 못 버틴다 → 규칙용 intent 는 다음 판단까지 들고 있는다
         if msg.intent in RULE_INTENTS:
             self._pending_intent = msg.intent
+        elif msg.intent == "next_mode":
+            slots = dict(zip(msg.slot_keys, msg.slot_values))
+            try:
+                target = int(slots["mode"]) if "mode" in slots else None
+            except ValueError:
+                self.get_logger().warn(f"음성 next_mode 슬롯 mode={slots['mode']!r} 를 모드 번호로 못 읽음 — 무시")
+                return
+            ok, message = self._request_switch(target, "음성")
+            (self.get_logger().info if ok else self.get_logger().warn)(f"[모드 전환] 음성 — {message}")
+
+    # ---------- 모드 전환 ----------
+    def _on_set_mode(self, request: SetMode.Request, response: SetMode.Response) -> SetMode.Response:
+        response.success, response.message = self._request_switch(request.mode, "set_mode")
+        (self.get_logger().info if response.success else self.get_logger().warn)(
+            f"[모드 전환] set_mode — {response.message}")
+        return response
+
+    def _request_switch(self, target: int | None, source: str) -> tuple[bool, str]:
+        """요청 확인만 하고 접수. 실제 전환은 tick 루프의 _apply_switch. 확인+저장을 한 lock 안에서 (#51 리뷰 2)."""
+        with self._switch_lock:
+            session = self._session
+            if session is None:
+                return False, "진행 중인 세션 없음"
+            ctx = self._context
+            if ctx is not None and ctx.safety.level == SafetyStatus.LEVEL_STOP:
+                return False, "안전 정지 중 — 세션이 끝나므로 전환하지 않음"
+            if target is not None:
+                if target not in MODE_NAMES:
+                    return False, f"없는 모드 {target} (1·3·5·7)"
+                if target == TrialResult.MODE_CATCH_PAD and not mode3_enabled(self._skills_cfg):
+                    return False, "모드 3 캐치볼은 꺼져 있음 (skills.yaml mode3_challenge.enabled)"
+                if target == session.current_mode:
+                    return False, f"이미 모드 {target} {MODE_NAMES[target]} 진행 중"
+            replaced = self._pending_switch is not None
+            self._pending_switch = (target, source)
+        if target is None and not modes_after_switch(session.modes, session.current_mode, None):
+            what = "다음 모드 없음(마지막 모드) — 전환하면 세션이 끝남"
+        else:
+            what = ("다음 모드" if target is None else f"모드 {target} {MODE_NAMES[target]}") + "(으)로 전환"
+        return True, f"{what} 접수 — 지금 시도가 끝나면 바뀜" + (" (앞선 요청은 취소)" if replaced else "")
+
+    @staticmethod
+    def _skill_running(tree: py_trees.trees.BehaviourTree) -> bool:
+        return any(isinstance(b, SkillCall) and b.status == py_trees.common.Status.RUNNING
+                   for b in tree.root.iterate())
+
+    def _apply_switch(self, tree: py_trees.trees.BehaviourTree, session: Session,
+                      n: int) -> py_trees.trees.BehaviourTree:
+        """접수된 전환이 있고 시도 경계(시도 사이·손 대기)이면 남은 순서로 트리를 새로 만든다.
+        스킬 하나가 끝났어도 시도가 안 끝났으면(예: GIVE 뒤 RECEIVE 전) 기다린다 (#51 리뷰 3)."""
+        with self._switch_lock:
+            if self._pending_switch is None or session.trial_active or self._skill_running(tree):
+                return tree
+            (target, source), self._pending_switch = self._pending_switch, None
+        modes = modes_after_switch(session.modes, session.current_mode, target)
+        tree.root.stop(py_trees.common.Status.INVALID)   # 손 대기 등 진행 중 블록 정리 (스킬은 돌고 있지 않음)
+        self.get_logger().info(f"[모드 전환] {source}: 모드 {session.current_mode} → 남은 순서 {modes}")
+        session.current_mode = None
+        return py_trees.trees.BehaviourTree(build_session_tree(session, modes, n))
 
     def _after_trial(self, session: Session, trial: TrialResult) -> None:
         intent, self._pending_intent = self._pending_intent, None
@@ -177,6 +254,8 @@ class BtRunner(Node):
                           publish=self._trial_pub.publish, action_client=self._action_client,
                           skills_cfg=self._skills_cfg, say=self._say, after_trial=self._after_trial)
         tree = py_trees.trees.BehaviourTree(build_session_tree(session, modes, n))
+        with self._switch_lock:
+            self._session, self._pending_switch = session, None
         started = time.monotonic()
         self.get_logger().info(f"세션 시작 {session.session_id[:8]} — 모드 {modes}, 모드마다 {n}회")
 
@@ -197,6 +276,7 @@ class BtRunner(Node):
                     tree.root.stop(py_trees.common.Status.INVALID)   # 실행 중 블록 terminate → 스킬 goal 취소
                     self.get_logger().warn(f"안전 정지({ctx.safety.reason}) — 세션 중단")
                     break
+                tree = self._apply_switch(tree, session, n)
                 tree.tick()
                 tip = tree.tip()
                 self._state_name = tip.name if tip is not None else "idle"
@@ -213,6 +293,8 @@ class BtRunner(Node):
                 time.sleep(self.tick_period)
         finally:
             self._state_name = "idle"
+            with self._switch_lock:
+                self._session = self._pending_switch = None
 
         getattr(goal_handle, {"succeeded": "succeed", "canceled": "canceled", "aborted": "abort"}[outcome])()
         result = RunSession.Result(session_id=session.session_id, total_trials=len(session.trials),

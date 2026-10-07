@@ -159,3 +159,38 @@ def test_config_defaults_and_override():
 @pytest.mark.parametrize("text", [mode5_handover.DEFAULTS["hand_prompt"], mode5_handover.DEFAULTS["retry_prompt"]])
 def test_prompts_avoid_stop_words(text):
     assert "그만" not in text and "멈춰" not in text   # INTERFACES #45
+
+
+def first_tick(session):
+    """한 번 tick → 손 확인 → goal 전송까지 (결과는 이미 와 있지만 아직 처리 전)."""
+    tree = mode5_handover.build_trial(session)
+    tree.tick_once()
+    assert tree.status == Status.RUNNING
+    return tree
+
+
+def test_success_just_before_stop_is_recorded():
+    # #64 리뷰 1 재현: 스킬이 성공으로 끝났는데 처리 전에 STOP·취소로 트리가 멈춤 → 그래도 성공 1건 기록
+    client = FakeClient([(True, True, "")])
+    session, published, _ = make_session(client)
+    tree = first_tick(session)
+    tree.stop(Status.INVALID)
+    assert [(t.success, metric(t, "attempts")) for t in published] == [(True, 1)]
+    assert not session.trial_active
+
+
+def test_abort_before_stop_keeps_real_reason():
+    # #64 리뷰 2: 중단 시점에 abort 결과가 와 있으면 skill_aborted 가 아니라 실제 이유
+    client = FakeClient([(False, False, "safety_stop")])
+    session, published, _ = make_session(client)
+    tree = first_tick(session)
+    tree.stop(Status.INVALID)
+    assert [(t.success, t.notes) for t in published] == [(False, "safety_stop")]
+
+
+def test_no_hand_has_wait_time_and_zero_attempts():
+    client = FakeClient([])
+    session, published, _ = make_session(client, hand=False)
+    run(session)
+    assert published[0].duration_s >= 0.1            # 0.05 s × 2번 기다림
+    assert metric(published[0], "attempts") == 0

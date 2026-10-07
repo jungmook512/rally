@@ -12,10 +12,12 @@
            ├─ Selector(Handover GIVE, abort 결과 받기)
            └─ 판정               성공 → 기록 / retry_reasons 실패이고 회차가 남았으면 안내 후 FAILURE(→ 다음 회차) / 아니면 실패 기록
   세션이 스킬 도중 중단되면(안전 STOP·취소) 실패 TrialResult notes=interrupted
-  재시도는 시도 1회 안의 일이다 — TrialResult 는 마지막 회차 결과 하나, metrics 에 attempts.
+  재시도는 시도 1회 안의 일이다 — TrialResult 는 마지막 회차 결과 하나, metrics 에 attempts (no_hand 는 0).
+  no_hand 는 성공률·개선율·난이도 규칙에서 빠진다 (metrics.yaml exclude_notes, session_tree.NOT_PERFORMANCE).
   설정: skills.yaml mode5 (없으면 DEFAULTS).
 
-지금(Day 3): Handover GIVE. 물체는 로봇이 이미 쥐고 있다고 가정.
+지금(Day 3): Handover GIVE. 물체는 로봇이 이미 쥐고 있다고 가정. 그래서 재시도 대상은 지금은 GIVE 의
+timeout(환자가 안 잡음)이고, todo 의 "파지 실패 재시도"(PickCompliant 로 집기)는 집기 단계가 트리에 들어올 때 같은 방식으로.
 TODO: PickCompliant 로 집기 → GIVE → RECEIVE, 기울기 단계
 """
 from __future__ import annotations
@@ -80,7 +82,8 @@ def hand_wait(session: Session, cfg: dict) -> py_trees.behaviour.Behaviour:
 
 def build_trial(session: Session) -> py_trees.behaviour.Behaviour:
     cfg = mode5_config(session.skills_cfg)
-    state: dict[str, Any] = {"t0": 0.0, "attempt": 0, "result": None, "fatal": False}
+    state: dict[str, Any] = {"t0": 0.0, "attempt": 0, "result": None, "fatal": False, "recorded": False,
+                             "wait_t0": 0.0}
     client = session.action_client(Handover, ACTION)
     log = session.node.get_logger()
 
@@ -88,23 +91,42 @@ def build_trial(session: Session) -> py_trees.behaviour.Behaviour:
         return time.monotonic() - state["t0"]
 
     def mark_start() -> None:
-        state.update(t0=time.monotonic(), attempt=0, result=None, fatal=False)
+        state.update(t0=time.monotonic(), attempt=0, result=None, fatal=False, recorded=False)
+        session.begin_trial()   # 여기부터 기록까지 모드 전환 안 함 (손 대기 중엔 됨)
 
     def record_failure(notes: str) -> None:
         session.record(TrialResult(mode=TrialResult.MODE_HANDOVER, success=False, duration_s=elapsed(),
                                    metric_keys=["attempts"], metric_values=[float(max(1, state["attempt"]))],
                                    notes=notes))
 
+    def mark_wait() -> None:
+        state["wait_t0"] = time.monotonic()
+
     def record_no_hand() -> None:
-        log.warn(f"[모드 5] 손이 {cfg['hand_wait_s'] * cfg['hand_wait_tries']:.0f} s 동안 안 보임 — 이번 시도 건너뜀")
-        state["attempt"] = 0
-        session.record(TrialResult(mode=TrialResult.MODE_HANDOVER, success=False, notes="no_hand"))
+        waited = time.monotonic() - state["wait_t0"]
+        log.warn(f"[모드 5] 손이 {waited:.0f} s 동안 안 보임 — 이번 시도 건너뜀")
+        session.record(TrialResult(mode=TrialResult.MODE_HANDOVER, success=False, duration_s=waited,
+                                   metric_keys=["attempts"], metric_values=[0.0], notes="no_hand"))
 
     def attempt(k: int) -> py_trees.behaviour.Behaviour:
+        def on_result(result: Handover.Result) -> None:
+            # 성공은 여기서 바로 기록 — 중단(STOP·취소) 직전에 끝난 시도는 terminate 가 이것만 부르고
+            # judge 는 돌지 않는다 (#64 리뷰 1, #41 과 같은 버그). 실패는 judge 가 재시도를 정한다
+            state["result"] = result
+            if result.success:
+                session.record(trial_from_result(result, elapsed(), k))
+                state["recorded"] = True
+
+        def on_interrupt(reason: str) -> None:
+            # 중단 시점에 abort 결과가 와 있으면 실제 실패 이유(safety_stop 등)로 (#64 리뷰 2)
+            if reason != "interrupted" and skill.result is not None and skill.result.failure_reason:
+                reason = skill.result.failure_reason
+            elif reason != "interrupted":
+                reason = f"skill_{reason}"
+            record_failure(reason)
+
         skill = SkillCall(f"건네기 GIVE {k}", session.node, client, handover_goal,
-                          on_result=lambda r: state.update(result=r),
-                          on_interrupt=lambda reason: record_failure(
-                              reason if reason == "interrupted" else f"skill_{reason}"))
+                          on_result=on_result, on_interrupt=on_interrupt)
 
         def start() -> bool:
             if state["fatal"]:
@@ -121,10 +143,9 @@ def build_trial(session: Session) -> py_trees.behaviour.Behaviour:
         def judge() -> bool:
             if state["fatal"]:
                 return False
-            result = state["result"]
-            if result is not None and result.success:
-                session.record(trial_from_result(result, elapsed(), k))
+            if state["recorded"]:                 # 성공 — on_result 에서 이미 기록
                 return True
+            result = state["result"]
             reason = result.failure_reason if result is not None else f"skill_{skill.feedback_message}"
             if should_retry(reason, k, cfg):
                 log.info(f"[모드 5] {k}회차 실패({reason}) — 다시 시도")
@@ -146,6 +167,7 @@ def build_trial(session: Session) -> py_trees.behaviour.Behaviour:
     attempts = [attempt(k) for k in range(1, int(cfg["max_retries"]) + 2)]
     return py_trees.composites.Selector("모드 5 시도", memory=True, children=[
         py_trees.composites.Sequence("손 없음", memory=True, children=[
+            Do("대기 시작", mark_wait),
             py_trees.decorators.Inverter("손 보이면 넘어감", hand_wait(session, cfg)),
             Do("손 없음 기록", record_no_hand),
         ]),
