@@ -80,3 +80,36 @@ def test_llm_stop_is_not_emergency_and_mode_dropped():
     r = parse_tool_arguments(json.dumps({"intent": "stop", "mode": "1", "confidence": 0.9}))
     assert r.intent == "stop" and not r.is_emergency and r.slots == {}
     assert parse_tool_arguments(json.dumps({"intent": "harder", "mode": "", "confidence": 3.0})).confidence == 1.0
+
+
+class FakeLlm:
+    def __init__(self, result):
+        self.result, self.calls = result, 0
+
+    def classify(self, text):
+        self.calls += 1
+        return self.result
+
+
+def test_llm_first_uses_llm_even_when_rules_match():
+    from rally_voice.intent_llm import classify_text
+    from rally_voice.intent_rules import Intent
+    llm = FakeLlm(Intent("tired", confidence=0.9, source="llm"))
+    r = classify_text("시작은 했는데 좀 힘드네요", llm)       # 규칙은 '시작' 에 걸려 start_session 이 됨
+    assert r.intent == "tired" and llm.calls == 1
+
+
+def test_emergency_skips_llm():
+    from rally_voice.intent_llm import classify_text
+    from rally_voice.intent_rules import Intent
+    llm = FakeLlm(Intent("unknown", confidence=0.9, source="llm"))
+    r = classify_text("아파 그만", llm)
+    assert r.is_emergency and llm.calls == 0
+
+
+def test_llm_failure_falls_back_to_rules():
+    from rally_voice.intent_llm import classify_text
+    from rally_voice.intent_rules import Intent
+    llm = FakeLlm(Intent("unknown", confidence=0.0, source="llm"))   # API 오류·시간 초과 모양
+    assert classify_text("천천히 해줘", llm).intent == "easier"
+    assert classify_text("오늘 날씨 좋네", llm).intent == "unknown"
