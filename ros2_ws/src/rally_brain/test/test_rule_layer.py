@@ -1,4 +1,4 @@
-"""rule_layer 단위 테스트 — 규칙 7개를 위에서부터 하나씩, 실제 skills.yaml·ontology.yaml 로."""
+"""rule_layer 단위 테스트 — 규칙 7개를 위에서부터 하나씩, 실제 skills.yaml·ontology.jsonld 로."""
 import pytest
 
 from rally_brain import rule_layer
@@ -67,13 +67,13 @@ def test_6_two_weak_signals_ask_llm():
     ts = trials(False, False, True, False, True, durations=[10, 10, 10, 10, 20])
     d = decide(ctx(compensation=True), ts)
     assert d.action == "ask_llm"
-    assert set(d.signals) == {"compensation_repeated", "success_drop", "slowing"}
+    assert set(d.signals) == {"compensation", "success_drop", "slowing"}
     assert "성공률 하락" in d.reason
 
 
 def test_6_one_signal_is_not_enough():
     d = decide(ctx(compensation=True), trials(True, False, True))
-    assert d.action == "continue" and d.signals == ("compensation_repeated",)
+    assert d.action == "continue" and d.signals == ("compensation",)
 
 
 def test_7_continue():
@@ -91,3 +91,68 @@ def test_apply_difficulty_clamped():
     assert rule_layer.apply_difficulty(3, "harder", CFG) == 3
     assert rule_layer.apply_difficulty(-3, "easier", CFG) == -3
     assert rule_layer.apply_difficulty(2, "continue", CFG) == 2
+
+
+def test_actions_come_from_ontology_graph():
+    # 규칙은 계기만 정하고 행동은 그래프(Cue —triggers→ Action)에서 — 그래프를 바꾸면 행동이 바뀐다 (안전 STOP 은 예외, 아래)
+    from rdflib import Literal
+    from rally_brain.knowledge import ontology
+    g = ontology.load()
+    g2 = type(g)()
+    for t in g:
+        g2.add(t)
+    cue = next(g2.subjects(ontology.RALLY.key, Literal("success_streak")))
+    g2.remove((cue, ontology.RALLY.triggers, None))
+    g2.add((cue, ontology.RALLY.triggers, ontology.RALLY.act_continue))
+    d = rule_layer.decide(ctx(), trials(True, True, True), None, CFG, graph=g2)
+    assert d.action == "continue" and "3연속 성공" in d.reason
+
+
+def copy_graph():
+    from rally_brain.knowledge import ontology
+    g = ontology.load()
+    g2 = type(g)()
+    for t in g:
+        g2.add(t)
+    return g2
+
+
+def relink(g, cue_key, action):
+    from rdflib import Literal
+    from rally_brain.knowledge import ontology
+    cue = next(g.subjects(ontology.RALLY.key, Literal(cue_key)))
+    g.remove((cue, ontology.RALLY.triggers, None))
+    g.add((cue, ontology.RALLY.triggers, getattr(ontology.RALLY, action)))
+    return g
+
+
+def test_stop_is_fixed_in_code_not_graph():
+    # 그래프에서 safety_stop → harder 로 바꿔도 STOP 은 wait (#60 리뷰 1 재현)
+    g = relink(copy_graph(), "safety_stop", "act_harder")
+    d = rule_layer.decide(ctx(stop=True), trials(True, True, True), "harder", CFG, graph=g)
+    assert d.action == "wait"
+
+
+def test_check_graph_real_is_clean():
+    assert rule_layer.check_graph(CFG) == []
+
+
+def test_check_graph_finds_missing_and_disallowed_actions():
+    from rally_brain.knowledge import ontology
+    g = copy_graph()
+    cue = next(g.subjects(ontology.RALLY.key, __import__("rdflib").Literal("tired")))
+    g.remove((cue, ontology.RALLY.triggers, None))
+    problems = rule_layer.check_graph(CFG, g)
+    assert any("'tired'" in p and "연결 없음" in p for p in problems)
+    narrow = {**CFG, "actions": ["continue", "wait", "ask_llm"]}
+    problems = rule_layer.check_graph(narrow, copy_graph())
+    assert any("'harder'" in p and "brain.actions" in p for p in problems)
+
+
+def test_check_graph_reports_unreadable_file(monkeypatch):
+    from rally_brain.knowledge import ontology
+
+    def broken():
+        raise ValueError("깨진 JSON")
+    monkeypatch.setattr(ontology, "load", broken)
+    assert rule_layer.check_graph(CFG)[0].startswith("ontology 를 읽지 못함")
