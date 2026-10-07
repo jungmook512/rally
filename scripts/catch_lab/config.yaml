@@ -1,0 +1,55 @@
+# catch_lab 설정. 좌표는 RealSense 컬러 광학 프레임 기준 (x 오른쪽, y 아래, z 카메라 앞), 단위 m.
+topics:
+  color: /camera/camera/color/image_raw
+  color_info: /camera/camera/color/camera_info
+  depth: /camera/camera/depth/image_rect_raw                    # 원본 깊이 (녹화 부하가 적어 권장)
+  depth_info: /camera/camera/depth/camera_info
+  aligned_depth: /camera/camera/aligned_depth_to_color/image_raw # bag 에 있으면 이쪽을 우선 사용
+  accel: /camera/camera/accel/sample
+  webcam: /webcam/image_raw
+
+ball:
+  diameter_m: 0.065
+  hsv:                          # 공 색 범위 (합집합). 실제 공은 연두+파랑 반반. tune_color.py --index 로 조정
+    - {lo: [20, 50, 100], hi: [50, 255, 255]}    # 연두. 밝게 찍혀 채도가 80 안팎까지 떨어짐
+    - {lo: [90, 110, 60], hi: [125, 255, 255]}   # 진한 파랑. 하늘색 옷(채도 65 안팎)은 안 걸리게 110 이상
+  webcam_hsv:                   # 웹캠(C270) 전용. 색감·밝기가 달라 따로 둔다. tune_color.py --webcam 으로 조정
+    - {lo: [28, 90, 50], hi: [50, 255, 255]}     # 연두. 베이지 테이블(채도 50 안팎)은 안 걸리게 90 이상
+    - {lo: [100, 120, 30], hi: [130, 255, 255]}  # 진한 파랑. 노출 5 ms 라 어둡게(V 40~70) 찍힘
+  min_area_px: 15
+  min_circularity: 0.3
+
+webcam:
+  calib: webcam_calib.yaml      # calib_webcam.py 결과. config.yaml 기준 상대 경로
+  hfov_deg_guess: 60            # 렌즈 캘리브레이션 초기값
+
+time_offset:
+  dt: null                      # 웹캠 시각 + dt = RealSense 시각 [s]. null 이면 투구 궤적으로 자동 추정
+  search_s: 0.15
+
+pad:                            # 패드 평면. 줄자로 재서 입력 (RealSense 렌즈 중심 기준)
+  center_m: [0.0, 0.10, 0.15]   # 오른쪽 +x, 아래 +y, 앞 +z
+  normal: [0.0, 0.0, 1.0]       # 패드가 바라보는 방향의 반대 (카메라 앞쪽이 +)
+
+gravity_fallback: [0.0, 9.81, 0.0]   # IMU 토픽이 없을 때만. 카메라가 수평이라고 가정
+
+sigma:
+  rs_px: 1.5
+  wc_px: 3.0
+  depth_a: 0.01
+  depth_b: 0.01
+
+segment:
+  min_speed_mps: 1.0            # 이보다 빠르면 "날아가는 중"
+  max_gap_s: 0.1                # 이보다 길게 안 보이면 다른 투구
+  min_frames: 4
+  merge_gap_s: 0.15             # 이보다 짧게 느려졌다 다시 빨라지면 같은 투구
+
+release:
+  seed_rms_px: 3.0              # 놓은 직후 6 프레임이 포물선에 이만큼 맞아야 "날기 시작"
+  gate_px: 8.0                  # 다음 프레임이 예측에서 이 거리(또는 공 반지름×gate_rel) 안이면 같은 비행
+  gate_rel: 0.4
+  max_rms_px: 6.0               # 손에서 떠난 뒤 포물선 잔차 허용치. 실제 공은 가까이 오면 반지름 20 px 넘고 중심이 2~5 px 흔들림
+  flight_s: [0.2, 3.0]          # 이 범위 밖 비행시간은 투구가 아닌 것으로 본다
+
+early_frames: [3, 4, 5, 6, 8, 10, 15, 20]   # "앞 N 프레임만 보고 예측" 비교용

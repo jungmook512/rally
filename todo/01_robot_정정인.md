@@ -71,9 +71,9 @@
 - [ ] 발표: 힘·순응 제어 파트 (힘 곡선 그래프 준비)
 
 ## 메모 / 막힌 것
-
 - [!] 10/7 `get_tool_force` 가 전부 0 (관절 외력 토크는 정상). 재부팅·툴 재적용으로 안 풀림. 우회: `scripts/ejt_wrench.py`(관절 외력 토크 → 자코비안). 선생님·다른 조 로봇과 비교 필요. 접촉 검출·당김 해제·nudge 는 이 문제가 풀리거나 우회 경로를 force_publisher 에 넣어야 실로봇 가능
 - 소프트 비상정지는 `scripts/estop.sh` (QoS TransientLocal 맞춤), 해제는 `scripts/estop.sh reset`
+- 10/7 (정동휘): `catch_ball` 관련 실측 → 이슈 #38. 가속 1000 mm/s² 면 0.5 s 에 6~12 cm 라 `catch_radius_m: 0.35` 불가, M0609 `servol_stream` 연속 추종 중 알람 → 제어함 전원 차단 보고(doosan-robot2 #393). 패드 거치대는 정동휘가 3D 출력(Day 4) — 거치 위치·높이 같이 정하기
 - 10/6: 로봇 없이 스킬 흐름 테스트: `RALLY_FAKE=1 ros2 run rally_robot skill_server --fake` (가짜 DSR, 테이블 Z 250 mm). 모드 7 nudge 오탐 대비로 접촉 예정 플래그 도입.
 - 10/6: 그리퍼·로봇이 모드 3 검토에 쓰이는 동안 코드 먼저 진행. 물체별 파지 폭은 안 재기로 (폭 0 + 물체별 힘으로 닫음, `skills.yaml gripper`). safety.yaml 값 채움(INTERFACES 6절 기준), nudge·작업 공간 값은 실측 후 확정.
 - 10/6 실측: 테이블 Z 14.4 mm(`table.yaml`), 작업 공간 x_min 0.20 m, 관측 자세 티칭 (#25). 측정 CSV 는 `data/measure/`(git 제외, #31).
