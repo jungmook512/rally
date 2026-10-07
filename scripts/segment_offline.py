@@ -16,7 +16,6 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "ros2_ws", "src", "rally_vision"))
-from rally_vision import projection as pj  # noqa: E402
 from rally_vision.segmenter_node import DEFAULT_ALIAS, extract_objects, parse_alias  # noqa: E402
 
 

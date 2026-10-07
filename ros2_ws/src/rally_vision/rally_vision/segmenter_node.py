@@ -21,6 +21,8 @@ import numpy as np
 import rclpy
 from cv_bridge import CvBridge
 from geometry_msgs.msg import Point, PoseStamped, Vector3
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.time import Time
@@ -183,10 +185,12 @@ class SegmenterNode(Node):
 
         self.color = self.depth = self.K = self.tcp = None
         self.color_stamp = self.color_frame = None
-        self.create_subscription(Image, g("color_topic"), self._on_color, qos_profile_sensor_data)
-        self.create_subscription(Image, g("depth_topic"), self._on_depth, qos_profile_sensor_data)
-        self.create_subscription(CameraInfo, g("info_topic"), self._on_info, qos_profile_sensor_data)
-        self.create_subscription(PoseStamped, g("tcp_pose_topic"), self._on_tcp, qos_profile_sensor_data)
+        sub_cg = ReentrantCallbackGroup()                 # 구독은 가볍게, 추론(타이머)은 별도 그룹 — 추론이 수신을 막지 않게
+        self.infer_cg = MutuallyExclusiveCallbackGroup()
+        self.create_subscription(Image, g("color_topic"), self._on_color, qos_profile_sensor_data, callback_group=sub_cg)
+        self.create_subscription(Image, g("depth_topic"), self._on_depth, qos_profile_sensor_data, callback_group=sub_cg)
+        self.create_subscription(CameraInfo, g("info_topic"), self._on_info, qos_profile_sensor_data, callback_group=sub_cg)
+        self.create_subscription(PoseStamped, g("tcp_pose_topic"), self._on_tcp, qos_profile_sensor_data, callback_group=sub_cg)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
@@ -197,8 +201,8 @@ class SegmenterNode(Node):
         self._dbg_period = 1.0 / max(float(g("debug_hz")), 0.1)
         self._done_stamp = None
         self._n, self._t_infer = 0, 0.0
-        self.create_timer(1.0 / max(float(g("rate_hz")), 1.0), self._tick)
-        self.create_timer(5.0, self._stats)
+        self.create_timer(1.0 / max(float(g("rate_hz")), 1.0), self._tick, callback_group=self.infer_cg)
+        self.create_timer(5.0, self._stats, callback_group=self.infer_cg)
 
     # --- 구독 ---
     def _on_color(self, msg: Image):
@@ -287,8 +291,10 @@ def draw_debug(img, objs, frame):
 def main(args=None):
     rclpy.init(args=args)
     n = SegmenterNode()
+    ex = MultiThreadedExecutor(num_threads=2)
+    ex.add_node(n)
     try:
-        rclpy.spin(n)
+        ex.spin()
     except KeyboardInterrupt:
         pass
     finally:
