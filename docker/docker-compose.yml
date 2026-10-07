@@ -41,7 +41,11 @@ services:
     build: { context: .., dockerfile: docker/voice/Dockerfile }
     devices: ["/dev/snd:/dev/snd"]
     group_add: ["audio"]
+    # environment 를 적으면 x-ros 의 environment 를 통째로 덮어쓴다 (YAML 병합은 목록을 합치지 않음) → ROS 설정을 다시 적는다
     environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-10}
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+      - ROS_DISCOVERY_SERVER=${PC3_IP:-172.24.3.122}:11811
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     volumes:
       - ../models:/models:ro

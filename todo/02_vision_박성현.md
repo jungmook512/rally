@@ -21,7 +21,7 @@
 - [x] Seg 학습 데이터 촬영 (10/6~7, `scripts/capture_realsense.py`, data/raw): ball 417장(테이블·레일·스탠드·굴림·패드 위 42장은 깊이 포함), rod 160, cup 151, velcro_ball 100(테이블). 공중 velcro_ball 은 정동휘 bag 프레임으로 보류
 
 ## Day 2 — Seg 1차 + 3D
-- [ ] 폴리곤 라벨링 완료 → YOLOv8/11-seg 파인튜닝 1차 (mAP50 기록)
+- [x] ball 1차: Roboflow 폴리곤 344장(v3) → Colab T4 yolov8n-seg 63 epoch(최적 43) → **Box mAP50 0.988 · Mask mAP50 0.988 · Mask mAP50-95 0.95, Recall 1.0** (10/7, `models/yolov8n-seg_ball.pt`, 기록 `rally_vision/training/README.md`). rod·cup·velcro_ball 라벨링 후 2차
 - [x] `segmenter_node.py`: 마스크 → 마스크 픽셀 깊이 중앙값으로 3D 중심, PCA 주축 `yaw`, `mask_area`, bbox (10/7 PR. 노트북 RealSense 라이브 13 fps CPU. base 변환은 tf → tcp_pose×npy 폴백. 학습 모델 전엔 COCO yolov8n-seg 임시)
 - [x] `TrackedObjectArray` 발행 (BestEffort depth 1, 30 Hz 목표 — GPU PC 에서 fps 확인 필요)
 - [x] 디버그 영상 `/rally/perception/objects/debug_image` (10 Hz, 비압축 — 구독자 있을 때만)
@@ -42,8 +42,8 @@
 - [ ] 명중 판정 정확도 테스트 20회 (≥ 95 %)
 
 ## Day 5 — 모드 1 예측
-- [ ] `predictor.py`: 칼만 필터(위치·속도) + 마찰 감속 모델 → `predicted_stop`, `predicted_stop_time`
-- [ ] 마찰 계수 온라인 추정 (매 시도 실제 궤적으로 갱신)
+- [ ] `predictor.py`: 칼만 필터(위치·속도) + 마찰 감속 모델 → `predicted_stop`, `predicted_stop_time` — **정동휘가 맡음** (10/7, `todo/03` Day 5). `tracker_node` 연결은 박성현
+- [ ] 마찰 계수 온라인 추정 (매 시도 실제 궤적으로 갱신) — 정동휘가 `predictor.py` 와 같이
 - [ ] 실제 정지 위치 측정 (속도 0 판정 → `is_moving=false`)
 - [ ] (정정인과) 밀기 파라미터 ↔ 정지 거리 사전 실험 20회 측정 담당
 
@@ -64,6 +64,8 @@
 
 ## 메모 / 막힌 것
 - 10/7 (정동휘): `flight_predictor` 관련 실측 → 이슈 #38. C270 웹캠은 640×480 에서 약 20 fps (60 fps 아님), 색 기반 검출은 하늘색 옷·테이블 오검출. 실험 bag·분석 도구 `scripts/catch_lab` (PR #32)
+- 10/7 (정동휘): 모드 1 `predictor.py`(칼만 + 마찰 감속, 마찰 계수 온라인 추정)를 정동휘가 구현. 브랜치 `feat/rally_vision/kalman-predictor`, 순수 Python 클래스로 만들어 `tracker_node` 에서 import 하게 함. 인터페이스 변경 없음 (`TrackedObject` 필드 그대로). PR 리뷰어 박성현
+- 10/7 (정동휘): 모드 3 제안 — 웹캠이 20 fps 라 포물선 피팅 프레임이 적고 잡음이 큼 → 피팅 전에 칼만(등가속, z 중력)으로 위치 정리·결측 프레임 보간을 넣는 것 검토. 모드 1 칼만 검증 후 이슈 #38 에서 논의
 - 10/7 (박성현): #38 답변 — 웹캠은 하드웨어 한계, 손목 RealSense 주 센서, YOLO 는 박성현. 문제 진단·논문 정리: https://claude.ai/artifact/3sgU76Fn2pYak8DGrJCAPj . 모드 3 포함 여부는 10/9 CP13 중간 점검·10/11 최종
 - 10/7: 학습은 Roboflow 유료 대신 라벨 내보내기(YOLOv8 형식) → Colab 또는 로봇·인식 PC 에서 yolov8n-seg 파인튜닝. TensorRT engine 은 로봇·인식 PC 에서만 생성
 - 
