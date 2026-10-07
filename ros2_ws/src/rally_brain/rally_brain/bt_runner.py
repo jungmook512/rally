@@ -12,18 +12,19 @@
   가짜 스킬 서버로 흐름만 볼 때는 check_readiness:=false.
 세션 중단: 안전 STOP (상황판 기준) → abort / 취소 요청 → canceled. 둘 다 진행 중인 스킬 goal 도 취소한다.
 트리는 execute 콜백 안에서 tick_hz(기본 10 Hz)로 돈다. 스킬 action 은 비동기라 tick 이 막히지 않는다.
-TODO(Day 3): 준비가 도중에 깨지면 중단 + 관측 자세 대기, rule_layer(난이도·휴식), SetMode·음성 intent
+시도가 기록될 때마다 rule_layer 가 다음 행동을 고른다 (/rally/voice/intent 의 tired·harder·easier 도 여기서 소비).
+  harder/easier → 모드별 난이도 단계만 바꾼다 (값 반영은 각 모드 서브트리). suggest_rest → 지금은 로그만 (TTS 노드 전).
+  ask_llm → llm_advisor 가 생기기 전까지 continue 로 대체.
+TODO: 준비가 도중에 깨지면 중단 + 관측 자세 대기, SetMode·음성 next_mode, suggest_rest → TTS·일시정지
 """
 from __future__ import annotations
 
-import os
 import threading
 import time
 import uuid
 
 import py_trees
 import rclpy
-import yaml
 from rclpy.action import ActionClient, ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
@@ -31,25 +32,24 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from std_msgs.msg import String
 
-from rally_bringup.readiness import ReadinessChecker
+from rally_brain import rule_layer
+from rally_brain.config import load_skills
 from rally_brain.trees.session_tree import Session, build_session_tree
+from rally_bringup.readiness import ReadinessChecker
 from rally_interfaces.action import RunSession
-from rally_interfaces.msg import SafetyStatus, SceneContext, TrialResult
+from rally_interfaces.msg import SafetyStatus, SceneContext, TrialResult, VoiceIntent
 
 CHECK_PERIOD_S = 1.0
 STATE_PERIOD_S = 0.5
 ALL_MODES = [TrialResult.MODE_PUSH_BALL, TrialResult.MODE_CATCH_PAD, TrialResult.MODE_HANDOVER, TrialResult.MODE_RESIST]
 
 
-def mode3_enabled() -> bool:
-    """skills.yaml mode3_challenge.enabled. 파일을 못 읽으면 True (기획 기본값)."""
-    try:
-        from ament_index_python.packages import get_package_share_directory
-        path = os.path.join(get_package_share_directory("rally_bringup"), "config", "skills.yaml")
-        with open(path, encoding="utf-8") as f:
-            return bool(((yaml.safe_load(f) or {}).get("mode3_challenge") or {}).get("enabled", True))
-    except Exception:  # noqa: BLE001 — 설정 못 읽어도 세션은 돈다
-        return True
+RULE_INTENTS = ("tired", "harder", "easier")   # 규칙 레이어가 소비하는 음성 intent
+
+
+def mode3_enabled(skills_cfg: dict) -> bool:
+    """skills.yaml mode3_challenge.enabled. 없으면 True (기획 기본값)."""
+    return bool((skills_cfg.get("mode3_challenge") or {}).get("enabled", True))
 
 
 def default_modes(include_mode3: bool) -> list[int]:
@@ -73,9 +73,13 @@ class BtRunner(Node):
         self._busy = threading.Lock()   # 세션은 한 번에 하나
         self._skill_clients: dict[str, ActionClient] = {}
         self._client_group = ReentrantCallbackGroup()
+        self._skills_cfg = load_skills()
+        self._rule_cfg = rule_layer.rule_config(self._skills_cfg)
+        self._pending_intent: str | None = None
 
         reliable = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, depth=10)
         self.create_subscription(SceneContext, "/rally/brain/context", self._on_context, qos_profile_sensor_data)
+        self.create_subscription(VoiceIntent, "/rally/voice/intent", self._on_intent, reliable)
         self._trial_pub = self.create_publisher(TrialResult, "/rally/brain/trial_result", reliable)
         self._state_pub = self.create_publisher(String, "/rally/brain/state", reliable)
         if self.readiness is not None:
@@ -91,6 +95,28 @@ class BtRunner(Node):
     # ---------- 상태 ----------
     def _on_context(self, msg: SceneContext) -> None:
         self._context = msg
+
+    def _on_intent(self, msg: VoiceIntent) -> None:
+        # 상황판의 last_intent 는 3 s 만 남아 시도 끝까지 못 버틴다 → 규칙용 intent 는 다음 판단까지 들고 있는다
+        if msg.intent in RULE_INTENTS:
+            self._pending_intent = msg.intent
+
+    def _after_trial(self, session: Session, trial: TrialResult) -> None:
+        intent, self._pending_intent = self._pending_intent, None
+        d = rule_layer.decide(self._context, session.trials_for_rules(trial.mode), intent, self._rule_cfg)
+        log = self.get_logger()
+        if d.action in ("harder", "easier"):
+            old = session.difficulty.get(trial.mode, 0)
+            new = rule_layer.apply_difficulty(old, d.action, self._rule_cfg)
+            session.set_difficulty(trial.mode, new)
+            log.info(f"[규칙] {d.reason} — 모드 {trial.mode} 난이도 {old} → {new}"
+                     + ("" if new != old else " (한계)"))
+        elif d.action == "ask_llm":
+            log.info(f"[규칙] {d.reason} — llm_advisor 전이라 continue")
+        elif d.action == "suggest_rest":
+            log.warn(f"[규칙] {d.reason} — TTS 노드 전이라 로그만")
+        else:
+            log.info(f"[규칙] {d.reason}")
 
     def _check_ready(self) -> None:
         missing = self.readiness.missing()
@@ -128,10 +154,11 @@ class BtRunner(Node):
 
     def _run_session(self, goal_handle) -> RunSession.Result:
         goal: RunSession.Goal = goal_handle.request
-        modes = list(goal.modes) or default_modes(mode3_enabled())
+        modes = list(goal.modes) or default_modes(mode3_enabled(self._skills_cfg))
         n = goal.trials_per_mode or int(self.get_parameter("trials_per_mode").value)
         session = Session(node=self, session_id=str(uuid.uuid4()), get_context=lambda: self._context,
-                          publish=self._trial_pub.publish, action_client=self._action_client)
+                          publish=self._trial_pub.publish, action_client=self._action_client,
+                          after_trial=self._after_trial)
         tree = py_trees.trees.BehaviourTree(build_session_tree(session, modes, n))
         self._tree = tree
         self.get_logger().info(f"세션 시작 {session.session_id[:8]} — 모드 {modes}, 모드마다 {n}회")

@@ -36,7 +36,10 @@ class Session:
     get_context: Callable[[], SceneContext | None]
     publish: Callable[[TrialResult], None]
     action_client: Callable[[type, str], ActionClient]
+    after_trial: Callable[["Session", TrialResult], None] | None = None   # 규칙 레이어 (bt_runner)
     trials: list[TrialResult] = field(default_factory=list)
+    difficulty: dict[int, int] = field(default_factory=dict)        # 모드 → 난이도 단계 (0 = 시작)
+    level_changed_at: dict[int, int] = field(default_factory=dict)  # 모드 → 난이도가 바뀐 시점의 len(trials)
 
     def safe(self) -> bool:
         ctx = self.get_context()
@@ -56,6 +59,17 @@ class Session:
         self.node.get_logger().info(
             f"시도 {trial.trial_index} (모드 {trial.mode}) {'성공' if trial.success else '실패'}"
             + (f" — {trial.notes}" if trial.notes else ""))
+        if self.after_trial is not None:
+            self.after_trial(self, trial)
+
+    def trials_for_rules(self, mode: int) -> list[TrialResult]:
+        """이 모드에서 난이도가 마지막으로 바뀐 뒤의 시도 (규칙 레이어의 연속 횟수·추세 계산용)."""
+        return [t for t in self.trials[self.level_changed_at.get(mode, 0):] if t.mode == mode]
+
+    def set_difficulty(self, mode: int, level: int) -> None:
+        if level != self.difficulty.get(mode, 0):
+            self.difficulty[mode] = level
+            self.level_changed_at[mode] = len(self.trials)
 
     def success_rate(self) -> float:
         return sum(t.success for t in self.trials) / len(self.trials) if self.trials else 0.0
