@@ -1,0 +1,12 @@
+# 도커 빌드 컨텍스트에서 빼는 것 (#35)
+# 비밀값: rally_voice/resource/.env(API 키)가 voice 이미지에 구워지지 않게. 네이티브 실행은 그대로 .env 를 읽는다
+**/.env
+docker/.env
+# 커밋하지 않는 큰 데이터·빌드 결과 — 컨텍스트 전송만 느리게 한다 (Dockerfile 은 ros2_ws/src 의 패키지만 COPY)
+.git
+data/
+models/
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+**/__pycache__/

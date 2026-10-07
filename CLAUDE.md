@@ -50,7 +50,7 @@ docs/ todo/ scripts/
 
 ### ROS 2 (Jazzy, Python)
 - 노드 이름은 `rally_` 접두사. 토픽·서비스·액션 이름은 `docs/INTERFACES.md`에 있는 것만 쓴다. 새 이름이 필요하면 거기에 먼저 추가.
-- QoS: 센서·관절·힘 스트림은 `qos_profile_sensor_data`(BestEffort, depth 1~5). 안전·결과·명령은 Reliable. `/rally/safety/estop`만 TransientLocal.
+- QoS: 센서·관절·힘 스트림은 `qos_profile_sensor_data`(BestEffort, depth 1~5). 안전·결과·명령은 Reliable. TransientLocal은 `/rally/safety/estop`, `/rally/voice/speaking` 두 개만 (늦게 켜진 노드도 현재 상태를 알아야 하는 것).
 - 블로킹 호출(DRL `movel`, `mwait`, 모델 추론, LLM API)은 **별도 콜백 그룹**에서. 안전 감시 콜백을 막으면 안 된다.
 - 좌표는 미터·라디안으로 메시지에 싣는다. 두산 DRL은 mm·deg를 쓰므로 `rally_robot` 안에서만 변환한다.
 - 3D 좌표 프레임은 `base_link`. 카메라 → base 변환은 tf2(`camera_link` static tf) 또는 과도기엔 `rally_robot.dsr_helpers.transform_to_base`.
