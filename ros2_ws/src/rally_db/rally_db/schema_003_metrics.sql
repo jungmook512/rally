@@ -1,10 +1,11 @@
 -- schema_003: 시맨틱 레이어 지표 뷰 — rally_bringup/config/metrics.yaml 과 같은 정의 (파이썬 버전: rally_brain/metrics.py)
--- 숫자(창 크기 5, k 5, 'higher' 모드 7)는 metrics.yaml 과 똑같이 둔다. test_metrics.py 가 둘이 같은지 검사한다.
+-- 숫자(창 크기 5, k 5, 'higher' 모드 7)와 빼는 시도(exclude_notes)는 metrics.yaml 과 똑같이 둔다. test_metrics.py 가 둘이 같은지 검사한다.
 -- 기존 DB 에 적용: psql -U rally -d rally -f schema_003_metrics.sql (뷰만 만들고 데이터는 건드리지 않음)
 
--- 모드별 대표 값 (metrics.yaml key_values)
+-- 모드별 대표 값 (metrics.yaml key_values). counted = 지표에 넣는 시도 (exclude_notes 아님)
 CREATE OR REPLACE VIEW trial_key_value AS
 SELECT t.id AS trial_id, t.session_id, t.mode, t.trial_index, t.success,
+       COALESCE(t.decision->>'notes', '') NOT IN ('no_hand', 'interrupted') AS counted,
        CASE t.mode
          WHEN 1 THEN t.error_mm
          WHEN 3 THEN t.error_mm
@@ -13,20 +14,23 @@ SELECT t.id AS trial_id, t.session_id, t.mode, t.trial_index, t.success,
        END AS key_value
 FROM trials t;
 
--- success_rate: 같은 세션·모드의 최근 5회(window) 성공 비율
+-- success_rate: 같은 세션·모드의 최근 5회(window) 성공 비율 (빼는 시도 제외)
 CREATE OR REPLACE VIEW trial_success_rate AS
 SELECT trial_id, session_id, mode, trial_index,
        AVG(success::int) OVER (PARTITION BY session_id, mode ORDER BY trial_index
                                ROWS BETWEEN 4 PRECEDING AND CURRENT ROW) AS success_rate
-FROM trial_key_value;
+FROM trial_key_value
+WHERE counted;
 
--- improvement: 처음 5회(k) 대비 마지막 5회 대표 값. 양수 = 나아짐. 10회(2k) 미만·값 빠짐·처음 평균 0 이면 NULL
+-- improvement: 성공한 시도의 처음 5회(k) 대비 마지막 5회 대표 값. 양수 = 나아짐.
+-- 성공 시도 10회(2k) 미만·값 빠짐·처음 평균 0 이면 NULL
 CREATE OR REPLACE VIEW session_improvement AS
 WITH ranked AS (
   SELECT session_id, mode, key_value,
          ROW_NUMBER() OVER (PARTITION BY session_id, mode ORDER BY trial_index)      AS rn_first,
          ROW_NUMBER() OVER (PARTITION BY session_id, mode ORDER BY trial_index DESC) AS rn_last
   FROM trial_key_value
+  WHERE counted AND success
 ), agg AS (
   SELECT session_id, mode,
          COUNT(*)                                     AS trials,
