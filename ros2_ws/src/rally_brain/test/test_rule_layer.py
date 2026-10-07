@@ -1,4 +1,4 @@
-"""rule_layer 단위 테스트 — 규칙 7개를 위에서부터 하나씩, 실제 skills.yaml·ontology.yaml 로."""
+"""rule_layer 단위 테스트 — 규칙 7개를 위에서부터 하나씩, 실제 skills.yaml·ontology.jsonld 로."""
 import pytest
 
 from rally_brain import rule_layer
@@ -67,13 +67,13 @@ def test_6_two_weak_signals_ask_llm():
     ts = trials(False, False, True, False, True, durations=[10, 10, 10, 10, 20])
     d = decide(ctx(compensation=True), ts)
     assert d.action == "ask_llm"
-    assert set(d.signals) == {"compensation_repeated", "success_drop", "slowing"}
+    assert set(d.signals) == {"compensation", "success_drop", "slowing"}
     assert "성공률 하락" in d.reason
 
 
 def test_6_one_signal_is_not_enough():
     d = decide(ctx(compensation=True), trials(True, False, True))
-    assert d.action == "continue" and d.signals == ("compensation_repeated",)
+    assert d.action == "continue" and d.signals == ("compensation",)
 
 
 def test_7_continue():
@@ -91,3 +91,18 @@ def test_apply_difficulty_clamped():
     assert rule_layer.apply_difficulty(3, "harder", CFG) == 3
     assert rule_layer.apply_difficulty(-3, "easier", CFG) == -3
     assert rule_layer.apply_difficulty(2, "continue", CFG) == 2
+
+
+def test_actions_come_from_ontology_graph():
+    # 규칙은 계기만 정하고 행동은 그래프(Cue —triggers→ Action)에서 — 그래프를 바꾸면 행동이 바뀐다
+    from rdflib import Literal
+    from rally_brain.knowledge import ontology
+    g = ontology.load()
+    g2 = type(g)()
+    for t in g:
+        g2.add(t)
+    cue = next(g2.subjects(ontology.RALLY.key, Literal("success_streak")))
+    g2.remove((cue, ontology.RALLY.triggers, None))
+    g2.add((cue, ontology.RALLY.triggers, ontology.RALLY.act_continue))
+    d = rule_layer.decide(ctx(), trials(True, True, True), None, CFG, graph=g2)
+    assert d.action == "continue" and "3연속 성공" in d.reason

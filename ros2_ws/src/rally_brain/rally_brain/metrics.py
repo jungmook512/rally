@@ -58,8 +58,7 @@ def improvement(trials: Sequence[TrialResult], cfg: dict[str, Any] | None = None
     return (first - last) / first if spec["better"] == "lower" else (last - first) / first
 
 
-def fatigue_score(signals: Iterable[str], onto: dict[str, Any], cfg: dict[str, Any] | None = None) -> float:
-    """피로 신호(ontology fatigue_signals 키) → 0~1."""
+def fatigue_score(signals: Iterable[str], cfg: dict[str, Any] | None = None) -> float:
+    """신호(voice_tired · rule_layer.SIGNAL_LABELS 키) → 0~1. 모르는 신호는 0."""
     weights = (cfg or load())["metrics"]["fatigue_score"]["weights"]
-    total = sum(weights[onto["fatigue_signals"][s]["strength"]] for s in set(signals))
-    return min(1.0, total)
+    return min(1.0, sum(weights.get(s, 0.0) for s in set(signals)))

@@ -1,0 +1,526 @@
+# 자동 생성 — 손으로 고치지 말 것. 원본: ontology.jsonld → python3 scripts/export_ontology.py
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rally: <https://rally.local/ontology#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+rally: a owl:Ontology ;
+    rdfs:label "RALLY 개념 사전"@ko ;
+    rdfs:comment "근거가 있는 것만 담는다. 모든 개념·관계에 source(출처). evidence=weak 은 문서에 적혀 있지만 임상 근거가 없는 것. 추측(신체 부위 목록, 보상 동작의 뜻, 피로 강도, 보상 동작 → 대응)은 넣지 않는다 — 근거가 생기면 추가 (기획서 4.10, 2026-10-07)."@ko .
+
+rally:act_ask_llm a rally:Action ;
+    rdfs:label "LLM 판단"@ko ;
+    rally:key "ask_llm" ;
+    rally:source "기획서 4.7(애매하면 LLM)" .
+
+rally:act_continue a rally:Action ;
+    rdfs:label "계속"@ko ;
+    rally:key "continue" ;
+    rally:source "skills.yaml brain.actions" .
+
+rally:adjusts a owl:ObjectProperty ;
+    rdfs:label "조절한다"@ko ;
+    rdfs:domain rally:Skill ;
+    rdfs:range rally:Parameter ;
+    rally:source "rally_interfaces/action" .
+
+rally:cue_failure_streak a rally:Cue ;
+    rdfs:label "연속 실패"@ko ;
+    rally:key "failure_streak" ;
+    rally:source "todo Day 4(모드 7 실패 2회 → -10 %)" ;
+    rally:triggers rally:act_easier .
+
+rally:cue_safety_stop a rally:Cue ;
+    rdfs:label "안전 정지"@ko ;
+    rally:key "safety_stop" ;
+    rally:source "기획서 5.3, NFR-08" ;
+    rally:triggers rally:act_wait .
+
+rally:cue_success_streak a rally:Cue ;
+    rdfs:label "연속 성공"@ko ;
+    rally:key "success_streak" ;
+    rally:source "기획서 4.7, 3.5" ;
+    rally:triggers rally:act_harder .
+
+rally:cue_voice_easier a rally:Cue ;
+    rdfs:label "\"쉽게\" 음성"@ko ;
+    rally:key "easier" ;
+    rally:source "VoiceIntent.msg" ;
+    rally:triggers rally:act_easier .
+
+rally:cue_voice_harder a rally:Cue ;
+    rdfs:label "\"어렵게\" 음성"@ko ;
+    rally:key "harder" ;
+    rally:source "VoiceIntent.msg" ;
+    rally:triggers rally:act_harder .
+
+rally:cue_voice_tired a rally:Cue ;
+    rdfs:label "\"힘들어\" 음성"@ko ;
+    rally:key "tired" ;
+    rally:source "기획서 3.5 음성, VoiceIntent.msg" ;
+    rally:triggers rally:act_suggest_rest .
+
+rally:difficultyParam a owl:ObjectProperty ;
+    rdfs:label "난이도 값"@ko ;
+    rdfs:domain rally:Mode ;
+    rdfs:range rally:Parameter ;
+    rally:source "기획서 3.2, 3.3, 3.5, 5.2" .
+
+rally:hasSession a owl:ObjectProperty ;
+    rdfs:label "세션"@ko ;
+    rdfs:domain rally:Patient ;
+    rdfs:range rally:Session ;
+    rally:source "기획서 4.10" .
+
+rally:hasTrial a owl:ObjectProperty ;
+    rdfs:label "시도"@ko ;
+    rdfs:domain rally:Session ;
+    rdfs:range rally:Trial ;
+    rally:source "기획서 4.10" .
+
+rally:inMode a owl:ObjectProperty ;
+    rdfs:label "모드"@ko ;
+    rdfs:domain rally:Trial ;
+    rdfs:range rally:Mode ;
+    rally:source "기획서 4.10" .
+
+rally:indicatesFatigue a owl:ObjectProperty ;
+    rdfs:label "피로를 나타낸다"@ko ;
+    rdfs:comment "기획서에 '보상 동작 → 피로 신호'로 적혀 있으나 임상 근거는 확인 전"@ko ;
+    rdfs:domain rally:Compensation ;
+    rdfs:range rally:FatigueSignal ;
+    rally:evidence "weak" ;
+    rally:source "기획서 4.10" .
+
+rally:level_normal a rally:SafetyLevel ;
+    rdfs:label "정상"@ko ;
+    rally:key "normal" ;
+    rally:level 0 ;
+    rally:source "SafetyStatus.msg" .
+
+rally:measures a owl:ObjectProperty ;
+    rdfs:label "판정한다"@ko ;
+    rdfs:domain rally:Mode ;
+    rdfs:range rally:Measure ;
+    rally:source "기획서 3.2~3.5 판정" .
+
+rally:mode1 a rally:Mode ;
+    rdfs:label "공 굴리기"@ko ;
+    rally:difficultyParam rally:target ;
+    rally:measures rally:patient_grasped,
+        rally:stop_error ;
+    rally:modeNumber 1 ;
+    rally:next rally:mode3 ;
+    rally:source "기획서 3.2" ;
+    rally:trains rally:reach ;
+    rally:usesSkill rally:pick_compliant,
+        rally:push_ball .
+
+rally:next a owl:ObjectProperty ;
+    rdfs:label "다음 모드"@ko ;
+    rdfs:domain rally:Mode ;
+    rdfs:range rally:Mode ;
+    rally:source "기획서 3.1" .
+
+rally:observed a owl:ObjectProperty ;
+    rdfs:label "관찰된 보상 동작"@ko ;
+    rdfs:domain rally:Trial ;
+    rdfs:range rally:Compensation ;
+    rally:source "기획서 4.10" .
+
+rally:safe_fist a rally:SafetyTrigger ;
+    rdfs:label "주먹 제스처"@ko ;
+    rally:key "fist_gesture" ;
+    rally:source "기획서 3.6" ;
+    rally:triggersLevel rally:level_stop .
+
+rally:safe_force_limit a rally:SafetyTrigger ;
+    rdfs:label "힘 한계(25 N)"@ko ;
+    rally:key "force_limit" ;
+    rally:source "기획서 3.6" ;
+    rally:threshold 25.0 ;
+    rally:triggersLevel rally:level_stop ;
+    rally:unit "N" .
+
+rally:safe_hand_close a rally:SafetyTrigger ;
+    rdfs:label "손이 중앙선 아주 가까이(0.15 m)"@ko ;
+    rally:key "hand_near_centerline" ;
+    rally:source "기획서 3.6" ;
+    rally:threshold 0.15 ;
+    rally:triggersLevel rally:level_stop ;
+    rally:unit "m" .
+
+rally:safe_hand_near a rally:SafetyTrigger ;
+    rdfs:label "손이 중앙선 가까이(0.25 m)"@ko ;
+    rally:key "hand_near_centerline" ;
+    rally:source "기획서 3.6" ;
+    rally:threshold 0.25 ;
+    rally:triggersLevel rally:level_slow ;
+    rally:unit "m" .
+
+rally:safe_nudge a rally:SafetyTrigger ;
+    rdfs:label "로봇 툭 치기"@ko ;
+    rally:key "nudge" ;
+    rally:source "기획서 3.6" ;
+    rally:triggersLevel rally:level_stop .
+
+rally:safe_voice_stop a rally:SafetyTrigger ;
+    rdfs:label "\"그만\" 음성"@ko ;
+    rally:key "voice_stop" ;
+    rally:source "기획서 3.6, 4.8" ;
+    rally:triggersLevel rally:level_stop .
+
+rally:safe_workspace a rally:SafetyTrigger ;
+    rdfs:label "작업 공간 밖"@ko ;
+    rally:key "workspace_limit" ;
+    rally:source "기획서 3.6" ;
+    rally:triggersLevel rally:level_stop .
+
+rally:shoulder_hike a rally:Compensation ;
+    rdfs:label "어깨 들기"@ko ;
+    rally:indicatesFatigue rally:fatigue ;
+    rally:key "shoulder_hike" ;
+    rally:source "BodyPose.msg" .
+
+rally:trains a owl:ObjectProperty ;
+    rdfs:label "훈련한다"@ko ;
+    rdfs:domain rally:Mode ;
+    rdfs:range rally:Motion ;
+    rally:source "기획서 3.1~3.5" .
+
+rally:triggers a owl:ObjectProperty ;
+    rdfs:label "일으킨다"@ko ;
+    rdfs:domain rally:Cue ;
+    rdfs:range rally:Action ;
+    rally:source "기획서 4.7" .
+
+rally:triggersLevel a owl:ObjectProperty ;
+    rdfs:label "안전 단계로"@ko ;
+    rdfs:domain rally:SafetyTrigger ;
+    rdfs:range rally:SafetyLevel ;
+    rally:source "기획서 3.6" .
+
+rally:trunk_lean a rally:Compensation ;
+    rdfs:label "몸통 기울이기"@ko ;
+    rally:indicatesFatigue rally:fatigue ;
+    rally:key "trunk_lean" ;
+    rally:source "BodyPose.msg, FR-05(임계 15°)" ;
+    rally:threshold 15.0 ;
+    rally:unit "deg" .
+
+rally:usedParam a owl:ObjectProperty ;
+    rdfs:label "사용한 파라미터"@ko ;
+    rdfs:domain rally:Trial ;
+    rdfs:range rally:Parameter ;
+    rally:source "기획서 4.10" .
+
+rally:usesSkill a owl:ObjectProperty ;
+    rdfs:label "사용한다"@ko ;
+    rdfs:domain rally:Mode ;
+    rdfs:range rally:Skill ;
+    rally:source "기획서 3.2~3.5 로봇 기능, 5.2" .
+
+rally:Patient a owl:Class ;
+    rdfs:label "환자"@ko ;
+    rdfs:comment "익명 ID 만"@ko ;
+    rally:source "기획서 4.10 Knowledge Graph" .
+
+rally:act_suggest_rest a rally:Action ;
+    rdfs:label "휴식 제안"@ko ;
+    rally:key "suggest_rest" ;
+    rally:source "기획서 3.5, 5.1" .
+
+rally:act_wait a rally:Action ;
+    rdfs:label "대기"@ko ;
+    rally:key "wait" ;
+    rally:source "skills.yaml brain.actions" .
+
+rally:catch_ball a rally:Skill ;
+    rdfs:label "공 받기"@ko ;
+    rally:adjusts rally:catch_radius,
+        rally:lead_time_s ;
+    rally:key "/rally/skill/catch_ball" ;
+    rally:source "INTERFACES 4절, CatchBall.action" .
+
+rally:caught a rally:Measure ;
+    rdfs:label "받았는지"@ko ;
+    rally:key "caught" ;
+    rally:source "기획서 3.3 판정, CatchBall.action" .
+
+rally:detach_ball a rally:Skill ;
+    rdfs:label "공 떼어내기"@ko ;
+    rally:key "/rally/skill/detach_ball" ;
+    rally:source "INTERFACES 4절" .
+
+rally:force_smoothness a rally:Measure ;
+    rdfs:label "힘 떨림"@ko ;
+    rally:key "force_smoothness" ;
+    rally:source "기획서 3.5 측정, ResistPush.action" .
+
+rally:handover_time a rally:Measure ;
+    rdfs:label "건네받는 시간"@ko ;
+    rally:key "handover_time_s" ;
+    rally:source "기획서 3.4 판정, Handover.action" ;
+    rally:unit "s" .
+
+rally:hold_time a rally:Measure ;
+    rdfs:label "버틴 시간"@ko ;
+    rally:key "hold_time_achieved_s" ;
+    rally:source "기획서 3.5 측정, ResistPush.action" ;
+    rally:unit "s" .
+
+rally:isometric_push a rally:Motion ;
+    rdfs:label "등척성 밀기"@ko ;
+    rdfs:comment "근력 훈련"@ko ;
+    rally:source "기획서 3.5" .
+
+rally:lane a rally:Parameter ;
+    rdfs:label "가이드 길"@ko ;
+    rally:key "lane" ;
+    rally:source "PushBall.action" .
+
+rally:lead_time_s a rally:Parameter ;
+    rdfs:label "예측 선행 시간"@ko ;
+    rally:key "lead_time_s" ;
+    rally:source "CatchBall.action" ;
+    rally:unit "s" .
+
+rally:level_slow a rally:SafetyLevel ;
+    rdfs:label "느리게"@ko ;
+    rally:key "slow" ;
+    rally:level 1 ;
+    rally:source "SafetyStatus.msg" .
+
+rally:mode3 a rally:Mode ;
+    rdfs:label "캐치볼"@ko ;
+    rally:challenge true ;
+    rally:difficultyParam rally:catch_radius ;
+    rally:measures rally:caught,
+        rally:prediction_error,
+        rally:reaction_time ;
+    rally:modeNumber 3 ;
+    rally:next rally:mode5 ;
+    rally:source "기획서 3.3" ;
+    rally:trains rally:throw ;
+    rally:usesSkill rally:catch_ball,
+        rally:detach_ball,
+        rally:handover .
+
+rally:mode5 a rally:Mode ;
+    rdfs:label "건네고 받기"@ko ;
+    rally:difficultyParam rally:tilt_deg ;
+    rally:measures rally:handover_time,
+        rally:wrist_angle_at_grasp ;
+    rally:modeNumber 5 ;
+    rally:next rally:mode7 ;
+    rally:source "기획서 3.4, 5.2" ;
+    rally:trains rally:wrist_grasp ;
+    rally:usesSkill rally:handover,
+        rally:pick_compliant .
+
+rally:mode7 a rally:Mode ;
+    rdfs:label "팔씨름"@ko ;
+    rally:difficultyParam rally:stiffness,
+        rally:target_force_n ;
+    rally:measures rally:force_smoothness,
+        rally:hold_time,
+        rally:peak_force ;
+    rally:modeNumber 7 ;
+    rally:source "기획서 3.5" ;
+    rally:trains rally:isometric_push ;
+    rally:usesSkill rally:resist_push .
+
+rally:patient_grasped a rally:Measure ;
+    rdfs:label "환자가 잡았는지"@ko ;
+    rally:source "기획서 3.2 판정" .
+
+rally:peak_force a rally:Measure ;
+    rdfs:label "최대 힘"@ko ;
+    rally:key "peak_force_n" ;
+    rally:source "기획서 3.5 측정, ResistPush.action" ;
+    rally:unit "N" .
+
+rally:prediction_error a rally:Measure ;
+    rdfs:label "착지 예측 오차"@ko ;
+    rally:key "prediction_error_mm" ;
+    rally:source "기획서 3.3, CatchBall.action" ;
+    rally:unit "mm" .
+
+rally:push_ball a rally:Skill ;
+    rdfs:label "공 밀기"@ko ;
+    rally:adjusts rally:lane,
+        rally:push_speed,
+        rally:target ;
+    rally:key "/rally/skill/push_ball" ;
+    rally:source "INTERFACES 4절, PushBall.action" .
+
+rally:push_speed a rally:Parameter ;
+    rdfs:label "밀기 속도"@ko ;
+    rally:key "push_speed" ;
+    rally:source "PushBall.action" ;
+    rally:unit "m/s" .
+
+rally:reach a rally:Motion ;
+    rdfs:label "팔 뻗기"@ko ;
+    rally:source "기획서 3.2" .
+
+rally:reaction_time a rally:Measure ;
+    rdfs:label "반응 시간"@ko ;
+    rally:key "reaction_time_s" ;
+    rally:source "기획서 3.3, CatchBall.action" ;
+    rally:unit "s" .
+
+rally:release_force_threshold_n a rally:Parameter ;
+    rdfs:label "당김 감지 힘"@ko ;
+    rally:key "release_force_threshold_n" ;
+    rally:source "Handover.action" ;
+    rally:unit "N" .
+
+rally:resist_push a rally:Skill ;
+    rdfs:label "저항 밀기"@ko ;
+    rally:adjusts rally:stiffness,
+        rally:target_force_n ;
+    rally:key "/rally/skill/resist_push" ;
+    rally:source "INTERFACES 4절, ResistPush.action" .
+
+rally:stop_error a rally:Measure ;
+    rdfs:label "정지 위치 오차"@ko ;
+    rally:key "error_mm" ;
+    rally:source "기획서 3.2 판정" ;
+    rally:unit "mm" .
+
+rally:throw a rally:Motion ;
+    rdfs:label "던지기·협응"@ko ;
+    rally:source "기획서 3.3" .
+
+rally:wrist_angle_at_grasp a rally:Measure ;
+    rdfs:label "잡을 때 손목 각도"@ko ;
+    rally:key "wrist_angle_at_grasp_deg" ;
+    rally:source "기획서 3.4 판정, Handover.action" ;
+    rally:unit "deg" .
+
+rally:wrist_grasp a rally:Motion ;
+    rdfs:label "손목 회전·쥐기"@ko ;
+    rally:source "기획서 3.4" .
+
+rally:FatigueSignal a owl:Class ;
+    rdfs:label "피로 신호"@ko ;
+    rally:source "기획서 4.10" .
+
+rally:Session a owl:Class ;
+    rdfs:label "세션"@ko ;
+    rally:source "기획서 4.10 Knowledge Graph" .
+
+rally:act_easier a rally:Action ;
+    rdfs:label "쉽게"@ko ;
+    rally:key "easier" ;
+    rally:source "기획서 3.5(목표 하향)" .
+
+rally:act_harder a rally:Action ;
+    rdfs:label "어렵게"@ko ;
+    rally:key "harder" ;
+    rally:source "기획서 4.7" .
+
+rally:catch_radius a rally:Parameter ;
+    rdfs:label "받으러 가는 반경"@ko ;
+    rally:key "catch_radius" ;
+    rally:source "CatchBall.action" ;
+    rally:unit "m" .
+
+rally:fatigue a rally:FatigueSignal ;
+    rdfs:label "피로"@ko ;
+    rally:source "기획서 4.10" .
+
+rally:handover a rally:Skill ;
+    rdfs:label "건네기·받기"@ko ;
+    rally:adjusts rally:release_force_threshold_n,
+        rally:tilt_deg ;
+    rally:key "/rally/skill/handover" ;
+    rally:source "INTERFACES 4절, Handover.action" .
+
+rally:pick_compliant a rally:Skill ;
+    rdfs:label "순응 집기"@ko ;
+    rally:key "/rally/skill/pick_compliant" ;
+    rally:source "INTERFACES 4절" .
+
+rally:stiffness a rally:Parameter ;
+    rdfs:label "버티는 강성"@ko ;
+    rally:key "stiffness" ;
+    rally:source "ResistPush.action" ;
+    rally:unit "N/m" .
+
+rally:target a rally:Parameter ;
+    rdfs:label "목표 정지 위치"@ko ;
+    rally:key "target" ;
+    rally:source "PushBall.action" ;
+    rally:unit "m" .
+
+rally:target_force_n a rally:Parameter ;
+    rdfs:label "목표 힘"@ko ;
+    rally:key "target_force_n" ;
+    rally:source "ResistPush.action" ;
+    rally:unit "N" .
+
+rally:tilt_deg a rally:Parameter ;
+    rdfs:label "제시 기울기"@ko ;
+    rally:key "tilt_deg" ;
+    rally:source "Handover.action" ;
+    rally:unit "deg" .
+
+rally:Compensation a owl:Class ;
+    rdfs:label "보상 동작"@ko ;
+    rdfs:comment "BodyPose.compensation_type 값"@ko ;
+    rally:source "BodyPose.msg" .
+
+rally:SafetyLevel a owl:Class ;
+    rdfs:label "안전 단계"@ko ;
+    rally:source "SafetyStatus.msg" .
+
+rally:Trial a owl:Class ;
+    rdfs:label "시도"@ko ;
+    rally:source "기획서 4.10 Knowledge Graph" .
+
+rally:Motion a owl:Class ;
+    rdfs:label "훈련 동작"@ko ;
+    rally:source "기획서 3.1" .
+
+rally:level_stop a rally:SafetyLevel ;
+    rdfs:label "정지"@ko ;
+    rally:key "stop" ;
+    rally:level 2 ;
+    rally:source "SafetyStatus.msg" .
+
+rally:Action a owl:Class ;
+    rdfs:label "규칙 행동"@ko ;
+    rdfs:comment "key = skills.yaml brain.actions 의 이름"@ko ;
+    rally:source "기획서 4.7, skills.yaml brain" .
+
+rally:Cue a owl:Class ;
+    rdfs:label "판단 계기"@ko ;
+    rdfs:comment "규칙 레이어가 행동을 고르는 근거가 되는 관찰"@ko ;
+    rally:source "기획서 4.7" .
+
+rally:SafetyTrigger a owl:Class ;
+    rdfs:label "안전 계기"@ko ;
+    rdfs:comment "key = SafetyStatus.reason 값"@ko ;
+    rally:source "기획서 3.6, SafetyStatus.msg" .
+
+rally:Skill a owl:Class ;
+    rdfs:label "로봇 스킬"@ko ;
+    rdfs:comment "rally_robot skill_server 의 action"@ko ;
+    rally:source "INTERFACES 4절" .
+
+rally:Measure a owl:Class ;
+    rdfs:label "판정 값"@ko ;
+    rdfs:comment "시도 결과에서 재는 값. 계산법은 metrics.yaml"@ko ;
+    rally:source "기획서 3.2~3.5 판정" .
+
+rally:Mode a owl:Class ;
+    rdfs:label "훈련 모드"@ko ;
+    rally:source "기획서 3.1" .
+
+rally:Parameter a owl:Class ;
+    rdfs:label "스킬 파라미터"@ko ;
+    rdfs:comment "action goal 필드. 값·범위는 skills.yaml"@ko ;
+    rally:source "rally_interfaces/action" .
+
