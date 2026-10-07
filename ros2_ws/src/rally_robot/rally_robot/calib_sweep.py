@@ -62,6 +62,22 @@ def generate_poses(center, span_xy=60.0, span_z=40.0, span_deg=12.0, count=15):
     return poses[:count]
 
 
+# 컨트롤러(펜던트 안전 설정)가 거부하는 관절 범위. 2026-10-07 실측: J5 131.3° 허용, 138.8° 는 1206 "NOT REACHABLE".
+# 정확한 값은 펜던트 안전 설정 → 관절 범위에서 확인해 고친다. 여유 2° 를 둔다.
+J5_ABS_MAX_DEG = 133.0
+
+
+def check_joint_limits(joint_sets, j5_max=J5_ABS_MAX_DEG):
+    """[(i, posj|None)] → 문제 있는 [(i, 이유)]. posj None = IK 실패."""
+    bad = []
+    for i, q in joint_sets:
+        if q is None:
+            bad.append((i, "IK 해 없음 (현재 팔 형태로 도달 불가)"))
+        elif abs(q[4]) > j5_max:
+            bad.append((i, f"J5 {q[4]:.1f}° > ±{j5_max:.0f}° (컨트롤러 관절 범위 밖)"))
+    return bad
+
+
 def load_workspace(safety_yaml):
     """safety.yaml 의 workspace_*_m → dict(m). 파일이 없으면 기본값."""
     ws = dict(WORKSPACE_DEFAULT_M)
@@ -87,7 +103,7 @@ def check_workspace(poses, ws):
 
 
 # ---------------------------------------------------------------- 실제 순회 (ROS·두산 필요)
-def run_sweep(poses, out_dir, no_camera=False):
+def run_sweep(poses, out_dir, no_camera=False, j5_max=J5_ABS_MAX_DEG):
     import rclpy
     from rclpy.node import Node
     from rclpy.qos import qos_profile_sensor_data, QoSProfile, ReliabilityPolicy, HistoryPolicy
@@ -108,7 +124,7 @@ def run_sweep(poses, out_dir, no_camera=False):
             self.frame = msg
 
         def _on_safety(self, msg):
-            self.safety = msg
+            self.safety = msg                 # 백그라운드 스레드에서 갱신 (참조 대입이라 잠금 불필요)
 
         def stop_requested(self):
             return self.safety is None or self.safety.level == SafetyStatus.LEVEL_STOP
@@ -117,9 +133,10 @@ def run_sweep(poses, out_dir, no_camera=False):
             return self.safety.speed_override if self.safety.level == SafetyStatus.LEVEL_SLOW else 1.0
 
         def wait_for(self, attr, timeout_s):
+            # 콜백은 백그라운드 실행기가 처리한다 (이동 중에도 안전 상태가 갱신돼야 estop 이 먹는다)
             t0 = time.monotonic()
             while getattr(self, attr) is None and time.monotonic() - t0 < timeout_s:
-                rclpy.spin_once(self, timeout_sec=0.05)
+                time.sleep(0.05)
             return getattr(self, attr) is not None
 
         def grab(self):
@@ -130,8 +147,17 @@ def run_sweep(poses, out_dir, no_camera=False):
             arr = np.frombuffer(m.data, dtype=np.uint8).reshape(m.height, m.step)[:, : m.width * 3].reshape(m.height, m.width, 3)
             return arr[:, :, ::-1].copy() if m.encoding == "rgb8" else arr.copy()
 
+    import threading
+    from rclpy.executors import SingleThreadedExecutor
+
     rclpy.init()
     node = Sweep()
+    # 2026-10-07 버그 수정: 예전엔 wait_for 안에서만 spin_once 해서, move_checked 가 도는 동안 /rally/safety/status 를
+    # 못 받아 이동 중 estop 이 무시됐다. 안전 구독 노드는 별도 스레드에서 계속 spin 한다.
+    executor = SingleThreadedExecutor()
+    executor.add_node(node)
+    spin_thread = threading.Thread(target=executor.spin, daemon=True)
+    spin_thread.start()
     dsr = None
     try:
         # 1. 안전 상태 수신 전에는 움직이지 않는다
@@ -145,12 +171,41 @@ def run_sweep(poses, out_dir, no_camera=False):
             node.get_logger().error("/camera/color/image_raw 수신 없음 — PC2 realsense 확인. 중단 (--no-camera 로 이동만 점검 가능)")
             return 2
 
+        if os.environ.get("RALLY_FAKE") == "1":            # 로봇 없이 흐름·estop 검증 (skill_server --fake 와 같은 방식)
+            from rally_robot import fake_dsr
+            sys.modules["DSR_ROBOT2"] = fake_dsr
+            node.get_logger().warning("RALLY_FAKE=1 — 가짜 DSR 로 순회 (로봇 안 움직임)")
         dsr = init_dsr("rally_calib_sweep_dsr")
         from DSR_ROBOT2 import get_current_posx
         if not controller_alive(dsr, 2.0):
             node.get_logger().error("두산 컨트롤러 motion 서비스(check_motion)가 2 s 안에 응답하지 않음 — bringup 재시작 필요. 중단")
             return 5
         import cv2
+
+        # 1206 "NOT REACHABLE" 사전 차단: 현재 해 공간으로 IK → 관절 범위 밖 자세는 순회에서 뺀다 (움직이기 전에)
+        try:
+            from DSR_ROBOT2 import get_current_solution_space, ikin
+        except ImportError:                           # fake_dsr 에는 IK 가 없다 → 검사 생략
+            ikin = None
+        bad = []
+        sol = -1
+        if ikin is not None:
+            sol = int(get_current_solution_space())
+            joint_sets = []
+            for i, p in enumerate(poses):
+                try:
+                    q = [float(v) for v in ikin(p, sol)]
+                except Exception:                     # noqa: BLE001 — IK 실패는 '도달 불가'로 본다
+                    q = None
+                joint_sets.append((i, q))
+            bad = check_joint_limits(joint_sets, j5_max)
+        for i, why in bad:
+            node.get_logger().warning(f"자세 {i} 제외 — {why}")
+        poses = [p for i, p in enumerate(poses) if i not in {b[0] for b in bad}]
+        if not poses:
+            node.get_logger().error("도달 가능한 자세가 없음 — 중심 자세의 J5 를 줄이거나(덜 기울이기) --span 각도를 줄이세요. 중단")
+            return 2
+        node.get_logger().info(f"관절 범위 검사: {len(poses)}개 순회 (제외 {len(bad)}, 해 공간 {sol})")
 
         node.dsr = dsr                                   # move_checked / stop_robot 이 정지 서비스에 쓴다
         node.safety_reason = lambda: node.safety.reason if node.safety else "no_status"
@@ -182,6 +237,8 @@ def run_sweep(poses, out_dir, no_camera=False):
         node.get_logger().fatal(f"안전 정지({e.reason}) — 정지 명령 실패, 로봇이 아직 움직일 수 있음. 하드웨어 비상정지로 멈추고 점검")
         return 4
     finally:
+        executor.shutdown(timeout_sec=1.0)
+        spin_thread.join(timeout=2.0)
         node.destroy_node()
         if dsr is not None:
             dsr.destroy_node()
@@ -197,6 +254,7 @@ def main(args=None):
     ap.add_argument("--safety-yaml", help="작업 공간 한계를 읽을 safety.yaml (없으면 코드 기본값)")
     ap.add_argument("--out", default="data/calib/latest")
     ap.add_argument("--no-camera", action="store_true", help="촬영 없이 이동만 (카메라 미연결 점검용)")
+    ap.add_argument("--j5-max", type=float, default=J5_ABS_MAX_DEG, help="허용 |J5| [deg] — 펜던트 관절 범위에 맞춘다")
     ap.add_argument("--dry-run", action="store_true", help="자세·작업 공간만 검사하고 움직이지 않음")
     argv = [a for a in (args if args is not None else sys.argv[1:]) if not a.startswith("--ros-args")]
     opt = ap.parse_args(argv)
@@ -223,7 +281,7 @@ def main(args=None):
     print(f"작업 공간 검사 통과 ({ws})")
     if opt.dry_run:
         return 0
-    return run_sweep(poses, opt.out, no_camera=opt.no_camera)
+    return run_sweep(poses, opt.out, no_camera=opt.no_camera, j5_max=opt.j5_max)
 
 
 if __name__ == "__main__":

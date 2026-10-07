@@ -246,6 +246,8 @@ def controller_alive(node, timeout_s=2.0):
     """두산 motion 서비스(check_motion)가 timeout 안에 응답하는지. 컨트롤러 노드가 반쯤 멈추면(aux 는 답하고 motion 은 무응답) 여기서 걸린다.
     node 는 rclpy 노드(스핀 중이 아닌 것). 응답 없으면 False."""
     import DSR_ROBOT2
+    if hasattr(DSR_ROBOT2, "fake_move_stop"):                 # fake 모드: 컨트롤러 없음 → 항상 살아 있음
+        return True
     from dsr_msgs2.srv import CheckMotion
     prefix = getattr(DSR_ROBOT2, "_srv_name_prefix", "dsr_controller2/")
     client = node.create_client(CheckMotion, f"/{ROBOT_ID}/{prefix}motion/check_motion")
