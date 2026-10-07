@@ -45,6 +45,8 @@ webcam_link          측면 웹캠 (table_link 기준 static)
 | `/rally/voice/intent` | `rally_interfaces/VoiceIntent` | rally_voice/intent_node | brain, safety | 이벤트 | Reliable |
 | `/rally/voice/transcript` | `std_msgs/String` | rally_voice/stt_node | dashboard | 이벤트 | Reliable |
 
+**음성으로 훈련 고르기** (`VoiceIntent` 슬롯 약속, 메시지 변경 없음): "공 굴리기 하자"처럼 훈련 이름을 말하면 `intent: next_mode` + `slot_keys: [mode]`, `slot_values: ["1"]` (1 공 굴리기 · 3 캐치볼 · 5 건네고 받기 · 7 팔씨름). 세션 시작과 같이 말하면 `start_session` 에 같은 슬롯. 슬롯이 없으면 순서상 다음 모드. 모드 3 이 꺼져 있으면(`mode3_challenge.enabled: false`) brain 이 무시하고 TTS 로 안내.
+
 ### 2.3 판단·안전·기록 (커스텀)
 
 | 토픽 | 타입 | 발행 | 구독 | 주기 | QoS |
