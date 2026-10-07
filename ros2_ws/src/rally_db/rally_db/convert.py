@@ -54,6 +54,22 @@ def trial_to_row(msg, session_id: str) -> dict[str, Any]:
     }
 
 
+def trial_to_event(row: dict[str, Any], trial_id: int) -> dict[str, Any]:
+    """trials 한 줄 → 대시보드 알림 (JSON 으로 보낼 수 있는 값만)."""
+    return {
+        "trial_id": trial_id,
+        "session_id": row["session_id"],
+        "mode": row["mode"],
+        "trial_index": row["trial_index"],
+        "success": row["success"],
+        "error_mm": round(row["error_mm"], 1),
+        "duration_s": round(row["duration_s"], 2),
+        "metrics": row["metrics"],
+        "notes": (row["decision"] or {}).get("notes", ""),
+        "ended_at": (row["started_at"] + timedelta(seconds=row["duration_s"])).isoformat(),
+    }
+
+
 def wrench_to_row(msg, session_id: str | None) -> tuple:
     """WrenchStamped → ts_wrench 튜플 (WRENCH_COLUMNS 순서). trial_id 는 비워 두고 시각으로 잇는다."""
     f, t = msg.wrench.force, msg.wrench.torque
