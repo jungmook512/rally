@@ -9,6 +9,7 @@
     python3 scripts/measure_impact.py --throws 10                 # 10회 던지기, 충격 자동 검출
     python3 scripts/measure_impact.py --throws 10 --threshold 2   # 살살 토스라 피크가 작으면 임계 낮추기
     python3 scripts/measure_impact.py --throws 5 --no-mask        # safety_monitor 가 멈추는지 보고 싶을 때 (nudge 마스킹 끔)
+    python3 scripts/measure_impact.py --throws 5 --mark           # 임계 없이: 던지기 직전 Enter → 그 뒤 3 s 창의 최대 |ΔF|·샘플간 ΔF 를 무조건 보고 (작은 충격 정량화)
 
 출력: 던질 때마다 피크 |ΔF|, 축별 피크(패드 법선 방향 확인), 접촉 시간, 한 주기(10 ms) 최대 ΔF(nudge 설계용), 요약 + CSV(data/measure/).
 """
@@ -107,6 +108,8 @@ def main():
     ap.add_argument("--threshold", type=float, default=3.0, help="충격 검출 임계 |ΔF| [N] (영점 대비)")
     ap.add_argument("--timeout", type=float, default=30.0, help="한 번 던지기 대기 시간 [s]")
     ap.add_argument("--no-mask", action="store_true", help="contact_expected 하트비트 끄기 (safety_monitor nudge 반응 확인용)")
+    ap.add_argument("--mark", action="store_true", help="던지기 직전 Enter 로 표시 → 이후 --window 초 창의 최대값을 임계 없이 보고")
+    ap.add_argument("--window", type=float, default=3.0, help="--mark 분석 창 [s]")
     ap.add_argument("--tag", default="pad")
     opt = ap.parse_args()
 
@@ -140,6 +143,28 @@ def main():
             while base is None:
                 time.sleep(0.2)
                 base = node.baseline()
+            if opt.mark:
+                input(f"\n[{i}/{opt.throws}] 준비되면 Enter 를 누르고 바로 던지세요 (이후 {opt.window:.0f} s 분석) ")
+                base = node.baseline()
+                with node.lock:
+                    start_len = len(node.rows)
+                time.sleep(opt.window)
+                with node.lock:
+                    rows = node.rows[start_len:]
+                if len(rows) < 5:
+                    print("   샘플 없음"); continue
+                devs = [math.sqrt(sum((r[k + 1] - base[k]) ** 2 for k in range(3))) for r in rows]
+                fm = [math.sqrt(r[1] ** 2 + r[2] ** 2 + r[3] ** 2) for r in rows]
+                dfs = [abs(fm[k] - fm[k - 1]) for k in range(1, len(fm))] or [0.0]
+                pk = max(range(len(devs)), key=lambda k: devs[k])
+                above = [k for k, d in enumerate(devs) if d >= devs[pk] * 0.5]
+                h = dict(peak=devs[pk], axis=[abs(rows[pk][k + 1] - base[k]) for k in range(3)],
+                         duration_s=rows[above[-1]][0] - rows[above[0]][0], dfdt_max=max(dfs), t=rows[pk][0], samples=len(rows))
+                hits.append(h)
+                ax = max(range(3), key=lambda k: h["axis"][k])
+                print(f"   창 {len(rows)} 샘플({len(rows)/opt.window:.0f} Hz) · 최대 |ΔF| {h['peak']:.2f} N @ +{rows[pk][0]-rows[0][0]:.2f} s · 축별 {[round(a, 2) for a in h['axis']]} (주축 {AXES[ax]}) · "
+                      f"반치폭 {h['duration_s']*1000:.0f} ms · 샘플간 ΔF 최대 {h['dfdt_max']:.2f} N")
+                continue
             print(f"\n[{i}/{opt.throws}] 영점 {[round(b, 2) for b in base]} N — 던지세요 (최대 {opt.timeout:.0f} s 대기)")
             h = detect_hit(node, base, opt.threshold, opt.timeout)
             if h is None:
