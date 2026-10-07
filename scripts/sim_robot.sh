@@ -2,6 +2,7 @@
 # 실로봇 없이 RViz + 두산 에뮬레이터로 스킬 돌리기. 실로봇 스택과 섞이지 않게 ROS_DOMAIN_ID=77 을 쓴다.
 #   scripts/sim_robot.sh up      # 가상 bringup(에뮬레이터·RViz) + TCP 등록 + 관측 자세 + safety_monitor + 가상 그리퍼 + skill_server
 #   scripts/sim_robot.sh down    # 전부 종료 (에뮬레이터 컨테이너 포함)
+#   scripts/sim_robot.sh rviz    # RViz 창만 다시 열기 (창을 닫았거나 꺼졌을 때)
 # 스킬 보내기 (다른 터미널):
 #   source scripts/sim_robot.sh env
 #   ros2 action send_goal /rally/skill/push_ball rally_interfaces/action/PushBall "{lane: 1, push_speed: 0.1}" --feedback
@@ -25,7 +26,7 @@ case "$1" in
     sim_env
     export DISPLAY=${DISPLAY:-:1}
     nohup ros2 launch m0609_rg2_bringup bringup.launch.py mode:=virtual rviz:=false > $LOG/bringup.log 2>&1 & echo $! > $LOG/bringup.pid
-    nohup rviz2 -d "$ROOT/scripts/sim.rviz" > $LOG/rviz.log 2>&1 & echo $! > $LOG/rviz.pid   # 공·레인·테이블 표시가 더해진 시뮬 전용 설정
+    setsid nohup rviz2 -d "$ROOT/scripts/sim.rviz" > $LOG/rviz.log 2>&1 < /dev/null & echo $! > $LOG/rviz.pid   # 공·레인·테이블 표시가 더해진 시뮬 전용 설정
     echo "[sim] 에뮬레이터 기동 대기…"
     for i in $(seq 1 60); do grep -q "INITIAL AUTHORITY GRANTED" $LOG/bringup.log && break; sleep 2; done
     sleep 5
@@ -53,5 +54,12 @@ case "$1" in
     done
     echo "[sim] 종료"
     ;;
-  *) echo "사용법: scripts/sim_robot.sh up | down   ·   source scripts/sim_robot.sh env" ;;
+  rviz)
+    sim_env
+    export DISPLAY=${DISPLAY:-:1}
+    [ -f $LOG/rviz.pid ] && kill $(cat $LOG/rviz.pid) 2>/dev/null
+    setsid nohup rviz2 -d "$ROOT/scripts/sim.rviz" > $LOG/rviz.log 2>&1 < /dev/null & echo $! > $LOG/rviz.pid
+    echo "[sim] RViz 다시 엶 (로그 $LOG/rviz.log)"
+    ;;
+  *) echo "사용법: scripts/sim_robot.sh up | down | rviz   ·   source scripts/sim_robot.sh env" ;;
 esac

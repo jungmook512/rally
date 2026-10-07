@@ -67,12 +67,30 @@ def test_push_ball_plan():
     from rally_robot.skills.push_ball import DEFAULTS, _plan
     lanes = [{"name": "center", "start": [0.40, 0.0, 0.0], "dir_deg": 0}]
     goal = SimpleNamespace(lane=0, push_dir_deg=0.0)
-    pts, info = _plan(goal, dict(DEFAULTS), lanes, {"z_m": 0.0144})
+    pts, info = _plan(goal, dict(DEFAULTS, push_mode="push", ball_radius_m=0.03), lanes, {"z_m": 0.0144})
     assert pts["behind"][0] == pytest.approx(400 - 80)          # 공 중심 − (반지름 30 + back_off 50)
     assert pts["end"][0] == pytest.approx(400 - 30 + 60)        # 공 뒤면 + stroke 60
     assert pts["behind"][2] == pytest.approx(14.4 + 30)
     assert pts["above"][2] == pytest.approx(14.4 + 100)
     assert pts["end"][1] == pytest.approx(0.0)
     goal90 = SimpleNamespace(lane=0, push_dir_deg=90.0)          # +y 로 밀기
-    pts90, _ = _plan(goal90, dict(DEFAULTS), lanes, {"z_m": 0.0})
+    pts90, _ = _plan(goal90, dict(DEFAULTS, push_mode="push", ball_radius_m=0.03), lanes, {"z_m": 0.0})
     assert pts90["end"][1] > pts90["behind"][1] and pts90["end"][0] == pytest.approx(400)
+
+
+def test_push_ball_strike_arc():
+    """치기 원호: 타격점은 툴 수직·손가락 끝이 테이블 바로 위·앞면이 공 뒤 표면, 백스윙은 뒤쪽·위, 팔로스루는 앞쪽. 모든 점이 같은 원(반지름 L) 위."""
+    pytest.importorskip("rally_interfaces")
+    from rally_robot.skills.push_ball import DEFAULTS, _strike_points
+    cfg = dict(DEFAULTS, ball_radius_m=0.0315)
+    sp, tips = _strike_points(cfg, (0.4324, -0.0058), (1.0, 0.0), 0.0144, 0.0)
+    r, L = 0.0315, cfg["strike_radius_m"]
+    assert tips["mid"][2] == pytest.approx(0.0144 + cfg["strike_tip_height_m"])
+    assert tips["mid"][0] == pytest.approx(0.4324 - r - cfg["strike_face_offset_m"])
+    assert tips["start"][0] < tips["mid"][0] < tips["end"][0]                 # 뒤 → 타격 → 앞
+    assert tips["start"][2] > tips["mid"][2] and tips["end"][2] > tips["mid"][2]   # 타격점이 원호의 최저점
+    z_mid = Rotation.from_euler("ZYZ", sp["mid"][3:6], degrees=True).apply([0, 0, 1])
+    assert z_mid[2] < -0.99                                                    # 타격 순간 툴 거의 수직 (실측 tool_down 이 3° 틀어짐)
+    pivot = np.array(tips["mid"]) - L * z_mid
+    for k in ("start", "end"):
+        assert float(np.linalg.norm(np.array(tips[k]) - pivot)) == pytest.approx(L, abs=1e-6)

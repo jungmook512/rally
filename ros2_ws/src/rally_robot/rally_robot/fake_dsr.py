@@ -88,6 +88,12 @@ def movej(pos, vel=None, acc=None, **kw):
     return 0
 
 
+def amovec(pos1, pos2, vel=None, acc=None, **kw):
+    """원호 흉내 — 끝점으로 직선 보간 (경로 모양은 흉내 내지 않음)."""
+    _start_move(pos2, vel)
+    return 0
+
+
 def amovej(pos, vel=None, acc=None, **kw):
     """관절 이동 흉내 — 관절값만 바꾸고 TCP 자세는 그대로 둔다 (FK 없음). 1 s 동안 이동 중."""
     S.joints = [float(v) for v in pos]
