@@ -8,7 +8,22 @@
 | `calibration/*` | 선생님 Calibration_Tutorial | data_recording / handeye / verify |
 | `training/*` | 선생님 OD_Tutorial | YOLO 학습·평가 스크립트 (Seg로 바꿔 사용) |
 | `segmenter_node.py` | 신규 | YOLO-Seg → TrackedObjectArray 토픽 |
-| `tracker_node.py` `predictor.py` | 신규 | ByteTrack, 칼만 정지 예측 |
+| `tracker_node.py` | 신규 | ByteTrack, predictor 연결 |
+| `predictor.py` | 신규 (정동휘) | 모드 1 칼만(레인 1D) + 마찰 감속 → 정지 위치·시각, 감속도 시도마다 갱신. ROS 무관 순수 클래스 |
+| `rolling_sim.py` | 신규 (정동휘) | predictor 검증용 합성 궤적. `python3 -m rally_vision.rolling_sim` 으로 오차 표 |
 | `pad_hit_judge.py` | 신규 | 모드 3 명중 판정 |
 | `projection.py` `calibration_node.py` | 신규 | tf2 변환, 캘리브레이션 서비스 |
 | `resource/yolov8n_tools_0122.pt` | 선생님 모델 | 기준선 확인용. RALLY 소품 Seg 모델로 교체 예정 |
+
+## predictor 사용 (tracker_node 에서)
+
+```python
+from rally_vision.predictor import LaneAxis, RollingBallPredictor, RollingParams
+cfg = yaml.safe_load(skills_yaml)["mode1"]
+pred = RollingBallPredictor(LaneAxis.from_cfg(cfg["lanes"][lane]), RollingParams.from_cfg(cfg.get("rolling")))
+pred.reset()                                       # 밀기 한 번 시작할 때 (감속도는 유지)
+r = pred.update(stamp_sec, xyz_base_link)          # 공 못 본 프레임은 None → 예측만
+# r.velocity / r.position(predicted_stop) / r.time_s(predicted_stop_time) / r.confidence / r.is_moving → TrackedObject
+pred.finish_trial()                                # is_moving=False 된 뒤 몇 프레임 더 넣고 호출 → 감속도 갱신
+```
+레인 번호는 brain 이 `PushBall.lane` 으로 정한다. tracker 가 어느 레인인지 알아야 한다 (공 위치로 가장 가까운 레인을 골라도 됨).

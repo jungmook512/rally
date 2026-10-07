@@ -4,7 +4,7 @@
   WaitUntil  조건이 참이 될 때까지 RUNNING (timeout_s 넘으면 FAILURE)
   SkillCall  스킬 action 을 비동기로 보내고 결과가 오면 SUCCESS — 로봇이 움직이는 동안 트리·안전 감시가 막히지 않는다.
              결과 메시지는 on_result 로 넘긴다 (스킬의 success=false 도 SUCCESS: 시도는 끝났고 판정은 기록 쪽에서).
-             서버 없음·goal 거절·abort·취소는 FAILURE. 트리가 중단되면(terminate) goal 을 보낸 시도는 반드시 기록하고
+             서버 없음·goal 거절·abort·취소는 FAILURE. abort 여도 결과 메시지(failure_reason 등)는 .result 에 남는다. 트리가 중단되면(terminate) goal 을 보낸 시도는 반드시 기록하고
              (이미 끝났으면 그 결과, 아니면 on_interrupt), 아직 돌고 있거나 수락 전이면 취소한다.
   Do         함수 한 번 실행 후 SUCCESS (TrialResult 발행 등). 함수가 False 를 돌려주면 FAILURE
 """
@@ -60,6 +60,7 @@ class SkillCall(py_trees.behaviour.Behaviour):
         self._result_future = None
         self._goal_handle = None
         self._handled = False          # 결과(또는 거절)를 update 에서 처리했는지
+        self.result = None             # 마지막 결과 메시지 (abort 포함) — 재시도 판단용
         self._cancel_on_accept = False  # 수락 전에 중단됨 → 수락되자마자 취소
         self._t0 = time.monotonic()
 
@@ -103,6 +104,7 @@ class SkillCall(py_trees.behaviour.Behaviour):
             return Status.RUNNING
         self._handled = True
         response = self._result_future.result()
+        self.result = response.result
         if response.status != GoalStatus.STATUS_SUCCEEDED:
             self.feedback_message = GOAL_STATUS_NAMES.get(response.status, f"status_{response.status}")
             self.node.get_logger().warn(f"[{self.name}] 스킬 {self.feedback_message}")
@@ -124,6 +126,7 @@ class SkillCall(py_trees.behaviour.Behaviour):
                 self._result_future = goal_handle.get_result_async()
         if self._result_future is not None and self._result_future.done():
             response = self._result_future.result()
+            self.result = response.result
             if response.status == GoalStatus.STATUS_SUCCEEDED:
                 self.on_result(response.result)           # 중단 직전에 끝난 시도는 실제 결과로
             else:

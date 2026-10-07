@@ -1,13 +1,16 @@
+from glob import glob
+
 from setuptools import find_packages, setup
 package_name = 'rally_brain'
 setup(
     name=package_name,
     version='0.1.0',
     packages=find_packages(exclude=['test']),
-    package_data={'rally_brain.knowledge': ['*.yaml']},
+    package_data={'rally_brain.knowledge': ['*.jsonld']},
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        ('share/' + package_name + '/prompts', glob('rally_brain/prompts/*.md')),   # llm.yaml prompt_* 경로
     ],
     install_requires=['setuptools'],
     extras_require={'test': ['pytest']},

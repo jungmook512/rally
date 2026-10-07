@@ -120,6 +120,33 @@ class Repository:
                       (trial["mode"], trial["session_id"], trial["mode"]))
         return cur.fetchone()[0]
 
+    def find_similar_trials(self, vec: Sequence[float], mode: int, k: int = 3,
+                            exclude_session_id: str | None = None) -> list[dict[str, Any]]:
+        """같은 모드에서 feature_vec 가 가장 가까운(L2) 시도 k 개. 가까운 순. exclude_session_id 의 시도는 뺀다
+        (지금 세션의 최근 시도는 따로 보내므로). 시도가 수천 개 수준이라 인덱스 없이 정확히 다 비교한다."""
+        cur = self._execute(
+            """SELECT id, session_id::text, mode, trial_index, success, error_mm, duration_s, params, metrics,
+                      decision, feature_vec <-> %s::vector AS distance
+               FROM trials
+               WHERE mode = %s AND feature_vec IS NOT NULL
+                 AND (%s::uuid IS NULL OR session_id <> %s::uuid)
+               ORDER BY distance, id LIMIT %s""",
+            (_vector_literal(vec), mode, exclude_session_id, exclude_session_id, k))
+        names = [d.name for d in cur.description]
+        return [dict(zip(names, r)) for r in cur.fetchall()]
+
+    def trials_for_embedding(self, everything: bool = False) -> list[dict[str, Any]]:
+        """벡터를 (다시) 계산할 trials. everything=False 면 feature_vec 가 없는 줄만."""
+        cur = self._execute(
+            "SELECT id, mode, success, error_mm, duration_s, params, metrics, decision FROM trials"
+            + ("" if everything else " WHERE feature_vec IS NULL") + " ORDER BY id")
+        names = [d.name for d in cur.description]
+        return [dict(zip(names, r)) for r in cur.fetchall()]
+
+    def set_feature_vec(self, trial_id: int, vec: Sequence[float] | None) -> None:
+        self._execute("UPDATE trials SET feature_vec = %s::vector WHERE id = %s",
+                      (_vector_literal(vec) if vec is not None else None, trial_id))
+
     def add_wrench_rows(self, rows: Sequence[tuple]) -> int:
         """ts_wrench 여러 줄 (WRENCH_COLUMNS 순서 튜플). 넣은 줄 수."""
         return self._add_rows("ts_wrench", WRENCH_COLUMNS, rows)

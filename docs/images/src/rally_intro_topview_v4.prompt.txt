@@ -1,0 +1,32 @@
+Use case: infographic-diagram.
+Create a polished landscape presentation illustration for RALLY, a tabletop upper-limb rehabilitation partner robot. The user's first attached image is the physical hardware and colors reference; second attached image is the authoritative overhead layout reference. Transform these into an elegant, clear, illustrated overhead setup, with a realistically engineered robot arm.
+
+Camera: STRICT straight-down top view, orthographic, no isometric or oblique room view. Landscape 16:9, high resolution. Warm white background, one large light birch rounded-rectangle tabletop, soft contact shadows, clean restrained editorial technical illustration. Table occupies most of frame; clear readable Korean callouts around it, generous margins, no clutter.
+
+Faithful spatial layout: robot mounted on LEFT of table. Ball rack near TOP CENTER between robot and upper lane area. Exactly THREE horizontal guide lanes on RIGHT half, running left-to-right toward patient side; each lane has two separate long narrow raised guide rails (SIX rails total), top pair mint green, middle pair blue, bottom pair mint green. Balls roll on exposed wood BETWEEN paired rails, not on top of the rails. All six rails parallel, aligned. No fourth lane. Patient side is beyond the RIGHT table edge, indicated only by a small label, no person needed.
+
+Robot: visually believable Doosan M0609 six-axis collaborative industrial arm, matching reference: white/light gray metal cast links, substantial articulated cylindrical shoulder and elbow housings, realistic joint covers and seams, brushed-metal bolted base plate, proportionate connected upper arm/forearm/wrist, blue accent wrist coupling, actual OnRobot RG2 gray body and two black parallel gripping fingers. Black/silver RealSense stereo depth camera mounted immediately above gripper on wrist bracket, not overhead camera. Realistic engineering rendering within a soft illustration, not a toy, not a flat schematic, no extra disconnected joints. Keep whole arm inside left safe region. Bend arm to keep rack and lanes unobscured, empty gripper near lane entrances but left of limit.
+
+Mode 1 ball rack: small blue open U-channel rail at top center, slightly inclined vertically so gravity feeds balls from right high end toward left low end. EXACTLY FOUR solid orange balls in one queue in the rack, including leading ball in the same fixed left pickup pocket. Low stopping lip retains front ball, clear subtle leftward feed arrow over rack. Rack is entirely on robot side of limit. Top view should show four balls clearly, slight supporting riser/shadow conveys slope. No return chute or ball return pathway. No physical balls anywhere else in image: depict mode-start state.
+
+Guide lanes: depict FOUR distinct FUTURE target positions as thin orange hollow dashed circles numbered 1,2,3,4, with no orange solid fill. One target in upper lane, TWO at different distances along middle lane, one in bottom lane. These are target markers, not extra balls or extra lanes. Small arrows in the channels point only to the RIGHT, showing roll direction. Four placements across three lanes, not four lanes.
+
+Robot movement limit: purple slim physical tape marker near top of lane entrance region as reference, aligned with a purple dashed vertical conceptual boundary down the tabletop. Boundary lies slightly to right of lane entrances, left of all four target circles; arm and rack stay left of it. The limit is an overlay, not a physical wall or fence. No invented distances or numeric safety dimensions.
+
+Pad holder: lower center-left, between robot base and bottom lane entrance, a narrow vertically oriented RED DASHED EMPTY footprint on tabletop. This holder has not been 3D printed yet, only location reserved. NO actual manufactured holder, NO paddle placed in footprint, no solid 3D pad rack.
+
+Typography: professional Korean sans-serif, accurate legible text, sparse leader lines that don't cross hardware. Header upper left: "RALLY" and subtitle "상지 재활 파트너 로봇". Labels only as follows:
+"두산 M0609"
+"RG2 + RealSense"
+"공 거치대 · 모드 1"
+"공 4개 · 기울기로 자동 공급"
+"고정 집기 위치"
+"로봇 이동 한계선" (purple)
+"패드 거치 예정 위치" (red)
+"모드 3 · 3D 프린팅 전" (red small)
+"환자 측" (outside right table edge)
+Bottom caption outside tabletop: "모드 1 | 집기 → 레인 입구에 놓기 → 굴리기 × 4회 = 한 사이클"
+Smaller bottom caption: "①–④ 서로 다른 목표 위치 · 환자에게 돌려받지 않음"
+Tiny footer: "배치 개념도 · 실제 치수와 다를 수 있음"
+
+Prioritize attractive introduction-ready illustration with realistic arm, faithful overhead layout, exactly 4 stocked balls, exactly 3 paired-rail lanes, clear conceptual safety boundary and unbuilt pad holder. Do not add software architecture, extra modes panels, unrequested equipment, return arrows, hands, humans, logos other than RALLY, or arbitrary measurements.

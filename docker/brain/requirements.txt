@@ -5,3 +5,4 @@ psycopg[binary]
 pgvector
 redis
 numpy
+rdflib>=6.1,<8   # rally_brain/knowledge/ontology.jsonld (JSON-LD·SPARQL)

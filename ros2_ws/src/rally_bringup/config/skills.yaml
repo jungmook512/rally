@@ -63,6 +63,17 @@ mode1:
   strike_tip_height_m: 0.006      # 타격 순간 손가락 끝 높이(테이블 기준). 앞면이 공 중심 높이를 친다 (10/7: 58 mm 는 공 윗부분만 스침, 10 mm 도 높다는 피드백)
   strike_face_offset_m: 0.008     # 손가락 끝 → 앞면 거리
   balls_per_cycle: 4
+  # 굴러가는 공 정지 예측 (rally_vision/predictor.py RollingParams 와 같은 키). 값은 합성 궤적 기준 — 실측 후 조정
+  rolling:
+    decel_init_mps2: 0.30        # 구름 감속도 초기값 (펠트 가정) TODO 실측: 공 굴려 정지 거리로
+    decel_range_mps2: [0.05, 1.5]
+    decel_update_alpha: 0.3      # 시도마다 새 추정값 반영 비율 (1/a 로 평균)
+    meas_std_m: 0.01             # 공 중심 측정 잡음 — 공을 가만히 두고 위치 표준편차를 재서 넣는다
+    accel_std_mps2: 0.5
+    stop_speed_mps: 0.02
+    stop_frames: 5
+    move_start_m: 0.02
+    min_frames: 5
 
 # mode7 (저항 밀기) — 로봇은 버티거나 져주기만, 절대 밀지 않음
 mode7:
@@ -78,7 +89,7 @@ brain:
   actions: [continue, harder, easier, suggest_rest, wait, ask_llm]
   success_streak: 3                 # 같은 모드 연속 성공 → harder
   failure_streak: 2                 # 같은 모드 연속 실패 → easier
-  llm_signal_count: 2               # 약한·중간 피로 신호가 이만큼 겹치면 ask_llm (ontology.yaml fatigue_signals)
+  llm_signal_count: 2               # 애매한 신호(보상 동작·성공률 하락·시도 시간 증가)가 이만큼 겹치면 ask_llm
   success_drop_rate: 0.4            # 최근 시도 성공률이 이 이하면 '성공률 하락' 신호 (최소 3회)
   slowing_ratio: 1.5                # 마지막 시도 시간이 앞선 시도 평균의 이 배 이상이면 '시도 시간 증가' 신호
   difficulty_range: [-3, 3]
@@ -120,3 +131,21 @@ handover:
   default_timeout_s: 20.0
   retreat_m: 0.10
   release_wait_s: 0.3
+
+# mode5 (brain) — 모드 5 시도의 실패 분기. 위 handover: 는 로봇 스킬 쪽 설정. 숫자는 초기값, 리허설 후 조정
+mode5:
+  hand_wait_s: 10.0               # 손이 이 시간 안 보이면 안내하고 다시 기다림
+  hand_wait_tries: 2              # 기다리는 횟수. 다 넘기면 이번 시도는 실패(notes=no_hand)로 기록하고 다음 시도
+  hand_prompt: "손을 앞으로 내밀어 주세요"
+  retry_reasons: [timeout, no_object]   # 이 실패 이유만 다시 시도. 안전 정지·취소·컨트롤러 오류는 재시도 안 함
+  max_retries: 1
+  retry_prompt: "한 번 더 해 볼게요"   # TTS 문구에 '그만'·'멈춰' 금지 (INTERFACES #45)
+
+# llm_tunable — LLM(llm_advisor)이 제안해도 되는 값과 그 범위. 범위는 여기서만 정한다 (요청에 온 범위는 이 안으로 좁히기만).
+# 여기 없는 모드·값을 요청하면 거부한다 (예: 모드 3 catch_radius·lead_time_s — 조절 금지). default_ref: 이력 없을 때 대체값
+llm_tunable:
+  1:
+    push_speed: {range_ref: mode1.push_speed_range}
+  7:
+    stiffness: {range_ref: mode7.stiffness_range}
+    target_force_n: {range_ref: mode7.target_force_range_n, default_ref: mode7.target_force_start_n}

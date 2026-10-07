@@ -1,0 +1,55 @@
+Edit the supplied RALLY illustration into an updated, polished Korean project-introduction image. Preserve its softly rendered engineering illustration style, realistic Doosan M0609 robot, warm birch tabletop, white background and navy typography. Make THREE changes: include all four rehabilitation modes in a bottom information strip; correct the RealSense camera orientation; add an adult patient seen from above on the right. Landscape 16:9, high-resolution, generous space, sharply legible Korean.
+
+LAYOUT: Enlarge/reflow the canvas as needed. Header top left. Main overhead worktable diagram in the upper roughly 70% of image, with a seated patient to its RIGHT outside the tabletop. Four equal-width concise mode cards across bottom 25%, no overlap with table or person. Do not cram new cards into existing occupied space. Keep viewing angle top-down, with believable depth/shadows on hardware.
+
+PRESERVE THE SETUP: Robot bolted at left, small blue inclined ball rack at top center with EXACTLY FOUR orange balls queued, automatic gravity feed toward the same left-end pickup pocket. Three horizontal paired-rail lanes at right: green pair, blue pair, green pair = SIX rails, not four lanes. Preserve FOUR hollow dashed numbered target markers: 1 upper lane, 2 and 3 middle lane at different distances, 4 lower lane. No additional solid balls on table. Purple vertical dashed robot movement boundary slightly right of lane entrances; robot remains on its left. Small solid purple tape marker at top. Red dashed empty pad-holder footprint at lower center-left, labeled as future unbuilt holder, NO manufactured holder or paddle here. No ball-return pathway.
+
+CAMERA FIX (critical): Existing camera has its black stereo lens face incorrectly looking UP toward the viewer. Rotate ONLY this camera and its mount so the optical/front sensor face points DOWN toward the tabletop/work area, approximately in the same downward direction as the RG2 grasp approach, with a modest tilt toward the lanes. Camera remains securely mounted on a short bracket immediately ABOVE the gripper at the wrist, eye-in-hand. From this overhead viewpoint we should mostly see its SILVER/GRAY BACK and TOP housing and side edge, not a front-facing black pair of lenses looking at the viewer. The lenses belong on the lower surface facing the table. Realistic mount, not hovering, no camera on base, no additional camera. Use a tiny unobtrusive downward field-of-view cue if needed to clarify observing the tabletop. Keep detailed realistic white and gray M0609 articulated links, blue wrist coupling, gray OnRobot RG2 body and black two fingers. Separate clear callouts "RG2 그리퍼" and "RealSense · 작업대 관측", leader accurately terminating on each part.
+
+PATIENT: Add a respectfully illustrated adult rehabilitation participant on a simple chair beyond the RIGHT table edge, facing LEFT toward the robot and table. True overhead view showing top of dark-haired head, shoulders in a muted light teal shirt, two anatomically correct arms and hands. One arm gently reaching LEFT toward the right half of the guide lanes, other hand resting near the right table edge. Hands remain well to the RIGHT of purple robot boundary, no robot-human direct contact, no grasped robot, no clinical machinery or injuries. Size proportionate to tabletop and 6 cm balls, natural comfortable seated posture. Do not cover numbered target markers, lanes, labels or cards. Label "환자" near shoulder/chair.
+
+MAIN TEXT, use clear Korean sans serif:
+Header "RALLY"
+Subtitle "상지 재활 파트너 로봇"
+Small header supporting line "공·패드·컵·손잡이를 통한 상호작용"
+Hardware/location callouts:
+"두산 M0609"
+"RG2 그리퍼"
+"RealSense · 작업대 관측"
+"공 거치대 · 모드 1"
+"공 4개 · 기울기로 자동 공급"
+"고정 집기 위치"
+"로봇 이동 한계선" in purple
+"패드 거치 예정 위치" in red
+"모드 3 · 3D 프린팅 전" in smaller red
+"환자"
+
+BOTTOM FOUR MODE CARDS: tasteful very pale tints, small simple object icons if space, bold mode/name and two or three short text lines. All four equally readable. Cards explain separate modes; do not portray them as simultaneously occurring on main table. Exact content:
+Card 1 (orange):
+"모드 1 | 공 굴려주기"
+"팔 뻗기"
+"집기 → 놓기 → 굴리기"
+"공 4개 · 서로 다른 목표로 4회 = 한 사이클"
+"환자에게 돌려받지 않음"
+
+Card 3 (coral):
+"모드 3 | 던진 공 받기"
+"던지기·협응 · 챌린지"
+"공의 착지점을 예측해"
+"로봇이 패드를 옮겨 받아요"
+
+Card 5 (blue):
+"모드 5 | 기울여 건네고 받기"
+"손목 회전·쥐기"
+"컵·막대를 기울여 건네고"
+"당기면 놓고, 내밀면 받아요"
+
+Card 7 (purple):
+"모드 7 | 저항 밀기"
+"등척성 근력"
+"손잡이를 쥐고 버티다가 목표 힘을 유지하면 져줘요"
+"로봇은 환자 쪽으로 밀지 않아요"
+
+Tiny footer "배치 개념도 · 실제 치수와 다를 수 있음"
+
+Avoid repeating the old oversized mode-1-only bottom caption; replace it with the four cards. Avoid unreadably tiny text, garbled Korean, perspective room view, front-facing/upward-looking camera lenses, extra fingers, toy robot, extra rails, extra solid balls, completed pad holder, changed safety boundary, direct robot-patient contact. Preserve the existing illustration's identity and overall placement while adding space for a patient and four-mode explanations.
