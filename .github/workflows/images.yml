@@ -1,0 +1,25 @@
+# Docker 이미지 빌드 (hand_pose · voice · brain · dashboard). 한 번에 10분 넘게 걸려서 꼭 필요할 때만 돈다.
+#   - PR 에서만, Dockerfile·requirements·compose·entrypoint 나 패키지 의존성(package.xml·setup.py)이 바뀔 때.
+#   - main push 에서는 돌지 않는다 (PR 에서 이미 확인). 필요하면 Actions 탭에서 수동 실행(workflow_dispatch).
+#   - vision 은 CUDA 이미지라 여기서 빼고 vision-deps.yml 에서 가볍게 검사.
+name: images
+on:
+  pull_request:
+    paths:
+      - docker/**
+      - ros2_ws/src/**/package.xml
+      - ros2_ws/src/**/setup.py
+      - .github/workflows/images.yml
+  workflow_dispatch:
+concurrency:
+  group: images-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  images:
+    runs-on: ubuntu-24.04
+    strategy: { matrix: { svc: [hand_pose, voice, brain, dashboard] } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: build ${{ matrix.svc }}
+        run: docker build -f docker/${{ matrix.svc }}/Dockerfile -t rally/${{ matrix.svc }}:ci .
