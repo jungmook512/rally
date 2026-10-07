@@ -7,16 +7,16 @@
 - [x] `rally_robot/README.md` 읽기 — 선생님 코드가 어디로 옮겨졌는지, `dsr_helpers.init_dsr()` 패턴
 - [x] dsr_bringup2 빌드, M0609 연결, `movel` 기본 이동 확인
 - [x] RG2 Modbus TCP 연결, 폭·힘 레지스터 읽기/쓰기 확인 (`scripts/check_gripper.py`)
-- [ ] `get_tool_force()` 값 읽기, 노이즈 수준 메모
-- [ ] 관측 자세 후보 2~3개 티칭 (카메라가 테이블 전체를 보는 자세)
+- [x] `get_tool_force()` 값 읽기, 노이즈 수준 메모 — 10/6 정지 노이즈 한 주기 |ΔF| ≤ 0.25 N, |F| ≤ 2.5 N → `nudge_dfdt_n` 5 N (#25)
+- [x] 관측 자세 후보 2~3개 티칭 (카메라가 테이블 전체를 보는 자세) — 10/6 1개 확정, `skills.yaml observe_pose` (#25)
 - [ ] (박성현과) 패드 들고 환자 쪽 향할 때 RealSense 시야 확인
 
 ## Day 1 — 기반
 - [ ] **기준선**: `ros2 launch rally_bringup legacy_baseline.launch.py` 로 선생님 픽앤플레이스가 그대로 동작하는지 확인 (박성현·정동휘와)
 - [x] `force_publisher.py`: `/rally/robot/wrench` (WrenchStamped, 100 Hz), `/rally/robot/tcp_pose` — 코드 완료, PC1 에서 `ros2 topic hz` 확인 필요
 - [x] `gripper_node.py`: `GripperCommand` srv, `/rally/gripper/state`, grip 비트 + 폭으로 `object_detected` — 동기 클라이언트 + Lock. 비동기 교체는 TODO. PC1 확인 필요
-- [x] `/rally/robot/go_observe_pose` (std_srvs/Trigger) — skill_server 에 있음, OBSERVE_POS 티칭 값만 교체 필요
-- [x] 캘리브레이션용 로봇 자세 15개 순회 스크립트 (`ros2 run rally_robot calib_sweep --center … --dry-run` 먼저) — 중심 자세 티칭 후 PC1 확인 필요
+- [x] `/rally/robot/go_observe_pose` (std_srvs/Trigger) — skill_server 에 있음, `skills.yaml observe_pose.posj` 사용 (#25)
+- [x] 캘리브레이션용 로봇 자세 15개 순회 스크립트 (`ros2 run rally_robot calib_sweep --center … --dry-run` 먼저) — 10/6 저녁 실로봇 1차 순회, 정지 서비스 이름·이동 타임아웃 수정 (#28). 이동 중 estop 정지 확인 남음
 - [ ] 그리퍼 닫힘 지연 측정 (`scripts/check_gripper.py` 가 ms 출력) → `skills.yaml gripper.command_to_motion_ms`
 
 ## Day 2 — 모드 5 스킬
@@ -73,3 +73,5 @@
 ## 메모 / 막힌 것
 - 10/6: 로봇 없이 스킬 흐름 테스트: `RALLY_FAKE=1 ros2 run rally_robot skill_server --fake` (가짜 DSR, 테이블 Z 250 mm). 모드 7 nudge 오탐 대비로 접촉 예정 플래그 도입.
 - 10/6: 그리퍼·로봇이 모드 3 검토에 쓰이는 동안 코드 먼저 진행. 물체별 파지 폭은 안 재기로 (폭 0 + 물체별 힘으로 닫음, `skills.yaml gripper`). safety.yaml 값 채움(INTERFACES 6절 기준), nudge·작업 공간 값은 실측 후 확정.
+- 10/6 실측: 테이블 Z 14.4 mm(`table.yaml`), 작업 공간 x_min 0.20 m, 관측 자세 티칭 (#25). 측정 CSV 는 `data/measure/`(git 제외, #31).
+- 10/6 남은 것: #14 skill_server 안전 상태 타임아웃(담당 정해야 함) · #30 네이티브↔root 컨테이너 공유 메모리 양방향 차단(`env_robot_pc.sh` 에 UDPv4, 수정 후 pc2 로 재확인) · 이동 중 estop 정지 확인 · 그리퍼 닫힘 지연 · 당김 힘 10회
