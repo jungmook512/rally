@@ -1,28 +1,297 @@
-"""rally_vision/segmenter_node.py — YOLO-Seg → TrackedObjectArray (/rally/perception/objects, 30 Hz)
+"""rally_vision/segmenter_node.py — YOLO-Seg → TrackedObjectArray (/rally/perception/objects)
 담당: 박성현
-선생님 detection.py 와의 차이
-- 서비스 요청 시 1회가 아니라 토픽으로 계속 발행
-- 박스 중심 대신 **마스크 픽셀 깊이 중앙값**으로 3D 중심 (배경 깊이 오염 제거)
-- 마스크 PCA 주축 → yaw, mask_area
-- camera → base_link 변환은 tf2 (camera_link static tf = T_gripper2camera.npy 를 rally_bringup 이 발행)
-  ※ 초기엔 선생님 방식(get_current_posx + npy 직접 곱)으로 해도 됨 — rally_robot.dsr_helpers.transform_to_base
-재사용: rally_vision.realsense.ImgNode (구독), rally_vision.yolo.YoloModel._aggregate_detections (프레임 집계 아이디어)
+
+흐름 (타이머, rate_hz): 최신 컬러·정렬 깊이·camera_info → ultralytics seg 추론 → 인스턴스마다
+  마스크 픽셀 깊이 중앙값으로 3D 중심 (배경 깊이 오염 제거) → camera → base_link → PCA 주축 yaw, mask_area, bbox
+  → 같은 클래스 직전 위치와 비교해 velocity·is_moving (간단 추적, ByteTrack 은 tracker_node) → 발행
+camera → base_link 변환 (projection.py):
+  1) tf2  base_link ← 이미지 frame_id (이미지 시각)      ← INTERFACES 1절. camera_link static tf 가 있을 때
+  2) 폴백 /rally/robot/tcp_pose × T_gripper2camera.npy    ← 과도기 (선생님 방식). tf 가 없고 tcp_pose 가 0.5 s 안이면
+  3) 둘 다 없으면 카메라 좌표 그대로 (header.frame_id = 카메라 프레임). 가짜 base 좌표를 만들지 않는다
+모델: model_path 가 비면 COCO yolov8n-seg (sports ball → ball, cup → cup 으로 이름 바꿈) — 학습 모델이 나오기 전 임시.
+      class_alias 로 모델 클래스 이름을 INTERFACES 이름(ball, velcro_ball, rod, cup)으로 바꾼다.
+검증: 로봇·카메라 없이 — python3 -m pytest ros2_ws/src/rally_vision/test, scripts/segment_offline.py (저장 사진+깊이)
 """
+from __future__ import annotations
+
+import os
+import time
+
+import numpy as np
 import rclpy
+from cv_bridge import CvBridge
+from geometry_msgs.msg import Point, PoseStamped, Vector3
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
+from rclpy.qos import qos_profile_sensor_data
+from rclpy.time import Time
+from rclpy.duration import Duration
+from sensor_msgs.msg import CameraInfo, Image, RegionOfInterest
+from tf2_ros import Buffer, TransformListener
+
 from rally_interfaces.msg import TrackedObject, TrackedObjectArray
+from rally_vision import projection as pj
+
+try:
+    import cv2
+except ImportError:  # pragma: no cover
+    cv2 = None
+
+DEFAULT_ALIAS = "sports ball:ball,tennis_ball:ball,tennis ball:ball,velcro ball:velcro_ball,stick:rod"
+KNOWN_CLASSES = ("ball", "velcro_ball", "pad", "rod", "cup", "hand")   # TrackedObject.msg 주석과 같게
+
+
+def parse_alias(s: str) -> dict[str, str]:
+    out = {}
+    for item in s.split(","):
+        if ":" in item:
+            k, v = item.split(":", 1)
+            out[k.strip()] = v.strip()
+    return out
+
+
+def default_gripper2cam_path() -> str:
+    try:
+        from ament_index_python.packages import get_package_share_directory
+        p = os.path.join(get_package_share_directory("rally_robot"), "resource", "T_gripper2camera.npy")
+        return p if os.path.isfile(p) else ""
+    except Exception:  # noqa: BLE001  rally_robot 이 없는 컨테이너
+        return ""
+
+
+def masks_from_result(res, shape_hw) -> list[np.ndarray]:
+    """ultralytics Results → 원본 해상도 bool 마스크 목록. seg 모델이면 폴리곤을 채우고, detect 모델이면 bbox 안 타원."""
+    h, w = shape_hw
+    masks = []
+    n = len(res.boxes)
+    polys = res.masks.xy if getattr(res, "masks", None) is not None else None
+    for i in range(n):
+        m = np.zeros((h, w), dtype=np.uint8)
+        if polys is not None and i < len(polys) and len(polys[i]) >= 3:
+            cv2.fillPoly(m, [np.round(polys[i]).astype(np.int32)], 1)
+        else:
+            x0, y0, x1, y1 = res.boxes.xyxy[i].tolist()
+            cv2.ellipse(m, (int((x0 + x1) / 2), int((y0 + y1) / 2)), (max(1, int((x1 - x0) / 2)), max(1, int((y1 - y0) / 2))), 0, 0, 360, 1, -1)
+        masks.append(m.astype(bool))
+    return masks
+
+
+def extract_objects(res, depth_mm: np.ndarray, K, T_cam_to_frame: np.ndarray | None, names: dict, alias: dict,
+                    conf_min: float, known_only: bool = True) -> list[dict]:
+    """추론 결과 1프레임 → 물체 dict 목록 (ROS 메시지 없음, 단위 테스트용).
+    dict: class_name, confidence, center(3,) [m, T 적용 프레임], yaw[rad], mask_area[px], bbox(x,y,w,h), uv(u,v), z_m, mask"""
+    out = []
+    if res is None or len(res.boxes) == 0:
+        return out
+    masks = masks_from_result(res, depth_mm.shape[:2])
+    T = np.eye(4) if T_cam_to_frame is None else T_cam_to_frame
+    for i, m in enumerate(masks):
+        conf = float(res.boxes.conf[i])
+        if conf < conf_min:
+            continue
+        raw = names.get(int(res.boxes.cls[i]), str(int(res.boxes.cls[i])))
+        cname = alias.get(raw, raw)
+        if known_only and cname not in KNOWN_CLASSES:      # COCO 임시 모델의 엉뚱한 클래스(mouse 등) 는 버림
+            continue
+        z = pj.mask_depth_median(depth_mm, m)
+        axis = pj.mask_principal_axis(m)
+        if z is None or axis is None:
+            continue
+        cx, cy = axis[0], axis[1]
+        p_cam = pj.pixel_to_camera(cx, cy, z, K)
+        center = pj.transform_points(T, p_cam)[0]
+        yaw = pj.yaw_in_frame(T, p_cam, axis, z, K) if axis[3] > 1.3 else 0.0   # 둥근 물체는 yaw 의미 없음 → 0
+        x0, y0, x1, y1 = res.boxes.xyxy[i].tolist()
+        out.append(dict(class_name=cname, confidence=conf, center=center, yaw=yaw, mask_area=float(m.sum()),
+                        bbox=(int(x0), int(y0), int(x1 - x0), int(y1 - y0)), uv=(cx, cy), z_m=z, mask=m))
+    return out
+
+
+class SimpleTracks:
+    """클래스별 최근 위치로 velocity·is_moving·track_id. ByteTrack 전 임시."""
+
+    def __init__(self, match_m: float = 0.15, moving_mps: float = 0.05, max_age_s: float = 1.0):
+        self.match_m, self.moving_mps, self.max_age_s = match_m, moving_mps, max_age_s
+        self.tracks: list[dict] = []
+        self.next_id = 1
+
+    def update(self, objs: list[dict], t: float) -> None:
+        self.tracks = [tr for tr in self.tracks if t - tr["t"] < self.max_age_s]
+        used = set()
+        for o in objs:
+            best, bd = None, self.match_m
+            for j, tr in enumerate(self.tracks):
+                if j in used or tr["class_name"] != o["class_name"]:
+                    continue
+                d = float(np.linalg.norm(tr["center"] - o["center"]))
+                if d < bd:
+                    best, bd = j, d
+            if best is None:
+                o["track_id"], o["velocity"], o["is_moving"] = self.next_id, np.zeros(3), False
+                self.tracks.append(dict(id=self.next_id, class_name=o["class_name"], center=o["center"], t=t, vel=np.zeros(3)))
+                self.next_id += 1
+                continue
+            used.add(best)
+            tr = self.tracks[best]
+            dt = max(t - tr["t"], 1e-3)
+            v_raw = (o["center"] - tr["center"]) / dt
+            vel = 0.5 * tr["vel"] + 0.5 * v_raw
+            o["track_id"], o["velocity"], o["is_moving"] = tr["id"], vel, bool(np.linalg.norm(vel) > self.moving_mps)
+            tr.update(center=o["center"], t=t, vel=vel)
 
 
 class SegmenterNode(Node):
     def __init__(self):
         super().__init__("rally_segmenter")
-        self.declare_parameter("model_path", "")          # resource/yolov8n-seg_rally.pt (TensorRT .engine 권장)
-        self.declare_parameter("conf", 0.5)
-        qos = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT, history=HistoryPolicy.KEEP_LAST, depth=1)
-        self.pub = self.create_publisher(TrackedObjectArray, "/rally/perception/objects", qos)
-        # TODO(박성현): ImgNode 구독 → ultralytics seg 추론 → 마스크별 3D 중심·yaw → 발행
+        d = self.declare_parameter
+        d("model_path", "")                       # 비면 COCO yolov8n-seg (임시). 학습 모델: models/yolov8n-seg_rally.pt 또는 .engine
+        d("class_alias", DEFAULT_ALIAS)           # "모델이름:INTERFACES이름,..."
+        d("conf", 0.5)
+        d("imgsz", 640)
+        d("device", "")                           # "" 자동, "cpu", "0"
+        d("rate_hz", 30.0)
+        d("color_topic", "/camera/color/image_raw")
+        d("depth_topic", "/camera/aligned_depth_to_color/image_raw")
+        d("info_topic", "/camera/color/camera_info")
+        d("base_frame", "base_link")
+        d("tcp_pose_topic", "/rally/robot/tcp_pose")
+        d("tcp_pose_max_age_s", 0.5)
+        d("gripper2cam_path", default_gripper2cam_path())
+        d("debug_hz", 10.0)
+        d("moving_mps", 0.05)
+        d("known_only", True)                     # INTERFACES 클래스(ball·velcro_ball·pad·rod·cup·hand) 만 발행
+        g = lambda k: self.get_parameter(k).value  # noqa: E731
+
+        self.bridge = CvBridge()
+        self.alias = parse_alias(g("class_alias"))
+        self.conf, self.imgsz, self.device = float(g("conf")), int(g("imgsz")), str(g("device"))
+        self.known_only = bool(g("known_only"))
+        self.base_frame = g("base_frame")
+        self.tcp_max_age = float(g("tcp_pose_max_age_s"))
+        self.g2c = None
+        if g("gripper2cam_path"):
+            try:
+                self.g2c = np.load(g("gripper2cam_path"))
+                self.get_logger().info(f"T_gripper2camera: {g('gripper2cam_path')} (tf 없을 때 폴백)")
+            except Exception as e:  # noqa: BLE001
+                self.get_logger().warn(f"npy 로드 실패 {g('gripper2cam_path')}: {e}")
+
+        from ultralytics import YOLO  # 무거운 import 는 여기서
+        path = g("model_path") or "yolov8n-seg.pt"
+        self.model = YOLO(path)
+        self.names = dict(self.model.names)
+        self.get_logger().info(f"모델 {path} 클래스 {sorted(set(self.alias.get(v, v) for v in self.names.values()))[:12]}…")
+
+        self.color = self.depth = self.K = self.tcp = None
+        self.color_stamp = self.color_frame = None
+        self.create_subscription(Image, g("color_topic"), self._on_color, qos_profile_sensor_data)
+        self.create_subscription(Image, g("depth_topic"), self._on_depth, qos_profile_sensor_data)
+        self.create_subscription(CameraInfo, g("info_topic"), self._on_info, qos_profile_sensor_data)
+        self.create_subscription(PoseStamped, g("tcp_pose_topic"), self._on_tcp, qos_profile_sensor_data)
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+
+        self.pub = self.create_publisher(TrackedObjectArray, "/rally/perception/objects", qos_profile_sensor_data)
+        self.pub_dbg = self.create_publisher(Image, "/rally/perception/objects/debug_image", qos_profile_sensor_data)
+        self.tracks = SimpleTracks(moving_mps=float(g("moving_mps")))
+        self._last_dbg = 0.0
+        self._dbg_period = 1.0 / max(float(g("debug_hz")), 0.1)
+        self._done_stamp = None
+        self._n, self._t_infer = 0, 0.0
+        self.create_timer(1.0 / max(float(g("rate_hz")), 1.0), self._tick)
+        self.create_timer(5.0, self._stats)
+
+    # --- 구독 ---
+    def _on_color(self, msg: Image):
+        self.color, self.color_stamp, self.color_frame = self.bridge.imgmsg_to_cv2(msg, "bgr8"), msg.header.stamp, msg.header.frame_id
+
+    def _on_depth(self, msg: Image):
+        d = self.bridge.imgmsg_to_cv2(msg, "passthrough")
+        self.depth = d if d.dtype == np.uint16 else (d * 1000.0).astype(np.uint16)   # 16UC1 mm 또는 32FC1 m
+
+    def _on_info(self, msg: CameraInfo):
+        self.K = list(msg.k)
+
+    def _on_tcp(self, msg: PoseStamped):
+        self.tcp = (msg, time.monotonic())
+
+    # --- 변환 ---
+    def _cam_to_base(self, stamp, cam_frame: str):
+        """(T 4x4, frame_id). tf → tcp_pose 폴백 → None(카메라 좌표)."""
+        try:
+            tf = self.tf_buffer.lookup_transform(self.base_frame, cam_frame, Time.from_msg(stamp), timeout=Duration(seconds=0.02))
+            tr, q = tf.transform.translation, tf.transform.rotation
+            return pj.pose_to_matrix(tr.x, tr.y, tr.z, q.x, q.y, q.z, q.w), self.base_frame
+        except Exception:  # noqa: BLE001
+            pass
+        if self.tcp is not None and self.g2c is not None and time.monotonic() - self.tcp[1] < self.tcp_max_age:
+            p, q = self.tcp[0].pose.position, self.tcp[0].pose.orientation
+            T = pj.base_from_tcp(pj.pose_to_matrix(p.x, p.y, p.z, q.x, q.y, q.z, q.w), self.g2c)
+            return T, self.base_frame
+        self.get_logger().warn(f"tf {self.base_frame}←{cam_frame} 없음, tcp_pose 도 없음 → 카메라 좌표로 발행", throttle_duration_sec=5.0)
+        return None, cam_frame
+
+    # --- 주기 ---
+    def _tick(self):
+        if self.color is None or self.depth is None or self.K is None or self.color_stamp == self._done_stamp:
+            return
+        img, depth, stamp, cam_frame = self.color, self.depth, self.color_stamp, self.color_frame
+        self._done_stamp = stamp
+        if depth.shape[:2] != img.shape[:2]:
+            self.get_logger().warn("컬러·깊이 해상도 불일치 — align_depth.enable:=true 확인", throttle_duration_sec=5.0)
+            return
+        t0 = time.monotonic()
+        res = self.model.predict(img, imgsz=self.imgsz, conf=self.conf, device=self.device or None, verbose=False)[0]
+        T, frame = self._cam_to_base(stamp, cam_frame)
+        objs = extract_objects(res, depth, self.K, T, self.names, self.alias, self.conf, self.known_only)
+        self.tracks.update(objs, time.monotonic())
+        self._n += 1; self._t_infer += time.monotonic() - t0
+
+        arr = TrackedObjectArray()
+        arr.header.stamp, arr.header.frame_id = stamp, frame
+        for o in objs:
+            m = TrackedObject()
+            m.header = arr.header
+            m.track_id, m.class_name, m.confidence = int(o["track_id"]), o["class_name"], float(o["confidence"])
+            m.position = Point(x=float(o["center"][0]), y=float(o["center"][1]), z=float(o["center"][2]))
+            v = o["velocity"]; m.velocity = Vector3(x=float(v[0]), y=float(v[1]), z=float(v[2]))
+            m.yaw, m.mask_area, m.is_moving = float(o["yaw"]), float(o["mask_area"]), bool(o["is_moving"])
+            x, y, w, h = o["bbox"]; m.bbox = RegionOfInterest(x_offset=max(x, 0), y_offset=max(y, 0), width=max(w, 0), height=max(h, 0))
+            arr.objects.append(m)
+        self.pub.publish(arr)
+
+        now = time.monotonic()
+        if now - self._last_dbg >= self._dbg_period and self.pub_dbg.get_subscription_count() > 0:
+            self._last_dbg = now
+            self.pub_dbg.publish(self.bridge.cv2_to_imgmsg(draw_debug(img, objs, frame), "bgr8", header=arr.header))
+
+    def _stats(self):
+        if self._n:
+            self.get_logger().info(f"{self._n / 5.0:.1f} fps, 추론+후처리 {1000 * self._t_infer / self._n:.0f} ms/프레임, 추적 {len(self.tracks.tracks)}")
+            self._n, self._t_infer = 0, 0.0
+
+
+def draw_debug(img, objs, frame):
+    vis = img.copy()
+    for o in objs:
+        m = o["mask"]
+        vis[m] = (0.55 * vis[m] + 0.45 * np.array([0, 200, 255])).astype(np.uint8)
+        x, y, w, h = o["bbox"]
+        cv2.rectangle(vis, (x, y), (x + w, y + h), (0, 200, 255), 1)
+        c = o["center"]
+        cv2.putText(vis, f"{o['class_name']}#{o.get('track_id', 0)} {o['confidence']:.2f} ({c[0]:.2f},{c[1]:.2f},{c[2]:.2f}) yaw{np.degrees(o['yaw']):.0f}",
+                    (x, max(y - 6, 12)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+    cv2.putText(vis, f"frame: {frame}", (8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+    return vis
 
 
 def main(args=None):
-    rclpy.init(args=args); n = SegmenterNode(); rclpy.spin(n); n.destroy_node(); rclpy.shutdown()
+    rclpy.init(args=args)
+    n = SegmenterNode()
+    try:
+        rclpy.spin(n)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        n.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
