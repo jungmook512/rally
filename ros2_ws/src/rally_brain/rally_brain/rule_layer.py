@@ -21,6 +21,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from rally_brain import metrics
 from rally_brain.knowledge import ontology
 from rally_interfaces.msg import SafetyStatus, SceneContext, TrialResult
 
@@ -66,8 +67,7 @@ def fatigue_signals(ctx: SceneContext | None, trials: Sequence[TrialResult], cfg
     if ctx is not None and ctx.body.compensation_detected:
         signals.append("compensation_repeated")   # 1차: 지금 보이면. TODO: 최근 시도 중 반복 횟수로
     if len(trials) >= MIN_TRIALS_FOR_TREND:
-        rate = sum(t.success for t in trials) / len(trials)
-        if rate <= cfg["success_drop_rate"]:
+        if metrics.success_rate(trials) <= cfg["success_drop_rate"]:   # 성공률 정의는 metrics.yaml 한 곳
             signals.append("success_drop")
         earlier = [t.duration_s for t in trials[:-1] if t.duration_s > 0]
         if earlier and trials[-1].duration_s >= cfg["slowing_ratio"] * (sum(earlier) / len(earlier)):

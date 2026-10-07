@@ -1,0 +1,42 @@
+# config/metrics.yaml — 시맨틱 레이어: 지표 계산법을 한 곳에 정한다 (기획서 4.10)
+# 같은 이름의 지표는 어디서 계산하든 같은 숫자가 나와야 한다. 쓰는 곳:
+#   - rally_brain/metrics.py           (규칙 레이어·LLM·리포트, 파이썬)
+#   - rally_db/schema_003_metrics.sql  (대시보드·리포트, DB 뷰) — 창 크기 같은 숫자를 여기와 똑같이 둔다.
+#     test_metrics.py 가 SQL 의 숫자와 이 파일이 같은지 검사한다
+# 지표 정의를 바꾸면 metrics.py · schema_00N(새 마이그레이션) · 이 파일을 같이 바꾼다.
+
+# 모드별 대표 값 — 개선율의 기준. 값이 TrialResult 필드면 field, metric_keys 안에 있으면 metric
+key_values:
+  1: {source: field, name: error_mm, better: lower, label: 정지 위치 오차}
+  3: {source: field, name: error_mm, better: lower, label: 패드 중심 오차}
+  5: {source: metric, name: handover_time_s, better: lower, label: 건네받는 시간}
+  7: {source: metric, name: peak_force_n, better: higher, label: 최대 힘}
+
+# 지표에서 빼는 시도 — 시도가 실제로 안 일어난 기록 (환자 부재·도중 중단). TrialResult.notes 로 판단
+exclude_notes: [no_hand, interrupted]
+
+metrics:
+  success_rate:
+    label: 성공률
+    description: >
+      같은 세션·모드의 최근 window 회 중 성공 비율 (0~1). exclude_notes 시도는 빼고 센다.
+      시도가 window 보다 적으면 있는 만큼으로, 하나도 없으면 0.
+      규칙 레이어(success_drop)와 SceneContext.recent_success_rate(→ LLM) 가 모두 이 정의를 쓴다
+    window: 5
+
+  improvement:
+    label: 개선율
+    description: >
+      같은 세션·모드의 **성공한 시도**에서 처음 k 회와 마지막 k 회의 대표 값(key_values) 평균을 비교.
+      (처음 - 마지막) / 처음 (better: lower) 또는 (마지막 - 처음) / 처음 (better: higher). 양수 = 나아짐.
+      실패한 시도는 뺀다 — 실패하면 error_mm 이 0 으로 기록돼 "완벽" 으로 계산되고, 중단된 시도는 대표 값이 없다.
+      성공한 시도가 2k 회보다 적으면 계산하지 않는다 (None / NULL). 처음 평균이 0 이면 계산하지 않는다.
+      난이도가 중간에 바뀌어도 그대로 비교한다 (어려워지면 낮게 나올 수 있음 — 리포트에서 난이도와 같이 보여 준다)
+    k: 5
+
+  fatigue_score:
+    label: 피로도
+    description: >
+      걸린 피로 신호(ontology.yaml fatigue_signals)의 강도 가중치 합, 1 로 자름 (0~1).
+      대시보드·리포트 표시용. 휴식 결정은 규칙 레이어가 신호로 직접 한다
+    weights: {strong: 1.0, medium: 0.5, weak: 0.25}

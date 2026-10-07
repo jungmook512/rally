@@ -74,7 +74,7 @@ fatigue_signals:
     verified: false
   success_drop:
     name: 성공률 하락
-    source: SceneContext.recent_success_rate
+    source: metrics.success_rate (metrics.yaml)
     strength: weak
     verified: false
   slowing:

@@ -14,18 +14,19 @@
 
 신선도는 수신 시각(이 노드 시계) 기준이다. header.stamp 는 PC 간 시계 차가 있어 그대로 넘기기만 한다.
 session_id · mode · trial_index 는 마지막 TrialResult 에서 가져온다 — bt_runner 가 생기면 그쪽 상태로 바꾼다.
+recent_success_rate 는 마지막 시도와 같은 모드만으로 metrics.success_rate (metrics.yaml — 규칙 레이어와 같은 정의).
 fatigue_score 는 rule_layer 추정이 생기기 전까지 0. robot_state 는 STOP 이면 STOPPED, 아니면 IDLE
 (스킬 실행 상태 토픽이 아직 없다).
 """
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Iterable
 
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 
+from rally_brain import metrics
 from rally_interfaces.msg import (
     BodyPose,
     HandState,
@@ -42,14 +43,6 @@ NO_SAFETY_REASON = "no_safety_status"
 def is_fresh(received_ns: int | None, now_ns: int, max_age_s: float) -> bool:
     """수신 기록이 있고 max_age_s 안이면 True."""
     return received_ns is not None and now_ns - received_ns <= max_age_s * 1e9
-
-
-def success_rate(trials: Iterable) -> float:
-    """success 비율 (0~1). 시도가 없으면 0."""
-    trials = list(trials)
-    if not trials:
-        return 0.0
-    return sum(1 for t in trials if t.success) / len(trials)
 
 
 def same_utterance(a: VoiceIntent, b: VoiceIntent) -> bool:
@@ -144,7 +137,8 @@ class ContextBuilder(Node):
         ctx.last_intent = self._fresh(self._intent, self.intent_hold_s, now_ns) or VoiceIntent()
 
         ctx.recent_trials = list(self._trials)
-        ctx.recent_success_rate = success_rate(self._trials)
+        ctx.recent_success_rate = (metrics.success_rate([t for t in self._trials if t.mode == self._trials[-1].mode])
+                                   if self._trials else 0.0)
         if self._trials:
             last = self._trials[-1]
             ctx.session_id = last.session_id
