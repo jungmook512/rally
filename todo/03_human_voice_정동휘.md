@@ -14,15 +14,15 @@
 - [ ] `hand_pose_node.py`: MediaPipe 2D 21점 + 정렬 깊이 → 3D (결측 픽셀 주변 보간) → tf2로 base_link 변환 → `HandState` 30 Hz
 - [ ] 손바닥 좌표계(손목·검지 기저·새끼 기저), `palm_pose`
 - [ ] `distance_to_centerline` 계산 (table.yaml 중앙선 기준)
-- [ ] **기준선**: `ros2 run rally_voice get_keyword` (선생님 코드, `resource/.env` 에 API 키) 동작 확인
-- [ ] `intent_node.py`: 선생님 `WakeupWord`·`STT` 그대로 쓰고 LLM 프롬프트만 RALLY 의도 목록으로 → `VoiceIntent` 토픽, "그만/멈춰" 즉시 `is_emergency`
+- [x] **기준선**: `ros2 run rally_voice get_keyword` (선생님 코드, `resource/.env` 에 API 키) 동작 확인 — 키 확인됨. 팀 키는 gpt-4o·whisper-1 만 허용
+- [x] `intent_node.py`: 선생님 `WakeupWord`·`STT` 그대로 쓰고 LLM 프롬프트만 RALLY 의도 목록으로 → `VoiceIntent` 토픽, "그만/멈춰" 즉시 `is_emergency` — 규칙 먼저, 애매한 말만 gpt-4o (0.8~2 s)
 
 ## Day 2 — 제스처 · 의도 · TTS
 - [ ] `gesture.py`: 손가락 굽힘 각도 → `grip_closure`, 주먹/펼침/가리키기 분류, 주먹 → `/rally/safety/estop` 직결
 - [ ] `wrist_angle_deg`: 전완 방향 대비 손바닥 회전각
-- [ ] `intent_node.py`: LLM function calling → `VoiceIntent` (intent 목록은 msg 주석), "그만/멈춰" 키워드 스팟팅은 STT 전에 처리 → `is_emergency`
+- [ ] `intent_node.py`: LLM function calling → `VoiceIntent` (intent 목록은 msg 주석), "그만/멈춰" 키워드 스팟팅은 STT 전에 처리 → `is_emergency` — function calling 완료. STT 전 비상어(호출어 없이 항상 듣기)는 별도 모델 필요로 미룸
 - [ ] `tts_node.py`: `Speak` srv, Piper TTS, 발화 중 마이크 차단 플래그
-- [ ] 한국어 웨이크워드 모델 학습, 오탐 측정 (목표 ≤ 1회/10분)
+- [ ] 한국어 웨이크워드 모델 학습, 오탐 측정 (목표 ≤ 1회/10분) — **비상어 "그만"·"멈춰" 키워드 모델도 같이** (기획 CP9·FR-07: STT 없이 키워드 스팟팅, 0.3 s 이내, 네트워크 안 탐). 10/7 미착수 → 착수. 지금 intent_node 는 호출어 뒤 STT 로 판정(약 6 s)이라 교체 필요
 
 ## Day 3 — 모드 5 ✅
 - [ ] (정정인과) `HandState` → servol 추종 통합: 지연 측정, 필터 파라미터 공유
@@ -43,6 +43,11 @@
 
 ## Day 6 — 음성 피드백 ✅
 - [ ] 음성 피드백 문구 세트: 난이도 상승/하향, 휴식 제안, 자세 교정("몸을 덜 기울여 보세요")
+- [ ] 음성 의도 고도화 (10/7 인터뷰로 정한 요구사항, 조정묵 Day 3 피로도 지표 정의 후):
+  - 슬롯 추가: `fatigue`(말투로 본 피로 0~1), `mood`(기분, 정동휘 신규), `body_part`(통증 부위), `pain_level`(약함/심함). 말에 나왔을 때만. DB `events.payload.slots` 에 자동 저장되므로 스키마 변경 없음. 슬롯 이름은 조정묵과 맞춘 뒤 INTERFACES 에
+  - 되묻기: 훈련 바꾸기·세션 끝내기만, GPT 확신이 낮을 때 "○○ 할까요?" → 네/아니요 (tts_node 필요). 난이도·휴식은 바로, 비상 정지는 절대 되묻지 않음
+  - 화자: 어르신 환자 + 시연 팀원. 정확도 우선 (반응 2~3 s 허용)
+  - (선택) 지금 훈련 상황을 GPT 에 같이 주기 (brain 상태 필요)
 
 ## Day 7 — 통합·안정화
 - [ ] 시연장 소음에서 호출어·STT 재측정, 임계 조정

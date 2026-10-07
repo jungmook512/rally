@@ -43,7 +43,7 @@ webcam_link          측면 웹캠 (table_link 기준 static)
 | `/rally/perception/hand` | `rally_interfaces/HandState` | rally_human/hand_pose_node | brain, robot(safety), robot(handover) | 30 Hz | BestEffort, depth 1 |
 | `/rally/perception/body` | `rally_interfaces/BodyPose` | rally_human/body_pose_node | brain | 15 Hz | BestEffort |
 | `/rally/voice/intent` | `rally_interfaces/VoiceIntent` | rally_voice/intent_node | brain, safety | 이벤트 | Reliable |
-| `/rally/voice/transcript` | `std_msgs/String` | rally_voice/stt_node | dashboard | 이벤트 | Reliable |
+| `/rally/voice/transcript` | `std_msgs/String` | rally_voice/intent_node | dashboard | 이벤트 | Reliable |
 | `/rally/voice/speaking` | `std_msgs/Bool` | rally_voice/tts_node | rally_voice/intent_node (dashboard 선택) | 발화 시작·끝 이벤트 | **Reliable, TransientLocal**, depth 1 |
 
 **TTS 발화 중 마이크** (#45): `/rally/voice/speaking` 은 `Speak.block_mic=true` 발화가 시작되면 `true`, 끝나고 잔향 여유(약 0.3 s) 뒤 `false`. intent_node 는 `true` 동안 **일반 명령만 무시**하고 비상 키워드("그만/멈춰" → `is_emergency`)는 계속 듣는다 — 로봇이 말하는 동안에도 음성 정지가 살아 있어야 한다. 그래서 TTS 문구에는 "그만"·"멈춰"를 쓰지 않는다 (에코로 정지 오인식 방지).
