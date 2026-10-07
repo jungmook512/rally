@@ -39,6 +39,7 @@ from rally_brain.trees.session_tree import Session, build_session_tree
 from rally_bringup.readiness import ReadinessChecker
 from rally_interfaces.action import RunSession
 from rally_interfaces.msg import SafetyStatus, SceneContext, TrialResult, VoiceIntent
+from rally_interfaces.srv import Speak
 
 CHECK_PERIOD_S = 1.0
 STATE_PERIOD_S = 0.5
@@ -89,6 +90,7 @@ class BtRunner(Node):
         if self.readiness is not None:
             self.create_timer(CHECK_PERIOD_S, self._check_ready)
         self.create_timer(STATE_PERIOD_S, self._publish_state)
+        self._speak = self.create_client(Speak, "/rally/voice/speak", callback_group=self._client_group)
         self._server = ActionServer(
             self, RunSession, "/rally/session/run", self._execute,
             goal_callback=self._on_goal, cancel_callback=lambda _: CancelResponse.ACCEPT,
@@ -145,6 +147,14 @@ class BtRunner(Node):
             self._skill_clients[name] = ActionClient(self, action_type, name, callback_group=self._client_group)
         return self._skill_clients[name]
 
+    def _say(self, text: str) -> None:
+        """TTS 안내 (기다리지 않음). tts_node 가 없으면 로그만 — 안내가 없어도 세션은 계속된다."""
+        if not self._speak.service_is_ready():
+            self.get_logger().warn(f"[안내] tts 없음 — 못 함: {text}")
+            return
+        self.get_logger().info(f"[안내] {text}")
+        self._speak.call_async(Speak.Request(text=text, block_mic=True))
+
     # ---------- RunSession ----------
     def _on_goal(self, goal: RunSession.Goal) -> GoalResponse:
         if self._busy.locked():
@@ -165,7 +175,7 @@ class BtRunner(Node):
         n = goal.trials_per_mode or int(self.get_parameter("trials_per_mode").value)
         session = Session(node=self, session_id=str(uuid.uuid4()), get_context=lambda: self._context,
                           publish=self._trial_pub.publish, action_client=self._action_client,
-                          after_trial=self._after_trial)
+                          skills_cfg=self._skills_cfg, say=self._say, after_trial=self._after_trial)
         tree = py_trees.trees.BehaviourTree(build_session_tree(session, modes, n))
         started = time.monotonic()
         self.get_logger().info(f"세션 시작 {session.session_id[:8]} — 모드 {modes}, 모드마다 {n}회")

@@ -79,3 +79,12 @@ handover:
   default_timeout_s: 20.0
   retreat_m: 0.10
   release_wait_s: 0.3
+
+# mode5 (brain) — 모드 5 시도의 실패 분기. 위 handover: 는 로봇 스킬 쪽 설정. 숫자는 초기값, 리허설 후 조정
+mode5:
+  hand_wait_s: 10.0               # 손이 이 시간 안 보이면 안내하고 다시 기다림
+  hand_wait_tries: 2              # 기다리는 횟수. 다 넘기면 이번 시도는 실패(notes=no_hand)로 기록하고 다음 시도
+  hand_prompt: "손을 앞으로 내밀어 주세요"
+  retry_reasons: [timeout, no_object]   # 이 실패 이유만 다시 시도. 안전 정지·취소·컨트롤러 오류는 재시도 안 함
+  max_retries: 1
+  retry_prompt: "한 번 더 해 볼게요"   # TTS 문구에 '그만'·'멈춰' 금지 (INTERFACES #45)

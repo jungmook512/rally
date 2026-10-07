@@ -22,6 +22,7 @@ from rally_brain.trees import mode5_handover
 from rally_interfaces.msg import SafetyStatus, SceneContext, TrialResult
 
 MODE_NAMES = {1: "공 굴리기", 3: "캐치볼", 5: "건네고 받기", 7: "팔씨름"}
+NOT_PERFORMANCE = {"no_hand"}   # 환자가 자리에 없었던 시도 — 기록은 하되 난이도 규칙에는 안 셈
 
 TRIAL_BUILDERS: dict[int, Callable[["Session"], py_trees.behaviour.Behaviour]] = {
     TrialResult.MODE_HANDOVER: mode5_handover.build_trial,
@@ -36,6 +37,8 @@ class Session:
     get_context: Callable[[], SceneContext | None]
     publish: Callable[[TrialResult], None]
     action_client: Callable[[type, str], ActionClient]
+    skills_cfg: dict = field(default_factory=dict)                  # skills.yaml 전체 (모드별 설정)
+    say: Callable[[str], None] = lambda text: None                  # TTS 안내 (기다리지 않음)
     after_trial: Callable[["Session", TrialResult], None] | None = None   # 규칙 레이어 (bt_runner)
     trials: list[TrialResult] = field(default_factory=list)
     difficulty: dict[int, int] = field(default_factory=dict)        # 모드 → 난이도 단계 (0 = 시작)
@@ -63,8 +66,9 @@ class Session:
             self.after_trial(self, trial)
 
     def trials_for_rules(self, mode: int) -> list[TrialResult]:
-        """이 모드에서 난이도가 마지막으로 바뀐 뒤의 시도 (규칙 레이어의 연속 횟수·추세 계산용)."""
-        return [t for t in self.trials[self.level_changed_at.get(mode, 0):] if t.mode == mode]
+        """이 모드에서 난이도가 마지막으로 바뀐 뒤의 시도 (규칙 레이어의 연속 횟수·추세 계산용). no_hand 는 뺀다."""
+        return [t for t in self.trials[self.level_changed_at.get(mode, 0):]
+                if t.mode == mode and t.notes not in NOT_PERFORMANCE]
 
     def set_difficulty(self, mode: int, level: int) -> None:
         if level != self.difficulty.get(mode, 0):
