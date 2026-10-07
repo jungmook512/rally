@@ -7,6 +7,8 @@
   2. 손 위치: 손바닥 5점(손목·네 MCP) 주변 정렬 깊이의 중앙값 = 손바닥 깊이. 21점 각각은
      MediaPipe 상대 깊이(z)를 손바닥 깊이에 더해 픽셀과 함께 3D 로 (깊이 구멍·손가락 가장자리 튐에 강함)
   3. tf2 로 카메라 → base_link (이미지 시각 기준). 실패하면 카메라 좌표로 내고 distance_to_centerline = NaN
+     NaN = "손은 보이는데 거리 모름" (INTERFACES 2.2). safety_monitor 가 detected && NaN 이면 SLOW (#44 리뷰)
+     깊이는 컬러와 시각이 가장 가까운 프레임 (50 ms 초과면 깊이 없음)
   4. 손 모양 값(쥔 정도·제스처)은 MediaPipe hand_world_landmarks(손 모양만의 3D)로 — 깊이 없이 계산, 회전과 무관
   5. 제스처는 N 프레임 연속일 때만 확정 (gesture.py). 주먹 확정 시 /rally/safety/estop 한 번
 손이 없으면 detected=false 를 계속 발행한다 (안 보내면 "손 없음" 과 "노드 죽음" 을 구분할 수 없음).
@@ -14,6 +16,7 @@
 import math
 import os
 import threading
+from collections import deque
 from pathlib import Path
 
 import cv2
@@ -109,7 +112,7 @@ class HandPoseNode(Node):
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.lock = threading.Lock()
         self.latest_color: Image | None = None
-        self.latest_depth: Image | None = None
+        self.depths: deque = deque(maxlen=10)          # 최근 깊이 프레임 (컬러와 시각 맞추기용)
         self.K: np.ndarray | None = None
         self.t0_ns: int | None = None
         self.last_ts_ms = -1
@@ -161,7 +164,21 @@ class HandPoseNode(Node):
 
     def _on_depth(self, m: Image) -> None:
         with self.lock:
-            self.latest_depth = m
+            self.depths.append(m)
+
+    def _nearest_depth(self, cmsg: Image, max_dt: float = 0.05) -> Image | None:
+        """컬러와 시각이 가장 가까운 깊이 프레임. 카메라가 팔과 같이 움직여서 시각이 어긋나면 위치가 틀린다 (#44 리뷰).
+        max_dt 넘게 차이 나면 None (깊이 없음 → 거리 NaN)."""
+        t = Time.from_msg(cmsg.header.stamp).nanoseconds
+        with self.lock:
+            cands = list(self.depths)
+        if not cands:
+            return None
+        best = min(cands, key=lambda d: abs(Time.from_msg(d.header.stamp).nanoseconds - t))
+        if abs(Time.from_msg(best.header.stamp).nanoseconds - t) > max_dt * 1e9:
+            self.get_logger().warn("컬러와 시각이 맞는 깊이 프레임 없음 (50 ms 초과)", throttle_duration_sec=5.0)
+            return None
+        return best
 
     def _on_info(self, m: CameraInfo) -> None:
         self.K = np.array(m.k, dtype=np.float64).reshape(3, 3)
@@ -169,10 +186,11 @@ class HandPoseNode(Node):
     # ----- 처리 -----
     def _tick(self) -> None:
         with self.lock:
-            cmsg, dmsg = self.latest_color, self.latest_depth
+            cmsg = self.latest_color
             self.latest_color = None
         if cmsg is None:
             return
+        dmsg = self._nearest_depth(cmsg)
         out = HandState()
         out.header = cmsg.header
         try:

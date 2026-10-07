@@ -18,7 +18,7 @@
 - [x] `intent_node.py`: 선생님 `WakeupWord`·`STT` 그대로 쓰고 LLM 프롬프트만 RALLY 의도 목록으로 → `VoiceIntent` 토픽, "그만/멈춰" 즉시 `is_emergency` — 규칙 먼저, 애매한 말만 gpt-4o (0.8~2 s)
 
 ## Day 2 — 제스처 · 의도 · TTS
-- [x] `gesture.py`: 손가락 굽힘 각도 → `grip_closure`, 주먹/펼침/가리키기 분류, 주먹 → `/rally/safety/estop` 직결 — 5 프레임 연속일 때만 확정
+- [x] `gesture.py`: 손가락 굽힘 각도 → `grip_closure`, 주먹/펼침/가리키기 분류, 주먹 → `/rally/safety/estop` 직결 — 5 프레임일 때만 확정 (손 놓친 프레임은 건너뜀, 3 프레임 넘게 놓치면 초기화)
 - [x] `wrist_angle_deg`: 전완 방향 대비 손바닥 회전각 — 팔꿈치가 없어 손 방향을 아래팔 축으로 근사 (0 손바닥 아래 · 90 옆 · 180 위)
 - [ ] `intent_node.py`: LLM function calling → `VoiceIntent` (intent 목록은 msg 주석), "그만/멈춰" 키워드 스팟팅은 STT 전에 처리 → `is_emergency` — function calling 완료. STT 전 비상어(호출어 없이 항상 듣기)는 별도 모델 필요로 미룸
 - [ ] `tts_node.py`: `Speak` srv, Piper TTS, 발화 중 마이크 차단 플래그

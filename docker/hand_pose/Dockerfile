@@ -17,8 +17,10 @@ COPY --from=build /ros2_ws/install /ros2_ws/install
 COPY docker/hand_pose/requirements.txt /tmp/requirements.txt
 RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
 # MediaPipe 모델 (git 에 안 넣음). hand_pose_node 가 /opt/mediapipe 를 먼저 찾는다
+# 버전 1 로 고정 + 손 모델 해시 확인 (latest 는 바뀔 수 있음, #44 리뷰). 10/7 기준 latest 와 같은 파일
 RUN mkdir -p /opt/mediapipe && python3 -c "import urllib.request as u; \
-u.urlretrieve('https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task', '/opt/mediapipe/hand_landmarker.task'); \
-u.urlretrieve('https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task', '/opt/mediapipe/pose_landmarker_full.task')"
+u.urlretrieve('https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task', '/opt/mediapipe/hand_landmarker.task'); \
+u.urlretrieve('https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task', '/opt/mediapipe/pose_landmarker_full.task')" \
+ && echo "fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1  /opt/mediapipe/hand_landmarker.task" | sha256sum -c -
 COPY docker/entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

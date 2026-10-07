@@ -122,3 +122,31 @@ def test_gesture_filter_release_and_disable():
     off = GestureFilter(frames=3, fist_enabled=False)
     outs = [off.update(True, hg.GESTURE_FIST) for _ in range(5)]
     assert all(o == (hg.GESTURE_NONE, False) for o in outs)
+
+
+def test_fist_with_missed_frames_still_stops():
+    """검출률 65 % 처럼 중간중간 손을 놓쳐도 주먹 5 프레임이 쌓이면 정지 (#44 리뷰)."""
+    f = GestureFilter(frames=5, max_miss=3)
+    seq = [True, False, True, True, False, True, False, True]          # 주먹 5 번, 사이사이 놓침
+    outs = [f.update(d, hg.GESTURE_FIST) for d in seq]
+    assert outs[-1] == (hg.GESTURE_FIST, True)
+    assert sum(e for _, e in outs) == 1                                 # 정지 요청은 한 번
+
+
+def test_long_miss_resets_count():
+    f = GestureFilter(frames=5, max_miss=3)
+    for _ in range(3):
+        f.update(True, hg.GESTURE_FIST)
+    for _ in range(4):                                                  # 4 프레임 연속 놓침 → 처음부터
+        f.update(False, hg.GESTURE_NONE)
+    outs = [f.update(True, hg.GESTURE_FIST) for _ in range(4)]
+    assert all(not e for _, e in outs)                                  # 아직 4 개뿐
+    assert f.update(True, hg.GESTURE_FIST) == (hg.GESTURE_FIST, True)
+
+
+def test_short_miss_keeps_stable_fist_without_refiring():
+    f = GestureFilter(frames=3, max_miss=3)
+    for _ in range(3):
+        f.update(True, hg.GESTURE_FIST)
+    assert f.update(False, hg.GESTURE_NONE) == (hg.GESTURE_FIST, False)  # 잠깐 놓쳐도 주먹 유지, 재요청 없음
+    assert f.update(True, hg.GESTURE_FIST) == (hg.GESTURE_FIST, False)
