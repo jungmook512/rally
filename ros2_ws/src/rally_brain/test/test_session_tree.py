@@ -72,3 +72,22 @@ def test_do_false_is_failure():
     d = Do("d", lambda: False)
     d.tick_once()
     assert d.status == Status.FAILURE
+
+
+def test_modes_after_switch():
+    from rally_brain.trees.session_tree import modes_after_switch as after
+    assert after([1, 5, 7], 5, None) == [7]           # "다음 거"
+    assert after([1, 5, 7], 7, None) == []            # 마지막 모드에서 다음 → 세션 끝
+    assert after([1, 5, 7], 5, 7) == [7]              # 앞으로 건너뛰기
+    assert after([1, 5, 7], 5, 1) == [1, 5, 7]        # 뒤로 돌아가면 거기서부터 다시
+    assert after([5, 7], 5, 1) == [1, 7]              # 순서에 없던 모드 → 그 뒤에 원래 남은 순서
+    assert after([1, 5, 7], None, None) == [1, 5, 7]  # 아직 시작 전
+
+
+def test_mode_block_sets_current_mode():
+    s, _ = make_session()
+    tree = build_session_tree(s, [5], 1)
+    assert s.modes == [5] and s.current_mode is None
+    tree.tick_once()                                   # "모드 5 시작" → 손 대기(컨텍스트 없음, RUNNING)
+    assert s.current_mode == 5
+    assert tree.status == Status.RUNNING
