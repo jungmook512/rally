@@ -24,6 +24,7 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallb
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
+from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool
 from std_srvs.srv import Trigger
 
@@ -76,6 +77,8 @@ class SkillServer(Node):
         reliable1 = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=1)
         self.create_subscription(SafetyStatus, "/rally/safety/status", self._on_safety, reliable, callback_group=self.cb_safety)
         self.create_subscription(HandState, "/rally/perception/hand", self._on_hand, qos_profile_sensor_data, callback_group=self.cb_state)
+        self.gripper_state = None            # (monotonic 수신 시각, 폭 mm, grip 비트) — gripper_node 의 실제 상태
+        self.create_subscription(JointState, "/rally/gripper/state", self._on_gripper_state, qos_profile_sensor_data, callback_group=self.cb_state)
         self.pub_contact = self.create_publisher(Bool, "/rally/safety/contact_expected", reliable1)
         self.create_timer(1.0 / CONTACT_HZ, self._contact_tick, callback_group=self.cb_state)
         self.gripper_cli = self.create_client(GripperCommand, "/rally/gripper/command", callback_group=self.cb_state)
@@ -103,6 +106,21 @@ class SkillServer(Node):
     # ----- 안전 -----
     def _on_safety(self, msg):
         self.safety = msg
+
+    def _on_gripper_state(self, msg):
+        d = dict(zip(msg.name, msg.position))
+        if "rg2_width_mm" in d:
+            self.gripper_state = (time.monotonic(), float(d["rg2_width_mm"]), int(round(d.get("rg2_grip", 0.0))))
+
+    def holding_now(self, min_width_mm: float = 10.0, max_age_s: float = 1.0) -> bool:
+        """물체를 쥐고 있는지. 스킬 서버가 보낸 명령 기록(self.holding) 또는 그리퍼 실제 상태(grip 비트 + 폭)가 쥠이면 True.
+        그리퍼 서비스를 손으로 불러 공을 쥐게 한 경우도 잡는다."""
+        if self.holding:
+            return True
+        st = self.gripper_state
+        if st is None or time.monotonic() - st[0] > max_age_s:
+            return False
+        return st[2] == 1 and st[1] >= min_width_mm
 
     def _on_hand(self, msg):
         self.last_hand = msg

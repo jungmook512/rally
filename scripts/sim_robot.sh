@@ -5,7 +5,9 @@
 # 스킬 보내기 (다른 터미널):
 #   source scripts/sim_robot.sh env
 #   ros2 action send_goal /rally/skill/push_ball rally_interfaces/action/PushBall "{lane: 1, push_speed: 0.1}" --feedback
-# 실제 그리퍼(gripper_node)는 띄우지 않는다 — scripts/sim_gripper.py 가 가상 RG2 로 넘긴다.
+# 실제 그리퍼(gripper_node)는 띄우지 않는다 — scripts/sim_gripper.py 가 가상 RG2 로 넘기고 RViz 에 공을 그린다.
+# 공 쥐여 주기:  ros2 service call /rally/sim/give_ball std_srvs/srv/Trigger
+# 공을 레인 2 입구에 놓기: ros2 service call /rally/sim/place_ball std_srvs/srv/Trigger
 SIM_DOMAIN=77
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG=/tmp/rally_sim; mkdir -p $LOG
@@ -22,7 +24,8 @@ case "$1" in
   up)
     sim_env
     export DISPLAY=${DISPLAY:-:1}
-    nohup ros2 launch m0609_rg2_bringup bringup.launch.py mode:=virtual > $LOG/bringup.log 2>&1 & echo $! > $LOG/bringup.pid
+    nohup ros2 launch m0609_rg2_bringup bringup.launch.py mode:=virtual rviz:=false > $LOG/bringup.log 2>&1 & echo $! > $LOG/bringup.pid
+    nohup rviz2 -d "$ROOT/scripts/sim.rviz" > $LOG/rviz.log 2>&1 & echo $! > $LOG/rviz.pid   # 공·레인·테이블 표시가 더해진 시뮬 전용 설정
     echo "[sim] 에뮬레이터 기동 대기…"
     for i in $(seq 1 60); do grep -q "INITIAL AUTHORITY GRANTED" $LOG/bringup.log && break; sleep 2; done
     sleep 5
@@ -41,9 +44,13 @@ case "$1" in
     grep -q "skill_server ready" $LOG/skill.log && echo "[sim] 준비 완료 — 로그 $LOG/*.log" || echo "[sim] skill_server 기동 실패 — $LOG/skill.log 확인"
     ;;
   down)
-    for f in skill gripper safety; do [ -f $LOG/$f.pid ] && kill $(cat $LOG/$f.pid) 2>/dev/null; done
+    for f in skill gripper safety rviz; do [ -f $LOG/$f.pid ] && kill $(cat $LOG/$f.pid) 2>/dev/null; done
     [ -f $LOG/bringup.pid ] && kill -INT $(cat $LOG/bringup.pid) 2>/dev/null
     sleep 3; docker rm -f dsr01_emulator >/dev/null 2>&1
+    # 남은 시뮬 도메인 프로세스(이전 실행의 rviz 등) 정리 — 실로봇 도메인 프로세스는 건드리지 않는다
+    for p in $(pgrep -f "rviz2|ros2_control_node|rally_robot/|sim_gripper|robot_state_publisher|gripper_virtual_node"); do
+      tr '\0' '\n' < /proc/$p/environ 2>/dev/null | grep -qx "ROS_DOMAIN_ID=$SIM_DOMAIN" && kill $p 2>/dev/null
+    done
     echo "[sim] 종료"
     ;;
   *) echo "사용법: scripts/sim_robot.sh up | down   ·   source scripts/sim_robot.sh env" ;;

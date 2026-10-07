@@ -36,6 +36,7 @@ mode1:
   # 공 거치대 (10/7 확정: 기울어진 레일에 공 4개, 늘 같은 자리로 내려옴 → 4번 밀기가 한 사이클)
   pickup_posx: null               # TODO 실측: 거치대 맨 앞 공을 쥔 자세 그대로 scripts/print_pose.py 의 posx (z 포함)
   pickup_approach_m: 0.08         # 집는 자리 위 접근 높이
+  place_open_mm: 80.0             # 레인 입구에 놓을 때 여는 폭 (레인 안쪽 폭 ≈ 87 mm 보다 작게)
   balls_per_cycle: 4
 
 # mode7 (저항 밀기) — 로봇은 버티거나 져주기만, 절대 밀지 않음

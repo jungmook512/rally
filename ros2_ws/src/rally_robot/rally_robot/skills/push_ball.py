@@ -51,6 +51,7 @@ DEFAULTS = dict(
     pickup_posx=None,              # 거치대에서 공을 쥔 자세 (mm, ZYZ deg) — 공을 쥔 채 print_pose 로 실측
     pickup_approach_m=0.08,        # 집는 자리 위 접근 높이 (그 자세의 z 기준 +)
     pickup_vel_scale=0.3,
+    place_open_mm=80.0,            # 레인 입구에 놓을 때 여는 폭 — 레인 안쪽 폭(≈87 mm)보다 작게 (공 63 mm + 여유)
 )
 
 
@@ -116,8 +117,11 @@ def execute(node):
             node.check_controller()
 
             phase("approach", 0.05)
+            holding = node.holding_now() if hasattr(node, "holding_now") else getattr(node, "holding", False)
+            node.holding = holding
+            log.info(f"[push_ball] 시작 시 공 쥠: {holding}")
             posj = (node.cfg.get("observe_pose") or {}).get("posj")
-            if posj and not getattr(node, "holding", False):   # 공을 쥐고 있으면 PickCompliant 의 들기 자세에서 곧장 레인 입구로
+            if posj and not holding:   # 공을 쥐고 있으면 PickCompliant 의 들기 자세에서 곧장 레인 입구로
                 movej_checked(node, posj, VELOCITY * 0.5, ACC * 0.5)
 
             if not getattr(node, "holding", False) and cfg["pickup_posx"]:
@@ -138,7 +142,7 @@ def execute(node):
 
             if getattr(node, "holding", False):
                 phase("place", 0.15)
-                open_mm, _ = node.gripper_cfg("ball")
+                open_mm = cfg["place_open_mm"]
                 move_checked(node, pts["place_above"], VELOCITY, ACC)
                 move_checked(node, pts["place"], VELOCITY * cfg["place_vel_scale"], ACC * cfg["place_vel_scale"])
                 ok, _, _ = node.gripper(open_mm, cfg["gripper_close_force_n"])
