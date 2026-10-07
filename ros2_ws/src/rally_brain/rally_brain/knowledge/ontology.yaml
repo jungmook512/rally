@@ -22,6 +22,7 @@ modes:
       error_mm: 정지 위치 오차
   3:
     name: 캐치볼
+    challenge: true                 # 챌린지 모드 — 세션 포함 여부는 skills.yaml mode3_challenge.enabled (CP13)
     motion: {id: throw, name: 던지기·협응}
     body_parts: {value: [shoulder, elbow, wrist], verified: false}
     skills: [catch_ball, detach_ball]
@@ -82,19 +83,22 @@ fatigue_signals:
     strength: weak
     verified: false
 
-# 스킬 → LLM·규칙이 조절할 수 있는 파라미터. range_ref = skills.yaml 경로 (null = 범위 미정, 조절 금지)
+# 스킬 → LLM·규칙이 조절할 수 있는 파라미터. skills.yaml 경로만 가리킨다:
+#   range_ref   = 숫자 범위 [min, max] (LLM 출력 클램핑에 쓴다). null = 범위 미정 → 조절 금지
+#   choices_ref = 고를 수 있는 목록 (예: 가이드 길). 범위가 아니라 목록 안에서만 고른다
 skills:
   pick_compliant: {name: 순응 집기, params: {}}
   push_ball:
     name: 공 밀기
     params:
       push_speed: {name: 밀기 속도, unit: m/s, range_ref: mode1.push_speed_range}
-      lane: {name: 가이드 길, unit: 번호, range_ref: mode1.lanes}
+      lane: {name: 가이드 길, unit: 번호, choices_ref: mode1.lanes}
   catch_ball:
     name: 공 받기
     params:
-      catch_radius: {name: 받으러 가는 반경, unit: m, range_ref: mode3.catch_radius_m}
-      lead_time_s: {name: 예측 선행 시간, unit: s, range_ref: mode3.lead_time_s}
+      # skills.yaml 에 아직 값 하나뿐이라 범위 없음 → 조절 금지. 범위는 정정인과 실측 후 [min, max] 로 추가 (#38)
+      catch_radius: {name: 받으러 가는 반경, unit: m, range_ref: null}
+      lead_time_s: {name: 예측 선행 시간, unit: s, range_ref: null}
   detach_ball: {name: 공 떼어내기, params: {}}
   handover:
     name: 건네기·받기

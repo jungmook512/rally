@@ -14,9 +14,30 @@ def onto():
     return ontology.load()
 
 
-def test_range_refs_exist_in_skills_yaml():
+def test_range_refs_are_min_max_in_skills_yaml():
     skills_cfg = yaml.safe_load(SKILLS_YAML.read_text(encoding="utf-8"))
     assert ontology.check_range_refs(onto(), skills_cfg) == []
+
+
+def test_check_range_refs_catches_bad_targets():
+    # PR #43 리뷰: 값 하나·목록·뒤집힌 범위를 range_ref 로 가리키면 잡아야 한다
+    o = {"skills": {"s": {"params": {
+        "single": {"range_ref": "a.single"},
+        "listy": {"range_ref": "a.lanes"},
+        "flipped": {"range_ref": "a.flipped"},
+        "missing": {"range_ref": "a.nope"},
+        "ok": {"range_ref": "a.ok"},
+        "choices_empty": {"choices_ref": "a.empty"},
+        "choices_ok": {"choices_ref": "a.lanes"},
+    }}}}
+    cfg = {"a": {"single": 0.35, "lanes": [{"name": "left"}], "flipped": [2.0, 1.0], "ok": [0.1, 0.5], "empty": []}}
+    problems = ontology.check_range_refs(o, cfg)
+    assert len(problems) == 5
+    assert not any(p.startswith(("s.ok ", "s.choices_ok ")) for p in problems)
+
+
+def test_mode3_is_marked_challenge():
+    assert onto()["modes"][3].get("challenge") is True
 
 
 def test_modes_reference_known_skills_and_body_parts():
