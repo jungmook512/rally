@@ -2,7 +2,8 @@
 담당: 조정묵
 
 구독                               기록
-  /rally/brain/trial_result        → trials (다음 flush 에서, 최대 0.5 s 뒤) + Redis rally:events kind=trial (대시보드 알림)
+  /rally/brain/trial_result        → trials (다음 flush 에서, 최대 0.5 s 뒤, feature_vec 포함 — embeddings.py)
+                                     + Redis rally:events kind=trial (대시보드 알림)
   /rally/robot/wrench   100 Hz     → ts_wrench (0.5 s 마다 묶어서)
   /rally/perception/hand 30 Hz     → ts_hand   (손이 잡힌 프레임만, 0.5 s 마다 묶어서)
   /rally/safety/status             → events kind=safety_change (레벨·사유가 바뀔 때만) + Redis rally:events
@@ -33,7 +34,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
-from rally_db import convert
+from rally_db import convert, embeddings
 from rally_db.repository import Repository, StorageUnavailable
 from rally_interfaces.msg import HandState, SafetyStatus, SceneContext, TrialResult, VoiceIntent
 
@@ -60,6 +61,11 @@ class Recorder(Node):
         self._last_mode: int | None = None
         self._storage_ok = True
         self._written = dict.fromkeys(("시도", "사건", "힘", "손", "대화"), 0)   # 요약 로그용, io_group 에서만 만진다
+        try:
+            self._embed_spec: embeddings.Spec | None = embeddings.load_spec()
+        except (OSError, ValueError, KeyError) as e:
+            self._embed_spec = None   # 벡터 없이도 기록은 계속 (유사 시도 검색에서만 빠진다)
+            self.get_logger().error(f"embeddings.yaml 읽기 실패 — feature_vec 없이 기록: {e}")
 
         reliable = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, depth=10)
         self.create_subscription(TrialResult, "/rally/brain/trial_result", self._on_trial, reliable)
@@ -149,6 +155,8 @@ class Recorder(Node):
             while trials:
                 msg = trials[0]
                 row = convert.trial_to_row(msg, convert.session_uuid(msg.session_id) or self._session_id)
+                if self._embed_spec is not None:
+                    row["feature_vec"] = embeddings.trial_vector(row, self._embed_spec)
                 trial_id = self.repo.add_trial(row)
                 trials.pop(0)
                 self._notify("trial", convert.trial_to_event(row, trial_id))

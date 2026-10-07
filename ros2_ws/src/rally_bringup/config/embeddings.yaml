@@ -1,0 +1,37 @@
+# config/embeddings.yaml — 시도 1회 → 숫자 dim 개 (trials.feature_vec). 비슷한 예전 시도 찾기용
+# 쓰는 곳: rally_db/embeddings.py (recorder 가 저장할 때 계산, repository.find_similar_trials 가 검색)
+#
+# 값 하나 = 한 칸. 범위 [min, max] 로 0~1 에 맞추고 벗어나면 자른다 (단위가 다른 값을 공평하게 비교하려고).
+# range 는 정규화용 눈금일 뿐 판단 기준이 아니다. range_ref 는 skills.yaml 의 [min, max] 를 가리킨다.
+#   source: field  = TrialResult 필드 (success, error_mm, duration_s)
+#           param  = param_keys/values,  metric = metric_keys/values
+# 시도에 그 값이 없으면 원래 값 0 으로 보고 맞춘다 (예: tilt [-45, 45] 에서 0° → 0.5). 같은 모드끼리만 비교하므로 칸의 뜻은 모드마다 달라도 된다 (common 뒤에 모드별 값).
+# 이 파일을 바꾸면 예전 벡터와 비교가 안 맞는다 → version 을 올리고 다시 계산:
+#   python3 -m rally_db.embeddings --backfill --all
+version: 1
+dim: 32
+
+common:
+  - {source: field, name: success,    range: [0, 1]}
+  - {source: field, name: error_mm,   range: [0, 200]}    # 모드 1·3 오차. 200 mm 이상은 1
+  - {source: field, name: duration_s, range: [0, 30]}
+
+modes:
+  1:   # PushBall goal 필드
+    - {source: param, name: push_speed,   range_ref: mode1.push_speed_range}
+    - {source: param, name: lane,         range: [0, 2]}
+    - {source: param, name: push_dir_deg, range: [0, 180]}
+  3:   # CatchBall goal 필드
+    - {source: param, name: catch_radius, range: [0, 0.35]}
+    - {source: param, name: lead_time_s,  range: [0, 0.3]}
+  5:   # trees/mode5_handover.py 가 기록하는 값
+    - {source: param,  name: tilt_deg,                 range: [-45, 45]}
+    - {source: metric, name: handover_time_s,          range: [0, 20]}    # handover.default_timeout_s
+    - {source: metric, name: wrist_angle_at_grasp_deg, range: [-90, 90]}
+    - {source: metric, name: attempts,                 range: [1, 2]}
+  7:   # ResistPush goal 필드 + metrics.yaml 대표 값
+    - {source: param,  name: stiffness,      range_ref: mode7.stiffness_range}
+    - {source: param,  name: target_force_n, range_ref: mode7.target_force_range_n}
+    - {source: metric, name: peak_force_n,   range: [0, 15]}               # mode7.force_limit_n
+
+skip_notes: [no_hand, interrupted]   # 시도가 실제로 안 일어난 기록은 벡터를 만들지 않는다 (검색에서 빠짐)
