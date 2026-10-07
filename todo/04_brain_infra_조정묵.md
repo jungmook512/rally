@@ -40,7 +40,7 @@
 - [ ] `skills.yaml` mode3 단계값(0.35 / 0.15 / 0), Phase 1은 0.35 고정. `rule_layer` 에 단계 전환 자리만
 - [ ] `scripts/measure_latency.py` 로 웹캠→landing→skill_server 지연 측정 → lead_time 결정 (정정인·박성현과)
 - [ ] 떼어내기 힘 곡선 `ts_wrench` 저장 → 임계 결정 데이터 정정인에게
-- [ ] `llm_advisor.py` 골격: OpenAI function calling, 3 s 타임아웃, pydantic 스키마 검증, 범위 클램핑, 폴백
+- [x] `llm_advisor.py` 골격: OpenAI function calling, 3 s 타임아웃, pydantic 스키마 검증, 범위 클램핑, 폴백 → `/rally/llm/suggest_params`, 가짜 LLM 테스트 14개(시간 초과·형식 오류·범위 밖·전송 화이트리스트), `prompts/suggest_params.md`, `llm.yaml send_fields`
 - [ ] **HMI** 모드 7 실시간 힘 게이지 + 목표선, 회차별 최대 힘 추이 / `/rally/robot/wrench` 실시간 힘 그래프 (Timescale 최근 10 s)
 
 ## Day 5 — 모드 1 + LLM 루프
