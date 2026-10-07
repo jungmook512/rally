@@ -4,11 +4,11 @@
 참고: `docs/INTERFACES.md` 1 / 2.2, `rally_bringup/config/hand_eye.yaml`, `table.yaml`
 
 ## Day 0 (10/5)
-- [ ] 라벨링 툴(Roboflow 또는 CVAT) 프로젝트 생성, Seg 클래스 확정: `ball, velcro_ball, pad, rod, cup, hand`
-- [ ] `realsense2_camera` 컨테이너에서 컬러·정렬 깊이·camera_info 발행 확인
-- [ ] ArUco 보드 출력·테이블 고정, 보드 크기 측정
+- [x] 라벨링 툴 Roboflow 프로젝트 생성(인스턴스 분할), 클래스 확정: `ball, velcro_ball, rod, cup` (10/6 결정: pad 는 티칭 자세+공 검출로 판정, hand 는 MediaPipe). ball·velcro_ball 은 상자(4점 폴리곤), rod·cup 은 폴리곤
+- [x] `realsense2_camera` 컬러·정렬 깊이·camera_info 발행 확인 (10/6, 노트북 네이티브. 토픽 `/camera/camera/...`, 848×480)
+- [ ] ArUco 보드 출력·테이블 고정, 보드 크기 측정 — 배치안·측정 스크립트 준비됨(`scripts/aruco_detect.py`, `config/table_markers.yaml`, 미커밋). 실측 후 PR
 - [ ] (정정인과) 패드 들었을 때 RealSense 시야 실측 → 가리면 웹캠 역할 분담 결정
-- [ ] `docker/vision/Dockerfile` 빌드 확인 (TensorRT 베이스, GPU 인식)
+- [x] `docker/vision/Dockerfile` 빌드 확인 — numpy<2·opencv<4.12 고정 PR #18, 로봇·인식 PC(드라이버 595) 빌드 통과(정정인, #18 댓글)
 
 ## Day 1 — 캘리브레이션 검증 ✅ 기반
 - [ ] **기준선**: `ros2 run rally_vision detection` + `legacy_baseline.launch.py`로 선생님 픽앤플레이스가 우리 레포에서 그대로 도는지 확인
@@ -18,13 +18,13 @@
 - [ ] `projection.py`: 픽셀+깊이 → camera_optical → (tf2, timestamp 일치) → base_link
 - [ ] `scripts/verify_calibration.py`: 기준점 터치 오차 측정, **≤ 5 mm** 확인
 - [ ] `table.yaml`: table_link 원점·중앙선·작업 공간 한계 기입
-- [ ] Seg 학습 데이터 촬영 시작 (소품별 150장 이상, 조명·배치 다양하게)
+- [x] Seg 학습 데이터 촬영 (10/6~7, `scripts/capture_realsense.py`, data/raw): ball 417장(테이블·레일·스탠드·굴림·패드 위 42장은 깊이 포함), rod 160, cup 151, velcro_ball 100(테이블). 공중 velcro_ball 은 정동휘 bag 프레임으로 보류
 
 ## Day 2 — Seg 1차 + 3D
-- [ ] 폴리곤 라벨링 완료 → YOLOv8/11-seg 파인튜닝 1차 (mAP50 기록)
-- [ ] `segmenter_node.py`: 마스크 → 마스크 픽셀 깊이 중앙값으로 3D 중심, PCA 주축 `yaw`, `mask_area`, bbox
-- [ ] `TrackedObjectArray` 발행 (BestEffort depth 1, 30 Hz 목표)
-- [ ] 디버그 영상 `/rally/perception/objects/debug_image` (10 Hz, 압축)
+- [x] ball 1차: Roboflow 폴리곤 344장(v3) → Colab T4 yolov8n-seg 63 epoch(최적 43) → **Box mAP50 0.988 · Mask mAP50 0.988 · Mask mAP50-95 0.95, Recall 1.0** (10/7, `models/yolov8n-seg_ball.pt`, 기록 `rally_vision/training/README.md`). rod·cup·velcro_ball 라벨링 후 2차
+- [x] `segmenter_node.py`: 마스크 → 마스크 픽셀 깊이 중앙값으로 3D 중심, PCA 주축 `yaw`, `mask_area`, bbox (10/7 PR. 노트북 RealSense 라이브 13 fps CPU. base 변환은 tf → tcp_pose×npy 폴백. 학습 모델 전엔 COCO yolov8n-seg 임시)
+- [x] `TrackedObjectArray` 발행 (BestEffort depth 1, 30 Hz 목표 — GPU PC 에서 fps 확인 필요)
+- [x] 디버그 영상 `/rally/perception/objects/debug_image` (10 Hz, 비압축 — 구독자 있을 때만)
 
 ## Day 3 — 추적·최적화
 - [ ] `tracker_node.py`: ByteTrack ID 유지, 클래스별 트랙
@@ -33,7 +33,7 @@
 - [ ] 손 마스크·물체 마스크 접촉/분리 판정 함수 (릴리스 검출 기초)
 
 ## Day 4 — 모드 3 착수 (챌린지, Day 6 까지)
-- [ ] `flight_predictor.py`: 웹캠 60 fps 공 추적(색 기반 빠른 분할 + ByteTrack) → 릴리스 검출 → 3~5프레임 포물선 피팅 → `predicted_landing`·시각·confidence, `/rally/perception/landing` 60 Hz 발행
+- [ ] `flight_predictor.py`: 손목 RealSense 60 fps 주 센서(YOLO + ROI 추적) + 웹캠(C270 약 20 fps) 보조 → 릴리스 검출 → 항력 있는 칼만 필터 → `predicted_landing`·시각·confidence(불확실도), `/rally/perception/landing` 발행. (10/7 이슈 #38: 웹캠 60 fps 불가, 색 검출 오검출 → 계획 수정. INTERFACES 4.1 수정 필요)
 - [ ] 단안 거리: 공 지름(기지) + webcam_link tf + 테이블 평면 교차. RealSense가 보이는 구간은 깊이로 보정
 - [ ] 살살 토스 20회 기록 → 최종 예측 vs 실제 착지 오차(목표 ≤ 50 mm), 첫 예측까지 시간(≤ 100 ms)
 - [ ] `pad_hit_judge.py`: 패드 마스크 안에서 `velcro_ball` 마스크 분리 → 받았는지, 패드 중심 대비 오차(mm)
@@ -66,4 +66,6 @@
 - 10/7 (정동휘): `flight_predictor` 관련 실측 → 이슈 #38. C270 웹캠은 640×480 에서 약 20 fps (60 fps 아님), 색 기반 검출은 하늘색 옷·테이블 오검출. 실험 bag·분석 도구 `scripts/catch_lab` (PR #32)
 - 10/7 (정동휘): 모드 1 `predictor.py`(칼만 + 마찰 감속, 마찰 계수 온라인 추정)를 정동휘가 구현. 브랜치 `feat/rally_vision/kalman-predictor`, 순수 Python 클래스로 만들어 `tracker_node` 에서 import 하게 함. 인터페이스 변경 없음 (`TrackedObject` 필드 그대로). PR 리뷰어 박성현
 - 10/7 (정동휘): 모드 3 제안 — 웹캠이 20 fps 라 포물선 피팅 프레임이 적고 잡음이 큼 → 피팅 전에 칼만(등가속, z 중력)으로 위치 정리·결측 프레임 보간을 넣는 것 검토. 모드 1 칼만 검증 후 이슈 #38 에서 논의
+- 10/7 (박성현): #38 답변 — 웹캠은 하드웨어 한계, 손목 RealSense 주 센서, YOLO 는 박성현. 문제 진단·논문 정리: https://claude.ai/artifact/3sgU76Fn2pYak8DGrJCAPj . 모드 3 포함 여부는 10/9 CP13 중간 점검·10/11 최종
+- 10/7: 학습은 Roboflow 유료 대신 라벨 내보내기(YOLOv8 형식) → Colab 또는 로봇·인식 PC 에서 yolov8n-seg 파인튜닝. TensorRT engine 은 로봇·인식 PC 에서만 생성
 - 
