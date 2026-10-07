@@ -119,14 +119,18 @@ def execute(node):
             phase("place")
             move_checked(node, above, VELOCITY, ACC)
             node.set_contact(True)
-            base_fz = get_tool_force()[2]
+            base = {}
 
-            def touched():
-                return abs(get_tool_force()[2] - base_fz) >= cfg["place_contact_force_n"]
+            hits = [0]
+
+            def touched():                                       # 연속 3 샘플 넘어야 접촉
+                hits[0] = hits[0] + 1 if abs(get_tool_force()[2] - fz0["z"]) >= cfg["place_contact_force_n"] else 0
+                return hits[0] >= 3
 
             with compliance([3000, 3000, 300, 200, 200, 200], log):
-                how = move_checked(node, below, VELOCITY * 0.3, ACC * 0.3, on_poll=touched)
-                if how != "interrupted":
+                fz0["z"] = get_tool_force()[2]                    # 순응이 켜진 뒤의 영점
+                how = move_checked(node, below, VELOCITY * 0.3, ACC * 0.3, on_poll=touched, stall_ok=True)
+                if how == "done":
                     log.warning("[handover] 내려놓으며 접촉 감지 없음 — 집었던 높이까지 내려가 놓음")
                 open_mm, grip_force = node.gripper_cfg(goal.object_class or "rod")
                 ok, _, _ = node.gripper(open_mm, grip_force)

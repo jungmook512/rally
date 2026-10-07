@@ -66,19 +66,19 @@ def execute(node):
 
             phase("descend", 0.3)
             node.set_contact(True)
-            base = {}
+            fz0 = {}
             contact_force = [0.0]
 
             hits = [0]
 
             def touched():                                   # 연속 3 샘플 넘어야 접촉 (이동 중 힘 튐 무시)
-                dz = abs(get_tool_force()[2] - base["fz"])
+                dz = abs(get_tool_force()[2] - fz0["z"])
                 contact_force[0] = max(contact_force[0], dz)
                 hits[0] = hits[0] + 1 if dz >= cfg["contact_force_n"] else 0
                 return hits[0] >= 3
 
             with compliance([3000, 3000, z_st, 200, 200, 200], log):
-                base["fz"] = get_tool_force()[2]              # 순응이 켜진 뒤의 영점
+                fz0["z"] = get_tool_force()[2]                # 순응이 켜진 뒤의 영점
                 how = move_checked(node, below, VELOCITY * cfg["descend_vel_scale"], ACC * cfg["descend_vel_scale"], on_poll=touched, stall_ok=True)
                 if how == "done":
                     log.warning("[pick_compliant] 접촉 없이 하강 끝 — 테이블 Z 설정 확인. 그래도 파지 시도")
