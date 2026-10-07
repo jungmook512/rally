@@ -19,7 +19,7 @@
 - [x] `scripts/measure_latency.py` 초안 — 토픽별 header.stamp 지연(평균·p50·p95·max), NFR-01 판정, CSV. 실측은 로봇·인식 PC 에서
 
 ## Day 2 — 행동 트리 골격 + 기록
-- [ ] `context_builder.py`: 토픽 구독 → `SceneContext` 5 Hz (가짜 발행기로 먼저 테스트)
+- [x] `context_builder.py`: 토픽 구독 → `SceneContext` 5 Hz (가짜 발행기로 먼저 테스트) → 신선도 판정(손·몸·물체 1 s, 안전 0.5 s 넘으면 STOP 간주), 최근 시도 5개(`recent_n`), 단위 테스트 7개
 - [ ] `bt_runner.py`: py_trees 세션 트리 골격 (모드 선택 → 시도 루프 → 종료), action client 래퍼
 - [ ] `trees/mode5_handover.py` (가짜 action 서버로 흐름 검증)
 - [x] `recorder_node.py`: `TrialResult` → `trials`, `WrenchStamped` → `ts_wrench`, `HandState` → `ts_hand`, 이벤트 → `events`

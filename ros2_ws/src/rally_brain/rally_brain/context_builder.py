@@ -1,15 +1,153 @@
 """rally_brain/rally_brain/context_builder.py — 토픽 구독 → SceneContext 5 Hz 발행 (/rally/brain/context)
 담당: 조정묵
-TODO(Day 2): 손·몸·물체·음성·안전·최근 시도 구독 → SceneContext. 가짜 발행기로 먼저 테스트
+
+구독                                 보관
+  /rally/safety/status      Reliable    최신 1개 (stale_safety_s 넘게 안 오면 STOP 으로 간주, reason=no_safety_status)
+  /rally/perception/hand    BestEffort  최신 1개 (stale_s 넘으면 빈 메시지 = detected False)
+  /rally/perception/body    BestEffort  최신 1개 (stale_s 넘으면 빈 메시지)
+  /rally/perception/objects BestEffort  최신 1개 (stale_s 넘으면 빈 배열)
+  /rally/voice/intent       Reliable    마지막 1개를 intent_hold_s 동안만 싣는다 (같은 발화는 header.stamp 로 중복 판별)
+  /rally/brain/trial_result Reliable    최근 recent_n 개 (session_id 가 바뀌면 비움)
+발행
+  /rally/brain/context      BestEffort  rate_hz (기본 5 Hz)
+
+신선도는 수신 시각(이 노드 시계) 기준이다. header.stamp 는 PC 간 시계 차가 있어 그대로 넘기기만 한다.
+session_id · mode · trial_index 는 마지막 TrialResult 에서 가져온다 — bt_runner 가 생기면 그쪽 상태로 바꾼다.
+fatigue_score 는 rule_layer 추정이 생기기 전까지 0. robot_state 는 STOP 이면 STOPPED, 아니면 IDLE
+(스킬 실행 상태 토픽이 아직 없다).
 """
+from __future__ import annotations
+
+from collections import deque
+from collections.abc import Iterable
+
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
+
+from rally_interfaces.msg import (
+    BodyPose,
+    HandState,
+    SafetyStatus,
+    SceneContext,
+    TrackedObjectArray,
+    TrialResult,
+    VoiceIntent,
+)
+
+NO_SAFETY_REASON = "no_safety_status"
+
+
+def is_fresh(received_ns: int | None, now_ns: int, max_age_s: float) -> bool:
+    """수신 기록이 있고 max_age_s 안이면 True."""
+    return received_ns is not None and now_ns - received_ns <= max_age_s * 1e9
+
+
+def success_rate(trials: Iterable) -> float:
+    """success 비율 (0~1). 시도가 없으면 0."""
+    trials = list(trials)
+    if not trials:
+        return 0.0
+    return sum(1 for t in trials if t.success) / len(trials)
+
+
+def robot_state_for(safety_level: int) -> int:
+    return SceneContext.ROBOT_STOPPED if safety_level == SafetyStatus.LEVEL_STOP else SceneContext.ROBOT_IDLE
 
 
 class ContextBuilder(Node):
     def __init__(self):
         super().__init__("rally_context_builder")
-        self.get_logger().info("rally_context_builder 골격 — 아직 하는 일 없음")
+        self.declare_parameter("rate_hz", 5.0)
+        self.declare_parameter("recent_n", 5)
+        self.declare_parameter("stale_s", 1.0)            # 손·몸·물체
+        self.declare_parameter("stale_safety_s", 0.5)     # 안전 상태는 100 Hz 라 짧게
+        self.declare_parameter("intent_hold_s", 3.0)
+        p = self.get_parameter
+        self.rate_hz = float(p("rate_hz").value)
+        self.stale_s = float(p("stale_s").value)
+        self.stale_safety_s = float(p("stale_safety_s").value)
+        self.intent_hold_s = float(p("intent_hold_s").value)
+
+        # (메시지, 수신 시각 ns)
+        self._safety: tuple[SafetyStatus, int] | None = None
+        self._hand: tuple[HandState, int] | None = None
+        self._body: tuple[BodyPose, int] | None = None
+        self._objects: tuple[TrackedObjectArray, int] | None = None
+        self._intent: tuple[VoiceIntent, int] | None = None
+        self._trials: deque[TrialResult] = deque(maxlen=int(p("recent_n").value))
+        self._last_stale_warn: bool | None = None
+
+        reliable = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, depth=10)
+        self.create_subscription(SafetyStatus, "/rally/safety/status", self._keep("_safety"), reliable)
+        self.create_subscription(HandState, "/rally/perception/hand", self._keep("_hand"), qos_profile_sensor_data)
+        self.create_subscription(BodyPose, "/rally/perception/body", self._keep("_body"), qos_profile_sensor_data)
+        self.create_subscription(
+            TrackedObjectArray, "/rally/perception/objects", self._keep("_objects"), qos_profile_sensor_data)
+        self.create_subscription(VoiceIntent, "/rally/voice/intent", self._keep("_intent"), reliable)
+        self.create_subscription(TrialResult, "/rally/brain/trial_result", self._on_trial, reliable)
+        self._pub = self.create_publisher(SceneContext, "/rally/brain/context", qos_profile_sensor_data)
+        self.create_timer(1.0 / self.rate_hz, self._publish)
+        self.get_logger().info(
+            f"rally_context_builder 시작 — {self.rate_hz:.0f} Hz, 최근 시도 {self._trials.maxlen}개, "
+            f"stale {self.stale_s} s / 안전 {self.stale_safety_s} s")
+
+    def _now_ns(self) -> int:
+        return self.get_clock().now().nanoseconds
+
+    def _keep(self, attr: str):
+        def callback(msg) -> None:
+            setattr(self, attr, (msg, self._now_ns()))
+        return callback
+
+    def _on_trial(self, msg: TrialResult) -> None:
+        if self._trials and self._trials[-1].session_id != msg.session_id:
+            self._trials.clear()
+        self._trials.append(msg)
+
+    def _fresh(self, kept: tuple | None, max_age_s: float, now_ns: int):
+        """신선하면 메시지, 아니면 None."""
+        if kept is not None and is_fresh(kept[1], now_ns, max_age_s):
+            return kept[0]
+        return None
+
+    def build(self) -> SceneContext:
+        now_ns = self._now_ns()
+        ctx = SceneContext()
+        ctx.header.stamp = self.get_clock().now().to_msg()
+        ctx.header.frame_id = "base_link"
+
+        safety = self._fresh(self._safety, self.stale_safety_s, now_ns)
+        if safety is None:
+            safety = SafetyStatus(level=SafetyStatus.LEVEL_STOP, reason=NO_SAFETY_REASON, speed_override=0.0)
+            safety.header.stamp = ctx.header.stamp
+        ctx.safety = safety
+        ctx.robot_state = robot_state_for(safety.level)
+        ctx.hand = self._fresh(self._hand, self.stale_s, now_ns) or HandState()
+        ctx.body = self._fresh(self._body, self.stale_s, now_ns) or BodyPose()
+        ctx.objects = self._fresh(self._objects, self.stale_s, now_ns) or TrackedObjectArray()
+        ctx.last_intent = self._fresh(self._intent, self.intent_hold_s, now_ns) or VoiceIntent()
+
+        ctx.recent_trials = list(self._trials)
+        ctx.recent_success_rate = success_rate(self._trials)
+        if self._trials:
+            last = self._trials[-1]
+            ctx.session_id = last.session_id
+            ctx.mode = last.mode
+            ctx.trial_index = last.trial_index
+        ctx.fatigue_score = 0.0
+        return ctx
+
+    def _publish(self) -> None:
+        ctx = self.build()
+        no_safety = ctx.safety.reason == NO_SAFETY_REASON
+        if no_safety != self._last_stale_warn:   # 바뀔 때만 한 줄
+            if no_safety:
+                self.get_logger().warn(f"/rally/safety/status 가 {self.stale_safety_s} s 넘게 안 옴 — STOP 으로 간주")
+            elif self._last_stale_warn is not None:
+                self.get_logger().info("/rally/safety/status 수신 재개")
+            self._last_stale_warn = no_safety
+        self._pub.publish(ctx)
 
 
 def main(args=None):
