@@ -57,6 +57,7 @@ class SimGripper(Node):
         self.r = ball_mm / 2000.0
         self.decel = decel
         self.width = 110.0              # 현재 손가락 폭 mm
+        self.target = -1.0              # 마지막 명령 폭 mm
         self.held = False
         self.ball = None                # [x, y, z] base_link — 없으면 화면에 안 그림
         self.ball_v = (0.0, 0.0)        # 굴러가는 속도 (m/s)
@@ -79,6 +80,7 @@ class SimGripper(Node):
     def on_cmd(self, req, res):
         target = min(max(float(req.width_mm), 0.0), 110.0)
         with self.lock:
+            self.target = target
             ball_mm = self.r * 2000.0
             if self.held and target >= ball_mm:          # 열기 → 놓기
                 self.held = False
@@ -87,7 +89,7 @@ class SimGripper(Node):
             grab = (not self.held) and target < ball_mm and self._ball_between_fingers()
             if grab:
                 self.held = True
-            actual = ball_mm if self.held else target
+            actual = ball_mm if self.held else max(target, 12.4)       # 실물 RG2: 빈손으로 닫아도 12.4 mm
             self.width = actual
             holding = self.held
         if self.cli.wait_for_service(timeout_sec=0.5):
@@ -155,7 +157,7 @@ class SimGripper(Node):
                     t0, x0, y0 = self.tip_hist[0]
                     dt = self.tip_hist[-1][0] - t0
                     vx, vy = (tip[1] - x0) / dt, (tip[2] - y0) / dt
-                touching = tip[3] < self.table_z + 2 * self.r and math.hypot(tip[1] - bx, tip[2] - by) < self.r + 0.012
+                touching = tip[3] < self.table_z + 1.5 * self.r and math.hypot(tip[1] - bx, tip[2] - by) < self.r + 0.012   # 손가락 끝이 공 중심 근처 높이일 때만 민다
                 speed = math.hypot(vx, vy)
                 if touching and speed > 0.005:
                     ux, uy = vx / speed, vy / speed
@@ -178,9 +180,9 @@ class SimGripper(Node):
     def publish_state(self):
         m = JointState()
         m.header.stamp = self.get_clock().now().to_msg()
-        m.name = ["rg2_width_mm", "rg2_grip"]
+        m.name = ["rg2_width_mm", "rg2_grip", "rg2_target_mm"]
         with self.lock:
-            m.position = [float(self.width), 1.0 if self.held else 0.0]
+            m.position = [float(self.width), 1.0 if self.held else 0.0, float(self.target)]
         self.pub_state.publish(m)
 
     def publish_scene(self, ball):

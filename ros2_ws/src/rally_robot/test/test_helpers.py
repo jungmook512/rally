@@ -110,3 +110,37 @@ def test_handover_present_pose_and_tilt():
     assert abs(z_axis[0]) < 1e-6                                                   # x 축 회전이라 x 성분 없음
     _, tilt_c = present_pose(cfg, table, cur, 80.0)
     assert tilt_c == 45.0                                                          # 범위 클램프
+
+
+
+def test_push_ball_speed_for_target():
+    """레시피 d = v²/(2a) + d0 의 역: 목표까지 레인 방향 거리 d → v = sqrt(2a(d - d0)). 레시피 없음·너무 가까움은 거부."""
+    pytest.importorskip("rally_interfaces")
+    from types import SimpleNamespace
+    from rally_robot.dsr_helpers import SkillAbort
+    from rally_robot.skills.push_ball import speed_for_target
+    lane = {"start": [0.43, 0.0, 0.0]}
+    goal = SimpleNamespace(target=SimpleNamespace(point=SimpleNamespace(x=0.43 + 0.40, y=0.0)))
+    v, d = speed_for_target(goal, lane, {"decel_mps2": 0.5, "d0_m": 0.10}, 0.0)
+    assert d == pytest.approx(0.40) and v == pytest.approx(math.sqrt(2 * 0.5 * 0.30))
+    with pytest.raises(SkillAbort):
+        speed_for_target(goal, lane, None, 0.0)
+    near = SimpleNamespace(target=SimpleNamespace(point=SimpleNamespace(x=0.43 + 0.05, y=0.0)))
+    with pytest.raises(SkillAbort):
+        speed_for_target(near, lane, {"decel_mps2": 0.5, "d0_m": 0.10}, 0.0)
+
+
+def test_push_ball_choose_ball_smallest_x():
+    """비전 공 고르기: ball·신뢰도·정지·x 범위를 통과한 것 중 x 최소. base_link 가 아니면 None."""
+    pytest.importorskip("rally_interfaces")
+    from types import SimpleNamespace as NS
+    from rally_robot.skills.push_ball import DEFAULTS, choose_ball
+    def obj(cls, x, y=0.0, conf=0.9, moving=False):
+        return NS(class_name=cls, confidence=conf, is_moving=moving, position=NS(x=x, y=y, z=0.05))
+    arr = NS(header=NS(frame_id="base_link"), objects=[
+        obj("ball", 0.45, 0.1), obj("ball", 0.31, 0.38), obj("ball", 0.28, 0.38, conf=0.3),   # 신뢰도 낮음 → 제외
+        obj("ball", 0.25, 0.0, moving=True), obj("cup", 0.20), obj("ball", 0.05),             # 움직임·컵·범위 밖 제외
+        NS(class_name="ball", confidence=0.99, is_moving=False, position=NS(x=0.20, y=0.0, z=0.51))])   # 그리퍼에 쥔 공(높이) 제외
+    x, y, z, n = choose_ball(arr, dict(DEFAULTS))
+    assert (x, y, n) == (0.31, 0.38, 2)
+    assert choose_ball(NS(header=NS(frame_id="camera_color_optical_frame"), objects=arr.objects), dict(DEFAULTS)) is None
