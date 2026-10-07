@@ -1,14 +1,15 @@
 """rally_voice/intent_node.py — 호출어 → 녹음 → STT → 의도 → /rally/voice/intent (VoiceIntent)
 담당: 정동휘
-
 흐름 (마이크는 별도 스레드에서 계속 읽는다. ROS 콜백을 막지 않게):
   1. openWakeWord 로 호출어 대기 (resource/hello_rokey_8332_32.tflite, 선생님 모델·임계 0.3 그대로)
   2. 감지되면 record_s 초 녹음 → OpenAI Whisper(whisper-1, 한국어) → /rally/voice/transcript
   3. 비상어("그만", "멈춰", "아파" …)면 LLM 없이 바로 intent=stop, is_emergency=true + /rally/safety/estop
   4. 아니면 LLM 함수 호출(intent_llm, gpt-4o) 로 문맥 판단. 3 s 초과·오류면 규칙(intent_rules)으로 대신
   5. /rally/voice/intent 발행. header.stamp = 호출어 감지 시각 (brain 이 같은 발화를 한 번만 처리하는 기준)
-TTS 가 말하는 동안(/rally/voice/speaking = true)과 끝난 뒤 speaking_tail_s 동안은 마이크 입력을 버린다 (자기 목소리 인식 방지).
-한계: 비상어도 호출어 다음에 말해야 한다 (호출어 없이 항상 듣는 비상어는 별도 모델 필요).
+TTS 발화 중(/rally/voice/speaking=true)에도 듣는다. 그동안 들은 말은 비상어일 때만 발행하고 일반 명령은 버린다
+  (INTERFACES 2.2, #45). 잔향 여유는 tts_node 가 false 를 늦게 보내는 것으로 처리 → 여기 speaking_tail_s 기본 0.
+아직 기획과 다른 점: 비상어도 호출어 다음에 말해야 하고 STT 를 거쳐 정지까지 약 6 s.
+  기획(CP9·FR-07)은 STT 없이 키워드 스팟팅으로 0.3 s 이내 → "그만/멈춰" openWakeWord 키워드 모델 학습 후 교체 예정 (todo/03 Day 2).
 음성 원본이 OpenAI 로 나간다 (선생님 방식). 로컬 STT(faster-whisper) 전환은 팀 결정 사항.
 """
 import io
@@ -70,7 +71,7 @@ class IntentNode(Node):
         self.declare_parameter("use_llm", True)
         self.declare_parameter("llm_model", "gpt-4o")              # 팀 키(OpenAI 프로젝트)는 gpt-4o·whisper-1 만 허용 (10/7 확인)
         self.declare_parameter("llm_timeout_s", 3.0)
-        self.declare_parameter("speaking_tail_s", 0.3)            # TTS 끝난 뒤 잔향 무시 시간
+        self.declare_parameter("speaking_tail_s", 0.0)            # 잔향 여유는 tts_node 가 처리 (INTERFACES 2.2). 필요하면 추가로
 
         reliable = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=10)
         latched = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -99,7 +100,7 @@ class IntentNode(Node):
         if not m.data:
             self.mute_until = time.monotonic() + float(self.get_parameter("speaking_tail_s").value)
 
-    def _muted(self) -> bool:
+    def _robot_speaking(self) -> bool:
         return self.speaking or time.monotonic() < self.mute_until
 
     # ----- 마이크 스레드 -----
@@ -123,30 +124,24 @@ class IntentNode(Node):
         with stream:
             while not self._stop.is_set() and rclpy.ok():
                 chunk, _ = stream.read(FRAME)
-                if self._muted():
-                    model.reset()
-                    continue
+                # 로봇이 말하는 중에도 듣는다 (비상어는 살려 둬야 함). 들은 말을 거르는 건 _handle_audio 에서
                 if model.predict(chunk.flatten())[name] <= thr:
                     continue
                 model.reset()
                 stamp = self.get_clock().now().to_msg()
-                self.get_logger().info("호출어 감지 → 녹음")
-                frames, aborted = [], False
+                during_speech = self._robot_speaking()
+                self.get_logger().info("호출어 감지 → 녹음" + (" (로봇 발화 중: 비상어만 처리)" if during_speech else ""))
+                frames = []
                 for _ in range(rec_frames):
                     c, _ = stream.read(FRAME)
-                    if self._muted():               # 녹음 중 TTS 가 말하기 시작하면 버림
-                        aborted = True
-                        break
+                    during_speech = during_speech or self._robot_speaking()
                     frames.append(c.copy())
-                if aborted or not frames:
-                    self.get_logger().info("녹음 중 TTS 발화 → 버림")
-                    continue
-                self._handle_audio(np.concatenate(frames).flatten(), stamp)
+                self._handle_audio(np.concatenate(frames).flatten(), stamp, during_speech)
                 while stream.read_available >= FRAME:   # STT 하는 동안 쌓인 소리는 버림 (지난 말을 다시 듣지 않게)
                     stream.read(FRAME)
                 model.reset()
 
-    def _handle_audio(self, audio: np.ndarray, stamp) -> None:
+    def _handle_audio(self, audio: np.ndarray, stamp, during_speech: bool = False) -> None:
         if not self.api_key:
             return
         t0 = time.perf_counter()
@@ -160,7 +155,10 @@ class IntentNode(Node):
             return
         t_stt = time.perf_counter() - t0
         self.pub_text.publish(String(data=text))
-        result = self.classify(text)
+        result = self.classify(text, during_speech)
+        if result is None:
+            self.get_logger().info(f'로봇 발화 중 일반 명령 무시: "{text}"')
+            return
         msg = VoiceIntent()
         msg.header.stamp = stamp
         msg.text = text
@@ -176,10 +174,11 @@ class IntentNode(Node):
                                f'신뢰 {result.confidence:.2f}, STT {t_stt:.1f} s, 전체 {time.perf_counter() - t0:.1f} s)'
                                + (" [비상]" if result.is_emergency else ""))
 
-    def classify(self, text: str) -> Intent:
-        """비상어(규칙, 즉시) → LLM → LLM 실패 시 규칙. 10/7 평가 40문장: 규칙 먼저 85 % → LLM 먼저 98 %+"""
-        from rally_voice.intent_llm import classify_text
-        return classify_text(text, self.llm, llm_first=True)
+    def classify(self, text: str, during_speech: bool = False) -> Intent | None:
+        """비상어(규칙, 즉시) → LLM → LLM 실패 시 규칙. 로봇 발화 중에 들은 말은 비상어만 (None = 버림).
+        10/7 평가 40문장: 규칙 먼저 85 % → LLM 먼저 100 %"""
+        from rally_voice.intent_llm import classify_heard
+        return classify_heard(text, self.llm, during_speech)
 
     def destroy_node(self) -> None:
         self._stop.set()

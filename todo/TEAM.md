@@ -12,7 +12,7 @@
 - [ ] 인터페이스 합의: `rally_interfaces` msg/srv/action 필드 확정 (30분 회의)
 - [ ] PC 2대 환경: Ubuntu 24.04, ROS 2 Jazzy, Docker, 로봇·인식 PC nvidia-container-toolkit (10/6 결정: PC1+PC2 를 GPU PC 한 대로 합침, pc1/pc2/pc3 는 역할 이름)
 - [ ] 고정 IP·`ROS_DOMAIN_ID` 통일, PC끼리 `ros2 topic list` 상호 확인
-- [ ] 소품: 공 ×3, 벨크로 캐치볼 세트, 막대·컵, 펠트, 중앙선 테이프, ArUco 보드 출력, **가이드 길 3개**, **모드 7 손잡이 막대**
+- [ ] 소품: 공 ×3, 벨크로 캐치볼 세트, 막대·컵, 펠트, 중앙선 테이프, ArUco 보드 출력, **가이드 길 3개**, **모드 7 손잡이 막대**, **패드 손잡이·패드 거치대 3D 출력 (정동휘, Day 4)**
 - [ ] **패드 시야 실측**: 로봇이 패드 들고 환자 쪽 향할 때 RealSense에 환자·공이 보이는지 (CP3)
 - [ ] RealSense 장착 확인: 그리퍼 위 고정, 전 구간 이동 시 케이블 걸림 없음
 - [ ] LLM API 키·사용 한도 확인, `docker/.env` 작성

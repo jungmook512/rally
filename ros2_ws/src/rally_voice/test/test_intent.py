@@ -113,3 +113,16 @@ def test_llm_failure_falls_back_to_rules():
     llm = FakeLlm(Intent("unknown", confidence=0.0, source="llm"))   # API 오류·시간 초과 모양
     assert classify_text("천천히 해줘", llm).intent == "easier"
     assert classify_text("오늘 날씨 좋네", llm).intent == "unknown"
+
+
+def test_during_robot_speech_only_emergency_is_published():
+    """로봇(TTS)이 말하는 동안 들은 말: 비상어만 발행, 일반 명령은 버림, LLM 은 안 부름 (INTERFACES 2.2, #45)."""
+    from rally_voice.intent_llm import classify_heard
+    from rally_voice.intent_rules import Intent
+    llm = FakeLlm(Intent("next_mode", confidence=0.9, source="llm"))
+    assert classify_heard("다음 거 하자", llm, during_speech=True) is None
+    r = classify_heard("그만 멈춰", llm, during_speech=True)
+    assert r.intent == "stop" and r.is_emergency
+    assert llm.calls == 0
+    assert classify_heard("다음 거 하자", llm, during_speech=False).intent == "next_mode"   # 평소엔 그대로
+    assert llm.calls == 1

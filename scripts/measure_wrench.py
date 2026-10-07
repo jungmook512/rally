@@ -72,10 +72,10 @@ def summarize(rows, label):
     fmag = [math.sqrt(r[1]**2 + r[2]**2 + r[3]**2) for r in rows]
     out["|F|"] = dict(mean=statistics.fmean(fmag), std=statistics.pstdev(fmag), peak=max(fmag))
     print(f"   |F| {out['|F|']['mean']:8.3f}  {out['|F|']['std']:8.3f}  {'':8s}  {'':8s}  {out['|F|']['peak']:8.3f}")
-    # 10 ms 간격 변화율 (nudge 임계 근거)
+    # 샘플 간 변화율 (nudge 임계 근거 — wrench 50 Hz 면 20 ms)
     dfs = [abs(fmag[i] - fmag[i-1]) for i in range(1, len(fmag))]
     out["dF"] = dict(std=statistics.pstdev(dfs), peak=max(dfs))
-    print(f"   한 주기 |ΔF| 표준편차 {out['dF']['std']:.3f} N · 최대 {out['dF']['peak']:.3f} N")
+    print(f"   한 샘플 |ΔF| 표준편차 {out['dF']['std']:.3f} N · 최대 {out['dF']['peak']:.3f} N")
     return out
 
 
@@ -136,7 +136,7 @@ def main():
             if s:
                 save(rows, f"data/measure/wrench{tag}_{stamp}.csv")
                 print(f"\n→ safety.yaml 제안: nudge_dfdt_n ≥ {max(5 * s['dF']['std'], 2 * s['dF']['peak']):.1f} N "
-                      f"(한 주기 |ΔF| 표준편차 ×5 또는 최대 ×2 중 큰 값) · force_limit_n 25 N 은 |F| 피크 {s['|F|']['peak']:.1f} N 보다 충분히 큰지 확인")
+                      f"(한 샘플 |ΔF| 표준편차 ×5 또는 최대 ×2 중 큰 값) · force_limit_n 25 N 은 |F| 피크 {s['|F|']['peak']:.1f} N 보다 충분히 큰지 확인")
     except KeyboardInterrupt:
         pass
     finally:

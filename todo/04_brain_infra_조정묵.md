@@ -20,11 +20,11 @@
 
 ## Day 2 — 행동 트리 골격 + 기록
 - [x] `context_builder.py`: 토픽 구독 → `SceneContext` 5 Hz (가짜 발행기로 먼저 테스트) → 신선도 판정(손·몸·물체 1 s, 안전 0.5 s 넘으면 STOP 간주), 최근 시도 5개(`recent_n`), 단위 테스트 7개
-- [ ] `bt_runner.py`: py_trees 세션 트리 골격 (모드 선택 → 시도 루프 → 종료), action client 래퍼
-- [ ] `trees/mode5_handover.py` (가짜 action 서버로 흐름 검증)
+- [x] `bt_runner.py`: py_trees 세션 트리 골격 (모드 선택 → 시도 루프 → 종료), action client 래퍼 → `RunSession` 서버, `behaviours.py`(WaitUntil·SkillCall·Do), 안전 STOP·취소 시 스킬 goal 취소 + 중단 시도도 기록
+- [x] `trees/mode5_handover.py` (가짜 action 서버로 흐름 검증) → 손 대기 → Handover GIVE → TrialResult 1단계. `scripts/fake_skills.py` 로 성공·실패·STOP·취소 확인
 - [x] `recorder_node.py`: `TrialResult` → `trials`, `WrenchStamped` → `ts_wrench`, `HandState` → `ts_hand`, 이벤트 → `events`
 - [x] Redis `rally:state` 갱신, `rally:events` publish (+ `rally:dialog`)
-- [ ] **Ontology** `rally_brain/knowledge/ontology.yaml` 초안: 모드 → 훈련 동작 → 신체 부위, 보상 동작 → 피로 신호, 스킬 → 파라미터·허용 범위 (기획서 4.10, 필수 · 활용 방식 TBD)
+- [x] **Ontology** `rally_brain/knowledge/ontology.yaml` 초안: 모드 → 훈련 동작 → 신체 부위, 보상 동작 → 피로 신호, 스킬 → 파라미터·허용 범위 (기획서 4.10, 필수 · 활용 방식 TBD) → 재활 해석은 `verified: false`(가정) 표시, 범위는 skills.yaml 참조만. `ontology.py` 로 LLM 맥락 문장·한국어 이름
 
 ## Day 3 — 모드 5 통합 ✅
 - [ ] 모드 5 서브트리를 실제 skill 서버에 연결, 실패 분기(손 결측 → 대기, 파지 실패 → 재시도 1회)
@@ -76,5 +76,6 @@
 - [ ] **HMI** 대시보드 모니터 세팅, 리허설 중 화면 운영, 발표 때 대시보드 시연
 
 ## 메모 / 막힌 것
+- (10/7, 정동휘) 모드 3 `lead_time_s`·CP13 관련 실측 → 이슈 #38 (비행 0.40~0.55 s, 로봇 이동 거리 한계)
 - (10/6) HMI 대시보드를 정동휘에게서 가져옴. 골격은 하루 당겨 Day 3 (Day 2 recorder·Redis 와 바로 연결)
 - 지식 계층(Ontology · KG · Graph RAG · 시맨틱 레이어)은 **반드시 사용**. 구체적인 활용 방식은 추후 결정 → 정해지면 기획서 4.10·FR-20~23 갱신

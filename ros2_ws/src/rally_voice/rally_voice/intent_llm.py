@@ -124,3 +124,13 @@ def classify_text(text: str, llm: "LlmClassifier | None", llm_first: bool = True
     if r is not None:
         return r
     return llm.classify(text) if llm is not None else Intent("unknown", confidence=0.0, source="none")
+
+
+def classify_heard(text: str, llm: "LlmClassifier | None", during_speech: bool) -> Intent | None:
+    """들은 말 → 발행할 Intent, 버릴 말이면 None.
+    로봇(TTS)이 말하는 동안 들은 말은 비상어일 때만 발행하고 일반 명령은 버린다 (INTERFACES 2.2, #45).
+    이때 LLM 은 부르지 않는다 (로봇 자기 목소리를 분류하느라 시간·비용 쓰지 않게)."""
+    if during_speech:
+        from rally_voice.intent_rules import is_emergency
+        return Intent("stop", confidence=1.0, is_emergency=True) if is_emergency(text) else None
+    return classify_text(text, llm, llm_first=True)

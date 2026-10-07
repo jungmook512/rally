@@ -46,3 +46,15 @@ def test_fake_dsr_motion_and_contact():
     f.mwait()
     assert f.check_motion() == 0 and f.get_current_posx()[0][2] == 240.0
     assert f.get_tool_force()[2] < -5.0          # TABLE_Z(250) 아래에서 멈춤 → 접촉 힘
+
+
+def test_check_joint_limits():
+    """J5 한계(펜던트 관절 범위) 넘는 자세와 IK 실패를 순회 전에 걸러낸다 (2026-10-07 1206 NOT REACHABLE)."""
+    pytest.importorskip("scipy")
+    from rally_robot.calib_sweep import check_joint_limits
+    ok = [0.0, 9.0, 30.0, -7.0, 131.3, -5.0]
+    over = [8.0, 21.0, 7.0, -24.0, 141.1, -10.0]
+    neg = [0.0, 0.0, 0.0, 0.0, -134.0, 0.0]
+    bad = check_joint_limits([(0, ok), (1, over), (2, None), (3, neg)], j5_max=133.0)
+    assert [i for i, _ in bad] == [1, 2, 3]
+    assert check_joint_limits([(0, over)], j5_max=145.0) == []
