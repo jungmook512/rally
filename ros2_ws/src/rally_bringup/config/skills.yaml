@@ -22,6 +22,17 @@ mode1:
     - {name: center, start: [0.45,  0.00, 0.02], dir_deg: 90}
     - {name: right,  start: [0.45,  0.20, 0.02], dir_deg: 80}
   push_speed_range: [0.05, 0.35]
+  # 굴러가는 공 정지 예측 (rally_vision/predictor.py RollingParams 와 같은 키). 값은 합성 궤적 기준 — 실측 후 조정
+  rolling:
+    decel_init_mps2: 0.30        # 구름 감속도 초기값 (펠트 가정) TODO 실측: 공 굴려 정지 거리로
+    decel_range_mps2: [0.05, 1.5]
+    decel_update_alpha: 0.3      # 시도마다 새 추정값 반영 비율 (1/a 로 평균)
+    meas_std_m: 0.01             # 공 중심 측정 잡음 — 공을 가만히 두고 위치 표준편차를 재서 넣는다
+    accel_std_mps2: 0.5
+    stop_speed_mps: 0.02
+    stop_frames: 5
+    move_start_m: 0.02
+    min_frames: 5
 
 # mode7 (저항 밀기) — 로봇은 버티거나 져주기만, 절대 밀지 않음
 mode7:
