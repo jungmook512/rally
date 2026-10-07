@@ -11,7 +11,8 @@
     python3 scripts/push_recipe.py --lane 1 --speeds 0.08 0.12 0.16 --repeats 3 --manual        # 줄자
     python3 scripts/push_recipe.py --fit data/measure/push_recipe_lane1_1007_150000.csv          # 기록만 다시 맞추기
 
-매 시도 전에 공을 레인 입구(skills.yaml mode1.lanes[lane].start)에 놓고 Enter. 정지 거리는 레인 입구에서 레인 방향으로 잰 값.
+매 시도: 그리퍼가 열리면 공을 손가락 사이에 대고 Enter → 닫아서 쥠 확인 → PushBall(레인 입구에 놓기 → 치기).
+(--ball-in-lane 이면 예전처럼 공을 레인 입구에 직접 놓는다.) 정지 거리는 레인 입구(공 놓는 자리)에서 공 중심까지 레인 방향으로 잰 값.
 결과 CSV 는 data/measure/ (git 제외). 마지막에 a·d0 와 목표 거리별 추천 속도 표를 출력 → skills.yaml 에 옮긴다.
 """
 import argparse
@@ -77,7 +78,7 @@ def report(rows_all):
     for d in (0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.50):
         v = math.sqrt(max(2 * a * (d - d0), 0.0))
         print(f"  {d:4.2f} m → {v:.3f} m/s")
-    print(f"→ skills.yaml mode1 에 레인별 decel_mps2: {a:.3f}, d0_m: {d0:.3f} 로 기록")
+    print(f"→ skills.yaml mode1.lanes[해당 레인] 에 추가:  recipe: {{decel_mps2: {a:.3f}, d0_m: {d0:.3f}}}")
 
 
 class Runner:
@@ -93,6 +94,9 @@ class Runner:
         rclpy.init()
         self.node = Node("rally_push_recipe")
         self.ac = ActionClient(self.node, PushBall, "/rally/skill/push_ball")
+        from rally_interfaces.srv import GripperCommand
+        self.GripperCommand = GripperCommand
+        self.grip = self.node.create_client(GripperCommand, "/rally/gripper/command")
         self.lock = threading.Lock()
         self.ball = None          # 최신 공 (TrackedObject)
         self.first_pred = None    # 이번 시도에서 처음 나온 정지 예측
@@ -112,6 +116,28 @@ class Runner:
             self.ball = (time.monotonic(), b)
             if b.is_moving and self.first_pred is None and b.prediction_confidence > 0.3:
                 self.first_pred = (b.predicted_stop.x, b.predicted_stop.y)
+
+    def gripper(self, width_mm, force_n=12.0):
+        """그리퍼 열기·닫기 → (성공, 폭, 물체 감지)."""
+        if not self.grip.wait_for_service(timeout_sec=3.0):
+            raise RuntimeError("/rally/gripper/command 없음 — gripper_node 확인")
+        fut = self.grip.call_async(self.GripperCommand.Request(width_mm=float(width_mm), force_n=float(force_n), wait_until_done=True))
+        t0 = time.monotonic()
+        while not fut.done() and time.monotonic() - t0 < 6.0:
+            time.sleep(0.05)
+        r = fut.result() if fut.done() else None
+        return (bool(r.success), float(r.actual_width_mm), bool(r.object_detected)) if r else (False, 0.0, False)
+
+    def hand_ball(self, label):
+        """그리퍼를 열고 → 사람이 공을 손가락 사이(끝 쪽)에 대고 Enter → 닫아서 쥠 확인. 실패하면 다시."""
+        while True:
+            self.gripper(90.0)
+            input(f"{label} — 공을 손가락 사이(끝 쪽)에 대고 Enter ")
+            ok, w, det = self.gripper(0.0)
+            if ok and det:
+                print(f"  공 쥠 (폭 {w:.0f} mm)")
+                return
+            print(f"  공이 안 잡힘 (폭 {w:.0f} mm) — 다시")
 
     def push(self, speed):
         if not self.ac.wait_for_server(timeout_sec=5.0):
@@ -163,6 +189,7 @@ def main():
     ap.add_argument("--speeds", type=float, nargs="+", default=[0.08, 0.12, 0.16, 0.20])
     ap.add_argument("--repeats", type=int, default=3)
     ap.add_argument("--manual", action="store_true", help="비전 없이 줄자로 잰 정지 거리(cm) 입력")
+    ap.add_argument("--ball-in-lane", action="store_true", help="공을 쥐여 주지 않고 사람이 레인 입구에 놓는 방식 (예전)")
     ap.add_argument("--fit", help="기존 CSV 만 다시 맞추기")
     opt = ap.parse_args([a for a in sys.argv[1:] if not a.startswith("--ros-args")])
 
@@ -185,7 +212,10 @@ def main():
             w = csv.DictWriter(f, fieldnames=FIELDS)
             w.writeheader()
             for i, v in enumerate(plan, 1):
-                input(f"\n[{i}/{len(plan)}] 속도 {v:.2f} m/s — 공을 레인 입구에 놓고 Enter ")
+                if opt.ball_in_lane:
+                    input(f"\n[{i}/{len(plan)}] 속도 {v:.2f} m/s — 공을 레인 입구에 놓고 Enter ")
+                else:
+                    r.hand_ball(f"\n[{i}/{len(plan)}] 속도 {v:.2f} m/s")
                 r.push(v)
                 pred = None
                 if opt.manual:

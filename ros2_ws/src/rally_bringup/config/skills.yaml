@@ -31,12 +31,26 @@ mode1:
   approach_height_m: 0.10
   transit_vel_scale: 2.5          # 공중 이동 = 60 × 2.5 = 150 mm/s (놓기 하강은 느리게 유지)
   observe_vel_scale: 1.0          # 관측 자세 복귀 movej 60 °/s
+  contact_vel_scale: 0.6          # 접촉 감지 하강의 마지막 구간만 36 mm/s — 그 전까지는 transit 속도 (10/7: 위아래 이동이 너무 느리다는 피드백)
+  pickup_slow_above_m: 0.03       # 집기: 공 중심 + 3 cm 까지 빠르게
+  place_slow_above_m: 0.07        # 놓기: 테이블 + 7 cm 까지 빠르게
   push_acc_mm_s2: 2000.0          # 스윙 가속도 (≈0.2 g). 백스윙 원호 ≈110 mm 안에서 0.6 m/s 까지 붙는 최소 ≈1600 + 여유. 10/7 3000 → 2000
   tool_down_zyz: [174.8, -177.0, 175.1]   # 10/6 테이블 접촉 자세 (툴 수직 아래)
   push_yaw_deg: 0.0               # 닫힌 손가락 면이 미는 방향을 보게 툴 Z 회전 보정
   gripper_close_force_n: 10.0
   # 공 거치대 (10/7 확정: 기울어진 레일에 공 4개, 늘 같은 자리로 내려옴 → 4번 밀기가 한 사이클)
-  pickup_posx: null               # TODO 실측: 거치대 맨 앞 공을 쥔 자세 그대로 scripts/print_pose.py 의 posx (z 포함)
+  # 공 집기 — 10/7: 직접교시 대신 비전(rally_vision segmenter, models/yolov8n-seg_ball.pt)으로. 공이 여러 개면 x 가 가장 작은 것(거치대 맨 앞)
+  pickup_source: vision           # vision | posx(pickup_posx 고정 자세) | none(사람이 쥐여 주거나 레인 입구에 놓음)
+  pickup_yaw_deg: 90.0            # 집을 때 툴 Z 회전 — 거치대에서 공들이 x 로 붙어 있어 손가락이 y 로 닫히게. 손가락이 옆 공에 닿으면 0 으로
+  pickup_below_center_m: 0.05     # 비전 공 중심에서 이만큼 아래를 향해 순응 하강 (거치대 바닥·공에 닿으면 멈춤)
+  pickup_x_range_m: [0.15, 0.60]  # 이 x 범위의 공만 후보
+  pickup_wait_s: 4.0              # 거치대를 보는 자세에서 이 시간 안에 공이 보여야 함
+  # 거치대를 내려다보는 자세 — 관측 자세에선 거치대가 카메라 화면 위쪽 밖 (10/7). 손끝 (380, 200, 380) mm 툴 수직, J5 120° (한계 ≈135°)
+  pickup_view_posj: [28.0, 15.0, 43.0, -2.0, 120.0, 28.0]
+  # 비전 좌표 보정 (base, m, 더함). 10/7: 레인 입구 실측 공을 두 자세(관측·거치대)에서 비교 → 둘 다 x +9.5, y −9.2 mm 치우침.
+  #   segmenter 가 T_gripper2camera.npy 대신 bringup URDF 의 카메라 브래킷 설계 치수(tf)를 쓰는 탓으로 추정 (박성현 확인 필요)
+  vision_offset_m: [-0.0095, 0.0092, 0.0]
+  pickup_posx: null               # (pickup_source: posx 일 때만) 공을 쥔 자세 posx
   pickup_approach_m: 0.08         # 집는 자리 위 접근 높이
   place_open_mm: 80.0             # 레인 입구에 놓을 때 여는 폭 (레인 안쪽 폭 ≈ 87 mm 보다 작게)
   place_contact_force_n: 8.0      # 놓기: 순응 하강 중 Z 힘 변화가 이 이상(연속 3 샘플) 또는 목표 전에 멈춤 = 공이 테이블에 닿음 → 연다

@@ -54,6 +54,8 @@ def _cur():
 
 
 def _start_move(target6, vel):
+    if isinstance(vel, (list, tuple)):          # [직선 mm/s, 회전 deg/s] 형식 — 직선만 쓴다
+        vel = vel[0]
     S.pose = _cur()
     S.target = [float(v) for v in target6]
     dist = math.dist(S.pose[:3], S.target[:3])
@@ -91,6 +93,12 @@ def movej(pos, vel=None, acc=None, **kw):
 def amovec(pos1, pos2, vel=None, acc=None, **kw):
     """원호 흉내 — 끝점으로 직선 보간 (경로 모양은 흉내 내지 않음)."""
     _start_move(pos2, vel)
+    return 0
+
+
+def amovesx(pos_list, vel=None, acc=None, **kw):
+    """스플라인 흉내 — 마지막 점으로 직선 보간."""
+    _start_move(pos_list[-1], vel)
     return 0
 
 
