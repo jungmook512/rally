@@ -11,6 +11,8 @@
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>tf2_ros</depend>
+  <depend>action_msgs</depend>
+  <exec_depend>py_trees</exec_depend>
   <exec_depend>py_trees_ros</exec_depend>
   <exec_depend>rally_bringup</exec_depend>
   <test_depend>ament_copyright</test_depend>
