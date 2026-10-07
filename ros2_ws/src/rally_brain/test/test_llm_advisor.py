@@ -161,12 +161,12 @@ def test_fallback_uses_default_ref_without_history():
     assert s.values == {"target_force_n": 5.0}
 
 
-@pytest.mark.parametrize("word", ["그만", "멈춰", "아프", "위험"])
+@pytest.mark.parametrize("word", ["그만", "멈춰", "아프", "위험", "정지", "아파", "스톱"])
 def test_rationale_with_stop_word_is_dropped(word):
     a, _ = advisor({"values": {"push_speed": 0.2, "lane": 1}, "rationale": f"{word} 하면 좋겠어요", "confidence": 0.5})
     s = a.suggest(1, HISTORY, SPECS)
     assert s.source == "llm" and s.values["push_speed"] == 0.2      # 값은 쓰고
-    assert s.rationale == "" and "비상어" in s.note                   # 문장만 버림
+    assert s.rationale == "" and "비상어" in s.note                   # 문장만 버림 (speech.phrase_problem 기준)
 
 
 def test_prompt_and_code_agree_on_length():

@@ -42,6 +42,7 @@ from rally_brain import rule_layer
 from rally_brain.config import load_skills
 from rally_brain.behaviours import SkillCall
 from rally_brain.knowledge import ontology
+from rally_brain.speech import phrase_problem
 from rally_brain.trees.session_tree import MODE_NAMES, Session, build_session_tree, modes_after_switch
 from rally_bringup.readiness import ReadinessChecker
 from rally_interfaces.action import RunSession
@@ -232,12 +233,27 @@ class BtRunner(Node):
         return self._skill_clients[name]
 
     def _say(self, text: str) -> None:
-        """TTS 안내 (기다리지 않음). tts_node 가 없으면 로그만 — 안내가 없어도 세션은 계속된다."""
+        """TTS 안내 (기다리지 않음). tts_node 가 없거나 거절해도 로그만 — 안내가 없어도 세션은 계속된다.
+        말하면 안 되는 문구(비상어)는 보내지 않는다 — tts_node 도 같은 기준으로 거절한다 (#53)."""
+        if (why := phrase_problem(text)) is not None:
+            self.get_logger().error(f"[안내] 보내지 않음 ({why}): {text}")
+            return
         if not self._speak.service_is_ready():
             self.get_logger().warn(f"[안내] tts 없음 — 못 함: {text}")
             return
         self.get_logger().info(f"[안내] {text}")
-        self._speak.call_async(Speak.Request(text=text, block_mic=True))
+        future = self._speak.call_async(Speak.Request(text=text, block_mic=True))
+        future.add_done_callback(lambda f: self._on_spoken(f, text))
+
+    def _on_spoken(self, future, text: str) -> None:
+        """tts_node 가 말하지 않았으면(done=false) 로그 (#53 요청)."""
+        try:
+            res = future.result()
+        except Exception as e:  # noqa: BLE001 — 서비스가 사라지는 등
+            self.get_logger().warn(f"[안내] tts 응답 실패 ({type(e).__name__}): {text}")
+            return
+        if res is not None and not res.done:
+            self.get_logger().warn(f"[안내] tts 가 말하지 않음(done=false): {text}")
 
     # ---------- RunSession ----------
     def _on_goal(self, goal: RunSession.Goal) -> GoalResponse:

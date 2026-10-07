@@ -12,7 +12,8 @@ LLM 답은 숫자 자리에 글자·참거짓이 오면 고쳐 쓰지 않고 거
 
 응답: success = LLM 값을 썼으면 true, 대체값이면 false — 이때 param_values 는 범위 안이라 그대로 써도 된다.
 요청 오류(llm_tunable 에 없음·범위 안 겹침·길이 다름)면 success=false + param_values 비어 있음 → 호출자가 규칙 값을 쓴다.
-rationale 은 LLM 의 한 문장(80자 이내, TTS 로 들려줄 수 있음) 또는 대체 이유. 비상어가 들어 있으면 문장만 버린다.
+rationale 은 LLM 의 한 문장(80자 이내, TTS 로 들려줄 수 있음) 또는 대체 이유. 말하면 안 되는 문장(비상어 —
+speech.phrase_problem, tts_node 와 같은 기준)이면 문장만 버린다.
 TODO(Day 5): pgvector 유사 시도 3개 + Graph RAG 맥락을 요청에 추가, bt_runner 모드 1 트리에서 호출
 """
 from __future__ import annotations
@@ -34,11 +35,11 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
 from rally_brain.config import load_skills
+from rally_brain.speech import phrase_problem
 from rally_interfaces.srv import SuggestParams
 
 TOOL_NAME = "suggest_params"
 RATIONALE_MAX = 80                                  # prompts/suggest_params.md 와 같은 숫자
-STOP_WORDS = ("그만", "멈춰", "아프", "위험")          # TTS 에코로 음성 정지 오인식 방지 (INTERFACES #45)
 DEFAULT_SEND_FIELDS = ["mode", "trial_index", "success", "error_mm", "duration_s", "params", "metrics"]
 LlmCall = Callable[[str, dict, dict], dict]   # (system prompt, 요청 JSON, 함수 스키마) → 함수 인자 dict
 
@@ -269,8 +270,9 @@ class Advisor:
                 clipped.append(f"{s.key} {v:g}→{values[s.key]:g}")
         notes = [("범위로 자름: " + ", ".join(clipped))] if clipped else []
         rationale = reply.rationale.strip()
-        if any(w in rationale for w in STOP_WORDS):
-            notes.append(f"비상어가 든 문장 버림: {rationale}")
+        if (why := phrase_problem(rationale)) is not None:
+            # tts_node 가 어차피 거절한다(done=false) — 미리 버리고 이유를 남긴다. 값은 그대로 쓴다
+            notes.append(f"말할 수 없는 문장 버림({why}): {rationale}")
             rationale = ""
         return Suggestion(values, rationale, reply.confidence, "llm", " / ".join(notes), time.monotonic() - t0, request)
 
