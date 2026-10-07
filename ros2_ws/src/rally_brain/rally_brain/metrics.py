@@ -35,18 +35,25 @@ def key_value(trial: TrialResult, cfg: dict[str, Any] | None = None) -> float | 
     return float(pairs[spec["name"]]) if spec["name"] in pairs else None
 
 
+def counted(trials: Iterable[TrialResult], cfg: dict[str, Any] | None = None) -> list[TrialResult]:
+    """지표에 넣는 시도만 (exclude_notes 빼고: no_hand · interrupted)."""
+    exclude = set((cfg or load())["exclude_notes"])
+    return [t for t in trials if t.notes not in exclude]
+
+
 def success_rate(trials: Sequence[TrialResult], cfg: dict[str, Any] | None = None) -> float:
-    """최근 window 회 성공 비율. trials 는 같은 모드라고 가정. 시도가 없으면 0."""
-    window = (cfg or load())["metrics"]["success_rate"]["window"]
-    recent = list(trials)[-window:]
+    """최근 window 회 성공 비율 (exclude_notes 시도는 빼고). trials 는 같은 모드라고 가정. 시도가 없으면 0."""
+    cfg = cfg or load()
+    recent = counted(trials, cfg)[-cfg["metrics"]["success_rate"]["window"]:]
     return sum(t.success for t in recent) / len(recent) if recent else 0.0
 
 
 def improvement(trials: Sequence[TrialResult], cfg: dict[str, Any] | None = None) -> float | None:
-    """처음 k 회 대비 마지막 k 회 대표 값 개선율 (양수 = 나아짐). 같은 모드라고 가정. 계산 불가면 None."""
+    """성공한 시도의 처음 k 회 대비 마지막 k 회 대표 값 개선율 (양수 = 나아짐). 같은 모드라고 가정. 계산 불가면 None."""
     cfg = cfg or load()
     k = cfg["metrics"]["improvement"]["k"]
-    if not trials or len(trials) < 2 * k:
+    trials = [t for t in counted(trials, cfg) if t.success]
+    if len(trials) < 2 * k:
         return None
     spec = cfg["key_values"].get(trials[0].mode)
     values = [key_value(t, cfg) for t in trials]

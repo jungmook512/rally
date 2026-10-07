@@ -1,10 +1,9 @@
 """context_builder 단위 테스트 — 순수 함수는 SimpleNamespace, build() 는 노드를 띄워 직접 호출 (spin 없음)."""
-from types import SimpleNamespace as NS
 
 import pytest
 import rclpy
 
-from rally_brain.context_builder import NO_SAFETY_REASON, ContextBuilder, is_fresh, same_utterance, success_rate
+from rally_brain.context_builder import NO_SAFETY_REASON, ContextBuilder, is_fresh, same_utterance
 from rally_interfaces.msg import HandState, SafetyStatus, SceneContext, TrialResult, VoiceIntent
 
 
@@ -12,11 +11,6 @@ def test_is_fresh():
     assert is_fresh(1_000_000_000, 1_500_000_000, 1.0)
     assert not is_fresh(1_000_000_000, 2_500_000_000, 1.0)
     assert not is_fresh(None, 1_000_000_000, 1.0)
-
-
-def test_success_rate():
-    assert success_rate([]) == 0.0
-    assert success_rate([NS(success=True), NS(success=False), NS(success=True), NS(success=True)]) == 0.75
 
 
 @pytest.fixture
@@ -72,6 +66,18 @@ def test_recent_trials_keep_last_n(node):
     assert [t.trial_index for t in ctx.recent_trials] == [3, 4, 5, 6, 7]
     assert ctx.recent_success_rate == pytest.approx(0.4)
     assert (ctx.session_id, ctx.trial_index, ctx.mode) == ("s1", 7, TrialResult.MODE_HANDOVER)
+
+
+def test_success_rate_uses_metrics_definition(node):
+    # 마지막 시도와 같은 모드만, no_hand·interrupted 는 빼고 (metrics.yaml — 규칙 레이어와 같은 정의)
+    node._on_trial(trial(index=1, success=True))
+    node._on_trial(TrialResult(session_id="s1", mode=TrialResult.MODE_PUSH_BALL, trial_index=2, success=False))
+    node._on_trial(trial(index=3, success=False))
+    m = trial(index=4, success=False)
+    m.notes = "no_hand"
+    node._on_trial(m)
+    ctx = node.build()
+    assert ctx.recent_success_rate == pytest.approx(0.5)   # 모드 5 의 1·3 번만
 
 
 def test_new_session_clears_trials(node):
