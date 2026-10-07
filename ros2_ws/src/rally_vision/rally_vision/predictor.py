@@ -1,5 +1,6 @@
 """rally_vision/predictor.py — 모드 1용: 칼만 필터(위치·속도) + 마찰 감속 모델 → 굴러가는 공의 정지 위치·시간, 마찰 계수 온라인 추정. 던진 공은 flight_predictor.py
 담당: 정동휘 (10/7 박성현에게서 넘겨받음). tracker_node 연결은 박성현
+보류 (#69, 10/7): 모드 1 정지 예측은 밀기 전 레시피로 한다. 이 클래스는 모드 3 에 칼만을 먼저 쓴 뒤 모드 1 에 붙일지 정할 때까지 유지만.
 
 ROS 에 의존하지 않는 순수 클래스다. tracker_node 가 공 트랙 하나마다 RollingBallPredictor 를 하나 두고
 매 프레임 update(t, xyz) 를 부른 뒤 결과를 TrackedObject 의 velocity·predicted_stop·predicted_stop_time·
