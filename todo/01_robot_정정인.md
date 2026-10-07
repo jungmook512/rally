@@ -72,5 +72,6 @@
 
 ## 메모 / 막힌 것
 - 10/7 (정동휘): `hand_pose` 노드 동작. ① `HandState.gesture` 는 5 프레임(약 0.17 s) 연속일 때만 FIST 로 내보냄 (safety_monitor 가 한 프레임 FIST 에도 STOP 하므로). 모드 5 에서 물체 쥔 손이 주먹으로 보이면 `fist_estop_enabled:=false` 로 끌 수 있음 — 같이 정하기. ② tf(base_link ← 카메라)가 없으면 `distance_to_centerline = NaN` 으로 나감. safety_monitor 에서 NaN 비교는 항상 거짓이라 손 근접 감속이 안 걸림 → NaN 을 어떻게 다룰지(SLOW 로 볼지) 정해주세요
+- 10/7 (정동휘): `catch_ball` 관련 실측 → 이슈 #38. 가속 1000 mm/s² 면 0.5 s 에 6~12 cm 라 `catch_radius_m: 0.35` 불가, M0609 `servol_stream` 연속 추종 중 알람 → 제어함 전원 차단 보고(doosan-robot2 #393). 패드 거치대는 정동휘가 3D 출력(Day 4) — 거치 위치·높이 같이 정하기
 - 10/6: 로봇 없이 스킬 흐름 테스트: `RALLY_FAKE=1 ros2 run rally_robot skill_server --fake` (가짜 DSR, 테이블 Z 250 mm). 모드 7 nudge 오탐 대비로 접촉 예정 플래그 도입.
 - 10/6: 그리퍼·로봇이 모드 3 검토에 쓰이는 동안 코드 먼저 진행. 물체별 파지 폭은 안 재기로 (폭 0 + 물체별 힘으로 닫음, `skills.yaml gripper`). safety.yaml 값 채움(INTERFACES 6절 기준), nudge·작업 공간 값은 실측 후 확정.
