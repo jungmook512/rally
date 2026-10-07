@@ -71,7 +71,7 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 |---|---|---|---|
 | `/rally/brain/set_mode` | `rally_interfaces/SetMode` | rally_brain | 모드 강제 전환 (대시보드·음성) |
 | `/rally/vision/run_calibration` | `rally_interfaces/RunCalibration` | rally_vision/calibration | eye-in-hand 캘리브레이션 (로봇 자세 순회 포함) |
-| `/rally/llm/suggest_params` | `rally_interfaces/SuggestParams` | rally_brain/llm_advisor | 다음 시도 파라미터 제안. 응답은 최대 timeout_s(3 s) 뒤. `success=false` = LLM 실패로 대체값(마지막 값) — 어느 쪽이든 `param_values` 는 요청 범위 안이라 그대로 써도 된다 |
+| `/rally/llm/suggest_params` | `rally_interfaces/SuggestParams` | rally_brain/llm_advisor | 다음 시도 파라미터 제안. 응답은 최대 timeout_s(3 s) 뒤. 조절할 수 있는 값과 범위는 `skills.yaml llm_tunable` 이 정한다 (요청 범위는 그 안으로 좁히기만). `success=true` = LLM 값, `success=false` + `param_values` 있음 = LLM 실패로 대체값(마지막 값) — 둘 다 범위 안이라 그대로 써도 된다. `success=false` + `param_values` 비어 있음 = 요청 오류(llm_tunable 에 없는 값·범위 안 겹침) → 호출자가 규칙 값을 쓴다. `rationale` 은 80자 이내, 비상어가 들어 있으면 빈 문자열 |
 | `/rally/voice/speak` | `rally_interfaces/Speak` | rally_voice/tts_node | TTS 발화, 발화 중 마이크 차단 |
 | `/rally/gripper/command` | `rally_interfaces/GripperCommand` | rally_robot/gripper_node | RG2 폭·힘 명령 |
 | `/rally/robot/go_observe_pose` | `std_srvs/Trigger` | rally_robot/skill_server | 관측 자세로 이동 (카메라가 테이블 전체를 보는 자세) |

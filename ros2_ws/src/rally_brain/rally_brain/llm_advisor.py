@@ -4,12 +4,15 @@
 다음 시도 파라미터를 LLM 에 묻는다. LLM 출력은 로봇에 바로 가지 않는다 — 네 단계를 반드시 거친다 (rally_brain/CLAUDE.md):
   1. 비동기 호출 + timeout_s(3 s)   스레드에서 부르고 기다리는 시간을 자른다. 넘으면 대체값
   2. pydantic 스키마 검증            숫자·이름·빠짐·NaN 을 걸러낸다. 틀리면 대체값
-  3. 범위 클램핑                    요청에 온 [min, max](= skills.yaml 범위)로 자른다
-  4. 대체값(규칙 기본값)             마지막 시도에 쓴 값, 없으면 범위 가운데 — 이것도 범위로 자른다
+  3. 범위 클램핑                    skills.yaml llm_tunable 범위로 자른다. 요청 범위는 그 안으로 좁히기만 한다
+  4. 대체값(규칙 기본값)             마지막 시도에 쓴 값, 없으면 default_ref, 그것도 없으면 범위 가운데 — 범위로 자름
+llm_tunable 에 없는 모드·값을 요청하면 거부 (LLM 에 묻지도 않는다). 범위의 근거는 항상 skills.yaml (#62 리뷰 1).
 LLM 에는 llm.yaml send_fields 의 필드만 보낸다 (session_id·notes·header 제외, 숫자만).
+LLM 답은 숫자 자리에 글자·참거짓이 오면 고쳐 쓰지 않고 거부한다 (#62 리뷰 2).
 
-응답: success = LLM 값을 썼으면 true, 대체값이면 false. 어느 쪽이든 param_values 는 범위 안이라 그대로 써도 된다.
-rationale 은 LLM 의 한 문장 또는 대체 이유.
+응답: success = LLM 값을 썼으면 true, 대체값이면 false — 이때 param_values 는 범위 안이라 그대로 써도 된다.
+요청 오류(llm_tunable 에 없음·범위 안 겹침·길이 다름)면 success=false + param_values 비어 있음 → 호출자가 규칙 값을 쓴다.
+rationale 은 LLM 의 한 문장(80자 이내, TTS 로 들려줄 수 있음) 또는 대체 이유. 비상어가 들어 있으면 문장만 버린다.
 TODO(Day 5): pgvector 유사 시도 3개 + Graph RAG 맥락을 요청에 추가, bt_runner 모드 1 트리에서 호출
 """
 from __future__ import annotations
@@ -30,9 +33,12 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
+from rally_brain.config import load_skills
 from rally_interfaces.srv import SuggestParams
 
 TOOL_NAME = "suggest_params"
+RATIONALE_MAX = 80                                  # prompts/suggest_params.md 와 같은 숫자
+STOP_WORDS = ("그만", "멈춰", "아프", "위험")          # TTS 에코로 음성 정지 오인식 방지 (INTERFACES #45)
 DEFAULT_SEND_FIELDS = ["mode", "trial_index", "success", "error_mm", "duration_s", "params", "metrics"]
 LlmCall = Callable[[str, dict, dict], dict]   # (system prompt, 요청 JSON, 함수 스키마) → 함수 인자 dict
 
@@ -42,6 +48,76 @@ class ParamSpec:
     key: str
     lo: float
     hi: float
+
+
+@dataclass(frozen=True)
+class Limit:
+    """skills.yaml llm_tunable 한 줄 — 허용 범위와 이력 없을 때 기본값."""
+    lo: float
+    hi: float
+    default: float | None = None
+
+
+Limits = dict[int, dict[str, Limit]]
+
+
+def _ref(skills: dict, ref: str) -> Any:
+    node: Any = skills
+    for part in ref.split("."):
+        if not isinstance(node, dict) or part not in node:
+            raise ValueError(f"skills.yaml 에 {ref} 없음")
+        node = node[part]
+    return node
+
+
+def _is_number(v: Any) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def tunable_limits(skills: dict) -> Limits:
+    """skills.yaml llm_tunable → {모드: {값 이름: Limit}}. 설정이 틀리면 ValueError (노드가 뜨지 않음)."""
+    out: Limits = {}
+    for mode, params in (skills.get("llm_tunable") or {}).items():
+        for key, entry in (params or {}).items():
+            rng = _ref(skills, entry["range_ref"])
+            if not (isinstance(rng, list) and len(rng) == 2 and all(map(_is_number, rng)) and rng[0] <= rng[1]):
+                raise ValueError(f"llm_tunable.{mode}.{key}: {entry['range_ref']} = {rng!r} 는 [min, max] 가 아님")
+            default = _ref(skills, entry["default_ref"]) if "default_ref" in entry else None
+            if default is not None and not _is_number(default):
+                raise ValueError(f"llm_tunable.{mode}.{key}: default {default!r} 는 숫자가 아님")
+            out.setdefault(int(mode), {})[key] = Limit(float(rng[0]), float(rng[1]),
+                                                       float(default) if default is not None else None)
+    return out
+
+
+def allowed_specs(mode: int, requested: Sequence[ParamSpec], limits: Limits) -> list[ParamSpec]:
+    """요청 범위를 skills.yaml 범위 안으로 좁힌다. 허용 안 된 값이거나 겹치는 구간이 없으면 ValueError."""
+    check_specs(requested)
+    out = []
+    for s in requested:
+        lim = limits.get(int(mode), {}).get(s.key)
+        if lim is None:
+            raise ValueError(f"모드 {mode} 의 {s.key} 는 LLM 이 조절할 수 없음 (skills.yaml llm_tunable)")
+        lo, hi = max(s.lo, lim.lo), min(s.hi, lim.hi)
+        if lo > hi:
+            raise ValueError(f"{s.key} 요청 범위 [{s.lo:g}, {s.hi:g}] 가 허용 범위 [{lim.lo:g}, {lim.hi:g}] 와 안 겹침")
+        out.append(ParamSpec(s.key, lo, hi))
+    return out
+
+
+def check_reply_types(data: Any) -> str | None:
+    """pydantic 이 고쳐 쓰기 전에 형식을 엄격히 본다 (v1·v2 공통). 문제면 이유, 아니면 None.
+    숫자 자리에 글자("0.2")·참거짓(True)·NaN·무한대가 오면 거부."""
+    if not isinstance(data, dict):
+        return "답이 객체가 아님"
+    values = data.get("values")
+    if not isinstance(values, dict) or not all(_is_number(v) for v in values.values()):
+        return "values 가 숫자가 아님"
+    if not _is_number(data.get("confidence")):
+        return "confidence 가 숫자가 아님"
+    if not isinstance(data.get("rationale"), str):
+        return "rationale 이 글자가 아님"
+    return None
 
 
 @dataclass(frozen=True)
@@ -57,7 +133,7 @@ class Suggestion:
 
 class LlmReply(BaseModel):
     values: dict[str, float]
-    rationale: str = Field(..., min_length=1, max_length=200)
+    rationale: str = Field(..., min_length=1, max_length=RATIONALE_MAX)
     confidence: float = Field(..., ge=0.0, le=1.0)
 
 
@@ -118,7 +194,7 @@ def tool_schema(specs: Sequence[ParamSpec]) -> dict[str, Any]:
                 "required": [s.key for s in specs],
                 "additionalProperties": False,
             },
-            "rationale": {"type": "string", "description": "한국어 한 문장, 80자 이내"},
+            "rationale": {"type": "string", "description": f"한국어 한 문장, {RATIONALE_MAX}자 이내"},
             "confidence": {"type": "number", "minimum": 0, "maximum": 1},
         },
         "required": ["values", "rationale", "confidence"],
@@ -126,32 +202,39 @@ def tool_schema(specs: Sequence[ParamSpec]) -> dict[str, Any]:
     }
 
 
-def fallback_values(history: Sequence, specs: Sequence[ParamSpec]) -> dict[str, float]:
-    """규칙 기본값: 마지막 시도에 쓴 값(범위로 자름), 없으면 범위 가운데."""
+def fallback_values(history: Sequence, specs: Sequence[ParamSpec],
+                    defaults: dict[str, float | None] | None = None) -> dict[str, float]:
+    """규칙 기본값: 마지막 시도에 쓴 값 → skills.yaml default_ref → 범위 가운데. 모두 범위로 자름."""
     last = dict(zip(history[-1].param_keys, history[-1].param_values)) if history else {}
+    defaults = defaults or {}
     out = {}
     for s in specs:
         v = last.get(s.key)
-        out[s.key] = clamp(float(v), s) if v is not None and math.isfinite(v) else (s.lo + s.hi) / 2
+        if v is None or not math.isfinite(v):
+            v = defaults.get(s.key)
+        out[s.key] = clamp(float(v), s) if v is not None else (s.lo + s.hi) / 2
     return out
 
 
 class Advisor:
     """ROS 없이 쓰는 핵심 (테스트는 가짜 llm 을 넣는다)."""
 
-    def __init__(self, llm: LlmCall | None, system_prompt: str, timeout_s: float = 3.0,
+    def __init__(self, llm: LlmCall | None, system_prompt: str, limits: Limits, timeout_s: float = 3.0,
                  send_fields: Sequence[str] = DEFAULT_SEND_FIELDS, history_n: int = 5):
         self.llm = llm
+        self.limits = limits              # skills.yaml llm_tunable — 범위의 유일한 근거
         self.system_prompt = system_prompt
         self.timeout_s = timeout_s
         self.send_fields = list(send_fields)
         self.history_n = history_n
         self._pool = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="llm")
 
-    def suggest(self, mode: int, history: Sequence, specs: Sequence[ParamSpec]) -> Suggestion:
-        check_specs(specs)
+    def suggest(self, mode: int, history: Sequence, requested: Sequence[ParamSpec]) -> Suggestion:
+        """requested: 호출자가 원하는 값·범위. skills.yaml 범위 안으로 좁혀서 쓴다. 허용 안 된 값이면 ValueError."""
+        specs = allowed_specs(mode, requested, self.limits)
         request = build_request(mode, history, specs, self.send_fields, self.history_n)
-        fb = fallback_values(history, specs)
+        defaults = {s.key: self.limits[int(mode)][s.key].default for s in specs}
+        fb = fallback_values(history, specs, defaults)
         t0 = time.monotonic()
 
         def fallback(why: str) -> Suggestion:
@@ -169,23 +252,27 @@ class Advisor:
             return fallback(f"형식 오류: {type(e).__name__}")
         except Exception as e:  # noqa: BLE001 — 네트워크·인증·한도 등 무엇이든 대체값으로
             return fallback(f"호출 실패: {type(e).__name__}")
+        if why := check_reply_types(raw):                                               # 2. 스키마 검증
+            return fallback(f"형식 오류: {why}")
         try:
-            reply = _parse_reply(raw)                                                    # 2. 스키마 검증
+            reply = _parse_reply(raw)
         except ValidationError:
             return fallback("형식 오류: 스키마")
         expected = {s.key for s in specs}
         if set(reply.values) != expected:
             return fallback(f"이름 불일치: {sorted(reply.values)} ≠ {sorted(expected)}")
-        if not all(math.isfinite(v) for v in reply.values.values()):
-            return fallback("형식 오류: NaN·무한대")
         values, clipped = {}, []
         for s in specs:                                                                  # 3. 범위 클램핑
             v = reply.values[s.key]
             values[s.key] = clamp(v, s)
             if values[s.key] != v:
                 clipped.append(f"{s.key} {v:g}→{values[s.key]:g}")
-        note = ("범위로 자름: " + ", ".join(clipped)) if clipped else ""
-        return Suggestion(values, reply.rationale.strip(), reply.confidence, "llm", note, time.monotonic() - t0, request)
+        notes = [("범위로 자름: " + ", ".join(clipped))] if clipped else []
+        rationale = reply.rationale.strip()
+        if any(w in rationale for w in STOP_WORDS):
+            notes.append(f"비상어가 든 문장 버림: {rationale}")
+            rationale = ""
+        return Suggestion(values, rationale, reply.confidence, "llm", " / ".join(notes), time.monotonic() - t0, request)
 
 
 def openai_llm(model: str, temperature: float, timeout_s: float) -> LlmCall | None:
@@ -243,11 +330,14 @@ class LlmAdvisor(Node):
         llm = openai_llm(model, float(p("temperature")), timeout_s)
         if llm is None:
             self.get_logger().warn("OPENAI_API_KEY 없음 — 모든 요청에 대체값(이전 값)을 돌려준다")
-        self.advisor = Advisor(llm, load_prompt(str(p("prompt_suggest_params"))), timeout_s,
+        limits = tunable_limits(load_skills())   # 틀리면 ValueError → 노드가 뜨지 않음
+        self.advisor = Advisor(llm, load_prompt(str(p("prompt_suggest_params"))), limits, timeout_s,
                                list(p("send_fields")), int(p("history_n")))
         self.create_service(SuggestParams, "/rally/llm/suggest_params", self._on_suggest,
                             callback_group=ReentrantCallbackGroup())   # LLM 대기 중에도 다른 요청을 받는다
-        self.get_logger().info(f"rally_llm_advisor 시작 — {model}, {timeout_s:g} s, 보내는 필드 {self.advisor.send_fields}")
+        tunable = {m: sorted(ps) for m, ps in limits.items()}
+        self.get_logger().info(f"rally_llm_advisor 시작 — {model}, {timeout_s:g} s, 보내는 필드 {self.advisor.send_fields}, "
+                               f"조절 가능 {tunable}")
 
     def _on_suggest(self, req: SuggestParams.Request, res: SuggestParams.Response) -> SuggestParams.Response:
         if not (len(req.param_keys) == len(req.param_min) == len(req.param_max)):
@@ -262,8 +352,8 @@ class LlmAdvisor(Node):
             self.get_logger().error(res.rationale)
             return res
         res.success = s.source == "llm"
-        res.param_keys = [sp.key for sp in specs]
-        res.param_values = [float(s.values[sp.key]) for sp in specs]
+        res.param_keys = list(s.values)
+        res.param_values = [float(v) for v in s.values.values()]
         res.rationale, res.confidence = s.rationale, float(s.confidence)
         values = ", ".join(f"{k}={v:g}" for k, v in s.values.items())
         log = self.get_logger().info if s.source == "llm" else self.get_logger().warn

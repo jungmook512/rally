@@ -4,10 +4,12 @@ import time
 
 import pytest
 
-from rally_brain.llm_advisor import Advisor, ParamSpec, load_prompt, tool_schema
+from rally_brain.config import load_skills
+from rally_brain.llm_advisor import Advisor, Limit, ParamSpec, load_prompt, tool_schema, tunable_limits
 from rally_interfaces.msg import TrialResult
 
 SPECS = [ParamSpec("push_speed", 0.05, 0.35), ParamSpec("lane", 0.0, 2.0)]
+LIMITS = {1: {"push_speed": Limit(0.05, 0.35), "lane": Limit(0.0, 2.0)}}   # 테스트용 허용 목록 (실제는 skills.yaml)
 
 
 def trial(speed=0.2, lane=1.0, success=False, error=80.0, idx=1):
@@ -31,7 +33,7 @@ def advisor(reply=None, delay=0.0, raises=None, timeout=0.3):
             raise raises
         return reply
 
-    return Advisor(llm, "시스템 프롬프트", timeout_s=timeout), sent
+    return Advisor(llm, "시스템 프롬프트", LIMITS, timeout_s=timeout), sent
 
 
 def ok_reply(**values):
@@ -62,12 +64,18 @@ def test_timeout_falls_back_to_last_values():
 
 
 @pytest.mark.parametrize("bad, why", [
-    ({"values": {"push_speed": "빠르게", "lane": 1}, "rationale": "x", "confidence": 0.5}, "스키마"),
+    ({"values": {"push_speed": "빠르게", "lane": 1}, "rationale": "x", "confidence": 0.5}, "숫자가 아님"),
+    ({"values": {"push_speed": "0.2", "lane": 1}, "rationale": "x", "confidence": 0.5}, "숫자가 아님"),
+    ({"values": {"push_speed": True, "lane": 1}, "rationale": "x", "confidence": 0.5}, "숫자가 아님"),
+    ({"values": {"push_speed": 0.2, "lane": 1}, "rationale": "x", "confidence": "0.5"}, "숫자가 아님"),
+    ({"values": {"push_speed": 0.2, "lane": 1}, "rationale": "x", "confidence": True}, "숫자가 아님"),
+    ({"values": {"push_speed": 0.2, "lane": 1}, "rationale": "x", "confidence": float("inf")}, "숫자가 아님"),
+    ({"values": {"push_speed": 0.2, "lane": 1}, "rationale": "가" * 81, "confidence": 0.5}, "스키마"),
     ({"values": {"push_speed": 0.2}, "rationale": "x", "confidence": 0.5}, "이름 불일치"),
     ({"values": {"push_speed": 0.2, "lane": 1, "stiffness": 9}, "rationale": "x", "confidence": 0.5}, "이름 불일치"),
     ({"values": {"push_speed": 0.2, "lane": 1}, "rationale": "x", "confidence": 3}, "스키마"),
-    ({"values": {"push_speed": float("nan"), "lane": 1}, "rationale": "x", "confidence": 0.5}, "NaN"),
-    ("그냥 글", "스키마"),
+    ({"values": {"push_speed": float("nan"), "lane": 1}, "rationale": "x", "confidence": 0.5}, "숫자가 아님"),
+    ("그냥 글", "객체가 아님"),
 ])
 def test_bad_reply_falls_back(bad, why):
     a, _ = advisor(bad)
@@ -81,14 +89,14 @@ def test_errors_fall_back():
         a, _ = advisor(raises=exc)
         s = a.suggest(1, HISTORY, SPECS)
         assert s.source == "fallback" and why in s.note
-    s = Advisor(None, "p").suggest(1, HISTORY, SPECS)
+    s = Advisor(None, "p", LIMITS).suggest(1, HISTORY, SPECS)
     assert s.source == "fallback" and s.note == "LLM 없음"
 
 
 def test_fallback_without_history_is_mid_range_and_last_value_is_clamped():
-    s = Advisor(None, "p").suggest(1, [], SPECS)
+    s = Advisor(None, "p", LIMITS).suggest(1, [], SPECS)
     assert s.values == {"push_speed": pytest.approx(0.2), "lane": 1.0}
-    s = Advisor(None, "p").suggest(1, [trial(speed=0.99)], SPECS)
+    s = Advisor(None, "p", LIMITS).suggest(1, [trial(speed=0.99)], SPECS)
     assert s.values["push_speed"] == 0.35
 
 
@@ -106,9 +114,9 @@ def test_only_whitelisted_fields_are_sent():
 
 def test_bad_specs_are_rejected():
     with pytest.raises(ValueError):
-        Advisor(None, "p").suggest(1, [], [ParamSpec("a", 1.0, 0.0)])
+        Advisor(None, "p", LIMITS).suggest(1, [], [ParamSpec("a", 1.0, 0.0)])
     with pytest.raises(ValueError):
-        Advisor(None, "p").suggest(1, [], [ParamSpec("a", 0, 1), ParamSpec("a", 0, 1)])
+        Advisor(None, "p", LIMITS).suggest(1, [], [ParamSpec("a", 0, 1), ParamSpec("a", 0, 1)])
 
 
 def test_schema_and_prompt():
@@ -116,3 +124,50 @@ def test_schema_and_prompt():
     assert schema["properties"]["values"]["required"] == ["push_speed", "lane"]
     assert schema["properties"]["values"]["properties"]["push_speed"]["maximum"] == 0.35
     assert "suggest_params" in load_prompt("prompts/suggest_params.md")
+
+
+def test_real_tunable_list_from_skills_yaml():
+    limits = tunable_limits(load_skills())
+    assert limits[1]["push_speed"] == Limit(0.05, 0.35)
+    assert limits[7]["target_force_n"].default == 5.0          # mode7.target_force_start_n
+    assert 3 not in limits                                      # 모드 3 은 LLM 조절 금지
+
+
+@pytest.mark.parametrize("mode, spec", [
+    (3, ParamSpec("catch_radius", 0.0, 1.0)),        # 조절 금지 값 (#62 리뷰 1 재현)
+    (1, ParamSpec("stiffness", 0.0, 9999.0)),        # 다른 모드의 값
+])
+def test_not_tunable_is_rejected_before_asking(mode, spec):
+    a, sent = advisor(ok_reply())
+    with pytest.raises(ValueError, match="조절할 수 없음"):
+        a.suggest(mode, [], [spec])
+    assert sent == {}                                 # LLM 에 묻지도 않는다
+
+
+def test_request_range_is_narrowed_to_skills_yaml():
+    # 호출자가 범위를 넓혀 보내도 skills.yaml 범위로 잘린다
+    a, sent = advisor({"values": {"push_speed": 0.9}, "rationale": "빠르게", "confidence": 0.5})
+    s = a.suggest(1, [], [ParamSpec("push_speed", 0.0, 5.0)])
+    assert sent["request"]["params"] == {"push_speed": [0.05, 0.35]}
+    assert s.values == {"push_speed": 0.35}
+    a, _ = advisor(ok_reply())
+    with pytest.raises(ValueError, match="안 겹침"):
+        a.suggest(1, [], [ParamSpec("push_speed", 0.5, 0.9)])
+
+
+def test_fallback_uses_default_ref_without_history():
+    limits = tunable_limits(load_skills())
+    s = Advisor(None, "p", limits).suggest(7, [], [ParamSpec("target_force_n", 0.0, 100.0)])
+    assert s.values == {"target_force_n": 5.0}
+
+
+@pytest.mark.parametrize("word", ["그만", "멈춰", "아프", "위험"])
+def test_rationale_with_stop_word_is_dropped(word):
+    a, _ = advisor({"values": {"push_speed": 0.2, "lane": 1}, "rationale": f"{word} 하면 좋겠어요", "confidence": 0.5})
+    s = a.suggest(1, HISTORY, SPECS)
+    assert s.source == "llm" and s.values["push_speed"] == 0.2      # 값은 쓰고
+    assert s.rationale == "" and "비상어" in s.note                   # 문장만 버림
+
+
+def test_prompt_and_code_agree_on_length():
+    assert "80자" in load_prompt("prompts/suggest_params.md")
