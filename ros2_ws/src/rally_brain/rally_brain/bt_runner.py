@@ -10,7 +10,8 @@
 
 세션 시작 조건: readiness.yaml 의 session 그룹(안전·로봇·인식·음성)이 준비돼야 goal 을 받는다 (NFR-08).
   가짜 스킬 서버로 흐름만 볼 때는 check_readiness:=false.
-세션 중단: 안전 STOP (상황판 기준) → abort / 취소 요청 → canceled. 둘 다 진행 중인 스킬 goal 도 취소한다.
+세션 중단: 안전 STOP (상황판 기준) 또는 상황판이 context_timeout_s(기본 1 s) 넘게 안 옴 → abort / 취소 요청 → canceled.
+  모두 진행 중인 스킬 goal 도 취소한다. (실제 정지는 로봇 쪽 safety_monitor 가 따로 한다)
 트리는 execute 콜백 안에서 tick_hz(기본 10 Hz)로 돈다. 스킬 action 은 비동기라 tick 이 막히지 않는다.
 시도가 기록될 때마다 rule_layer 가 다음 행동을 고른다 (/rally/voice/intent 의 tired·harder·easier 도 여기서 소비).
   harder/easier → 모드별 난이도 단계만 바꾼다 (값 반영은 각 모드 서브트리). suggest_rest → 지금은 로그만 (TTS 노드 전).
@@ -62,14 +63,17 @@ class BtRunner(Node):
         self.declare_parameter("check_readiness", True)
         self.declare_parameter("trials_per_mode", 5)
         self.declare_parameter("tick_hz", 10.0)
+        self.declare_parameter("context_timeout_s", 1.0)
         self.check_readiness = bool(self.get_parameter("check_readiness").value)
         self.tick_period = 1.0 / float(self.get_parameter("tick_hz").value)
+        self.context_timeout_s = float(self.get_parameter("context_timeout_s").value)
 
         self.readiness = ReadinessChecker(self, ["session"]) if self.check_readiness else None
         self.session_ready = not self.check_readiness
         self._last_missing: list[str] | None = None
         self._context: SceneContext | None = None
-        self._tree: py_trees.trees.BehaviourTree | None = None
+        self._context_rx = 0.0          # 마지막 상황판 수신 시각 (monotonic)
+        self._state_name = "idle"       # tick 스레드에서만 갱신, 타이머는 읽기만
         self._busy = threading.Lock()   # 세션은 한 번에 하나
         self._skill_clients: dict[str, ActionClient] = {}
         self._client_group = ReentrantCallbackGroup()
@@ -95,6 +99,11 @@ class BtRunner(Node):
     # ---------- 상태 ----------
     def _on_context(self, msg: SceneContext) -> None:
         self._context = msg
+        self._context_rx = time.monotonic()
+
+    def _context_stale(self, since: float) -> bool:
+        """상황판이 context_timeout_s 넘게 안 왔으면 True. since = 세션 시작 (그 전 수신은 인정)."""
+        return time.monotonic() - max(self._context_rx, since) > self.context_timeout_s
 
     def _on_intent(self, msg: VoiceIntent) -> None:
         # 상황판의 last_intent 는 3 s 만 남아 시도 끝까지 못 버틴다 → 규칙용 intent 는 다음 판단까지 들고 있는다
@@ -129,9 +138,7 @@ class BtRunner(Node):
             self._last_missing = missing
 
     def _publish_state(self) -> None:
-        tree = self._tree
-        tip = tree.tip() if tree is not None else None
-        self._state_pub.publish(String(data=tip.name if tip is not None else "idle"))
+        self._state_pub.publish(String(data=self._state_name))
 
     def _action_client(self, action_type: type, name: str) -> ActionClient:
         if name not in self._skill_clients:
@@ -160,7 +167,7 @@ class BtRunner(Node):
                           publish=self._trial_pub.publish, action_client=self._action_client,
                           after_trial=self._after_trial)
         tree = py_trees.trees.BehaviourTree(build_session_tree(session, modes, n))
-        self._tree = tree
+        started = time.monotonic()
         self.get_logger().info(f"세션 시작 {session.session_id[:8]} — 모드 {modes}, 모드마다 {n}회")
 
         outcome = "aborted"
@@ -172,11 +179,17 @@ class BtRunner(Node):
                     outcome = "canceled"
                     break
                 ctx = self._context
+                if self._context_stale(started):
+                    tree.root.stop(py_trees.common.Status.INVALID)   # 실행 중 블록 terminate → 스킬 goal 취소
+                    self.get_logger().error(f"/rally/brain/context 가 {self.context_timeout_s} s 넘게 안 옴 — 세션 중단")
+                    break
                 if ctx is not None and ctx.safety.level == SafetyStatus.LEVEL_STOP:
                     tree.root.stop(py_trees.common.Status.INVALID)   # 실행 중 블록 terminate → 스킬 goal 취소
                     self.get_logger().warn(f"안전 정지({ctx.safety.reason}) — 세션 중단")
                     break
                 tree.tick()
+                tip = tree.tip()
+                self._state_name = tip.name if tip is not None else "idle"
                 status = tree.root.status
                 if status == py_trees.common.Status.SUCCESS:
                     outcome = "succeeded"
@@ -189,7 +202,7 @@ class BtRunner(Node):
                     last_feedback = time.monotonic()
                 time.sleep(self.tick_period)
         finally:
-            self._tree = None
+            self._state_name = "idle"
 
         getattr(goal_handle, {"succeeded": "succeed", "canceled": "canceled", "aborted": "abort"}[outcome])()
         result = RunSession.Result(session_id=session.session_id, total_trials=len(session.trials),
