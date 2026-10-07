@@ -24,7 +24,7 @@
 - [ ] `trees/mode5_handover.py` (가짜 action 서버로 흐름 검증)
 - [x] `recorder_node.py`: `TrialResult` → `trials`, `WrenchStamped` → `ts_wrench`, `HandState` → `ts_hand`, 이벤트 → `events`
 - [x] Redis `rally:state` 갱신, `rally:events` publish (+ `rally:dialog`)
-- [ ] **Ontology** `rally_brain/knowledge/ontology.yaml` 초안: 모드 → 훈련 동작 → 신체 부위, 보상 동작 → 피로 신호, 스킬 → 파라미터·허용 범위 (기획서 4.10, 필수 · 활용 방식 TBD)
+- [x] **Ontology** `rally_brain/knowledge/ontology.yaml` 초안: 모드 → 훈련 동작 → 신체 부위, 보상 동작 → 피로 신호, 스킬 → 파라미터·허용 범위 (기획서 4.10, 필수 · 활용 방식 TBD) → 재활 해석은 `verified: false`(가정) 표시, 범위는 skills.yaml 참조만. `ontology.py` 로 LLM 맥락 문장·한국어 이름
 
 ## Day 3 — 모드 5 통합 ✅
 - [ ] 모드 5 서브트리를 실제 skill 서버에 연결, 실패 분기(손 결측 → 대기, 파지 실패 → 재시도 1회)
