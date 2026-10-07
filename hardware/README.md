@@ -9,3 +9,13 @@
 | `pad_holder/` | 로봇이 받은 패드를 걸어두는 거치대. 그 위에서 `DetachBall`(공 떼기) | 정동휘 | Day 4 (10/9) |
 
 각 폴더 README 에 적을 것: 주요 치수, 재료·출력 설정, 조립 방법, 바꾼 이유(버전마다 한 줄).
+
+## 지금 들어 있는 파일 (10/7)
+| 폴더 | 파일 | 형식 |
+|---|---|---|
+| `pad_handle/` | `패드손잡이.stp` | STEP (다른 CAD 에서 열기용) |
+| `pad_handle/` | `패드 그리퍼 연계.ipt` | Inventor 원본 |
+| `pad_holder/` | `패드 거치대.ipt` | Inventor 원본 |
+| `pad_holder/` | `패드 거치대.stp` | STEP |
+
+출력용 STL 은 아직 없음 (출력할 때 추가).

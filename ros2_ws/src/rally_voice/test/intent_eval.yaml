@@ -1,0 +1,43 @@
+# 의도 분류 평가 세트 — scripts/eval_intent.py 가 읽는다.
+# 프롬프트의 예시(intent_llm.FEW_SHOT)와 겹치지 않게 따로 만든다 (겹치면 점수가 부풀려짐).
+# 받아쓰기 오류(STT 가 틀리게 적은 글자)도 섞었다. mode 는 훈련 이름이 나올 때만.
+- {text: "자 이제 운동 시작해 볼까요", intent: start_session}
+- {text: "준비됐어요 시작해 주세요", intent: start_session}
+- {text: "오늘은 공 굴리는 것부터 할래요", intent: start_session, mode: "1"}
+- {text: "시작은 했는데 좀 힘드네요", intent: tired}
+- {text: "어휴 숨차다", intent: tired}
+- {text: "팔에 힘이 하나도 없어요", intent: tired}
+- {text: "어깨가 좀 결리네", intent: tired}
+- {text: "잠깐 물 좀 마시고 올게요", intent: pause}
+- {text: "화장실 좀 다녀올게요", intent: pause}
+- {text: "숨 좀 돌리고 할게요", intent: pause}
+- {text: "자 다시 해볼게요", intent: resume}
+- {text: "이제 괜찮아요 계속해요", intent: resume}
+- {text: "이건 됐고 다른 거 해요", intent: next_mode}
+- {text: "이제 던지는 거 하고 싶어요", intent: next_mode, mode: "3"}
+- {text: "팔시름 해보자", intent: next_mode, mode: "7"}
+- {text: "컵 주고받는 거 해요", intent: next_mode, mode: "5"}
+- {text: "공 굴려 주는 걸로 바꿔줘", intent: next_mode, mode: "1"}
+- {text: "캐치 볼 할래요", intent: next_mode, mode: "3"}
+- {text: "이거 너무 시시한데", intent: harder}
+- {text: "좀 더 멀리 굴려 주세요", intent: harder}
+- {text: "할 만해요 더 세게 해도 돼요", intent: harder}
+- {text: "너무 빨라서 못 따라가겠어요", intent: easier}
+- {text: "조금만 살살 해주세요", intent: easier}
+- {text: "공이 너무 멀어요", intent: easier}
+- {text: "방금 뭐라고 하셨어요", intent: repeat}
+- {text: "잘 못 들었어요", intent: repeat}
+- {text: "다시 한 번 설명해 주세요", intent: repeat}
+- {text: "그 만 해", intent: stop}
+- {text: "멈 춰", intent: stop}
+- {text: "아야 아파", intent: stop}
+- {text: "이제 그만할게요 오늘은 끝", intent: stop}
+- {text: "로봇아 스톱", intent: stop}
+- {text: "오늘 날씨 진짜 좋다", intent: unknown}
+- {text: "선생님 저 내일도 와요?", intent: unknown}
+- {text: "음 어 그러니까", intent: unknown}
+- {text: "이 로봇 이름이 뭐예요", intent: unknown}
+- {text: "배고프다", intent: unknown}
+- {text: "할머니 오늘 잘하시네요", intent: unknown}
+- {text: "다음 주에 봬요", intent: unknown}
+- {text: "시작 버튼은 어디 있어요", intent: unknown}
