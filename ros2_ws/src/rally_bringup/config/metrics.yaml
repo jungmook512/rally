@@ -37,6 +37,6 @@ metrics:
   fatigue_score:
     label: 피로도
     description: >
-      걸린 피로 신호(ontology.yaml fatigue_signals)의 강도 가중치 합, 1 로 자름 (0~1).
-      대시보드·리포트 표시용. 휴식 결정은 규칙 레이어가 신호로 직접 한다
-    weights: {strong: 1.0, medium: 0.5, weak: 0.25}
+      걸린 신호의 가중치 합, 1 로 자름 (0~1). 대시보드·리포트 표시용 지표일 뿐 —
+      휴식 결정은 규칙 레이어가 계기(cue)로 직접 한다. 가중치는 표시용 약속이지 임상 근거가 아니다
+    weights: {voice_tired: 1.0, compensation: 0.5, success_drop: 0.25, slowing: 0.25}

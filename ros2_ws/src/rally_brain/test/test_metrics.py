@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 
 from rally_brain import metrics
-from rally_brain.knowledge import ontology
 from rally_interfaces.msg import TrialResult
 
 SQL = Path(__file__).resolve().parents[2] / "rally_db" / "rally_db" / "schema_003_metrics.sql"
@@ -66,10 +65,10 @@ def test_key_value_from_metric():
 
 
 def test_fatigue_score():
-    onto = ontology.load()
-    assert metrics.fatigue_score([], onto) == 0.0
-    assert metrics.fatigue_score(["success_drop", "slowing"], onto) == pytest.approx(0.5)
-    assert metrics.fatigue_score(["voice_tired", "compensation_repeated"], onto) == 1.0
+    assert metrics.fatigue_score([]) == 0.0
+    assert metrics.fatigue_score(["success_drop", "slowing"]) == pytest.approx(0.5)
+    assert metrics.fatigue_score(["voice_tired", "compensation"]) == 1.0
+    assert metrics.fatigue_score(["unknown"]) == 0.0
 
 
 def test_sql_matches_yaml():

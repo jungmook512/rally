@@ -2,17 +2,21 @@
 담당: 조정묵
 
 판단 순서는 규칙 → LLM (rally_brain/CLAUDE.md). 답이 분명하면 여기서 끝내고, 애매하면 ask_llm 으로 넘긴다.
-행동은 skills.yaml brain.actions 안에서만 고른다. 위에서부터 처음 걸리는 규칙 하나:
+규칙은 "어떤 계기가 일어났나"(cue)만 정하고, 그 계기에 맞는 행동은 ontology 그래프(Cue —triggers→ Action)에서 찾는다.
+단 안전 STOP 은 코드에 wait 로 고정한다 — 데이터 파일을 고쳐서 안전 판단이 바뀌면 안 된다 (#60 리뷰 1, CLAUDE.md 4절).
+행동은 skills.yaml brain.actions 안에서만 고른다. 위에서부터 처음 걸리는 계기 하나:
 
-  1. 안전 STOP                                  → wait
-  2. 음성 "힘들어"(tired, 강한 피로 신호)          → suggest_rest
-  3. 음성 harder / easier                        → harder / easier
-  4. 같은 모드 success_streak 연속 성공            → harder
-  5. 같은 모드 failure_streak 연속 실패            → easier
-  6. 약한·중간 피로 신호 llm_signal_count 개 이상   → ask_llm   (신호 강도는 ontology.yaml fatigue_signals)
+  1. 안전 STOP                                  → wait (코드 고정, 그래프는 이름에만)
+  2. 음성 "힘들어"                               cue tired            → (그래프) suggest_rest
+  3. 음성 harder / easier                        cue harder / easier  → (그래프) harder / easier
+  4. 같은 모드 success_streak 연속 성공            cue success_streak   → (그래프) harder
+  5. 같은 모드 failure_streak 연속 실패            cue failure_streak   → (그래프) easier
+  6. 애매한 신호 llm_signal_count 개 이상          → ask_llm (규칙으로 정하지 않음)
+     (보상 동작 감지 · 성공률 하락 · 시도 시간 증가 — 각각은 근거가 약해 혼자서는 행동을 정하지 않는다)
   7. 그 외                                       → continue
 
 연속 횟수는 그 모드의 난이도가 마지막으로 바뀐 뒤의 시도만 센다 (호출하는 쪽이 잘라서 넘김).
+그래프는 bt_runner 가 켜질 때 check_graph 로 미리 검사한다 — 문제가 있으면 노드가 뜨지 않는다 (세션 도중 예외 방지).
 안전 SLOW 는 다루지 않는다 — skill_server 가 speed_override 로 이미 낮춘다 (기획서 5.3).
 """
 from __future__ import annotations
@@ -35,17 +39,35 @@ DEFAULTS: dict[str, Any] = {
     "difficulty_range": [-3, 3],
 }
 MIN_TRIALS_FOR_TREND = 3
+GRAPH_CUES = ("tired", "harder", "easier", "success_streak", "failure_streak")   # 행동을 그래프에서 찾는 계기
 
 
 @dataclass(frozen=True)
 class Decision:
     action: str
     reason: str                                 # 한 줄, 로그·대시보드·TTS 용
-    signals: tuple[str, ...] = field(default=())  # 걸린 피로 신호 (ontology fatigue_signals 키)
+    signals: tuple[str, ...] = field(default=())  # 걸린 신호 (voice_tired · SIGNAL_LABELS 키)
 
 
 def rule_config(skills_cfg: dict[str, Any]) -> dict[str, Any]:
     return {**DEFAULTS, **(skills_cfg.get("brain") or {})}
+
+
+def check_graph(cfg: dict[str, Any], graph=None) -> list[str]:
+    """규칙 레이어가 쓸 그래프 검사. 문제 목록 (빈 목록이면 정상). bt_runner 가 시작할 때 부른다.
+    ontology.validate() + GRAPH_CUES 마다 행동이 있고 그 행동이 skills.yaml brain.actions 안에 있는지."""
+    try:
+        graph = graph if graph is not None else ontology.load()
+    except Exception as e:  # noqa: BLE001 — 파일 없음·깨짐
+        return [f"ontology 를 읽지 못함: {e}"]
+    problems = ontology.validate(graph)
+    for cue in GRAPH_CUES:
+        action = ontology.action_for_cue(cue, graph)
+        if action is None:
+            problems.append(f"계기 {cue!r} → 행동 연결 없음")
+        elif action not in cfg["actions"]:
+            problems.append(f"계기 {cue!r} → {action!r} 는 skills.yaml brain.actions 에 없음")
+    return problems
 
 
 def tail_streak(trials: Sequence[TrialResult], success: bool) -> int:
@@ -61,11 +83,14 @@ def tail_streak(trials: Sequence[TrialResult], success: bool) -> int:
     return n
 
 
+SIGNAL_LABELS = {"compensation": "보상 동작", "success_drop": "성공률 하락", "slowing": "시도 시간 증가"}
+
+
 def fatigue_signals(ctx: SceneContext | None, trials: Sequence[TrialResult], cfg: dict[str, Any]) -> list[str]:
-    """음성 tired 를 뺀 피로 신호들 (ontology.yaml fatigue_signals 키)."""
+    """애매한 신호들 (SIGNAL_LABELS 키). 음성 tired 는 여기 없음 — 그건 확실한 계기라 규칙 2."""
     signals = []
     if ctx is not None and ctx.body.compensation_detected:
-        signals.append("compensation_repeated")   # 1차: 지금 보이면. TODO: 최근 시도 중 반복 횟수로
+        signals.append("compensation")   # 1차: 지금 보이면. TODO: 최근 시도 중 반복 횟수로
     if len(trials) >= MIN_TRIALS_FOR_TREND:
         if metrics.success_rate(trials) <= cfg["success_drop_rate"]:   # 성공률 정의는 metrics.yaml 한 곳
             signals.append("success_drop")
@@ -76,31 +101,34 @@ def fatigue_signals(ctx: SceneContext | None, trials: Sequence[TrialResult], cfg
 
 
 def decide(ctx: SceneContext | None, trials: Sequence[TrialResult], intent: str | None,
-           cfg: dict[str, Any], onto: dict[str, Any] | None = None) -> Decision:
+           cfg: dict[str, Any], graph=None) -> Decision:
     """trials: 이번 세션에서 이 모드의 난이도가 마지막으로 바뀐 뒤의 시도. intent: 아직 처리 안 한 음성 intent."""
-    onto = onto or ontology.load()
+    graph = graph or ontology.load()
 
     def make(action: str, reason: str, signals: Sequence[str] = ()) -> Decision:
         if action not in cfg["actions"]:
             raise ValueError(f"skills.yaml brain.actions 에 없는 행동: {action}")
         return Decision(action, reason, tuple(signals))
 
+    def from_cue(cue: str, why: str, signals: Sequence[str] = ()) -> Decision:
+        action = ontology.action_for_cue(cue, graph)
+        if action is None:
+            raise ValueError(f"ontology 에 계기 {cue!r} → 행동 연결이 없음")
+        return make(action, f"{why} → {ontology.label(action, graph)}", signals)
+
     if ctx is not None and ctx.safety.level == SafetyStatus.LEVEL_STOP:
-        return make("wait", f"안전 정지({ctx.safety.reason or '사유 없음'}) → 대기")
-    if intent == "tired":
-        return make("suggest_rest", '"힘들어" 음성 → 휴식 제안', ["voice_tired"])
-    if intent in ("harder", "easier"):
-        return make(intent, f"음성 요청 → {'어렵게' if intent == 'harder' else '쉽게'}")
+        return make("wait", f"안전 정지({ctx.safety.reason or '사유 없음'}) → {ontology.label('wait', graph)}")
+    if intent in ("tired", "harder", "easier"):
+        return from_cue(intent, f"{ontology.label(intent, graph)}", ["voice_tired"] if intent == "tired" else [])
     if (n := tail_streak(trials, True)) >= cfg["success_streak"]:
-        return make("harder", f"{n}연속 성공 → 난이도 올림")
+        return from_cue("success_streak", f"{n}연속 성공")
     if (n := tail_streak(trials, False)) >= cfg["failure_streak"]:
-        return make("easier", f"{n}연속 실패 → 난이도 내림")
+        return from_cue("failure_streak", f"{n}연속 실패")
 
     signals = fatigue_signals(ctx, trials, cfg)
-    weak = [s for s in signals if onto["fatigue_signals"][s]["strength"] in ("medium", "weak")]
-    if len(weak) >= cfg["llm_signal_count"]:
-        names = ", ".join(ontology.label("fatigue_signals", s, onto) for s in weak)
-        return make("ask_llm", f"애매한 피로 신호 {len(weak)}개({names}) → LLM 판단", weak)
+    if len(signals) >= cfg["llm_signal_count"]:
+        names = ", ".join(SIGNAL_LABELS[s] for s in signals)
+        return make("ask_llm", f"애매한 신호 {len(signals)}개({names}) → LLM 판단", signals)
     return make("continue", "특이 사항 없음 → 계속", signals)
 
 

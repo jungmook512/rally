@@ -15,7 +15,8 @@
 신선도는 수신 시각(이 노드 시계) 기준이다. header.stamp 는 PC 간 시계 차가 있어 그대로 넘기기만 한다.
 session_id · mode · trial_index 는 마지막 TrialResult 에서 가져온다 — bt_runner 가 생기면 그쪽 상태로 바꾼다.
 recent_success_rate 는 마지막 시도와 같은 모드만으로 metrics.success_rate (metrics.yaml — 규칙 레이어와 같은 정의).
-fatigue_score 는 rule_layer 추정이 생기기 전까지 0. robot_state 는 STOP 이면 STOPPED, 아니면 IDLE
+fatigue_score 는 같은 모드 최근 시도로 rule_layer.fatigue_signals (+ 음성 tired) → metrics.fatigue_score (0~1, 표시용).
+  규칙 레이어는 난이도가 바뀐 뒤의 시도만 보므로 신호가 조금 다를 수 있다 — 휴식 결정은 규칙 레이어가 한다. robot_state 는 STOP 이면 STOPPED, 아니면 IDLE
 (스킬 실행 상태 토픽이 아직 없다).
 """
 from __future__ import annotations
@@ -26,7 +27,8 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 
-from rally_brain import metrics
+from rally_brain import metrics, rule_layer
+from rally_brain.config import load_skills
 from rally_interfaces.msg import (
     BodyPose,
     HandState,
@@ -70,6 +72,7 @@ class ContextBuilder(Node):
         self.stale_s = float(p("stale_s").value)
         self.stale_safety_s = float(p("stale_safety_s").value)
         self.intent_hold_s = float(p("intent_hold_s").value)
+        self._rule_cfg = rule_layer.rule_config(load_skills())
 
         # (메시지, 수신 시각 ns)
         self._safety: tuple[SafetyStatus, int] | None = None
@@ -137,14 +140,17 @@ class ContextBuilder(Node):
         ctx.last_intent = self._fresh(self._intent, self.intent_hold_s, now_ns) or VoiceIntent()
 
         ctx.recent_trials = list(self._trials)
-        ctx.recent_success_rate = (metrics.success_rate([t for t in self._trials if t.mode == self._trials[-1].mode])
-                                   if self._trials else 0.0)
+        same_mode = [t for t in self._trials if t.mode == self._trials[-1].mode] if self._trials else []
+        ctx.recent_success_rate = metrics.success_rate(same_mode)
         if self._trials:
             last = self._trials[-1]
             ctx.session_id = last.session_id
             ctx.mode = last.mode
             ctx.trial_index = last.trial_index
-        ctx.fatigue_score = 0.0
+        signals = rule_layer.fatigue_signals(ctx, metrics.counted(same_mode), self._rule_cfg)
+        if ctx.last_intent.intent == "tired":
+            signals.append("voice_tired")
+        ctx.fatigue_score = metrics.fatigue_score(signals)
         return ctx
 
     def _publish(self) -> None:
