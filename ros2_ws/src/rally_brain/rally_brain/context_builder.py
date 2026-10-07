@@ -6,7 +6,8 @@
   /rally/perception/hand    BestEffort  최신 1개 (stale_s 넘으면 빈 메시지 = detected False)
   /rally/perception/body    BestEffort  최신 1개 (stale_s 넘으면 빈 메시지)
   /rally/perception/objects BestEffort  최신 1개 (stale_s 넘으면 빈 배열)
-  /rally/voice/intent       Reliable    마지막 1개를 intent_hold_s 동안만 싣는다 (같은 발화는 header.stamp 로 중복 판별)
+  /rally/voice/intent       Reliable    마지막 1개를 intent_hold_s 동안만 싣는다 (같은 발화 = 같은 header.stamp 는 다시 와도 유지 시간을 늘리지 않음.
+                                        5 Hz 로 같은 last_intent 가 여러 번 실리므로 받는 쪽은 header.stamp 로 한 번만 처리)
   /rally/brain/trial_result Reliable    최근 recent_n 개 (session_id 가 바뀌면 비움)
 발행
   /rally/brain/context      BestEffort  rate_hz (기본 5 Hz)
@@ -51,6 +52,14 @@ def success_rate(trials: Iterable) -> float:
     return sum(1 for t in trials if t.success) / len(trials)
 
 
+def same_utterance(a: VoiceIntent, b: VoiceIntent) -> bool:
+    """header.stamp 가 같으면 같은 발화. stamp 가 비어 있으면(0) 판별하지 않는다."""
+    sa, sb = a.header.stamp, b.header.stamp
+    if sa.sec == 0 and sa.nanosec == 0:
+        return False
+    return (sa.sec, sa.nanosec) == (sb.sec, sb.nanosec)
+
+
 def robot_state_for(safety_level: int) -> int:
     return SceneContext.ROBOT_STOPPED if safety_level == SafetyStatus.LEVEL_STOP else SceneContext.ROBOT_IDLE
 
@@ -84,7 +93,7 @@ class ContextBuilder(Node):
         self.create_subscription(BodyPose, "/rally/perception/body", self._keep("_body"), qos_profile_sensor_data)
         self.create_subscription(
             TrackedObjectArray, "/rally/perception/objects", self._keep("_objects"), qos_profile_sensor_data)
-        self.create_subscription(VoiceIntent, "/rally/voice/intent", self._keep("_intent"), reliable)
+        self.create_subscription(VoiceIntent, "/rally/voice/intent", self._on_intent, reliable)
         self.create_subscription(TrialResult, "/rally/brain/trial_result", self._on_trial, reliable)
         self._pub = self.create_publisher(SceneContext, "/rally/brain/context", qos_profile_sensor_data)
         self.create_timer(1.0 / self.rate_hz, self._publish)
@@ -99,6 +108,12 @@ class ContextBuilder(Node):
         def callback(msg) -> None:
             setattr(self, attr, (msg, self._now_ns()))
         return callback
+
+    def _on_intent(self, msg: VoiceIntent) -> None:
+        """같은 발화(header.stamp 가 같은 메시지)가 다시 오면 무시한다 — intent_hold_s 유지 시간을 다시 늘리지 않는다."""
+        if self._intent is not None and same_utterance(self._intent[0], msg):
+            return
+        self._intent = (msg, self._now_ns())
 
     def _on_trial(self, msg: TrialResult) -> None:
         if self._trials and self._trials[-1].session_id != msg.session_id:

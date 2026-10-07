@@ -4,7 +4,7 @@ from types import SimpleNamespace as NS
 import pytest
 import rclpy
 
-from rally_brain.context_builder import NO_SAFETY_REASON, ContextBuilder, is_fresh, success_rate
+from rally_brain.context_builder import NO_SAFETY_REASON, ContextBuilder, is_fresh, same_utterance, success_rate
 from rally_interfaces.msg import HandState, SafetyStatus, SceneContext, TrialResult, VoiceIntent
 
 
@@ -80,3 +80,25 @@ def test_new_session_clears_trials(node):
     ctx = node.build()
     assert [t.session_id for t in ctx.recent_trials] == ["s2"]
     assert ctx.recent_success_rate == 0.0
+
+
+def intent(text="tired", sec=100, nanosec=0):
+    m = VoiceIntent(intent=text)
+    m.header.stamp.sec, m.header.stamp.nanosec = sec, nanosec
+    return m
+
+
+def test_same_utterance():
+    assert same_utterance(intent(sec=100), intent(sec=100))
+    assert not same_utterance(intent(sec=100), intent(sec=101))
+    assert not same_utterance(intent(sec=0), intent(sec=0))      # stamp 없으면 판별 안 함
+
+
+def test_repeated_utterance_does_not_extend_hold(node):
+    node._on_intent(intent(sec=100))
+    first_received = node._intent[1]
+    node._intent = (node._intent[0], first_received - 10_000_000_000)   # 10 s 전에 받은 것으로
+    node._on_intent(intent(sec=100))                                    # 같은 발화 재수신
+    assert node.build().last_intent.intent == ""                        # 유지 시간이 다시 늘지 않음
+    node._on_intent(intent(text="stop_session", sec=105))               # 새 발화
+    assert node.build().last_intent.intent == "stop_session"
