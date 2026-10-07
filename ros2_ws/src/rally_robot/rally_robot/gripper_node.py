@@ -9,6 +9,8 @@
 - 연결 실패 시 onrobot.RG 는 조용히 '가상 그리퍼' 모드로 빠지므로 connected 를 직접 확인해 로그를 남긴다.
 TODO(정정인): 이동 중에도 명령을 받으려면 AsyncModbusTcpClient 로 교체 (지금은 wait_until_done 동안 서비스가 점유됨)
 """
+import os
+import sys
 import threading
 import time
 
@@ -110,7 +112,14 @@ class GripperNode(Node):
         self.pub.publish(msg)
 
 
+SIM_DOMAIN = "77"   # scripts/sim_robot.sh 의 시뮬 도메인 — 여기서 실제 그리퍼를 잡으면 시뮬 스킬이 실물 그리퍼를 움직인다
+
+
 def main(args=None):
+    if os.environ.get("RALLY_SIM") == "1" or os.environ.get("ROS_DOMAIN_ID") == SIM_DOMAIN:
+        print(f"[rally_gripper] 시뮬 환경(RALLY_SIM=1 또는 ROS_DOMAIN_ID={SIM_DOMAIN})에서는 실제 그리퍼 노드를 띄우지 않습니다. "
+              "새 터미널에서 source scripts/env_robot_pc.sh 후 다시 실행하세요 (시뮬은 scripts/sim_gripper.py).", file=sys.stderr)
+        return 2
     rclpy.init(args=args)
     node = GripperNode()
     ex = MultiThreadedExecutor(num_threads=2)

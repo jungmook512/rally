@@ -12,7 +12,7 @@ LOG=/tmp/rally_sim; mkdir -p $LOG
 
 sim_env() {
   RALLY_LOCAL=1 source "$ROOT/scripts/env_robot_pc.sh" >/dev/null
-  export ROS_DOMAIN_ID=$SIM_DOMAIN
+  export ROS_DOMAIN_ID=$SIM_DOMAIN RALLY_SIM=1     # RALLY_SIM=1 이면 실제 gripper_node 가 기동을 거부한다
   unset RALLY_FAKE
   echo "[sim] ROS_DOMAIN_ID=$ROS_DOMAIN_ID (실로봇은 다른 도메인)"
 }
