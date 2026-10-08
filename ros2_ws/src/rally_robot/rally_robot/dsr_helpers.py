@@ -199,6 +199,7 @@ def move_checked(node, pose6, vel, acc, timeout_s=None, poll_s=0.02, on_poll=Non
     if path:
         from DSR_ROBOT2 import amovesx
     logger = node.get_logger()
+    resent = False
     while True:
         if node.stop_requested():
             raise SkillAbort(node.safety_reason(), stopped=True)
@@ -254,6 +255,11 @@ def move_checked(node, pose6, vel, acc, timeout_s=None, poll_s=0.02, on_poll=Non
             if not started:
                 if now - t0 > START_GRACE_S:
                     stopped = stop_robot(node.dsr, logger, "출발 없음")      # 늦게 출발할 모션이 있으면 취소
+                    if not resent and stopped:                            # 10/8 실로봇: 순응 해제 직후 명령 유실 → 한 번은 다시 보낸다
+                        resent = True
+                        logger.warning(f"{START_GRACE_S:.0f} s 안에 움직임 없음 — 명령 유실로 보고 한 번 다시 보냄 (목표와 {pose_error(cur, pose6)[0]:.1f} mm)")
+                        time.sleep(COMPLIANCE_SETTLE_S)
+                        break
                     logger.error(f"{START_GRACE_S:.0f} s 안에 움직임 없음 — 컨트롤러가 명령을 무시/지연. 목표와 {pose_error(cur, pose6)[0]:.1f} mm")
                     raise SkillAbort("not_started", stopped=stopped)
                 continue
@@ -297,6 +303,8 @@ def move_chain(node, vias, final_pose, final_vel, final_acc, on_poll=None, stall
     comp_on = False
     try:
         for i, (pose, vel, acc, radius) in enumerate(vias):
+            if final_compliance is not None and i == len(vias) - 1:
+                radius = 0.0                                  # 순응을 켤 마지막 경유점에서는 블렌딩하지 않고 감속해 선다
             if node.stop_requested():
                 raise SkillAbort(node.safety_reason(), stopped=stop_robot(node.dsr, logger, "safety STOP"))
             scale = node.speed_scale()
@@ -316,14 +324,30 @@ def move_chain(node, vias, final_pose, final_vel, final_acc, on_poll=None, stall
             if on_via:
                 on_via(i)
         if final_compliance is not None:
-            from DSR_ROBOT2 import task_compliance_ctrl
+            # 10/8 실로봇: 이동 중에 순응을 켜면 그 직후 명령을 컨트롤러가 자주 버려 섰다 가는 덜컹이 났다 →
+            # 마지막 경유점에 멈춘 뒤 켜고 COMPLIANCE_SETTLE_S 기다렸다 마지막 구간을 보낸다 (≈0.5 s 의 의도된 멈춤)
+            from DSR_ROBOT2 import check_motion, task_compliance_ctrl
+            t_wait = time.monotonic()
+            while check_motion() != 0 and time.monotonic() - t_wait < 5.0:
+                time.sleep(0.02)
+                if node.stop_requested():
+                    raise SkillAbort(node.safety_reason(), stopped=stop_robot(node.dsr, logger, "safety STOP"))
             task_compliance_ctrl(list(final_compliance))
             comp_on = True
+            time.sleep(COMPLIANCE_SETTLE_S)
         how = move_checked(node, final_pose, final_vel, final_acc, on_poll=on_poll, stall_ok=stall_ok)
-        if how == "stalled" and vias and pose_error(get_current_posx()[0], vias[-1][0])[0] < 8.0:
-            logger.warning(f"[{tag}] 마지막 구간이 출발 못 하고 경유점에서 멈춤 — 접촉 아님, 다시 보냄")
-            time.sleep(0.2)
-            how = move_checked(node, final_pose, final_vel, final_acc, on_poll=on_poll, stall_ok=stall_ok)
+        # 순응을 켠 직후의 마지막 구간 명령을 컨트롤러가 버리면 로봇은 앞 구간 끝(경유점 블렌딩 반경 안)에서 선다 → 멈춤이 '접촉'으로 읽힌다.
+        # 마지막 경유점을 지나 마지막 구간을 거의 못 내려갔으면(경유점보다 목표에 5 mm 이상 가깝지 않으면) 접촉이 아니라 명령 유실 → 다시 보낸다.
+        # (10/8 실로봇: 경유점 위 약 18 mm, 목표 82 mm 앞에서 멈춰 공을 못 집음 — 예전 기준 '경유점 8 mm 안' 에 안 걸렸다)
+        if vias:
+            seg = pose_error(vias[-1][0], final_pose)[0]
+            for attempt in (1, 2):
+                if how != "stalled" or pose_error(get_current_posx()[0], final_pose)[0] < seg - 5.0:
+                    break
+                logger.warning(f"[{tag}] 마지막 구간을 못 내려가고 멈춤 (목표까지 {pose_error(get_current_posx()[0], final_pose)[0]:.0f} mm, "
+                               f"구간 {seg:.0f} mm) — 접촉 아님, 다시 보냄 {attempt}/2")
+                time.sleep(0.2)
+                how = move_checked(node, final_pose, final_vel, final_acc, on_poll=on_poll, stall_ok=stall_ok)
         return how
     except BaseException:
         if comp_on:
@@ -368,6 +392,49 @@ def movej_checked(node, posj6, vel, acc, timeout_s=30.0, poll_s=0.02):
             raise SkillAbort("timeout", stopped=stop_robot(node.dsr, logger, "관절 이동 시간 초과"))
 
 
+J3_ABS_MAX_DEG = 148.0       # 컨트롤러 J3 범위 ±150° (2026-10-08 에뮬레이터 알람 "JNT(3) POS LIMIT ... MAX(150.000)"), 여유 2°
+
+
+def ik_nearest(pose6, cur_posj, j5_max=None):
+    """posx → 8개 IK 해 중 지금 관절과 가장 가까운 해 (관절 차이 합 최소). J1·J4·J6 은 ±360° 중 가까운 쪽으로 감는다.
+    J3·J5 가 컨트롤러 범위(J3_ABS_MAX_DEG, calib_sweep.J5_ABS_MAX_DEG) 밖인 해는 버린다. 해가 없으면 None."""
+    from DSR_ROBOT2 import ikin
+    if j5_max is None:
+        from rally_robot.calib_sweep import J5_ABS_MAX_DEG as j5_max
+    cur = [float(v) for v in cur_posj]
+    best, best_cost = None, float("inf")
+    for sol in range(8):
+        try:
+            r = ikin([float(v) for v in pose6], sol)
+            q = [float(v) for v in (r[0] if isinstance(r, tuple) else r)]
+        except Exception:                                   # noqa: BLE001  도달 불가 해
+            continue
+        if len(q) != 6 or abs(q[2]) > J3_ABS_MAX_DEG or abs(q[4]) > j5_max:
+            continue
+        for j in (0, 3, 5):                                 # ±360 범위 관절: 지금 값에 가까운 쪽으로
+            while q[j] - cur[j] > 180.0 and q[j] - 360.0 >= -360.0:
+                q[j] -= 360.0
+            while cur[j] - q[j] > 180.0 and q[j] + 360.0 <= 360.0:
+                q[j] += 360.0
+        cost = sum(abs(a - b) for a, b in zip(q, cur))
+        if cost < best_cost:
+            best, best_cost = q, cost
+    return best
+
+
+def movej_to_pose(node, pose6, vel_deg_s, acc_deg_s2, timeout_s=30.0):
+    """posx 목표로 관절 이동 (ik_nearest → movej_checked). 툴 자세가 크게 바뀌는 이동(툴 아래 ↔ 수평)을 movel 로 하면
+    도중에 손목 특이점(J5≈0)을 지나 컨트롤러가 멈춘다 (2026-10-08 에뮬레이터, 모드 5 제시). 관절 공간에선 J5=0 을 지나도 된다.
+    fake(ikin 없음)면 move_checked 로 대신한다."""
+    import DSR_ROBOT2
+    if not hasattr(DSR_ROBOT2, "ikin"):
+        return move_checked(node, pose6, VELOCITY, ACC)
+    q = ik_nearest(pose6, DSR_ROBOT2.get_current_posj())
+    if q is None:
+        raise SkillAbort("ik_failed", stopped=True)
+    return movej_checked(node, q, vel_deg_s, acc_deg_s2, timeout_s=timeout_s)
+
+
 def controller_alive(node, timeout_s=2.0):
     """두산 motion 서비스(check_motion)가 timeout 안에 응답하는지. 컨트롤러 노드가 반쯤 멈추면(aux 는 답하고 motion 은 무응답) 여기서 걸린다.
     node 는 rclpy 노드(스핀 중이 아닌 것). 응답 없으면 False."""
@@ -387,6 +454,18 @@ def controller_alive(node, timeout_s=2.0):
         node.destroy_client(client)
 
 
+# 모든 스킬 공통 속도 — skills.yaml motion: 이 있으면 그 값. 실제 명령 = 이 값 × 안전 속도 배율(move_checked 안에서)
+MOTION_DEFAULTS = dict(move_vel_mm_s=150.0, move_acc_mm_s2=150.0, move_ang_vel_deg_s=90.0, move_ang_acc_deg_s2=180.0,
+                       contact_vel_mm_s=36.0, contact_acc_mm_s2=72.0, joint_vel_deg_s=60.0, joint_acc_deg_s2=120.0)
+
+
+def motion_speeds(node):
+    """skills.yaml motion: → (공중 이동 vel, acc, 접촉 하강 vel, acc, 관절 vel, acc). 공중 이동은 [직선 mm/s, 회전 deg/s] 짝."""
+    m = {**MOTION_DEFAULTS, **((getattr(node, "cfg", None) or {}).get("motion") or {})}
+    return ([m["move_vel_mm_s"], m["move_ang_vel_deg_s"]], [m["move_acc_mm_s2"], m["move_ang_acc_deg_s2"]],
+            m["contact_vel_mm_s"], m["contact_acc_mm_s2"], m["joint_vel_deg_s"], m["joint_acc_deg_s2"])
+
+
 COMPLIANCE_SETTLE_S = 0.3   # 10/7 실로봇: task_compliance_ctrl 직후 곧바로 amovel 을 보내면 알람 없이 무시된다 (0.1 s 만 기다려도 받음)
 
 
@@ -403,6 +482,7 @@ def compliance(stx, logger=None, settle_s=None):
     finally:
         try:
             release_compliance_ctrl()
+            time.sleep(COMPLIANCE_SETTLE_S)                  # 10/8 실로봇: 해제 직후 amovel(PickCompliant 들기)이 -1 로 거부됨
         except Exception as e:  # 해제 실패는 로그만 — 호출자의 예외를 덮지 않는다
             if logger:
                 logger.error(f"release_compliance_ctrl 실패: {e}")

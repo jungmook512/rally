@@ -31,7 +31,7 @@ from std_srvs.srv import Trigger
 from rally_interfaces.action import CatchBall, DetachBall, Handover, MoveTarget, PickCompliant, PushBall, ResistPush
 from rally_interfaces.msg import HandState, SafetyStatus, TrackedObjectArray
 from rally_interfaces.srv import GripperCommand
-from rally_robot.dsr_helpers import ACC, OBSERVE_POS, ROBOT_ID, VELOCITY, SkillAbort, init_dsr
+from rally_robot.dsr_helpers import OBSERVE_POS, ROBOT_ID, SkillAbort, init_dsr, motion_speeds
 
 CONTACT_HZ = 5.0
 CONFIG_FILES = ("skills.yaml", "table.yaml")
@@ -238,10 +238,32 @@ class SkillServer(Node):
             res.success, res.message = False, f"safety STOP ({self.safety_reason()})"
             return res
         posj = (self.cfg.get("observe_pose") or {}).get("posj") or OBSERVE_POS   # skills.yaml 티칭 값 우선
-        movej([float(v) for v in posj], vel=VELOCITY * self.speed_scale(), acc=ACC * self.speed_scale())
+        jv, ja = motion_speeds(self)[4:]                                          # skills.yaml motion: joint_vel_deg_s
+        movej([float(v) for v in posj], vel=jv * self.speed_scale(), acc=ja * self.speed_scale())
         mwait()
         res.success, res.message = True, f"observe pose {posj}"
         return res
+
+
+def _install_sim_force(node):
+    """시뮬 전용(RALLY_SIM=1, 에뮬레이터): 에뮬레이터에는 외력이 없으니 /rally/sim/external_force(Vector3, N, base)를
+    get_tool_force 에 더한다. scripts/sim_gripper.py 의 환자 흉내(당기기·밀어 넣기)가 발행. 실로봇 경로에는 안 들어간다."""
+    import DSR_ROBOT2
+    from geometry_msgs.msg import Vector3
+    ext = [0.0, 0.0, 0.0]
+
+    def on_force(m):
+        ext[:] = [m.x, m.y, m.z]
+
+    node.create_subscription(Vector3, "/rally/sim/external_force", on_force, 10)
+    orig = DSR_ROBOT2.get_tool_force
+
+    def get_tool_force(*a, **k):
+        f = list(orig(*a, **k))
+        return [f[0] + ext[0], f[1] + ext[1], f[2] + ext[2], *f[3:]]
+
+    DSR_ROBOT2.get_tool_force = get_tool_force
+    node.get_logger().warning("시뮬 모드: /rally/sim/external_force 를 툴 힘에 더함 (RALLY_SIM=1)")
 
 
 def main(args=None):
@@ -256,6 +278,8 @@ def main(args=None):
         dsr_node = init_dsr()                        # DR_init 먼저
     node = SkillServer(fake=fake)
     node.dsr = dsr_node
+    if not fake and os.environ.get("RALLY_SIM") == "1":
+        _install_sim_force(node)
     ex = MultiThreadedExecutor(num_threads=6)
     ex.add_node(node)
     if dsr_node is not None:

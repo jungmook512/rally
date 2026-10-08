@@ -2,7 +2,7 @@
 담당: 정정인 · 모드 공통 (모드 1 공 · 모드 5 막대/컵 · 모드 7 손잡이)
 
 단계 (feedback.phase)
-  approach : 그리퍼 열기(pick.open_mm) → 목표 위 approach_height_m 로 movel. yaw 는 툴 Z축 회전으로 반영
+  approach : 그리퍼 열기(pick.open_mm) → 목표 위 approach_height_m 로 관절 이동(IK 가장 가까운 해). yaw 는 툴 Z축 회전으로 반영
   descend  : 접촉 예정 플래그 ON → task_compliance_ctrl(Z 만 goal.z_stiffness) → 목표보다 below_target_m 아래를 향해 저속 하강,
              get_tool_force() 의 Z 변화가 pick.contact_force_n 이상이면 정지 (= 테이블/물체 접촉)
   contact  : 접촉 힘 기록
@@ -13,16 +13,16 @@ Z 처리
   (비전 깊이 Z 는 믿지 않는다 — 윗면/깊이 바이어스 문제. 어차피 접촉 감지가 Z 오차를 흡수한다). table.z_m 이 없으면 goal Z.
 공통 규칙
 - 매 단계 사이 node.check_stop(goal_handle) → STOP/취소면 SkillAbort → 순응 해제(컨텍스트) → abort. 이동은 move_checked.
-- 속도는 VELOCITY * speed_scale (move_checked 안에서). 하강은 그 30 %.
+- 속도는 skills.yaml motion: (접근 = 관절 이동, 하강 = contact, 들기 = move) × 안전 속도 배율 (move_checked 안에서).
 """
 import math
 import time
 
 from rally_interfaces.action import PickCompliant
-from rally_robot.dsr_helpers import ACC, VELOCITY, SkillAbort, compliance, move_checked, rotate_tool
+from rally_robot.dsr_helpers import SkillAbort, compliance, motion_speeds, move_checked, movej_to_pose, rotate_tool
 
 DEFAULTS = dict(approach_height_m=0.08, below_target_m=0.015, lift_m=0.10, contact_force_n=8.0, open_mm=90.0,
-                descend_vel_scale=0.3, z_from_table=True, grasp_above_table_m=0.03, z_stiffness_default=300.0,
+                z_from_table=True, grasp_above_table_m=0.03, z_stiffness_default=300.0,
                 tool_down_zyz=None)   # 집는 자세 기준(툴 수직 아래). 없으면 현재 자세 — 관측 자세(11° 기울어짐)에서 부르면 기울어진 채 집는다
 
 
@@ -62,7 +62,8 @@ def execute(node):
             ok, _, _ = node.gripper(cfg["open_mm"], grip_force)
             if not ok:
                 raise SkillAbort("gripper_unavailable")
-            move_checked(node, above, VELOCITY, ACC)
+            tv, ta, cv, ca, jv, ja = motion_speeds(node)          # skills.yaml motion: (모든 스킬 공통)
+            movej_to_pose(node, above, jv, ja)   # 어느 자세에서 불러도 관절 이동 (10/8 실로봇: 접힌 자세에서 movel 로 가며 경로가 크게 휨)
 
             phase("descend", 0.3)
             node.set_contact(True)
@@ -79,7 +80,7 @@ def execute(node):
 
             with compliance([3000, 3000, z_st, 200, 200, 200], log):
                 fz0["z"] = get_tool_force()[2]                # 순응이 켜진 뒤의 영점
-                how = move_checked(node, below, VELOCITY * cfg["descend_vel_scale"], ACC * cfg["descend_vel_scale"], on_poll=touched, stall_ok=True)
+                how = move_checked(node, below, cv, ca, on_poll=touched, stall_ok=True)
                 if how == "done":
                     log.warning("[pick_compliant] 접촉 없이 하강 끝 — 테이블 Z 설정 확인. 그래도 파지 시도")
                 phase("contact", 0.5)
@@ -90,7 +91,7 @@ def execute(node):
             node.set_contact(False)
 
             phase("lift", 0.9)
-            move_checked(node, lift, VELOCITY, ACC)
+            move_checked(node, lift, tv, ta)
             res.success, res.grip_width_mm = bool(ok and detected), float(width)
             if res.success:                      # 모드 5: 건네받은 물체를 이 자리에 다시 내려놓는다 (handover RECEIVE 후)
                 node.last_pick = dict(pose=[x, y, z, *orient], grip_force=grip_force)

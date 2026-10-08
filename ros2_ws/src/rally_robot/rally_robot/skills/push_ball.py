@@ -35,12 +35,14 @@
   - 속도는 skills.yaml mode1.push_speed_range 로 클램프, 손 근접 SLOW 면 move_checked 가 감속 재명령.
 """
 import math
+import time
 
 import numpy as np
 from scipy.spatial.transform import Rotation
 
 from rally_interfaces.action import PushBall
-from rally_robot.dsr_helpers import ACC, VELOCITY, SkillAbort, compliance, move_chain, move_checked, movej_checked
+from rally_robot.dsr_helpers import (COMPLIANCE_SETTLE_S, SkillAbort, compliance, motion_speeds, move_chain, move_checked,
+                                     movej_checked, movej_to_pose)
 
 DEFAULTS = dict(
     ball_radius_m=0.03,            # 공 반지름 — 실측해서 skills.yaml 에
@@ -49,37 +51,34 @@ DEFAULTS = dict(
     back_off_m=0.05,               # 공 뒤면에서 이만큼 떨어진 곳으로 내려간다
     stroke_m=0.06,                 # 공 뒤면을 지나 이만큼 더 민다
     approach_height_m=0.10,        # 공 위 접근 높이 (테이블 기준)
-    descend_vel_scale=0.4,
-    transit_vel_scale=2.5,
-    transit_ang_vel_deg_s=120.0,   # 공중 이동 회전 속도 — 안 주면 툴이 크게 도는 이동(손가락 90° 돌리기)이 기본 회전 한도로 느려진다
+    # 이동 속도는 여기 없다 — skills.yaml motion: (모든 스킬 공통). 스윙만 goal.push_speed + push_acc_mm_s2
     chain_radius_mm=20.0,          # 경유점 블렌딩 반경 — 이 안에 들어오면 다음 이동으로 멈추지 않고 넘어간다
-    contact_vel_scale=0.6,         # 접촉 감지 하강 마지막 구간만 이 속도 (60 × 0.6 = 36 mm/s). 그 전까지는 transit 속도
     pickup_slow_above_m=0.03,      # 집기: 비전 공 중심 + 이 높이까지 빠르게, 그 아래는 천천히 접촉 감지
-    place_slow_above_m=0.07,       # 놓기: 테이블 + 이 높이까지 빠르게, 그 아래는 천천히 접촉 감지         # 공중 이동 속도 = VELOCITY × 이 값 (10/7: 60 mm/s 는 너무 느림 → 150 mm/s)
-    observe_vel_scale=1.0,         # 관측 자세 복귀 movej (VELOCITY deg/s × 이 값)
+    place_slow_above_m=0.07,       # 놓기: 테이블 + 이 높이까지 빠르게, 그 아래는 천천히 접촉 감지
     push_acc_mm_s2=2000.0,         # 스윙 가속도 (≈0.2 g) — 0.6 m/s 에 90 mm 만에 도달 (백스윙 35° 원호 ≈ 110 mm)
     tool_down_zyz=[174.8, -177.0, 175.1],   # 10/6 테이블 접촉 때 실측한 '툴 수직 아래' 자세 (ZYZ deg)
     push_yaw_deg=0.0,              # 툴 Z 회전 — 닫힌 손가락 면이 미는 방향에 수직이 되게 맞춘다
     gripper_close_force_n=10.0,
     centerline_margin_m=0.03,
     place_clear_m=0.005,           # 놓을 때 공 바닥과 테이블 사이 여유 (살짝 떨어뜨림)
-    place_vel_scale=0.3,
     require_held_ball=False,       # True 면 공을 안 쥐고 시작할 때 중단
     pickup_source="vision",        # vision: /rally/perception/objects 의 공 중 x 가 가장 작은 것 · posx: pickup_posx 고정 자세 · none: 집지 않음
     pickup_posx=None,              # (pickup_source: posx) 거치대에서 공을 쥔 자세 (mm, ZYZ deg)
     pickup_class="ball",
     pickup_min_conf=0.6,
-    pickup_wait_s=4.0,             # 거치대를 보는 자세에 멈춘 뒤 이 시간 안에 공이 보여야 한다
+    pickup_wait_s=6.0,             # 거치대를 보는 자세에 멈춘 뒤 이 시간 안에 공이 보여야 한다
     vision_offset_m=[0.0, 0.0, 0.0],   # 비전 좌표 보정 (더한다). 10/7 실측: 두 자세에서 똑같이 x +9.5, y −9.2 mm 치우침 → [−0.0095, 0.0092, 0]
     pickup_view_posj=None,         # 거치대를 내려다보는 자세 (관절 deg). 관측 자세에선 거치대가 화면 위쪽 밖이다 (10/7). None 이면 관측 자세에서 찾음
     pickup_settle_s=0.3,           # 멈춘 뒤 이만큼 지난 프레임만 쓴다 (tcp_pose 10 Hz 로 base 변환하므로)
     pickup_yaw_deg=90.0,           # 집을 때 툴 Z 회전 — 거치대에서 공들이 x 로 붙어 있어 손가락이 y 로 닫히게
     pickup_below_center_m=0.05,    # 비전 중심에서 이만큼 아래를 향해 순응 하강 — 거치대 바닥·공에 닿으면 멈춘다
     pickup_contact_force_n=8.0,
+    pickup_force_gate_above_center_m=0.01,   # 손끝이 공 중심 + 이 높이 아래로 내려온 뒤에만 힘 접촉을 본다 (손가락을 벌리고 내려가므로 그 위에선 닿을 게 없음)
     pickup_x_range_m=[0.15, 0.60], # 이 범위 밖의 '공' 은 무시 (오검출·테이블 밖)
-    pickup_z_max_above_table_m=0.15,  # 테이블 위 이보다 높은 공은 무시 — 그리퍼에 쥔 공이 카메라에 잡힌다 (10/7 실측)
+    pickup_consistent_frames=3,    # 이 수만큼 연속 프레임이
+    pickup_consistent_m=0.01,      #   이 거리 안에서 일치해야 그 위치를 쓴다 (중앙값)
+    pickup_z_max_above_table_m=0.08,  # 테이블 위 이보다 높은 공은 무시 — 그리퍼에 쥔 공이 카메라에 잡힌다 (10/7 실측)
     pickup_approach_m=0.08,        # 집는 자리 위 접근 높이 (그 자세의 z 기준 +)
-    pickup_vel_scale=0.3,
     place_open_mm=80.0,            # 레인 입구에 놓을 때 여는 폭 — 레인 안쪽 폭(≈87 mm)보다 작게 (공 63 mm + 여유)
     place_contact_force_n=4.0,     # 놓기: 순응 하강 중 Z 힘 변화가 이 이상이면 공이 테이블에 닿음 → 연다
     place_min_tip_m=0.006,         # 놓기 하강 하한 (손가락 끝이 테이블 위 이 높이까지만)
@@ -93,7 +92,30 @@ DEFAULTS = dict(
     strike_tip_height_m=0.006,     # 타격 순간 손가락 끝 높이 (테이블 기준). 닫은 손가락 앞면은 수직 판이라 공과 닿는 점은 늘 공 중심 높이
     strike_face_offset_m=0.008,    # 손가락 끝(TCP)에서 앞면까지 진행 방향 거리 (닫은 손가락 두께의 반)
     paddle_max_width_mm=25.0,      # 치기 전 손가락을 닫았을 때 이보다 벌어져 있으면 뭔가 쥔 것 → 중단 (빈손으로 닫으면 12.4 mm, 공 63 mm)
+    # 친 뒤 환자 손 보기 — 툴을 진행 방향으로 hand_view_tilt_deg 기울여 그리퍼 위 RealSense 가 환자 쪽을 보게 한다.
+    #   push_yaw_deg 90(집을 때 방향 그대로)이면 카메라(툴 +y)가 그리퍼 앞쪽 → 앞으로 기울이면 위로 올라가 환자를 본다
+    hand_view=True,
+    hand_view_tilt_deg=45.0,       # 수직에서 진행 방향으로 기울이는 각
+    hand_view_back_m=0.10,         # 레인 입구(공 놓는 자리)에서 로봇 쪽으로 이만큼 뒤 (TCP)
+    hand_view_height_m=0.30,       # 테이블 위 TCP 높이
+    hand_view_hold_s=2.0,          # 이 자세에서 기다리는 시간 (손 인식·공 받기 보기)
 )
+
+
+def _hand_view_pose(cfg, ball_xy, d, tz, yaw):
+    """친 뒤 환자 손을 보는 posx (mm, ZYZ deg). 툴 z 를 진행 방향 d 쪽으로 tilt 만큼 기울인다. 순수 함수 — 테스트용."""
+    rx, ry, rz = cfg["tool_down_zyz"]
+    r0 = Rotation.from_euler("ZYZ", [rx, ry, rz + yaw], degrees=True)
+    axis = np.array([d[1], -d[0], 0.0])
+    tilt = cfg["hand_view_tilt_deg"]
+    for sgn in (1.0, -1.0):                                  # 툴 z 가 진행 방향(+d)을 향하는 쪽으로
+        rot = Rotation.from_rotvec(np.deg2rad(sgn * tilt) * axis) * r0
+        z = rot.apply([0.0, 0.0, 1.0])
+        if z[0] * d[0] + z[1] * d[1] > 0:
+            break
+    x = ball_xy[0] - d[0] * cfg["hand_view_back_m"]
+    y = ball_xy[1] - d[1] * cfg["hand_view_back_m"]
+    return [x * 1000.0, y * 1000.0, (tz + cfg["hand_view_height_m"]) * 1000.0, *rot.as_euler("ZYZ", degrees=True)]
 
 
 def _strike_points(cfg, ball_xy, d, tz, yaw):
@@ -161,6 +183,7 @@ def _plan(goal, cfg, lanes, table):
     # 놓기: 공 중심이 레인 입구 위. 파지 때 TCP(손가락 끝) ≈ 공 중심 높이(pick.grasp_above_table_m) 이므로 TCP z = 테이블 + r + 여유
     pts["place_above"] = mm(bx, by, z_above)
     pts["place"] = mm(bx, by, tz + cfg["place_min_tip_m"])           # 하한 — 실제로는 공이 테이블에 닿는 힘에서 멈춘다
+    pts["hand_view"] = _hand_view_pose(cfg, (bx, by), d, tz, yaw)
     return pts, dict(ball=(bx, by), dir_deg=dir_deg, src=src, end_xy=end_xy, z_push=z_push)
 
 
@@ -181,25 +204,30 @@ def speed_for_target(goal, lane_cfg, recipe, dir_deg):
 COMPLY_STX = [3000, 3000, 400, 200, 200, 200]
 
 
-def _speeds(cfg):
-    """(공중 이동 [직선, 회전], 가속 [직선, 회전], 접촉 구간 속도, 가속)."""
-    w = cfg["transit_ang_vel_deg_s"]
-    tv = [VELOCITY * cfg["transit_vel_scale"], w]
-    ta = [ACC * cfg["transit_vel_scale"], 2.0 * w]
-    return tv, ta, VELOCITY * cfg["contact_vel_scale"], ACC * cfg["contact_vel_scale"]
+def _speeds(node):
+    """(공중 이동 [직선, 회전], 가속 [직선, 회전], 접촉 구간 속도, 가속) — skills.yaml motion: (모든 스킬 공통)."""
+    return motion_speeds(node)[:4]
+
+
+def _joint(node):
+    """관절 이동 (속도 deg/s, 가속 deg/s²) — skills.yaml motion:."""
+    return motion_speeds(node)[4:]
 
 
 def _release_compliance(log):
     try:
         from DSR_ROBOT2 import release_compliance_ctrl
         release_compliance_ctrl()
+        time.sleep(COMPLIANCE_SETTLE_S)     # 10/8 실로봇: 해제 직후 보낸 이동(공 집고 놓으러 가기)이 무시돼 not_started
     except Exception as e:  # noqa: BLE001
         log.error(f"release_compliance_ctrl 실패: {e}")
 
 
-def _contact_detector(threshold_n):
-    """연속 3 샘플 Z 힘 변화 ≥ threshold → True. 영점은 첫 호출(순응이 켜진 느린 구간 시작) 때 잡는다."""
-    from DSR_ROBOT2 import get_tool_force
+def _contact_detector(threshold_n, z_gate_mm=None, log=None):
+    """연속 3 샘플 Z 힘 변화 ≥ threshold → True. 영점은 첫 호출(순응이 켜진 느린 구간 시작) 때 잡는다.
+    z_gate_mm 이 있으면 TCP z 가 그 아래로 내려온 뒤에만 힘을 본다 — 이동 중에 순응을 켜는 순간의 힘 출렁임을 접촉으로
+    오인해 공 위에서 급정지한 적이 있다 (10/8 실로봇, 거치대 공 집기). 그 위에서의 진짜 접촉은 멈춤(stall_ok)이 잡는다."""
+    from DSR_ROBOT2 import get_current_posx, get_tool_force
     st = {"z": None, "hits": 0}
 
     def touched():
@@ -207,7 +235,12 @@ def _contact_detector(threshold_n):
         if st["z"] is None:
             st["z"] = fz
             return False
+        if z_gate_mm is not None and get_current_posx()[0][2] > z_gate_mm:
+            st["hits"] = 0
+            return False
         st["hits"] = st["hits"] + 1 if abs(fz - st["z"]) >= threshold_n else 0
+        if st["hits"] >= 3 and log:
+            log.info(f"[push_ball] 접촉 힘 {fz - st['z']:+.1f} N (z {get_current_posx()[0][2]:.0f} mm)")
         return st["hits"] >= 3
     return touched
 
@@ -233,19 +266,31 @@ def pick_ball_by_vision(node, cfg, table, log):
     if getattr(node, "objects", None) is None and not getattr(node, "fake", False):
         log.warning("[push_ball] /rally/perception/objects 를 아직 못 받음 — segmenter 가 떠 있는지 확인")
     if cfg["pickup_view_posj"]:                    # 거치대가 보이는 자세로 (관측 자세에선 화면 밖)
-        movej_checked(node, cfg["pickup_view_posj"], VELOCITY * cfg["observe_vel_scale"], ACC * cfg["observe_vel_scale"])
+        movej_checked(node, cfg["pickup_view_posj"], *_joint(node))
     t_still = time.monotonic()                     # 보는 자세에 막 도착
-    found, t0 = None, time.monotonic()
+    # 연속 pickup_consistent_frames 프레임이 pickup_consistent_m 안에서 일치해야 쓴다 — 10/8 실로봇: 비전이 막 켜진 직후 첫 프레임이
+    # (0.370, 0.313, 0.100) 처럼 크게 틀려(평소 0.334, 0.282, 0.054) 엉뚱한 곳을 집었다
+    found, t0, recent, last_stamp = None, time.monotonic(), [], None
     while time.monotonic() - t0 < cfg["pickup_wait_s"]:
         node.check_stop()
         obj = getattr(node, "objects", None)
-        if obj is not None and obj[0] - t_still >= cfg["pickup_settle_s"]:
+        if obj is not None and obj[0] - t_still >= cfg["pickup_settle_s"] and obj[0] != last_stamp:
+            last_stamp = obj[0]
             if obj[1].header.frame_id not in ("base_link", ""):
                 raise SkillAbort(f"vision_frame_{obj[1].header.frame_id} (비전 좌표가 base_link 아님 — force_publisher(tcp_pose)·T_gripper2camera.npy 확인)")
-            found = choose_ball(obj[1], cfg, float(table.get("z_m") or 0.0))
-            if found:
-                break
-        time.sleep(0.05)
+            c = choose_ball(obj[1], cfg, float(table.get("z_m") or 0.0))
+            if c is None:
+                recent = []
+            else:
+                recent = (recent + [c])[-cfg["pickup_consistent_frames"]:]
+                if len(recent) == cfg["pickup_consistent_frames"] and all(
+                        math.dist(r[:3], recent[-1][:3]) <= cfg["pickup_consistent_m"] for r in recent):
+                    xs, ys, zs = (sorted(r[k] for r in recent)[len(recent) // 2] for k in range(3))
+                    found = (xs, ys, zs, recent[-1][3])
+                    break
+        time.sleep(0.02)
+    if not found and recent:
+        log.warning(f"[push_ball] 비전 공 위치가 프레임마다 흔들림 — 최근 {[tuple(round(v, 3) for v in r[:3]) for r in recent]}")
     if not found:
         raise SkillAbort("no_ball_detected (관측 자세에서 공이 안 보임 — 거치대에 공이 있는지, segmenter 가 떠 있는지)")
     x, y, zc, n = found
@@ -263,14 +308,14 @@ def pick_ball_by_vision(node, cfg, table, log):
     if not ok:
         raise SkillAbort("gripper_unavailable")
     pre = [x * 1000.0, y * 1000.0, max(zc + cfg["pickup_slow_above_m"], low_z + 0.01) * 1000.0, *orient]
-    tv, ta, cv, ca = _speeds(cfg)
+    tv, ta, cv, ca = _speeds(node)
     r = cfg["chain_radius_mm"]
     node.set_contact(True)
     try:
         # 거치대 보는 자세 → 공 위 → 공 위 3 cm 까지 빠르게, 멈추지 않고 느린 순응 하강으로 (접촉에서 멈춤)
         how = move_chain(node, [(above, tv, ta, r), (pre, tv, ta, r * 0.75)], low, cv, ca,
-                         on_poll=_contact_detector(cfg["pickup_contact_force_n"]), stall_ok=True,
-                         final_compliance=COMPLY_STX, tag="집기")
+                         on_poll=_contact_detector(cfg["pickup_contact_force_n"], (zc + cfg["pickup_force_gate_above_center_m"]) * 1000.0, log),
+                         stall_ok=True, final_compliance=COMPLY_STX, tag="집기")
         log.info(f"[push_ball] 집기 하강: {'접촉에서 멈춤' if how != 'done' else '하한까지 내려감'}")
         ok, width, detected = node.gripper(0.0, grip_n)
     finally:
@@ -330,7 +375,7 @@ def execute(node):
             lift_from = None                               # 집은 뒤 들어 올릴 점 (있으면 레인 입구 위까지 스플라인)
             vision_view = cfg["pickup_source"] == "vision" and cfg["pickup_view_posj"]
             if posj and not holding and not vision_view:   # 공을 쥐고 있으면 곧장 레인 입구로, 비전 집기면 거치대 보는 자세로 바로
-                movej_checked(node, posj, VELOCITY * cfg["observe_vel_scale"], ACC * cfg["observe_vel_scale"])
+                movej_checked(node, posj, *_joint(node))
 
             if not getattr(node, "holding", False) and cfg["pickup_source"] == "vision":
                 phase("pickup", 0.1)
@@ -343,10 +388,11 @@ def execute(node):
                 ok, _, _ = node.gripper(open_mm, grip_n)
                 if not ok:
                     raise SkillAbort("gripper_unavailable")
-                move_checked(node, pick_above, VELOCITY * cfg["transit_vel_scale"], ACC * cfg["transit_vel_scale"])
-                move_checked(node, pick, VELOCITY * cfg["pickup_vel_scale"], ACC * cfg["pickup_vel_scale"])
+                tv, ta, cv, ca = _speeds(node)
+                move_checked(node, pick_above, tv, ta)
+                move_checked(node, pick, cv, ca)
                 ok, width, detected = node.gripper(0.0, grip_n)
-                move_checked(node, pick_above, VELOCITY * cfg["pickup_vel_scale"], ACC * cfg["pickup_vel_scale"])
+                move_checked(node, pick_above, tv, ta)
                 if not (ok and detected):
                     raise SkillAbort(f"pickup_failed (공 감지 없음, 폭 {width:.0f} mm — 거치대가 비었는지 확인)")
                 log.info(f"[push_ball] 거치대에서 공 집음 (폭 {width:.0f} mm)")
@@ -355,7 +401,7 @@ def execute(node):
             if getattr(node, "holding", False):
                 phase("place", 0.15)
                 open_mm = cfg["place_open_mm"]
-                tv, ta, cv, ca = _speeds(cfg)
+                tv, ta, cv, ca = _speeds(node)
                 r = cfg["chain_radius_mm"]
                 place_fast = list(pts["place_above"])
                 place_fast[2] = (float(table.get("z_m") or 0.0) + cfg["place_slow_above_m"]) * 1000.0
@@ -382,7 +428,7 @@ def execute(node):
                 log.warning("[push_ball] 공을 쥐고 있지 않음 — 공이 이미 레인 입구에 있다고 보고 놓기 생략")
 
             phase("approach", 0.3)
-            tv, ta, _, _ = _speeds(cfg)
+            tv, ta, _, _ = _speeds(node)
             r = cfg["chain_radius_mm"]
 
             def close_paddle(_i=None):                     # 백스윙 위치로 가면서 닫는다 (기다리지 않음)
@@ -412,13 +458,21 @@ def execute(node):
                 move_checked(node, pts["strike_end"], [v_mm, w], [cfg["push_acc_mm_s2"], aw], via=pts["strike_mid"])
             else:
                 move_checked(node, pts["end"], v_mm, cfg["push_acc_mm_s2"])
-            move_checked(node, pts["lift"], *_speeds(cfg)[:2])
+            move_checked(node, pts["lift"], *_speeds(node)[:2])
             node.set_contact(False)
             node.holding = False                       # 닫은 손가락은 '미는 면' 이지 물체를 쥔 게 아님
 
+            if cfg["hand_view"]:                       # 친 뒤 환자 손 보기 (공을 받는 모습)
+                phase("hand_view", 0.7)
+                movej_to_pose(node, pts["hand_view"], *_joint(node))
+                t_hv = time.monotonic()
+                while time.monotonic() - t_hv < cfg["hand_view_hold_s"]:
+                    node.check_stop(goal_handle)
+                    time.sleep(0.05)
+
             phase("observe", 0.8)
             if posj:
-                movej_checked(node, posj, VELOCITY * cfg["observe_vel_scale"], ACC * cfg["observe_vel_scale"])
+                movej_checked(node, posj, *_joint(node))
             # TODO(박성현·정정인): /rally/perception/objects 에서 공 is_moving=false 대기 → stop_position, error_mm
             res.success = True
             res.contact_force_peak = 0.0

@@ -9,6 +9,10 @@
 # 실제 그리퍼(gripper_node)는 띄우지 않는다 — scripts/sim_gripper.py 가 가상 RG2 로 넘기고 RViz 에 공을 그린다.
 # 공 쥐여 주기:  ros2 service call /rally/sim/give_ball std_srvs/srv/Trigger
 # 공을 레인 2 입구에 놓기: ros2 service call /rally/sim/place_ball std_srvs/srv/Trigger
+# 모드 5 (막대 집기 → 기울여 건네기 → 환자 당김 → 돌려받기 → 제자리): sim_gripper 가 막대(0.30, -0.25)와 환자 손을 흉내 낸다
+#   python3 scripts/mode5_cycle.py --cycles 2 --manual rod:0.30,-0.25,0 --tilt 45 90
+# 모드 1 (거치대 공 비전 집기 → 레인 입구 → 치기): sim_gripper 가 거치대(0.36, 0.24)에 공을 두고 가상 비전으로 발행
+#   ros2 action send_goal /rally/skill/push_ball rally_interfaces/action/PushBall "{lane: 1, push_speed: 0.3}" --feedback
 SIM_DOMAIN=77
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG=/tmp/rally_sim; mkdir -p $LOG
@@ -39,7 +43,7 @@ case "$1" in
     call motion/move_joint dsr_msgs2/srv/MoveJoint "{pos: [0.06, 9.06, 30.37, -7.68, 131.29, -5.15], vel: 30.0, acc: 30.0, time: 0.0, radius: 0.0, mode: 0, blend_type: 0, sync_type: 0}"
     B="$ROOT/ros2_ws/install/rally_robot/lib/rally_robot"
     nohup "$B/safety_monitor" > $LOG/safety.log 2>&1 & echo $! > $LOG/safety.pid
-    nohup python3 "$ROOT/scripts/sim_gripper.py" > $LOG/gripper.log 2>&1 & echo $! > $LOG/gripper.pid
+    nohup python3 "$ROOT/scripts/sim_gripper.py" $SIM_GRIPPER_ARGS > $LOG/gripper.log 2>&1 & echo $! > $LOG/gripper.pid
     nohup "$B/skill_server" > $LOG/skill.log 2>&1 & echo $! > $LOG/skill.pid
     sleep 5
     grep -q "skill_server ready" $LOG/skill.log && echo "[sim] 준비 완료 — 로그 $LOG/*.log" || echo "[sim] skill_server 기동 실패 — $LOG/skill.log 확인"
@@ -49,7 +53,7 @@ case "$1" in
     [ -f $LOG/bringup.pid ] && kill -INT $(cat $LOG/bringup.pid) 2>/dev/null
     sleep 3; docker rm -f dsr01_emulator >/dev/null 2>&1
     # 남은 시뮬 도메인 프로세스(이전 실행의 rviz 등) 정리 — 실로봇 도메인 프로세스는 건드리지 않는다
-    for p in $(pgrep -f "rviz2|ros2_control_node|rally_robot/|sim_gripper|robot_state_publisher|gripper_virtual_node"); do
+    for p in $(pgrep -f "rviz2|ros2_control_node|rally_robot/|sim_gripper|robot_state_publisher|gripper_virtual_node|mode:=virtual"); do
       tr '\0' '\n' < /proc/$p/environ 2>/dev/null | grep -qx "ROS_DOMAIN_ID=$SIM_DOMAIN" && kill $p 2>/dev/null
     done
     echo "[sim] 종료"

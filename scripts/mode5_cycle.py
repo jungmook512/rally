@@ -4,7 +4,7 @@
     source scripts/env_robot_pc.sh   (skill_server · safety_monitor · force_publisher · gripper_node 가 떠 있을 것)
     python3 scripts/mode5_cycle.py --cycles 4                                   # 비전(/rally/perception/objects)의 rod·cup 사용
     python3 scripts/mode5_cycle.py --cycles 2 --manual rod:0.30,0.20,0 cup:0.30,-0.20,0   # 비전 없이 x,y[m],yaw[deg] 직접
-    python3 scripts/mode5_cycle.py --cycles 2 --manual rod:0.30,0.20,0 --tilt 20 40 --seed 1
+    python3 scripts/mode5_cycle.py --cycles 2 --manual rod:0.30,0.20,0 --tilt 30 90 --seed 1
 
 각도: 매 회 |tilt| 를 --tilt MIN MAX 범위에서 고르고 부호(좌/우)도 무작위. 로봇은 skills.yaml handover.tilt_range_deg 로 한 번 더 클램프.
 점수는 brain 이 낸다 — 여기서는 제시 각도와 잡을 때 손목 각도(HandState, 없으면 0)의 차이만 출력한다.
@@ -72,7 +72,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cycles", type=int, default=4)
     ap.add_argument("--manual", nargs="*", help="class:x,y,yaw_deg (예 rod:0.30,0.20,0) — 비전 대신")
-    ap.add_argument("--tilt", type=float, nargs=2, default=(15.0, 40.0), metavar=("MIN", "MAX"))
+    ap.add_argument("--tilt", type=float, nargs=2, default=(20.0, 90.0), metavar=("MIN", "MAX"))
     ap.add_argument("--pull-n", type=float, default=0.0, help="당김 임계 [N] (0 = skills.yaml 기본)")
     ap.add_argument("--timeout", type=float, default=20.0)
     ap.add_argument("--seed", type=int, default=None)
