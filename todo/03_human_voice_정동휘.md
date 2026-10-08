@@ -40,11 +40,12 @@
 
 ## Day 5 — 모드 1 · 7 지원
 - [ ] **모드 1 `rally_vision/predictor.py`** (박성현 항목을 맡음, 10/7): 칼만(위치·속도, 등속) + 마찰 감속 → `velocity`·`predicted_stop`·`predicted_stop_time`·`prediction_confidence`. 브랜치 `feat/rally_vision/kalman-predictor`
+  - **보류 (#69, 10/7)**: 모드 1 은 밀기 전 레시피 예측으로 한다 (길이 일직선 → 맞출 값이 정지 거리 하나, 밀고 나면 못 고침, 굴러가는 공을 볼 카메라 없음). 칼만은 모드 3 에 먼저 쓰고, 그때 모드 1 에 붙일지 정함. 코드는 유지
   - [x] 구현: numpy 순수 클래스 (`filterpy` 는 vision requirements 에 이미 있음), `header.stamp` 기준 dt, 미검출 프레임은 predict 만
   - [x] 검증 1 (로봇 없이): 합성 궤적(마찰 감속 + 잡음 1 cm) 단위 테스트 → 정지점 오차 — confidence≥0.5 시점 평균 6~21 mm, 굴러간 거리 절반 지점 13~34 mm (`python3 -m rally_vision.rolling_sim`)
-  - [ ] 검증 2 (로봇·인식 PC): 공 굴리기 bag 재생 → 예측 vs 실제 정지점 (목표: 0.3 m/s 이하 ≤ 30 mm)
+  - [ ] 검증 2 (로봇·인식 PC): 공 굴리기 bag 재생 → 예측 vs 실제 정지점 (목표: 0.3 m/s 이하 ≤ 30 mm) — 보류 (#69)
   - [x] 마찰 계수 온라인 추정 (매 시도 실제 궤적으로 갱신) — 한 시도 추정은 ±30~50 % 흔들려 여러 시도 평균. 실측 잡음이 작으면 나아짐
-  - [ ] PR (리뷰어 박성현) → `tracker_node` 연결은 박성현
+  - [x] PR (리뷰어 박성현) → `tracker_node` 연결은 박성현 — #67 머지. tracker 연결은 보류 (#69)
 - [ ] 모드 7: 손잡이 파지 여부(grip_closure), 손잡이 외 로봇 링크 접근 감지 → safety, 음성 문구("밀어보세요", "2초 버텼어요")
 - [ ] 환자 손 3D 위치 → 모드 1 목표 지점 제공 (brain이 `PushBall.target`으로 사용)
 
@@ -69,4 +70,4 @@
 - (10/7) 모드 3 실측값이 계획과 다른 점 → 이슈 #38 (웹캠 20 fps, 가속 1000 mm/s² 로 0.5 s 에 6~12 cm, 비행 0.40~0.55 s, 색 오검출, servol 연속 추종 위험)
 - (조정묵, 10/6) `rally_human/setup.py` 에 `hand_pose`, `body_pose` 실행 등록(console_scripts)이 없어 `pc2_perception.launch.py part:=human` 이 두 노드를 건너뛴다. 노드 이름을 이 두 개로 등록하면 launch 가 바로 띄운다. `intent_node`·`tts_node` 는 등록돼 있지만 아직 `main()` 이 없어 켜자마자 종료됨 → 해결: hand_pose 등록(#44), intent_node(#46)·tts_node(#53) main 있음. body_pose 는 Day 4
 - (조정묵, 10/7) 음성으로 훈련 이름 고르기 요청: "공 굴리기 하자" → `intent: next_mode` + 슬롯 `mode=1` (1 공 굴리기 · 3 캐치볼 · 5 건네고 받기 · 7 팔씨름). 약속은 `docs/INTERFACES.md` 2.2 표 아래. `intent_node` 의 function calling 스키마에 `mode` 인자만 추가하면 됨, 메시지 변경 없음
-- (10/7) 모드 1 칼만 예측(`rally_vision/predictor.py`)을 박성현 대신 맡음. 칼만 검증 → 완성 순서. 모드 3 착지 예측에 칼만 전처리 넣는 건 그 다음에 이슈 #38 에서 제안
+- (10/7) 모드 1 칼만 예측(`rally_vision/predictor.py`)을 박성현 대신 맡음. 칼만 검증 → 완성 순서. 모드 3 착지 예측에 칼만 전처리 넣는 건 그 다음에 이슈 #38 에서 제안 → (10/7 #69) 순서 바뀜: 모드 1 은 레시피, 칼만은 모드 3 에 먼저
