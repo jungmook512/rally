@@ -6,24 +6,38 @@ const path = require('node:path');
 const html = fs.readFileSync(path.join(__dirname, '../web/index.html'), 'utf8');
 const elements = new Map();
 function element() {
-  return {dataset:{}, children:[], hidden:false, textContent:'', innerHTML:'',
-    prepend(row){this.children.unshift(row);}, setAttribute(){}, removeAttribute(){}};
+  return {dataset:{}, children:[], attributes:{}, hidden:false, textContent:'', htmlWrites:0,
+    get innerHTML(){return this.markup||'';}, set innerHTML(value){this.markup=value;this.htmlWrites++;},
+    prepend(row){this.children.unshift(row);}, append(row){this.children.push(row);},
+    setAttribute(name,value){this.attributes[name]=value;}, removeAttribute(name){delete this.attributes[name];}};
 }
 const ids = [...html.matchAll(/id="([^"]+)"/g)].map(m => m[1]);
 ids.forEach(id => elements.set(id, element()));
+const nav = [...html.matchAll(/<a[^>]*data-page="([^"]+)"[^>]*>/g)].map(match => Object.assign(element(),{dataset:{page:match[1]}}));
+const listeners = {};
+const intervals = [];
 const context = vm.createContext({
   document:{getElementById(id){assert(elements.has(id), id);return elements.get(id);},
-    querySelectorAll(){return [];}, createElement:element},
-  location:{hash:'#mode1'}, window:{addEventListener(){}},
-  Date, performance, AbortSignal, setInterval(){}, setTimeout(){}, console,
+    querySelectorAll(selector){assert.equal(selector,'#mode-nav a');return nav;}, createElement:element},
+  location:{hash:'#mode1'}, addEventListener(name,callback){listeners[name]=callback;},
+  Date, performance, AbortSignal, setInterval(callback){intervals.push(callback);}, setTimeout(){}, console,
 });
+context.window = context;
+assert(html.includes('src="/images/training-scenes.js"'), 'scene engine must load before page logic');
+vm.runInContext(fs.readFileSync(path.join(__dirname,'../web/images/training-scenes.js'),'utf8'),context);
 vm.runInContext(html.split('<script>')[1].split('</script>')[0].replace('load().then(connect);',''),context);
 function run(code){return vm.runInContext(code,context);}
 const get = id => elements.get(id);
 for(const mode of [1,3,5,7]) {
   run(`location.hash='#mode${mode}';selectPage();`);
   assert.match(get('page-title').textContent,new RegExp(`모드 ${mode}`));
-  assert.match(get('mode-diagram').innerHTML,/<svg/);
+  const picture = get('mode-diagram').innerHTML;
+  assert.match(picture, /<svg/);
+  assert(picture.includes(`data-scene-mode="${mode}"`));
+  assert.match(picture, /aria-label=["'][^"']+["']/);
+  assert.equal(get('trials-view').hidden,true);
+  assert.equal(get('events-view').hidden,true);
+  assert.equal(nav.find(a=>a.attributes['aria-current']==='page').dataset.page,String(mode));
 }
 run("location.hash='#mode1';selectPage();renderControl({mode:1,phase:'running',bt_node:'손 이탈 확인 대기',updated_at:Date.now()/1000,trial_index:2,difficulty:1});");
 assert.equal(get('step-title').textContent,'손 이탈 대기');
@@ -37,14 +51,81 @@ assert.equal(get('resume').disabled,true);
 assert.equal(get('step-title').textContent,'상태 수신 대기');
 run("renderControl({mode:1,phase:'running',bt_node:'밀기 1',updated_at:Date.now()/1000-5});");
 assert.doesNotMatch(get('steps').innerHTML,/aria-current="step"/);
-run("addTrial({trial_id:'one',mode:1},false);addTrial({trial_id:'five',mode:5},false);");
-assert.equal(get('trials').children.filter(r=>!r.hidden).length,1);
-run("location.hash='#mode3';selectPage();");
-assert.equal(get('trials').children.filter(r=>!r.hidden).length,0);
-assert.equal(get('trials-empty').hidden,false);
-run("location.hash='#overview';selectPage();");
+// Scene changes follow observed stages; stale or stopped states must never animate.
+const moving = () => /class=["'][^"']*\bscene-moving\b/.test(get('mode-diagram').innerHTML);
+run("renderState({time:new Date().toISOString(),safety:{level:'normal'}});renderControl({mode:1,phase:'running',bt_node:'밀기 1',updated_at:Date.now()/1000});");
+assert(moving(), 'known running stage should animate');
+const pushScene = get('mode-diagram').innerHTML;
+const writes = get('mode-diagram').htmlWrites;
+run('renderControl({...control,updated_at:Date.now()/1000});');
+assert.equal(get('mode-diagram').innerHTML,pushScene);
+assert.equal(get('mode-diagram').htmlWrites,writes,'same state must preserve the SVG DOM and animation');
+run("renderControl({...control,bt_node:'공 회수 1'});");
+assert.notEqual(get('mode-diagram').innerHTML,pushScene);
+assert(moving());
+run("renderControl({...control,phase:'pause_pending'});");
+assert(moving(), 'pause_pending completes the current trial');
+for (const phase of ['paused','ended']) {
+  run(`renderControl({...control,phase:'${phase}'});`);
+  assert(!moving(), `${phase} must be static`);
+}
+run("renderControl({...control,phase:'running',bt_node:'알 수 없는 단계'});");
+assert(!moving(), 'unknown stage must be static');
+run("renderControl({...control,bt_node:'밀기 1'});renderState({time:new Date().toISOString(),safety:{level:'stop'}});");
+assert(!moving(), 'fresh STOP must immediately freeze the illustration');
+run("renderState({time:new Date().toISOString(),safety:{level:'normal'}});");
+assert(moving());
+run('stateTime=Date.now()-3000;');
+intervals.forEach(callback=>callback());
+assert(!moving(), 'stale safety must freeze without another control update');
+run("renderState({time:new Date().toISOString(),safety:{level:'normal'}});renderControl({...control,updated_at:Date.now()/1000-3});");
+assert(!moving(), 'stale session must be static');
+run("renderControl({...control,mode:5,updated_at:Date.now()/1000});");
+assert(!moving(), 'viewing an inactive mode must be static');
+run("location.hash='#mode3';selectPage();renderControl({...control,mode:3,phase:'running',bt_node:'알 수 없는 단계'});");
+assert(!moving());
+assert.match(get('mode-diagram').innerHTML,/data-scene-stage="-1"/);
+run("location.hash='#mode1';selectPage();");
+run("addTrial({trial_id:'one',mode:1},false);addTrial({trial_id:'five',mode:5},false);addEvent({kind:'safety_change',level:'normal'},false,true);");
+const firstTrial = get('trials').children[1];
+const firstEvent = get('events').children[0];
+function visit(hash) { context.location.hash=hash; listeners.hashchange(); }
+for (const [hash,title,trialVisible,eventVisible] of [
+  ['#trials','최근 시도',true,false], ['#events','사건 기록',false,true], ['#overview','전체 현황',false,false],
+]) {
+  visit(hash);
+  assert.equal(get('page-title').textContent,title);
+  assert.equal(get('trials-view').hidden,!trialVisible);
+  assert.equal(get('events-view').hidden,!eventVisible);
+  assert.equal(get('mode-view').hidden,true);
+  assert.equal(run('selectedMode'),null);
+  assert.equal(nav.filter(a=>a.attributes['aria-current']==='page').length,1);
+  assert.equal(nav.find(a=>a.attributes['aria-current']==='page').dataset.page,hash.slice(1));
+}
+visit('#trials');
 assert.equal(get('trials').children.filter(r=>!r.hidden).length,2);
-assert.equal(get('mode-view').hidden,true);
+run("addTrial({trial_id:'seven',mode:7},true);addTrial({trial_id:'seven',mode:7},true);");
+assert.equal(get('trials').children.filter(r=>!r.hidden).length,3);
+visit('#mode1');
+assert.equal(get('trials-view').hidden,true);
+assert.equal(get('events-view').hidden,true);
+run("addTrial({trial_id:'three',mode:3},true);addEvent({kind:'safety_change',level:'slow'},true,false);");
+visit('#trials'); // hashchange also serves browser back/forward navigation.
+assert.equal(get('trials').children.filter(r=>!r.hidden).length,4);
+assert(get('trials').children.includes(firstTrial),'tab changes must preserve existing rows');
+visit('#events');
+assert.equal(get('events').children.length,2);
+assert(get('events').children.includes(firstEvent),'tab changes must preserve existing events');
+visit('#not-a-page');
+assert.equal(run('selectedPage'),'overview');
+assert.equal(get('page-title').textContent,'전체 현황');
+assert.equal(get('trials-view').hidden,true);
+assert.equal(get('events-view').hidden,true);
+for (const [level,label] of [['normal','정상'],['slow','느리게'],['stop','정지']]) {
+  run(`renderState({time:new Date().toISOString(),safety:{level:'${level}',reason:'가상 상태'}});`);
+  assert.equal(get('safety').className,level);
+  assert(get('safety').innerHTML.includes(label));
+}
 run("renderControl({phase:'running',session_id:'session',updated_at:Date.now()/1000,proposal:{proposal_id:'p',prompt:'휴식 제안',status:'pending',remaining_s:20}});");
 assert.equal(get('proposal-panel').hidden,false);
 assert.equal(get('proposal-accept').disabled,false);
@@ -65,6 +146,12 @@ async function testProposalResponses() {
     return new Promise(resolve => { finish = resolve; });
   };
   run('connect()');
+  visit('#trials');
+  socket.onmessage({data:JSON.stringify({type:'event',data:{kind:'trial',trial_id:'live',mode:5,trial_index:5,success:true}})});
+  assert.equal(get('trials').children.filter(r=>!r.hidden).length,5);
+  visit('#events');
+  assert.equal(get('events').children.length,3);
+  visit('#overview');
   const snapshot = id => ({phase:'running', session_id:'session', updated_at:Date.now()/1000,
     proposal:{proposal_id:id, prompt:'휴식 제안', status:'pending', remaining_s:20}});
   const receive = data => socket.onmessage({data:JSON.stringify({type:'session',data})});
@@ -130,6 +217,6 @@ async function testProposalResponses() {
   await previousSessionClick;
   assert.equal(get('proposal-panel').hidden, true);
   assert.equal(get('proposal-message').textContent, '', 'old session replies must remain hidden');
-  console.log('PASS: mode pages, state freshness, resume gating, trials, async proposal clicks, errors and WebSocket recovery');
+  console.log('PASS: dynamic stage scenes, STOP/stale freeze, unchanged scene DOM, record tabs, hash navigation, live records, state freshness, resume gating, trials, async proposal clicks, errors and WebSocket recovery');
 }
 testProposalResponses().catch(error => { console.error(error); process.exitCode = 1; });

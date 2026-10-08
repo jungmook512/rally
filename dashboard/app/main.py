@@ -25,6 +25,7 @@ import psycopg
 import redis.asyncio as aioredis
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from psycopg.rows import dict_row
 from pydantic import BaseModel
 
@@ -39,6 +40,7 @@ STATE_PERIOD_S = 0.5
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 
 app = FastAPI(title="RALLY dashboard")
+app.mount("/images", StaticFiles(directory=WEB_DIR / "images"), name="images")
 _redis = aioredis.from_url(REDIS_URL, decode_responses=True, socket_connect_timeout=0.5, socket_timeout=0.5)
 
 

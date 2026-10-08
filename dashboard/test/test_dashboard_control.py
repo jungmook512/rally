@@ -113,3 +113,19 @@ def test_proposal_response_checks_brain_and_current_proposal(monkeypatch, case, 
     assert r.status_code == code
     if case in ('old','expired','stale','invalid'): assert store.command is None
     if code == 200: assert store.command['command'] == 'proposal_'+body['decision']
+
+
+def test_training_illustrations_are_served_without_control_requests(monkeypatch):
+    store = FakeRedis(None, down=True)
+    monkeypatch.setattr(web, "_redis", store)
+
+    async def call():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url="http://test") as client:
+            response = await client.get("/images/training-scenes.js")
+            assert response.status_code == 200
+            assert "javascript" in response.headers["content-type"]
+            assert "function renderTrainingScene" in response.text
+            assert (await client.get("/images/missing.svg")).status_code == 404
+            assert (await client.get("/images/%2e%2e/index.html")).status_code == 404
+    asyncio.run(call())
+    assert store.command is None
