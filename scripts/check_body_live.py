@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """몸 자세(body_pose) 확인 창 — 카메라 화면 + BodyPose 값 + 항목별 통과 여부.
 
-body_pose 노드가 켜진 상태에서 실행. 자리를 잡고 바르게 앉은 뒤 b → 2초 가만히 (어깨 들림 기준을 다시 잡음).
+body_pose 노드가 켜진 상태에서 실행. 자리를 잡고 바르게 앉은 뒤 b → 2초 가만히 (몸통·어깨 기준을 다시 잡음).
+몸통·어깨 값은 팔을 뻗었을 때(팔꿈치 ≥ 140°)만 갱신된다 — 굽히면 팔이 어깨를 가려 관절이 틀어지기 때문.
     python3 scripts/check_body_live.py                              # /webcam/image_raw
     python3 scripts/check_body_live.py --no-skeleton                # 뼈대 안 그림 (CPU 아끼기)
 키: b 또는 스페이스 기준 다시 잡기 · q 종료(터미널에 결과 요약) · r 판정 다시
@@ -31,6 +32,7 @@ from rally_human import body_geometry as bg
 
 WIN = "check_body_live (b/space baseline, q quit, r reset)"
 GREEN, GRAY, WHITE, RED, YELLOW = (80, 200, 80), (150, 150, 150), (240, 240, 240), (60, 60, 230), (60, 200, 230)
+EXTENDED_DEG = 140.0                                # body_pose extended_deg 와 같게 — 이 이상이면 '뻗음'(판정 중)
 MODEL_NAME = "pose_landmarker_full.task"           # body_pose 노드와 같은 모델
 MODEL_CANDIDATES = [f"/opt/mediapipe/{MODEL_NAME}", str(Path(__file__).resolve().parents[1] / "models" / "mediapipe" / MODEL_NAME),
                     os.path.expanduser(f"~/rally/models/mediapipe/{MODEL_NAME}")]
@@ -124,6 +126,7 @@ class Checker(Node):
             self.lean_flag = self.hike_flag = False
             self.hike_max = 0.0
             self.elbow_min, self.elbow_max = math.inf, -math.inf
+            self.seen_ext = self.seen_bent = False
 
     def _on_image(self, m: Image) -> None:
         img = self.bridge.imgmsg_to_cv2(m, "bgr8")
@@ -152,6 +155,10 @@ class Checker(Node):
                 self.hike_max = max(self.hike_max, hike)
             if math.isfinite(elbow):
                 self.elbow_min, self.elbow_max = min(self.elbow_min, elbow), max(self.elbow_max, elbow)
+            if math.isfinite(elbow) and elbow >= EXTENDED_DEG:
+                self.seen_ext = True
+            else:
+                self.seen_bent = True
             self.lean_flag |= m.compensation_type == "trunk_lean"
             self.hike_flag |= m.compensation_type == "shoulder_hike"
 
@@ -160,10 +167,10 @@ class Checker(Node):
         em = (f"{self.elbow_min:.0f}~{self.elbow_max:.0f}°" if math.isfinite(self.elbow_min) else "-")
         return [
             ("1 몸 검출", self.n >= 30 and det >= 90, f"{det:.0f}% ({self.n_det}/{self.n}) — 1 m 이상 떨어져 앉기"),
-            ("2 바르게 앉기", self.upright, "기울기 5° 안을 1초 유지"),
-            ("3 몸통 기울임 → 보상", self.lean_flag, f"최대 {self.lean_max:.0f}° (15° 넘게 옆으로 기울이기)"),
-            ("4 어깨 으쓱 → 보상", self.hike_flag, f"최대 {self.hike_max:.0f}° (10° 넘게, 몸은 바르게)"),
-            ("5 팔꿈치 폈다 굽히기", self.elbow_max >= 160 and self.elbow_min <= 100, f"범위 {em} (≥160 · ≤100 다 보기)"),
+            ("2 뻗음 인식", self.seen_ext and self.seen_bent, f"폈다(≥{EXTENDED_DEG:.0f}°) 굽히기 둘 다 · 팔꿈치 {em}"),
+            ("3 팔 뻗고 바르게", self.upright, "b 로 기준 잡은 뒤, 팔 뻗고 몸통 5° 안 1초"),
+            ("4 뻗은 채 앞으로 숙이기", self.lean_flag, f"최대 {self.lean_max:.0f}° (15° 넘게)"),
+            ("5 뻗은 채 어깨 으쓱", self.hike_flag, f"최대 {self.hike_max:.0f}° (뻗는 쪽 10° 넘게, 몸은 바르게)"),
         ]
 
 
@@ -229,6 +236,10 @@ def render(node: Checker, skel: "Skeleton | None" = None, state: dict | None = N
         bar(panel, 34, "몸통 기울기", last.trunk_lean_deg, 40, 15)
         bar(panel, 80, "어깨 들림", last.shoulder_elevation_deg, 30, 10)
         bar(panel, 126, "팔꿈치 펴짐", last.elbow_extension_deg, 180, None)
+        e = last.elbow_extension_deg
+        reaching = math.isfinite(e) and e >= EXTENDED_DEG
+        put(frame, "팔: 뻗음 — 판정 중" if reaching else "팔: 굽힘·안 보임 — 값 유지(판정 안 함)",
+            (8, 30), GREEN if reaching else GRAY)
     y = 186
     for name, ok, info in items:
         put(panel, ("[통과] " if ok else "[ ] ") + name, (10, y), GREEN if ok else WHITE)

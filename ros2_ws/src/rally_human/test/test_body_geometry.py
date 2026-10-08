@@ -118,26 +118,75 @@ def _rot_x(deg: float) -> np.ndarray:
     return np.array([[1, 0, 0], [0, np.cos(r), -np.sin(r)], [0, np.sin(r), np.cos(r)]])
 
 
-def test_trunk_baseline_cancels_tilted_camera():
-    """카메라가 25° 내려다보면 바르게 앉아도 영상 수직 대비 25° — 기준을 잡으면 0, 거기서 숙인 만큼만."""
+def _meter(frames: int = 3) -> "bg.ReachMeter":
+    return bg.ReachMeter(arm="right", baseline_frames=frames, window_s=0.5)
+
+
+def _feed(m, w, n=5, t0=0.0, vis=ALL):
+    st = None
+    for i in range(n):
+        st = m.update(t0 + i / 15, w, vis)
+    return st
+
+
+def test_reach_meter_zero_at_baseline_even_with_tilted_camera():
+    """카메라가 25° 내려다봐도 바르게 앉아 팔을 뻗으면 0 (기준 자세 대비)."""
     tilt = _rot_x(25)
-    w0 = upright() @ tilt.T
-    assert bg.trunk_lean_deg(w0, ALL)[0] == pytest.approx(25, abs=0.5)   # 예전 방식
-    tb = bg.TrunkBaseline(frames=3)
-    for _ in range(3):
-        tb.lean_deg(w0, ALL)
-    assert tb.lean_deg(w0, ALL)[0] == pytest.approx(0, abs=1e-6)
-    lean_more = upright(20, "front") @ tilt.T                            # 거기서 20° 숙임
-    assert tb.lean_deg(lean_more, ALL)[0] == pytest.approx(20, abs=1.0)
+    m = _meter()
+    st = _feed(m, upright() @ tilt.T)
+    assert st.baseline_ready and st.extended
+    assert st.lean_deg == pytest.approx(0, abs=1e-6)
+    assert st.hike_deg == pytest.approx(0, abs=1e-6)
 
 
-def test_trunk_baseline_reset():
-    tb = bg.TrunkBaseline(frames=2)
-    for _ in range(2):
-        tb.lean_deg(upright(30, "front"), ALL)                        # 자리 잡는 중 (기울어진 기준)
-    assert tb.lean_deg(upright(), ALL)[0] == pytest.approx(30, abs=1.0)
-    tb.reset()
-    for _ in range(2):
-        tb.lean_deg(upright(), ALL)
-    assert tb.lean_deg(upright(), ALL)[0] == pytest.approx(0, abs=1e-6)
+def test_reach_meter_forward_lean_when_extended():
+    tilt = _rot_x(25)
+    m = _meter()
+    _feed(m, upright() @ tilt.T)
+    st = _feed(m, upright(20, "front") @ tilt.T, n=10, t0=1.0)
+    assert st.lean_deg == pytest.approx(20, abs=1.0)
+
+
+def test_reach_meter_holds_value_while_arm_bent():
+    """팔을 굽히면 관절이 틀어지므로 값을 갱신하지 않고 직전 값 유지."""
+    m = _meter()
+    _feed(m, upright())
+    _feed(m, upright(), t0=1.0)
+    st = _feed(m, upright(30, "front", elbow_deg=80), n=10, t0=2.0)   # 굽힌 채 크게 숙임 (믿을 수 없는 값)
+    assert not st.extended
+    assert st.lean_deg == pytest.approx(0, abs=1e-6)
+
+
+def test_reach_meter_shoulder_hike_reaching_side():
+    m = _meter()
+    _feed(m, upright())
+    st = _feed(m, upright(hike_m=0.04), n=10, t0=1.0)
+    assert st.hike_deg > 10
+
+
+def test_reach_meter_head_tilt_is_not_hike():
+    """고개를 옆으로 기울이면 한쪽 귀는 내려오고 다른 귀는 올라감 — 양 귀 가운데는 그대로라 으쓱으로 안 셈."""
+    m = _meter()
+    _feed(m, upright())
+    w = upright()
+    w[bg.R_EAR, 1] += 0.03
+    w[bg.L_EAR, 1] -= 0.03
+    st = _feed(m, w, n=10, t0=1.0)
+    assert abs(st.hike_deg) < 1.0
+
+
+def test_reach_meter_detects_with_only_reaching_shoulder():
+    vis = ALL.copy()
+    vis[[bg.L_SH, bg.L_EL, bg.L_WR, bg.L_EAR]] = 0.1     # 먼 쪽이 몸에 가려짐 (측면·대각)
+    st = _feed(_meter(), upright(), vis=vis)
+    assert st.detected and st.extended
+
+
+def test_reach_meter_reset_baseline():
+    m = _meter()
+    _feed(m, upright(30, "front"))                            # 자리 잡는 중에 잡힌 잘못된 기준
+    assert _feed(m, upright(), t0=1.0).lean_deg == pytest.approx(30, abs=1.0)
+    m.reset_baseline()
+    st = _feed(m, upright(), n=8, t0=2.0)
+    assert st.lean_deg == pytest.approx(0, abs=1e-6)
 

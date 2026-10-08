@@ -3,12 +3,15 @@
 
 흐름 (영상 콜백은 최신 프레임만 저장, 추론은 타이머 — 손 노드와 같은 구조):
   1. 웹캠 영상(/webcam/image_raw, webcam_pub 또는 usb_cam)을 MediaPipe PoseLandmarker(VIDEO 모드, 1명)로
-  2. pose_world_landmarks(엉덩이 원점 3D, m) 로 몸통 기울기·어깨 들림·팔꿈치 펴짐 (body_geometry.py)
-     - 몸통 기울기: 엉덩이가 보이면 엉덩이→어깨 선과 수직의 각, 책상에 가려지면 어깨선 기울기 (옆 기울임만)
-     - 어깨 들림: 좌우 각각 처음 보인 baseline_frames 프레임의 귀–어깨 거리를 평소로 잡고 줄어든 만큼 (기준 잡기 전엔 NaN)
-  3. 같은 보상 동작이 confirm_frames 프레임 연속이면 compensation_detected (몸통 15° 이상 > 어깨 들림 10° 이상).
-     사람을 놓치면 바로 none (brain rule_layer.fatigue_signals 가 이 플래그를 피로 신호로 씀)
-  주의: 골반이 가려져 어깨선으로 대신할 때는 앞으로 숙이기를 못 잰다 (옆 기울임만) — 0 이 '바른 자세' 라는 뜻은 아님
+  2. pose_world_landmarks(엉덩이 원점 3D, m) → body_geometry.ReachMeter (10/8 결정: 모드 1·5·7 팔 뻗기 보상)
+     - 뻗는 팔(arm, auto = 카메라 쪽) 어깨만 보여도 사람으로 봄
+     - 팔꿈치 펴짐 ≥ extended_deg 이고 그 팔이 잘 보일 때(뻗음)만 몸통 기울기·어깨 들림을 갱신 (window_s 중간값),
+       굽히면 마지막 값 유지 — 굽힌 팔이 어깨·몸통을 가려 관절이 틀어지기 때문 (10/8 C270 실측)
+     - 몸통 기울기 = 기준 자세 대비 앞으로 숙인 각, 어깨 들림 = 기준 대비 뻗는 쪽 어깨 으쓱 (양 귀 가운데 기준)
+     - 기준 = 노드 시작 후, 또는 /rally/perception/body/reset_baseline 뒤 baseline_frames 프레임 (바르게 앉은 상태)
+  3. 뻗은 동안 같은 보상 동작이 confirm_frames 프레임 연속이면 compensation_detected (몸통 15° 이상 > 어깨 들림 10° 이상).
+     안 뻗었거나 사람을 놓치면 none (brain rule_layer.fatigue_signals 가 이 플래그를 피로 신호로 씀)
+  elbow_extension_deg ≥ extended_deg 이면 '뻗음' — 이때만 몸통·어깨 값이 새 값이다. 정확한 팔꿈치 각도는 보장하지 않는다.
   header.stamp = 영상 원본 시각. 사람이 안 보이면 detected=false, 값은 NaN.
 측면 웹캠은 환자에게서 1 m 이상 (10/8 확인: 가까우면 몸이 안 잡힘).
 """
@@ -52,13 +55,16 @@ class BodyPoseNode(Node):
         d("hike_threshold_deg", 10.0)              # 어깨 들림 — 초기값, 실측 후 조정
         d("confirm_frames", 5)                     # 15 Hz 기준 약 0.3 s
         d("baseline_frames", 30)                   # 처음 약 2 s 를 평소 자세로
-        d("arm", "auto")                           # 팔꿈치 펴짐을 볼 팔: left | right | auto
+        d("arm", "auto")                           # 뻗는 팔: left | right | auto(카메라 쪽 = 더 잘 보이는 팔)
+        d("good_visibility", 0.7)                  # 뻗는 팔 어깨·팔꿈치·손목이 이 이상 보여야 값을 믿음
+        d("extended_deg", 140.0)                   # 팔꿈치 펴짐이 이 이상이면 '뻗음' — 이때만 보상 판정
+        d("window_s", 0.5)                         # 뻗은 동안 중간값 창
         p = lambda k: self.get_parameter(k).value  # noqa: E731
 
         self.vis_thr = float(p("min_visibility"))
         self.arm = str(p("arm"))
-        self.baseline = bg.ShoulderBaseline(int(p("baseline_frames")))
-        self.trunk_base = bg.TrunkBaseline(int(p("baseline_frames")))      # 몸통 기울기도 평소 자세 대비 (카메라 각도 무관)
+        self.meter = bg.ReachMeter(self.arm, self.vis_thr, float(p("good_visibility")), float(p("extended_deg")),
+                                   int(p("baseline_frames")), float(p("window_s")))
         self.comp = bg.CompensationFilter(float(p("lean_threshold_deg")), float(p("hike_threshold_deg")),
                                           int(p("confirm_frames")))
         self.landmarker = self._make_landmarker()
@@ -77,7 +83,8 @@ class BodyPoseNode(Node):
         self.create_service(Trigger, "/rally/perception/body/reset_baseline", self._on_reset,
                             callback_group=MutuallyExclusiveCallbackGroup())
         self.get_logger().info(f"몸 자세 시작: {p('image_topic')}, 기울임 {p('lean_threshold_deg')}° · "
-                               f"어깨 들림 {p('hike_threshold_deg')}° · 처음 {p('baseline_frames')} 프레임은 평소 자세로")
+                               f"어깨 들림 {p('hike_threshold_deg')}° · 팔꿈치 {p('extended_deg')}° 이상(뻗음)일 때만 판정 · "
+                               f"처음 {p('baseline_frames')} 프레임은 평소 자세로 (다시 잡기: reset_baseline)")
 
     def _make_landmarker(self):
         from mediapipe.tasks.python import BaseOptions, vision
@@ -107,8 +114,7 @@ class BodyPoseNode(Node):
             msg, self.latest = self.latest, None
             reset, self._reset_req = self._reset_req, False
         if reset:
-            self.baseline.reset()
-            self.trunk_base.reset()
+            self.meter.reset_baseline()
         if msg is None:
             return
         out = BodyPose()
@@ -120,7 +126,9 @@ class BodyPoseNode(Node):
             out.detected = False
         if not out.detected:
             out.trunk_lean_deg = out.shoulder_elevation_deg = out.elbow_extension_deg = math.nan
-        kind = self.comp.update(out.detected, out.trunk_lean_deg, out.shoulder_elevation_deg)
+        reaching = out.detected and math.isfinite(out.elbow_extension_deg) and \
+            out.elbow_extension_deg >= float(self.get_parameter("extended_deg").value)
+        kind = self.comp.update(reaching, out.trunk_lean_deg, out.shoulder_elevation_deg)   # 뻗은 동안만 판정
         out.compensation_type = kind
         out.compensation_detected = kind != "none"
         self.pub.publish(out)
@@ -140,15 +148,11 @@ class BodyPoseNode(Node):
             return
         w = np.array([[q.x, q.y, q.z] for q in res.pose_world_landmarks[0]])
         vis = np.array([q.visibility for q in res.pose_landmarks[0]])
-        if not bg._seen(vis, bg.L_SH, bg.R_SH, thr=self.vis_thr):      # 어깨가 안 보이면 아무것도 못 잼
-            out.detected = False
+        st = self.meter.update(stamp_ns * 1e-9, w, vis)
+        out.detected = st.detected
+        if not st.detected:
             return
-        out.detected = True
-        out.trunk_lean_deg, _ = self.trunk_base.lean_deg(w, vis, self.vis_thr)
-        gaps = bg.ear_shoulder_gaps(w, vis, self.vis_thr)
-        base = self.baseline.update(gaps)
-        out.shoulder_elevation_deg = bg.shoulder_elevation_deg(gaps, base, bg.shoulder_half_width(w))   # 기준 없는 쪽은 빠짐
-        out.elbow_extension_deg = bg.elbow_extension_deg(w, vis, self.arm, self.vis_thr)
+        out.trunk_lean_deg, out.shoulder_elevation_deg, out.elbow_extension_deg = st.lean_deg, st.hike_deg, st.elbow_deg
 
 
 def main() -> None:
