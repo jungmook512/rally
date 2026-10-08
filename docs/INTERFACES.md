@@ -11,7 +11,7 @@ base_link            로봇 베이스 (world 역할)
      └─ camera_link  RealSense (eye-in-hand 캘리브레이션 결과, static)
          └─ camera_color_optical_frame
 table_link           테이블 원점 (base_link 기준 static, 중앙선 y=0)
-webcam_link          측면 웹캠 (table_link 기준 static)
+webcam_link          측면 대각 웹캠, 높이 약 2 m (table_link 기준 static) — 모드 3 공 비행 + 몸 자세(BodyPose)
 ```
 
 - `camera_link`는 `rally_vision/camera_tf`(`ros2 run rally_vision camera_tf`)가 `hand_eye.yaml`을 읽어 올린다. 기본 `mode: static`은 두산 `base_link → link_6`(robot_state_publisher, 10/8 실로봇 약 56 Hz) 아래에 `link_6 → camera_link`(플랜지→TCP 0.228 m + hand_eye)를 `republish_hz`로 발행한다 — 영상 시각으로 보간되는 정확한 tf. **`/dsr01/joint_states`가 1 s 넘게 끊기거나 팔 6축이 전부 0이면(ros2_control 죽음) 발행을 멈추고 error 로그** — 그래야 받는 쪽이 NaN/폴백으로 가고 '그럴듯하지만 틀린 좌표'(손 z 1.4 m)가 안 나간다. `mode: tcp_pose`는 `/rally/robot/tcp_pose`(10 Hz)로 `base_link → camera_link`(두산 tf 없는 노트북·에뮬레이터용, segmenter `tcp_npy`와 같은 값). **`camera_link` 에 다른 부모(URDF `camera_bottom_screw_frame`)가 /tf_static 에 있으면 부모가 둘이 되므로 error 를 내고 발행하지 않는다** — bringup URDF 에서 카메라 체인(bracket·camera_*)을 빼야 static 모드가 켜진다(@정정인). tcp_pose 모드는 마지막 변환을 `republish_hz`(30 Hz)로 현재 시각에 다시 발행(hold-last)해 영상 stamp 조회가 되게 한다 — 값은 최근 tcp_pose(≤ 0.1 s 전)라 로봇 정지 중에만 정확 (static 모드는 두산 tf 가 보간하므로 이동 중에도 정확). 기본은 RealSense의 `camera_link → … → optical` static tf를 기다렸다가 `camera_link`를 자식으로 발행한다. RealSense가 tf를 안 내는 환경(`publish_tf:=false`)에서만 `optical_fallback: true`로 optical 프레임을 직접 발행한다(기본 false — 폴백 중 optical을 받은 노드는 RealSense가 늦게 켜져도 조회가 계속 실패하므로). `RunCalibration` 서비스는 아직 없음(Day 7 여유 시).
