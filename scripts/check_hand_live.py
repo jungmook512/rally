@@ -151,8 +151,14 @@ def render(node: Checker) -> np.ndarray:
     elif not last.detected:
         put(panel, "손 없음", (10, y), GRAY)
     else:
-        put(panel, f"{GESTURE_NAME.get(last.gesture, '?')}   손목 {last.wrist_angle_deg:.0f}°   {last.handedness}",
-            (10, y), WHITE)
+        z = last.palm_pose.position.z
+        if last.header.frame_id == "base_link":
+            depth = "base_link 좌표"                     # tf 가 있으면 카메라 거리가 아님
+        elif np.isfinite(z) and z > 0:
+            depth = f"카메라 {z * 100:.0f} cm"
+        else:
+            depth = "깊이 없음"                          # 깊이 못 구한 프레임 (손목 각도는 손 모양으로 계산)
+        put(panel, f"{GESTURE_NAME.get(last.gesture, '?')}  손목 {last.wrist_angle_deg:.0f}°  {depth}", (10, y), WHITE)
         y += 28
         bar = int(380 * max(0.0, min(1.0, last.grip_closure)))
         cv2.rectangle(panel, (10, y), (390, y + 16), (70, 70, 70), -1)
