@@ -169,7 +169,7 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 
 | 경로 | 계약 |
 |---|---|
-| Redis `rally:session_control` | brain이 0.2 s마다 갱신, TTL 2 s. `session_id`, `phase`(idle/running/pause_pending/paused/ended), `pause_id`, `reason`, `mode`, `difficulty`, `trial_index`, `can_resume`, `blocked_reason`, `updated_at`(Unix s) |
+| Redis `rally:session_control` | brain이 0.2 s마다 갱신, TTL 2 s. `session_id`, `phase`(idle/running/pause_pending/paused/ended), `pause_id`, `reason`, `mode`, `difficulty`, `trial_index`, `can_resume`, `blocked_reason`, `updated_at`(Unix s), `bt_node`(현재 BT 실행 노드명), `mode3_enabled`(챌린지 설정) |
 | Redis pub/sub `rally:session_commands` | 재개 요청 JSON: `request_id`, `session_id`, `pause_id`(모두 UUID 문자열), `command: resume`, `expires_at`(Unix s, 최대 3 s). 저장·재전송하지 않음 |
 | Redis `rally:session_reply:<request_id>` | brain 응답 `success`, `message`, `request_id`. TTL 5 s. 세션·휴식 식별값을 확인한 뒤 현재 안전·준비 조건으로 재검증. 중복 요청은 이미 소비된 휴식 ID이므로 재실행 불가 |
 | HTTP `GET /api/session` | 최신 Redis 제어 상태 또는 null (미수신·만료). Redis 연결 실패 503 |
@@ -184,3 +184,14 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 난이도별 reach는 기존 RMSE×2 간격이며 손의 레인 축 투영 거리 ≥ 목표 거리 + reach일 때만 타격한다.
 부족하거나 유효 손/NORMAL이 없으면 안내하며 대기한다. 대기 중에는 손 표본을 갱신하고 전송 직전에 조건을 재검증한다.
 STOP·취소는 기존 세션 중단 처리. 타격 action 실패 시에도 다음 타격을 시작하지 않고 기록 후 종료하여 운영자가 공·그리퍼 상태를 확인한다.
+
+## 테스트 휴식 제안 확인 — LLM·음성 응답 연결 전
+
+- Brain의 `test_rest_proposals` 파라미터는 기본 false. true로 시작할 때만 `/rally/brain/test/propose_rest` (`std_srvs/Trigger`)를 제공한다. 격리 가짜 스킬 환경에서만 켠다. 최신 상황판·안전·준비 조건과 running 상태, 대기 중인 모드/난이도 요청 없음을 검사한다. 이미 pending인 제안을 덮어쓰지 않는다.
+- 발화/화면 문구: “혹시 피곤하진 않으세요? 조금 쉬었다 할까요?”. 생성 시점부터 monotonic 20초이며 TTS 재생 완료를 기다리지 않는다. 응답 대기 중 기존 훈련은 계속한다. 현재 구현은 rest만 지원한다.
+- Redis `rally:session_control.proposal`: null 또는 `proposal_id`(UUID), `action: rest`, `source: test`, `prompt`, `status`(pending/accepted/rejected/expired/invalidated), `remaining_s`. 기존 GET `/api/session`과 WS `type: session`에 포함한다.
+- POST `/api/session/proposal/respond`: `{session_id, proposal_id, decision: accept|reject}`. ID는 UUID, 임의의 행동명 불허. API는 최신 상태를 확인하고 Redis에 `command: proposal_accept|proposal_reject`, `request_id`, `session_id`, `proposal_id`, `expires_at`을 보낸다. 요청 기한·reply 키·TTL·응답 대기는 resume과 동일하다. HTTP 200은 Brain 응답 후에만, 거절은 409, 연결/상태 없음 503, 결과 미확인 504. 자동 재전송하지 않는다.
+- Brain은 같은 lock에서 현재 세션·모드·난이도·상태·제안 ID·monotonic 만료·안전·준비 상태를 다시 검사한다. 수락은 한 번 소비하고 기존 `_pause`로 적용 예약하여 현재 시도 전체 완료 후 휴식한다. 수락 후 응답 타이머로 예약을 취소하지 않는다. 마지막 시도라면 기존대로 세션 종료다.
+- 거절은 즉시 rejected, 무응답은 20초 뒤 expired. 둘 다 훈련을 바꾸지 않는다. STOP/취소/상황판 상실/세션 종료/모드·난이도 변경/직접 휴식 요청은 pending을 무효화한다. 종료된 제안은 다시 수락할 수 없다. #98 손 근접 STOP 예외는 구현하지 않는다.
+- 화면은 응답 결과(성공·거절·결과 미확인)를 같은 제안의 상태 갱신·재접속 뒤에도 보존한다. 새 세션 또는 새 제안 ID를 받으면 이전 안내를 초기화하며, 이전 세션·제안의 늦은 응답은 새 안내를 덮지 않는다. 최신 상태가 없으면 응답 버튼을 비활성화하고 자동 재전송하지 않는다.
+- 테스트 제안 생성은 안전 판단이나 LLM 호출이 아니다. `tired` 직접 휴식의 기존 동작은 아직 변경하지 않으며, 실제 음성 분류·제안 응답 연결 전 상태다. 임의의 “네/아니요”나 resume은 제안 응답으로 사용하지 않는다.

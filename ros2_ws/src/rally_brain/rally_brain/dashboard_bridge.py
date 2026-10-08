@@ -1,4 +1,4 @@
-"""대시보드의 일시적 재개 요청. Redis I/O는 별도 콜백 그룹에서만 실행한다."""
+"""대시보드의 일시적 재개·제안 응답 요청. Redis I/O는 별도 콜백 그룹에서만 실행한다."""
 from __future__ import annotations
 
 import json
@@ -15,19 +15,22 @@ REPLY_PREFIX = "rally:session_reply:"
 
 
 def handle_command(node, data: str) -> tuple[str, dict] | None:
-    """기한·대상 검증 후 공통 재개 함수를 호출. 잘못된 요청 ID에는 응답 키도 만들지 않음."""
+    """기한·대상 검증 후 해당 Brain 제어 함수를 호출. 잘못된 요청 ID에는 응답 키도 만들지 않음."""
     try:
         command = json.loads(data)
         request_id = str(uuid.UUID(command["request_id"]))
         session_id = str(uuid.UUID(command["session_id"]))
-        pause_id = str(uuid.UUID(command["pause_id"]))
+        kind = command.get("command")
+        target_id = str(uuid.UUID(command["pause_id" if kind == "resume" else "proposal_id"]))
         remaining = float(command["expires_at"]) - time.time()
     except (ValueError, TypeError, KeyError, AttributeError):
         return None
-    if command.get("command") != "resume" or not 0 < remaining <= 3.0:
+    if kind not in ("resume", "proposal_accept", "proposal_reject") or not 0 < remaining <= 3.0:
         ok, message = False, "요청이 만료됐거나 허용되지 않은 명령입니다"
+    elif kind == "resume":
+        ok, message = node._resume(session_id, target_id)
     else:
-        ok, message = node._resume(session_id, pause_id)
+        ok, message = node._respond_proposal(session_id, target_id, kind.removeprefix("proposal_"))
     return request_id, {"request_id": request_id, "success": ok, "message": message}
 
 

@@ -201,3 +201,112 @@ def test_mode1_explicit_difficulty_and_rest_preserve_level(node):
         node._pending_intent = 'easier'
         node._after_trial(session, trial)
     assert session.difficulty[1] == 0
+
+
+def test_rest_proposal_accept_uses_existing_boundary(node):
+    response = node._test_proposal(None, NS())
+    assert response.success and node.control.phase == 'running'
+    pid = node.control_snapshot()['proposal']['proposal_id']
+    assert node._respond_proposal(node.control.session_id, pid, 'accept')[0]
+    assert node.control.phase == 'pause_pending'
+    assert not node._respond_proposal(node.control.session_id, pid, 'accept')[0]
+    assert not node._allow_trial()
+    assert node.control.phase == 'paused' and node._session.difficulty == {7: 2}
+
+
+@pytest.mark.parametrize('change', ['reject', 'expire', 'stop', 'stale', 'cancel', 'mode', 'difficulty', 'pause'])
+def test_rest_proposal_never_applies_after_invalidation(node, change):
+    assert node._test_proposal(None, NS()).success
+    pid = node.proposals.item['proposal_id']
+    if change == 'reject':
+        assert node._respond_proposal(node.control.session_id,pid,'reject')[0]
+    elif change == 'expire':
+        node.proposals.deadline = time.monotonic() - 1
+    elif change == 'stop':
+        ctx = SceneContext()
+        ctx.safety.level = SafetyStatus.LEVEL_STOP
+        node._on_context(ctx)
+    elif change == 'stale':
+        node._context_rx = time.monotonic() - 10
+    elif change == 'cancel':
+        node._cancel_session(None)
+    elif change == 'mode':
+        node._session.current_mode = 5
+    elif change == 'difficulty':
+        node._session.difficulty[7] = 3
+    elif change == 'pause':
+        node._pause('직접 요청')
+    assert not node._respond_proposal(node.control.session_id,pid,'accept')[0]
+    assert node.control.phase == ('pause_pending' if change == 'pause' else 'running')
+
+
+@pytest.mark.parametrize("mode", [1, 5])
+@pytest.mark.parametrize("last_trial", [False, True])
+def test_accepted_proposal_survives_deadline_until_whole_trial_finishes(node, monkeypatch, mode, last_trial):
+    """응답 시계가 끝나도 수락 예약은 유지하며, 회수/RECEIVE·기록 뒤에만 쉰다."""
+    from rally_brain import behaviours
+    from rally_interfaces.action import ReturnBall
+    from test_mode1 import arrange, hand, OK
+
+    clock = [0.0]
+    monkeypatch.setattr(behaviours, "time", NS(monotonic=lambda: clock[0]))
+    node.proposals.clock = lambda: clock[0]
+    count = 1 if last_trial else 2
+    if mode == 1:
+        first, session, trials = arrange([OK] * count)
+        session.skills_cfg["mode1"]["balls_per_cycle"] = count
+        session.get_context().hand = hand(1.0)
+        session.get_context().hand.distance_to_centerline = 0.20
+        final = session.action_client(ReturnBall, "/rally/skill/return_ball")
+    else:
+        ok = (True, {"success": True})
+        first = FakeClient(PickCompliant, [ok] * count)
+        final = FakeClient(Handover, [ok] * (2 * count))
+        rod = TrackedObject(class_name="rod", confidence=0.9, position=Point(x=0.3, y=0.2))
+        session, trials, _, _ = make_session({PickCompliant: first, Handover: final}, objects=[rod])
+    session.session_id = node.control.session_id
+    session.difficulty[mode] = 2
+    session.allow_trial = node._allow_trial
+    session.after_trial = node._after_trial
+    node._session = session
+    node._on_context(session.get_context())
+    tree = build_session_tree(session, [mode], count)
+    tree.tick_once()
+    assert first.sent == 1 and trials == []
+    assert node._test_proposal(None, NS()).success
+    proposal_id = node.proposals.item["proposal_id"]
+    assert node._respond_proposal(session.session_id, proposal_id, "accept")[0]
+
+    clock[0] = 21.0  # 제안의 원래 20초 기한 이후에도 예약은 취소되지 않는다.
+    assert node.control_snapshot()["proposal"]["status"] == "accepted"
+    assert node.control.phase == "pause_pending"
+    for decision in ("accept", "reject"):
+        assert not node._respond_proposal(session.session_id, proposal_id, decision)[0]
+    if mode == 1:
+        tree.tick_once()  # 타격 완료, 받기 관측 시작
+        clock[0] += 1.0
+        tree.tick_once()  # 받기 timeout, 손 이탈 대기
+        assert first.sent == 1 and final.sent == 0 and trials == []
+        assert node.control.phase == "pause_pending"
+        session.get_context().hand = hand(1.0)
+        tree.tick_once()  # 이탈 확인 뒤 회수 요청
+        assert final.sent == 1 and trials == []
+    else:
+        tree.tick_once()  # 집기 완료, GIVE 요청
+        assert final.sent == 1 and trials == []
+        tree.tick_once()  # GIVE 완료, RECEIVE 요청
+        assert final.sent == 2 and trials == []
+    assert node.control.phase == "pause_pending"
+    for _ in range(10):
+        tree.tick_once()
+        if tree.status == py_trees.common.Status.SUCCESS:
+            break
+    assert len(trials) == 1 and first.sent == 1
+    assert session.difficulty == {mode: 2}
+    assert node.proposals.item["status"] == "accepted"
+    if last_trial:
+        assert tree.status == py_trees.common.Status.SUCCESS
+        assert node.control.phase == "pause_pending"  # 실제 실행 루프가 이어서 finish한다.
+    else:
+        assert tree.status == py_trees.common.Status.RUNNING
+        assert node.control.phase == "paused"

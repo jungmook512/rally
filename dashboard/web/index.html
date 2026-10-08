@@ -6,93 +6,166 @@
 <title>RALLY 대시보드</title>
 <style>
   :root {
-    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #6b7385; --line: #e3e6ec;
-    --ok: #1f9d55; --ok-bg: #e7f6ee; --warn: #b7791f; --warn-bg: #fdf3e1; --stop: #c53030; --stop-bg: #fdeaea;
-    --accent: #2b6cb0;
+    --bg:#edf5f1; --panel:#fffefa; --text:#22352f; --muted:#52635d; --line:#b5c8bf;
+    --accent:#216c5b; --ok:#166148; --ok-bg:#def3e7; --warn:#78530b; --warn-bg:#fff0c9;
+    --stop:#a71d28; --stop-bg:#ffe2e5; --mint:#e3f2ec; --lavender:#eee9f7; --cream:#fff4dd;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #12151b; --panel: #1b2029; --text: #e6e9ef; --muted: #9aa3b5; --line: #2a313d;
-      --ok: #48bb78; --ok-bg: #16301f; --warn: #ecc94b; --warn-bg: #352b10; --stop: #fc8181; --stop-bg: #3a1616;
-      --accent: #63b3ed;
-    }
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text);
-         font: 15px/1.5 system-ui, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
-  header { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; }
-  header h1 { margin: 0; font-size: 18px; letter-spacing: .02em; }
-  #conn { font-size: 13px; color: var(--muted); }
-  #conn.off { color: var(--stop); }
-  main { padding: 0 20px 24px; display: grid; gap: 14px; max-width: 1280px; margin: 0 auto; }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0; }
-  .panel h2 { margin: 0 0 10px; font-size: 14px; color: var(--muted); font-weight: 600; }
-  button { background: var(--accent); color: white; border: 0; border-radius: 6px;
-           padding: 10px 18px; font: inherit; cursor: pointer; }
-  button:disabled { opacity: .45; cursor: not-allowed; }
-  #control-message { min-height: 1.5em; color: var(--muted); }
+  * { box-sizing:border-box; }
+  [hidden] { display:none!important; }
+  body { margin:0; background:linear-gradient(120deg,var(--bg),#f4f0fa 65%,#fff8e8); color:var(--text); font:15px/1.55 system-ui,-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif; }
+  header { max-width:1500px; margin:auto; padding:16px 28px; display:flex; justify-content:space-between; align-items:center; gap:16px; }
+  header h1 { margin:0; display:flex; align-items:center; gap:20px; }
+  header small { font-size:15px; font-weight:500; color:var(--muted); }
+  .brand { font-size:30px; letter-spacing:.08em; }
+  .brand span { color:var(--accent); font-size:12px; margin-left:4px; }
+  #conn { font-size:13px; color:var(--muted); }
+  #conn.off { color:var(--stop); }
+  #mode-nav { display:flex; gap:8px; padding:8px max(20px,calc((100vw - 1444px)/2)); background:#fffdf5; border-block:1px solid var(--line); overflow-x:auto; }
+  #mode-nav a { padding:10px 16px; border:1px solid transparent; border-radius:10px; color:var(--muted); text-decoration:none; font-weight:700; white-space:nowrap; }
+  #mode-nav a[aria-current] { background:var(--mint); border-color:#7cae99; color:#164e3f; }
+  #mode-nav small { font-size:11px; padding:2px 6px; background:var(--lavender); border-radius:6px; }
+  a:focus-visible,button:focus-visible,[tabindex]:focus-visible { outline:3px solid #9b6400; outline-offset:3px; }
+  main { max-width:1500px; margin:auto; padding:20px 28px 40px; display:grid; gap:16px; }
+  #page-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:4px 0; }
+  #page-heading h2 { margin:3px 0 6px; font-size:28px; line-height:1.3; }
+  #page-heading p { margin:0; color:var(--muted); }
+  .eyebrow { color:var(--accent)!important; font-size:11px; letter-spacing:.12em; font-weight:800; }
+  .badge { display:inline-block; border:1px solid var(--line); border-radius:8px; background:#fafcf9; padding:5px 9px; color:var(--muted); font-size:12px; }
+  .panel { min-width:0; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:18px; box-shadow:0 3px 0 #244c3510; }
+  .panel h2 { margin:0 0 12px; color:var(--text); font-size:18px; font-weight:750; }
+  .section-icon { display:inline-block; width:21px; height:21px; flex:none; vertical-align:middle; }
+  .section-heading,.current-label,.control-status h2,#proposal-panel h2 { display:flex; align-items:center; gap:9px; }
+  .panel .section-heading { padding-bottom:12px; margin-bottom:14px; border-bottom:1px solid var(--line); }
+  .section-help { margin:-4px 0 16px; color:var(--muted); font-size:13px; }
+  .section-tag { font-size:11px; font-weight:650; border:1px solid #c3ae82; border-radius:5px; padding:2px 6px; color:#70572e; }
+  .control-bar,.instruction,.stats,.steps-panel,#trials-view,#events-view { border-left-width:4px; }
+  .panel.control-bar { border-left-color:#4d8a72; }
+  .panel.instruction { border-left-color:#aa8440; }
+  .panel.stats { border-left-color:#629681; }
+  .panel.steps-panel,#events-view { border-left-color:#9182ac; }
+  #trials-view { border-left-color:#728b9d; }
+  .current-label { font-size:15px; font-weight:750; color:#6d552d; }
+  #raw-stage { display:block; padding-top:10px; border-top:1px solid #d9c79d; overflow-wrap:anywhere; }
+  #raw-stage:empty { display:none; }
+  .stats dd { min-width:0; font-size:20px; line-height:1.4; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+  .stats dt { flex-shrink:0; align-self:center; }
+  .diagram-panel>.panel-top { padding-bottom:12px; border-bottom:1px solid var(--line); }
 
-  #safety { border-radius: 10px; padding: 12px 16px; font-weight: 600; display: flex; gap: 12px; align-items: baseline; }
-  #safety.normal { background: var(--ok-bg); color: var(--ok); }
-  #safety.slow { background: var(--warn-bg); color: var(--warn); }
-  #safety.stop { background: var(--stop-bg); color: var(--stop); }
-  #safety.unknown { background: var(--panel); color: var(--muted); border: 1px solid var(--line); }
-  #safety small { font-weight: 400; }
-
-  .cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
-  .card .label { font-size: 13px; color: var(--muted); }
-  .card .value { font-size: 26px; font-weight: 700; margin-top: 2px; overflow-wrap: anywhere; }
-  .card .sub { font-size: 13px; color: var(--muted); }
-
-  .two { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 14px; }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-  th { color: var(--muted); font-weight: 600; font-size: 13px; }
-  td.notes { white-space: normal; color: var(--muted); }
-  .scroll { max-height: 340px; overflow: auto; }
-  .ok { color: var(--ok); font-weight: 600; } .fail { color: var(--stop); font-weight: 600; }
-  ul#events { list-style: none; margin: 0; padding: 0; font-size: 14px; }
-  ul#events li { padding: 6px 0; border-bottom: 1px solid var(--line); display: flex; gap: 10px; }
-  ul#events time { color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
-  .empty { color: var(--muted); font-size: 14px; padding: 8px 0; }
-  .placeholders { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
-  .placeholder { min-height: 140px; display: flex; flex-direction: column; }
-  .placeholder p { margin: auto 0; color: var(--muted); font-size: 13px; text-align: center; }
-  .new { animation: flash 1.2s ease-out; }
-  @keyframes flash { from { background: color-mix(in srgb, var(--accent) 18%, transparent); } to { background: transparent; } }
-
-  @media (max-width: 860px) {
-    .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .two, .placeholders { grid-template-columns: 1fr; }
-    header, main { padding-left: 16px; padding-right: 16px; }
-  }
+  .panel-top { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .panel-top h2 { margin:0; }
+  button { border:1px solid #18503f; border-radius:9px; padding:10px 18px; background:var(--accent); color:white; font:inherit; font-weight:650; cursor:pointer; }
+  button:disabled { background:#e3e8e4; color:#53635c; border-color:#b8c3bd; cursor:not-allowed; }
+  #proposal-reject { background:#fffdf6; color:var(--text); border-color:#8c9e93; }
+  #proposal-reject:disabled { background:#e3e8e4; color:#53635c; }
+  #safety { display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; border:1px solid currentColor; border-left:6px solid currentColor; border-radius:10px; padding:10px 14px; font-weight:750; }
+  #safety.normal { background:var(--ok-bg); color:var(--ok); }
+  #safety.slow { background:var(--warn-bg); color:var(--warn); }
+  #safety.stop { background:var(--stop-bg); color:var(--stop); }
+  #safety.unknown { background:#f0f1ee; color:var(--muted); }
+  #safety small { font-weight:500; }
+  .control-bar { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:6px 18px; background:var(--mint); border-color:#87b69e; }
+  .control-status { display:grid; gap:8px; }
+  .control-status h2,.control-status p { margin:0; }
+  #phase { font-size:18px; font-weight:750; line-height:1.5; overflow-wrap:anywhere; }
+  .control-bar small { color:var(--muted); font-size:12px; }
+  #control-message { grid-column:1/-1; margin:0; color:var(--muted); }
+  #control-message:empty,#proposal-message:empty { display:none; }
+  #proposal-panel { background:var(--cream); border-color:#c5ab72; }
+  #proposal-prompt { font-size:19px; font-weight:700; }
+  #proposal-message { font-weight:650; }
+  #mode-view { display:grid; grid-template-columns:minmax(0,3fr) minmax(270px,1fr); gap:16px; }
+  .visual-column,aside { display:grid; align-content:start; gap:16px; min-width:0; }
+  .diagram-panel { background:#f9fcf8; border-color:#9eb8a8; }
+  #mode-diagram { margin-top:12px; overflow-x:auto; border:1px solid #c2d3c7; border-radius:10px; background:#f1f7ef; }
+  #mode-diagram svg { display:block; width:100%; min-width:600px; height:auto; max-height:420px; object-fit:contain; }
+  .caption { margin:10px 0 0; color:var(--muted); font-size:13px; line-height:1.6; }
+  .steps-panel { background:#f1edf8; border-color:#b6a6cd; }
+  #steps { display:flex; gap:8px; list-style:none; margin:0; padding:0; }
+  #steps li { flex:1; text-align:center; color:var(--muted); font-size:13px; }
+  #steps li span { display:grid; place-items:center; width:34px; height:34px; margin:0 auto 8px; border:1px solid #aa9cbb; border-radius:50%; background:#fffdfb; font-size:16px; }
+  #steps strong { font-weight:650; }
+  #steps li.active { color:#725008; }
+  #steps li.active span { background:#ffe4a3; border:2px solid #a57617; box-shadow:0 0 0 3px #fff8dc; }
+  .instruction { background:var(--cream); border-color:#c5ab72; }
+  .instruction h2 { font-size:24px; line-height:1.35; margin:2px 0 12px; overflow-wrap:anywhere; }
+  .instruction p { margin:8px 0; font-size:15px; }
+  .stats { background:var(--mint); border-color:#9bbda9; }
+  .stats dl { margin:0; }
+  .stats dl>div { display:flex; justify-content:space-between; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); }
+  dt { color:var(--muted); font-size:14px; } dd { margin:0; font-weight:750; text-align:right; }
+  .cards { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; }
+  .card:nth-child(odd) { background:var(--mint); } .card:nth-child(even) { background:var(--lavender); }
+  .card .label { font-size:14px; color:var(--text); font-weight:750; padding-bottom:10px; border-bottom:1px solid var(--line); }
+  .card .sub { font-size:12px; color:var(--muted); margin-top:5px; overflow-wrap:anywhere; }
+  .card .value { font-size:30px; line-height:1.35; margin-top:13px; font-weight:800; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+  #events-view { background:#f5f0fb; border-color:#b6a6cd; }
+  #trials-view .scroll,#events-view .scroll { max-height:520px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th,td { text-align:left; padding:8px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { color:var(--muted); font-weight:700; font-size:13px; }
+  thead { position:sticky; top:0; background:var(--panel); }
+  td.notes { white-space:normal; color:var(--muted); }
+  .scroll { max-height:200px; overflow:auto; }
+  .ok { color:var(--ok); font-weight:650; } .fail { color:var(--stop); font-weight:650; }
+  ul#events { list-style:none; margin:0; padding:0; font-size:14px; }
+  ul#events li { display:flex; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); overflow-wrap:anywhere; }
+  ul#events time { flex:none; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .empty { color:var(--muted); padding:8px 0; font-size:14px; }
+  .new { animation:flash 1.2s ease-out; }
+  @keyframes flash { from { background:#d5eee2; } to { background:transparent; } }
+  @media(max-width:1000px) { #mode-view { grid-template-columns:1fr; } aside { grid-template-columns:1fr 1fr; } #page-heading { align-items:flex-start; flex-direction:column; } }
+  @media(max-width:700px) { .cards { grid-template-columns:repeat(2,minmax(0,1fr)); } header { padding:14px 16px; } header small { display:none; } main { padding:16px 12px 28px; } .panel { padding:14px; } #mode-nav { padding-inline:12px; } #mode-nav a { padding:9px 12px; font-size:14px; } #page-heading h2 { font-size:25px; } .panel-top { align-items:flex-start; flex-direction:column; } #steps { flex-wrap:wrap; row-gap:16px; } #steps li { flex:0 0 calc(33.33% - 6px); } }
+  @media(max-width:700px) { #mode-diagram svg { min-width:0; } #mode-diagram svg text { display:none; } }
+  @media(max-width:440px) { aside { grid-template-columns:1fr; } .control-bar { grid-template-columns:1fr; } .control-bar small { grid-column:1/-1; } #resume { justify-self:start; } #proposal-panel button { display:block; width:100%; margin-top:8px; } }
 </style>
 </head>
 <body>
 <header>
-  <h1>RALLY 대시보드</h1>
+  <h1><span class="brand">RALLY<span>●</span></span><small>재활 훈련 대시보드</small></h1>
   <span id="conn" class="off">연결 중…</span>
 </header>
+<nav id="mode-nav" aria-label="훈련 모드 페이지">
+<a href="#overview" data-page="overview">전체 현황</a>
+<a href="#mode1" data-page="1">모드 1 · 공 굴리기</a>
+<a href="#mode3" data-page="3">모드 3 · 캐치볼 <small>챌린지</small></a>
+<a href="#mode5" data-page="5">모드 5 · 건네고 받기</a>
+<a href="#mode7" data-page="7">모드 7 · 저항 밀기</a>
+<a href="#trials" data-page="trials">최근 시도</a>
+<a href="#events" data-page="events">사건 기록</a>
+</nav>
 <main>
+  <section id="page-heading"><div><p class="eyebrow">훈련 모니터</p><h2 id="page-title">전체 현황</h2><p id="page-subtitle">연결된 훈련의 상태와 기록을 확인합니다.</p></div><span id="view-status" class="badge">전체 보기</span></section>
   <div id="safety" class="unknown">안전 상태 모름 <small>상황판 수신 전</small></div>
-  <section class="panel" aria-label="훈련 휴식과 재개">
-    <h2>훈련 진행</h2>
-    <p id="phase" role="status">세션 상태 수신 대기</p>
+  <section class="panel control-bar" aria-label="훈련 휴식과 재개">
+    <div class="control-status"><h2><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4H19V20H5ZM9 8H15M9 12H15M9 16H12"/></svg>훈련 상태</h2>
+    <p id="phase" role="status">세션 상태 수신 대기</p></div>
     <button id="resume" type="button" disabled>훈련 재개</button>
     <p id="control-message" role="status" aria-live="polite"></p>
     <small>휴식 후 같은 난이도로 이어갑니다. 안전 정지 해제는 운영자의 별도 절차가 필요합니다.</small>
   </section>
+  <section id="proposal-panel" class="panel" hidden aria-label="휴식 제안">
+    <div class="panel-top"><h2><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5V19M16 5V19"/></svg>휴식 제안 <small class="section-tag">테스트</small></h2><span id="proposal-time" class="badge"></span></div>
+    <p id="proposal-prompt"></p><p id="proposal-status" role="status"></p>
+    <button id="proposal-accept" type="button">네, 쉬겠습니다</button>
+    <button id="proposal-reject" type="button">아니요, 계속할게요</button>
+    <p id="proposal-message" role="status" aria-live="polite"></p>
+  </section>
+  <section id="mode-view" hidden>
+    <div class="visual-column"><div class="panel diagram-panel"><div class="panel-top"><h2 id="diagram-title">훈련 공간</h2><span class="badge">환자 시점 · 실행 단계 설명</span></div><div id="mode-diagram" tabindex="0" role="region" aria-label="환자 시점에서 현재 실행 단계를 설명하는 훈련 일러스트"></div><p id="diagram-caption" class="caption"></p></div>
+    <div class="panel steps-panel"><h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5H8V9H4ZM12 7H20M4 15H8V19H4ZM12 17H20M6 9V15"/></svg>단계 순서</h2><ol id="steps"></ol><p class="caption">현재 강조는 수신된 실행 단계입니다. 이전 단계의 성공을 뜻하지 않습니다.</p></div></div>
+    <aside><div class="panel instruction"><div class="section-heading current-label"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5L18 12L8 19Z"/></svg>현재 동작</div><h2 id="step-title" role="status">상태 수신 대기</h2><p id="step-description"></p><span id="raw-stage" class="caption"></span></div>
+    <div class="panel stats"><h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19H20M7 15V10M12 15V5M17 15V8"/></svg>진행 현황</h2><dl><div><dt>완료한 시도</dt><dd id="mode-trials">—</dd></div><div><dt>현재 난이도</dt><dd id="mode-level">—</dd></div><div><dt>세션 상태</dt><dd id="mode-phase">미수신</dd></div></dl><p id="mode-extra" class="caption"></p></div></aside>
+  </section>
 
-  <section class="cards">
-    <div class="panel card"><div class="label">지금 모드</div><div class="value" id="mode">—</div><div class="sub" id="robot">로봇 —</div></div>
-    <div class="panel card"><div class="label">시도</div><div class="value" id="trial">—</div><div class="sub" id="session">세션 —</div></div>
+  <section class="cards" id="overview-cards">
+    <div class="panel card"><div class="label">현재 훈련 모드</div><div class="value" id="mode">—</div><div class="sub" id="robot">로봇 —</div></div>
+    <div class="panel card"><div class="label">현재 시도</div><div class="value" id="trial">—</div><div class="sub" id="session">세션 —</div></div>
     <div class="panel card"><div class="label">최근 성공률</div><div class="value" id="rate">—</div><div class="sub">같은 세션 최근 5회</div></div>
     <div class="panel card"><div class="label">피로도</div><div class="value" id="fatigue">—</div><div class="sub" id="hand">손 —</div></div>
   </section>
 
-  <section class="two">
-    <div class="panel">
-      <h2>최근 시도</h2>
+  <section id="trials-view" class="panel" hidden>
+      <h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3H15L19 7V21H6ZM15 3V7H19M9 11H16M9 15H16M9 18H13"/></svg>최근 시도</h2><p class="section-help">수신된 시도별 결과 · 오차 · 소요 시간</p>
       <div class="scroll">
         <table>
           <thead><tr><th>#</th><th>모드</th><th>결과</th><th>오차</th><th>시간</th><th>메모</th></tr></thead>
@@ -100,21 +173,16 @@
         </table>
         <div class="empty" id="trials-empty">아직 시도 없음</div>
       </div>
-    </div>
-    <div class="panel">
-      <h2>사건 기록</h2>
+  </section>
+  <section id="events-view" class="panel" hidden>
+      <h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4A8 8 0 1 1 4 12M4 4V9H9M12 7V12L16 14"/></svg>사건 기록</h2><p class="section-help">수신된 안전 상태 · 음성 · 모드 변경 기록</p>
       <div class="scroll"><ul id="events"></ul><div class="empty" id="events-empty">아직 사건 없음</div></div>
-    </div>
   </section>
 
-  <section class="placeholders">
-    <div class="panel placeholder"><h2>힘 그래프</h2><p>Day 4 — 모드 7 실시간 힘 게이지 · 최근 10 s</p></div>
-    <div class="panel placeholder"><h2>학습 곡선</h2><p>Day 5 — 예측 vs 실제 정지 위치 · 시도별 오차</p></div>
-    <div class="panel placeholder"><h2>세션 리포트</h2><p>Day 6 — LLM 리포트 (sessions.report_md)</p></div>
-  </section>
 </main>
+<script src="/images/training-scenes.js"></script>
 <script>
-const MODES = {1: "공 굴리기", 3: "캐치볼", 5: "건네고 받기", 7: "팔씨름"};
+const MODES = {1: "공 굴리기", 3: "캐치볼", 5: "건네고 받기", 7: "저항 밀기"};
 const LEVELS = {normal: ["normal", "정상"], slow: ["slow", "느리게"], stop: ["stop", "정지"]};   // rally_db convert.SAFETY_LEVELS
 const ROBOT = {idle: "대기", moving: "움직이는 중", holding: "잡고 있음", stopped: "멈춤"};
 const KINDS = {safety_change: "안전", voice_intent: "음성", mode_change: "모드", trial: "시도"};
@@ -124,13 +192,28 @@ const modeName = (m) => m ? `${m} ${MODES[m] ?? ""}`.trim() : "—";
 const clock = (iso) => iso ? new Date(iso).toLocaleTimeString("ko-KR", {hour12: false}) : "";
 const pct = (x) => x == null ? "—" : `${Math.round(x * 100)}%`;
 const seenTrials = new Set();
+let selectedMode = null, selectedPage = 'overview';
 let control = null, controlReceived = 0, resuming = false, stateTime = 0;
+let sceneSafety = null, sceneKey = null;
+let lastProposalId = null, lastProposalSessionId = null;
 const PHASES = {idle: "대기", running: "진행 중", pause_pending: "현재 시도 완료 후 휴식 예정",
                 paused: "휴식 중", ended: "세션 종료"};
 
 function renderControl(s) {
+  if (s && s.session_id !== lastProposalSessionId) {
+    lastProposalSessionId = s.session_id;
+    lastProposalId = null;
+    $("proposal-message").textContent = "";
+    $("proposal-prompt").textContent = "";
+  }
+  if (s?.proposal?.proposal_id && s.proposal.proposal_id !== lastProposalId) {
+    lastProposalId = s.proposal.proposal_id;
+    $("proposal-message").textContent = "";
+  }
   control = s;
+  renderModePage();
   controlReceived = performance.now();
+  renderProposal();
   $("phase").textContent = s ? `${PHASES[s.phase] ?? s.phase} · ${modeName(s.mode)} · 난이도 ${s.difficulty ?? "—"}`
     + (s.phase === "paused" && s.blocked_reason ? ` · ${s.blocked_reason}` : "") : "세션 상태 연결 끊김";
   $("resume").disabled = resuming || !s?.can_resume || s.phase !== "paused";
@@ -157,16 +240,18 @@ $("resume").onclick = async () => {
 
 setInterval(() => {
   if (performance.now() - controlReceived > 2000) renderControl(null);
+  renderProposal();
   if (!stateTime || Date.now() - stateTime > 2000) {
     $("safety").className = "unknown";
     $("safety").textContent = "안전 상태 모름 — 최신 상황판 수신 대기";
   }
+  renderModePage();
 }, 500);
 
 function renderState(s) {
-  if (!s) return;
-  stateTime = Date.parse(s.time) || 0;
-  if (!stateTime || Date.now() - stateTime > 2000) return;
+  sceneSafety = s?.safety?.level ?? null;
+  stateTime = s ? Date.parse(s.time) || 0 : 0;
+  if (!stateTime || Date.now() - stateTime < 0 || Date.now() - stateTime > 2000) { renderModePage(); return; }
   const [cls, word] = LEVELS[s.safety?.level] ?? ["unknown", "모름"];
   $("safety").className = cls;
   $("safety").innerHTML = `안전: ${word}` + (s.safety?.reason ? ` <small>${esc(s.safety.reason)}</small>` : "");
@@ -177,6 +262,7 @@ function renderState(s) {
   $("rate").textContent = pct(s.recent_success_rate);
   $("fatigue").textContent = pct(s.fatigue_score);
   $("hand").textContent = s.hand_detected ? "손 보임" : "손 안 보임";
+  renderModePage();
 }
 
 function addTrial(t, flash) {
@@ -184,6 +270,8 @@ function addTrial(t, flash) {
   seenTrials.add(t.trial_id);
   $("trials-empty").hidden = true;
   const tr = document.createElement("tr");
+  tr.dataset.mode = t.mode;
+  tr.hidden = selectedMode !== null && Number(t.mode) !== selectedMode;
   if (flash) tr.className = "new";
   const err = (t.mode === 1 || t.mode === 3) && t.error_mm != null ? `${Number(t.error_mm).toFixed(0)} mm` : "—";
   tr.innerHTML = `<td>${t.trial_index}</td><td>${esc(modeName(t.mode))}</td>` +
@@ -191,6 +279,7 @@ function addTrial(t, flash) {
     `<td>${err}</td><td>${t.duration_s != null ? Number(t.duration_s).toFixed(1) + " s" : "—"}</td>` +
     `<td class="notes">${esc(t.notes)}</td>`;
   $("trials").prepend(tr);
+  filterTrials();
 }
 
 function describe(e) {
@@ -235,6 +324,129 @@ function connect() {
   };
 }
 
+let respondingProposal = false;
+function renderProposal() {
+  const p=control?.proposal;
+  $('proposal-panel').hidden=!p&&!$('proposal-message').textContent;
+  if(!p) {
+    $('proposal-time').textContent='';
+    $('proposal-status').textContent='응답 불가 · 최신 상태 확인 중';
+    $('proposal-accept').disabled=$('proposal-reject').disabled=true;
+    return;
+  }
+  const age=Math.max(0,(performance.now()-controlReceived)/1000);
+  const remaining=Math.max(0, Number(p.remaining_s||0)-age);
+  const fresh=Number.isFinite(control.updated_at)&&Date.now()/1000-control.updated_at>=0&&Date.now()/1000-control.updated_at<2;
+  const pending=p.status==='pending'&&remaining>0&&fresh&&control.phase==='running';
+  $('proposal-prompt').textContent=p.prompt;
+  $('proposal-time').textContent=pending?`${Math.ceil(remaining)}초 남음`:'';
+  const statuses={accepted:'수락됨 · 휴식 예약 처리 결과를 확인해 주세요',rejected:'거절됨 · 훈련 계속',expired:'시간 만료 · 훈련 계속',invalidated:'훈련 상태 변경으로 제안 종료'};
+  $('proposal-status').textContent=pending?'응답을 기다리는 동안 훈련은 계속됩니다.':statuses[p.status]||'응답 불가 · 최신 상태 확인 중';
+  $('proposal-accept').disabled=$('proposal-reject').disabled=!pending||respondingProposal;
+}
+async function respondProposal(decision) {
+  if(respondingProposal||$('proposal-'+decision).disabled)return;
+  const p=control?.proposal;
+  if(!p)return;
+  const body={session_id:control.session_id,proposal_id:p.proposal_id,decision};
+  respondingProposal=true;renderProposal();
+  $('proposal-message').textContent='Brain 승인 확인 중…';
+  try {
+    const r=await fetch('/api/session/proposal/respond',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(5000)});
+    const reply=await r.json();
+    if (lastProposalSessionId===body.session_id && lastProposalId===body.proposal_id) $('proposal-message').textContent=r.ok?reply.message:reply.detail;
+  } catch(e){
+    if (lastProposalSessionId===body.session_id && lastProposalId===body.proposal_id) $('proposal-message').textContent='응답 결과 미확인 · 자동 재시도하지 않고 상태를 확인해 주세요';
+  }
+  finally {respondingProposal=false;renderControl(null);}
+}
+$('proposal-accept').onclick=()=>respondProposal('accept');
+$('proposal-reject').onclick=()=>respondProposal('reject');
+
+const PAGES = {
+  1: {title:'공 굴리기', subtitle:'공 목표와 손 시작 위치를 확인하고, 받기부터 회수까지 따라갑니다.',
+      diagram:'훈련 공간', caption:'환자 자리에서 바라본 레인입니다. 공은 로봇 쪽에서 내 쪽으로 옵니다. 위치·움직임은 단계 설명용이며 실측이 아닙니다.',
+      steps:['손 위치·안전 확인','공 보내기','받기 관측','손 이탈 대기','공 회수','시도 기록'],
+      match:[/손 시작 위치|NORMAL|손 대기|손 보기/,/밀기/,/쥐었다|받기/,/손 빠짐|손 이탈/,/공 회수/,/기록/],
+      help:['손 시작 위치와 안전 NORMAL을 확인합니다.','로봇이 공을 준비하고 보냅니다.','손동작으로 받기 후보를 관측합니다.','손 이탈을 확인할 때까지 회수를 시작하지 않습니다.','레인 위 공을 거치대로 돌려놓습니다.','받기 후보와 회수 결과를 기록합니다.']},
+  3: {title:'캐치볼', subtitle:'관측한 공 궤적과 예상 착지점, 패드의 역할을 살펴봅니다.',diagram:'공 궤적과 요격',
+      caption:'환자 자리에서 로봇의 패드를 바라봅니다. 점선은 던지는 방향의 예시이며 실제 궤적·착지점 데이터는 아직 연결되지 않았습니다.',
+      steps:['준비','던지기 관측','착지점 예측','패드 이동','받기 확인','결과 기록'],match:[],help:[]},
+  5: {title:'건네고 받기', subtitle:'물체 집기부터 건네기, 돌려받기까지 전달 방향을 확인합니다.',diagram:'물체 전달',
+      caption:'환자 자리에서 물체를 건네받고 돌려주는 방향을 보여줍니다. 위치·움직임은 단계 설명용이며 실측이 아닙니다.',
+      steps:['손·물체 확인','집기','건네기','돌려받기','시도 기록'],
+      match:[/손 대기|물체 대기/,/집기/,/GIVE/,/RECEIVE/,/기록/],
+      help:['손과 훈련 물체를 확인합니다.','로봇이 훈련 물체를 집습니다.','환자에게 물체를 제시하고 파지를 기다립니다.','환자가 돌려주는 물체를 받습니다.','건네기와 돌려받기의 결과를 기록합니다.']},
+  7: {title:'저항 밀기', subtitle:'팔씨름처럼 팔을 세우고 로봇팔을 밉니다. 로봇은 버티다가 물러납니다.',diagram:'팔씨름형 저항 훈련',
+      caption:'내 손으로 로봇팔 끝의 접촉부를 직접 밉니다. 그림은 단계 설명용이며 실측 움직임은 아닙니다. 환자가 밀면 로봇이 버티다가 목표 달성 후 져줍니다. 로봇이 환자 쪽으로 능동적으로 밀지는 않습니다.',
+      steps:['손 확인','저항 훈련','시도 기록'],match:[/손 대기/,/저항 밀기/,/기록/],
+      help:['손이 보이는지 확인합니다.','저항·힘 유지·져주기·복귀를 포함한 스킬이 실행 중입니다.','최대 힘과 유지 시간 등 시도 결과를 기록합니다.']}
+};
+function selectPage() {
+  const hash=location.hash.slice(1);
+  selectedPage=/^mode[1357]$/.test(hash)?hash.slice(4):(['trials','events'].includes(hash)?hash:'overview');
+  selectedMode=Object.hasOwn(PAGES,selectedPage)?Number(selectedPage):null;
+  document.querySelectorAll('#mode-nav a').forEach(a=>{if(a.dataset.page===selectedPage)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
+  $('mode-view').hidden=selectedMode===null;
+  $('overview-cards').hidden=selectedPage!=='overview';
+  $('trials-view').hidden=selectedPage!=='trials';
+  $('events-view').hidden=selectedPage!=='events';
+  if(selectedMode!==null) {
+    $('page-title').textContent=`모드 ${selectedMode} · ${PAGES[selectedMode].title}`;
+    $('page-subtitle').textContent=PAGES[selectedMode].subtitle;
+    $('diagram-title').textContent=PAGES[selectedMode].diagram;
+    $('diagram-caption').textContent=PAGES[selectedMode].caption;
+  } else {
+    const pages={overview:['전체 현황','현재 훈련과 안전 상태를 한눈에 확인합니다.'],trials:['최근 시도','수신된 전체 모드의 시도 결과를 확인합니다.'],events:['사건 기록','안전·음성·모드 변경 등 수신된 사건을 확인합니다.']};
+    [$('page-title').textContent,$('page-subtitle').textContent]=pages[selectedPage];
+  }
+  filterTrials(); renderModePage();
+}
+function filterTrials(){
+  let visible=0;
+  for(const row of $('trials').children){row.hidden=selectedMode!==null&&Number(row.dataset.mode)!==selectedMode;if(!row.hidden)visible++;}
+  $('trials-empty').hidden=visible>0;
+  $('trials-empty').textContent=selectedMode===null?'아직 수신한 시도 기록이 없습니다.':'이 모드의 수신된 시도 기록이 없습니다.';
+}
+function renderModePage(){
+  if(selectedMode===null){$('view-status').textContent=selectedPage==='overview'?'전체 보기':'기록 조회';return;}
+  const page=PAGES[selectedMode];
+  const fresh=control&&Number.isFinite(control.updated_at)&&Date.now()/1000-control.updated_at>=0&&Date.now()/1000-control.updated_at<2;
+  const active=fresh&&Number(control.mode)===selectedMode;
+  const running=active&&['running','pause_pending'].includes(control.phase);
+  const node=running?String(control.bt_node||''):'';
+  const index=running?page.match.findIndex(r=>r.test(node)):-1;
+  const safetyFresh=stateTime>0&&Date.now()-stateTime>=0&&Date.now()-stateTime<2000;
+  let sceneStatus=!fresh?'stale':!active?'inactive':control.phase;
+  if (active) {
+    if (safetyFresh&&sceneSafety==='stop') sceneStatus='stopped';
+    else if (!safetyFresh||!['normal','slow'].includes(sceneSafety)) sceneStatus='waiting';
+    else if (running&&index<0) sceneStatus='waiting';
+  }
+  if (!['running','pause_pending','paused','ended','stopped','stale','inactive','waiting'].includes(sceneStatus)) sceneStatus='waiting';
+  const nextSceneKey=`${selectedMode}:${index}:${sceneStatus}`;
+  if (sceneKey!==nextSceneKey) {
+    $('mode-diagram').innerHTML=renderTrainingScene(selectedMode,index,sceneStatus);
+    sceneKey=nextSceneKey;
+  }
+  $('view-status').textContent=active?'현재 훈련 모드':'둘러보는 페이지 · 훈련 모드는 바뀌지 않습니다';
+  $('mode-trials').textContent=active?`${control.trial_index ?? 0}회 (세션 전체)`:'—';
+  $('mode-level').textContent=active&&control.difficulty!=null?`${control.difficulty}단계`:'—';
+  $('mode-phase').textContent=active?(PHASES[control.phase]||'미수신'):'현재 실행 중 아님';
+  $('mode-extra').textContent=selectedMode===3?(fresh?(control.mode3_enabled?'챌린지 설정 켜짐 · 상세 단계 연결 대기':'챌린지 비활성'):'챌린지 설정 미수신'):selectedMode===7?'실시간 힘·목표 힘 데이터 연결 대기':'실제 위치·목표 좌표는 아직 표시하지 않습니다.';
+  let title='현재 모드 실행 대기',description='탭은 조회용입니다. 이 페이지를 열어도 로봇 동작은 시작되지 않습니다.';
+  if(!fresh){title='상태 수신 대기';description='연결이 복구되면 현재 단계를 표시합니다.';}
+  else if(active&&control.phase==='paused'){title='휴식 중';description='준비되면 상단 훈련 재개 버튼으로 같은 난이도에서 이어갑니다.';}
+  else if(active&&control.phase==='ended'){title='세션 종료';description='완료된 시도 기록을 확인할 수 있습니다.';}
+  else if(index>=0){title=page.steps[index];description=page.help[index];}
+  else if(running){title='세부 단계 확인 중';description='수신한 상태에 대응하는 단계가 아직 연결되지 않았습니다.';}
+  if(active&&control.phase==='pause_pending')description+=' 현재 시도와 회수 완료 후 휴식합니다.';
+  $('step-title').textContent=title;$('step-description').textContent=description;$('raw-stage').textContent=node?`수신 상태 · ${node}`:'';
+  $('steps').innerHTML=page.steps.map((step,i)=>`<li class="${i===index?'active':''}" ${i===index?'aria-current="step"':''}><span>${i+1}</span><strong>${esc(step)}</strong></li>`).join('');
+}
+
+window.addEventListener("hashchange", selectPage);
+selectPage();
 load().then(connect);
 </script>
 </body>
