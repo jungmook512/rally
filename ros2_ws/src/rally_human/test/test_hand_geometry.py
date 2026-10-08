@@ -91,6 +91,19 @@ def test_wrist_rotation(roll_deg, expected):
     assert hg.wrist_rotation_deg(R, np.array([0, 0, 1.0])) == pytest.approx(expected, abs=1e-6)
 
 
+
+# 손 좌표(위 +z, 손가락 +y) → MediaPipe world 축(x 오른쪽, y 아래, z 카메라에서 멀어짐): 위 → −y, 손가락 → +z
+TO_IMAGE = np.array([[1.0, 0, 0], [0, 0, -1.0], [0, 1.0, 0]])
+
+
+@pytest.mark.parametrize("roll_deg, expected", [(0, 0), (90, 90), (180, 180), (-90, 90)])
+def test_wrist_rotation_from_world_without_depth(roll_deg, expected):
+    """깊이 없을 때 경로 (#58 리뷰 5): 영상 축의 손 모양만으로 0 = 손바닥 아래, 90 = 옆, 180 = 위."""
+    a = math.radians(roll_deg)
+    Ry = np.array([[math.cos(a), 0, math.sin(a)], [0, 1, 0], [-math.sin(a), 0, math.cos(a)]])
+    world = make_hand(0.0) @ Ry.T @ TO_IMAGE.T
+    assert hg.wrist_rotation_from_world(world, "right") == pytest.approx(expected, abs=1e-6)
+
 def test_distance_to_centerline_sign():
     pts = np.array([[0.70, 0, 0], [0.65, 0, 0], [0.80, 0, 0]])
     assert hg.distance_to_centerline(pts, 0.60) == pytest.approx(0.05)     # 환자 구역, 5 cm 남음
