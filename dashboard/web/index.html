@@ -157,11 +157,17 @@ const pct = (x) => x == null ? "—" : `${Math.round(x * 100)}%`;
 const seenTrials = new Set();
 let selectedMode = null;
 let control = null, controlReceived = 0, resuming = false, stateTime = 0;
-let lastProposalId = null;
+let lastProposalId = null, lastProposalSessionId = null;
 const PHASES = {idle: "대기", running: "진행 중", pause_pending: "현재 시도 완료 후 휴식 예정",
                 paused: "휴식 중", ended: "세션 종료"};
 
 function renderControl(s) {
+  if (s && s.session_id !== lastProposalSessionId) {
+    lastProposalSessionId = s.session_id;
+    lastProposalId = null;
+    $("proposal-message").textContent = "";
+    $("proposal-prompt").textContent = "";
+  }
   if (s?.proposal?.proposal_id && s.proposal.proposal_id !== lastProposalId) {
     lastProposalId = s.proposal.proposal_id;
     $("proposal-message").textContent = "";
@@ -308,9 +314,9 @@ async function respondProposal(decision) {
   try {
     const r=await fetch('/api/session/proposal/respond',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(5000)});
     const reply=await r.json();
-    if (lastProposalId===body.proposal_id) $('proposal-message').textContent=r.ok?reply.message:reply.detail;
+    if (lastProposalSessionId===body.session_id && lastProposalId===body.proposal_id) $('proposal-message').textContent=r.ok?reply.message:reply.detail;
   } catch(e){
-    if (lastProposalId===body.proposal_id) $('proposal-message').textContent='응답 결과 미확인 · 자동 재시도하지 않고 상태를 확인해 주세요';
+    if (lastProposalSessionId===body.session_id && lastProposalId===body.proposal_id) $('proposal-message').textContent='응답 결과 미확인 · 자동 재시도하지 않고 상태를 확인해 주세요';
   }
   finally {respondingProposal=false;renderControl(null);}
 }

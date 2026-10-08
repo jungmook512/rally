@@ -118,6 +118,18 @@ async function testProposalResponses() {
   assert.equal(get('proposal-message').textContent, '휴식 예약 승인');
   assert.equal(get('proposal-accept').disabled, true);
   assert.equal(calls, 4);
+  receive({phase:'running',session_id:'next-session',updated_at:Date.now()/1000,proposal:null});
+  assert.equal(get('proposal-panel').hidden, true, 'new sessions must clear old proposal results');
+  assert.equal(get('proposal-message').textContent, '');
+  assert.equal(get('proposal-prompt').textContent, '');
+  receive(snapshot('old-session-request'));
+  context.fetch = () => { calls++; return new Promise(resolve => { finish = resolve; }); };
+  const previousSessionClick = get('proposal-accept').onclick();
+  receive({phase:'running',session_id:'third-session',updated_at:Date.now()/1000,proposal:null});
+  finish({ok:true,json:async()=>({message:'이전 세션 승인'})});
+  await previousSessionClick;
+  assert.equal(get('proposal-panel').hidden, true);
+  assert.equal(get('proposal-message').textContent, '', 'old session replies must remain hidden');
   console.log('PASS: mode pages, state freshness, resume gating, trials, async proposal clicks, errors and WebSocket recovery');
 }
 testProposalResponses().catch(error => { console.error(error); process.exitCode = 1; });
