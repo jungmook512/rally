@@ -95,12 +95,18 @@ class HandPoseNode(Node):
         self.declare_parameter("gesture_frames", 5)               # 30 Hz 기준 약 0.17 s
         self.declare_parameter("centerline_x_m", float("nan"))    # NaN 이면 rally_bringup/config/table.yaml
         self.declare_parameter("min_detection_confidence", 0.5)
+        self.declare_parameter("hand_eye_path", "")               # 비우면 rally_bringup/config/hand_eye.yaml (depth_scale 읽기)
+        self.declare_parameter("depth_scale", 0.0)                # 0 = hand_eye.yaml 값, 없으면 1.0. RealSense 깊이 보정 배율 (#77)
+        self.declare_parameter("tf_fallback_max_age_s", 0.15)     # 영상 시각 tf 가 없으면 이만큼 안의 최신 tf 로 대신 (#77 리뷰 1)
 
         self.rot = int(self.get_parameter("image_rotation_deg").value) % 360
         if self.rot not in (0, 90, 180, 270):
             raise ValueError("image_rotation_deg 는 0/90/180/270")
         self.base_frame = self.get_parameter("base_frame").value
         self.centerline_x = self._load_centerline()
+        self.depth_scale = float(self.get_parameter("depth_scale").value) or load_depth_scale(
+            self.get_parameter("hand_eye_path").value or default_hand_eye_path())
+        self._tf_fallback_logged = False
         self.gestures = GestureFilter(int(self.get_parameter("gesture_frames").value))
         self.landmarker = self._make_landmarker()
 
@@ -125,7 +131,7 @@ class HandPoseNode(Node):
                                  callback_group=io_group)
         self.pub = self.create_publisher(HandState, "/rally/perception/hand", qos_profile_sensor_data)
         self.create_timer(1.0 / float(p("rate_hz").value), self._tick, callback_group=work_group)
-        self.get_logger().info(f"손 인식 시작: 회전 {self.rot}°, 중앙선 x={self.centerline_x:.3f} m")
+        self.get_logger().info(f"손 인식 시작: 회전 {self.rot}°, 중앙선 x={self.centerline_x:.3f} m, 깊이 배율 {self.depth_scale:.3f}")
 
     # ----- 준비 -----
     def _make_landmarker(self):
@@ -232,7 +238,7 @@ class HandPoseNode(Node):
             out.distance_to_centerline = float("nan")
             self.get_logger().warn("깊이·카메라 정보 없음 → 손 모양만 발행", throttle_duration_sec=5.0)
             return
-        depth = self.bridge.imgmsg_to_cv2(dmsg).astype(np.float32) * 1e-3
+        depth = self.bridge.imgmsg_to_cv2(dmsg).astype(np.float32) * (1e-3 * self.depth_scale)   # RealSense 깊이 보정
         z_palm = palm_depth(depth, px[list(hg.PALM_POINTS)])
         if math.isnan(z_palm):
             out.distance_to_centerline = float("nan")
@@ -261,10 +267,12 @@ class HandPoseNode(Node):
         """카메라 → base_link. 이미지 시각의 tf (카메라가 팔과 같이 움직이므로 시각이 맞아야 함).
         실패하면 카메라 좌표 그대로 + '위' 는 카메라 −y 로 근사."""
         src = cmsg.header.frame_id
-        try:
-            tf = self.tf_buffer.lookup_transform(self.base_frame, src, Time.from_msg(cmsg.header.stamp),
-                                                 timeout=Duration(seconds=0.02))
-        except Exception:           # noqa: BLE001
+        tf, fallback = lookup_camera_tf(self.tf_buffer, self.base_frame, src, Time.from_msg(cmsg.header.stamp),
+                                        float(self.get_parameter("tf_fallback_max_age_s").value))
+        if fallback and not self._tf_fallback_logged:
+            self.get_logger().info("영상 시각 tf 가 아직 없어 최근 tf 로 대신 씀 (camera_tf 10 Hz) — 로봇 이동 중엔 그만큼 오차")
+            self._tf_fallback_logged = True
+        if tf is None:
             self.get_logger().warn(f"tf {self.base_frame} ← {src} 없음 → 카메라 좌표로 발행, 중앙선 거리 NaN",
                                    throttle_duration_sec=5.0)
             up_cam = np.array([0.0, -1.0, 0.0])
@@ -273,6 +281,39 @@ class HandPoseNode(Node):
         R = quat_to_rot(tf.transform.rotation)
         t = tf.transform.translation
         return P_cam @ R.T + np.array([t.x, t.y, t.z]), np.array([0.0, 0.0, 1.0]), self.base_frame
+
+
+def lookup_camera_tf(buffer: Buffer, target: str, source: str, stamp: Time, max_age_s: float):
+    """영상 시각의 tf → 없으면 최신 tf (영상 시각과 max_age_s 안일 때만). (tf, 대체했는지) 또는 (None, False).
+    camera_tf 는 tcp_pose(10 Hz) 마다 tf 를 내서 영상이 마지막 tf 보다 최신이면 영상 시각 조회가 실패한다 (#77 리뷰 1).
+    대체하면 로봇이 움직이는 중에는 최대 max_age_s × 로봇 속도 만큼 위치가 어긋난다."""
+    try:
+        return buffer.lookup_transform(target, source, stamp, timeout=Duration(seconds=0.02)), False
+    except Exception:               # noqa: BLE001
+        pass
+    try:
+        tf = buffer.lookup_transform(target, source, Time())
+    except Exception:               # noqa: BLE001
+        return None, False
+    age_s = abs(stamp.nanoseconds - Time.from_msg(tf.header.stamp).nanoseconds) * 1e-9   # 시계 종류가 달라도 비교되게
+    return (tf, True) if age_s <= max_age_s else (None, False)
+
+
+def default_hand_eye_path() -> str:
+    try:
+        from ament_index_python.packages import get_package_share_directory
+        p = Path(get_package_share_directory("rally_bringup")) / "config" / "hand_eye.yaml"
+        return str(p) if p.exists() else ""
+    except Exception:               # noqa: BLE001
+        return ""
+
+
+def load_depth_scale(path: str) -> float:
+    """hand_eye.yaml 의 depth_scale (#77, RealSense 정렬 깊이 약 3 % 길게 나옴). 파일·키가 없으면 1.0."""
+    try:
+        return float((yaml.safe_load(Path(path).read_text()) or {}).get("depth_scale", 1.0)) if path else 1.0
+    except Exception:               # noqa: BLE001
+        return 1.0
 
 
 def rotate_up(up_cam: np.ndarray, deg: int) -> np.ndarray:
