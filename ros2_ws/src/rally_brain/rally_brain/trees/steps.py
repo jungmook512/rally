@@ -8,6 +8,8 @@
                goal 을 못 보냈으면(서버 없음) state.fatal → FAILURE (재시도 안 함, 세션 실패).
                성공 결과는 SkillCall.on_result 에서 바로 on_success 로 — 중단(STOP·취소) 직전에 끝난 스킬은
                terminate 가 on_result 만 부르고 판정은 돌지 않기 때문 (#64 리뷰 1).
+  no_hand      손 대기: hand_wait_s 씩 hand_wait_tries 번, 사이마다 hand_prompt 안내. 끝내 안 보이면 notes=no_hand 기록
+               (이 가지가 SUCCESS = 시도 끝). 손이 보이면 FAILURE → 모드 트리의 Selector 가 다음 가지(진행)로.
   모드 트리는 단계들을 Sequence 로 잇고 Guard 로 감싼다: 단계 사이에 멈추면 on_stop 이 interrupted 로 기록.
 """
 from __future__ import annotations
@@ -20,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 import py_trees
 from rclpy.action import ActionClient
 
-from rally_brain.behaviours import Do, SkillCall
+from rally_brain.behaviours import Do, SkillCall, WaitUntil
 from rally_interfaces.msg import TrialResult
 
 if TYPE_CHECKING:
@@ -128,3 +130,41 @@ def skill_step(state: TrialState, name: str, client: ActionClient, make_goal: Ca
         ])
 
     return py_trees.composites.Selector(name, memory=True, children=[attempt(k) for k in range(1, max(1, tries) + 1)])
+
+
+HAND_DEFAULTS: dict[str, Any] = {"hand_wait_s": 10.0, "hand_wait_tries": 2, "hand_prompt": "손을 앞으로 내밀어 주세요"}
+
+
+def hand_wait(session: Session, cfg: dict) -> py_trees.behaviour.Behaviour:
+    """손이 보이면 SUCCESS. hand_wait_s 씩 hand_wait_tries 번 기다리고, 사이마다 안내. 끝내 안 보이면 FAILURE."""
+    def seen() -> bool:
+        return session.safe() and session.hand_visible()
+
+    tries = max(1, int(cfg["hand_wait_tries"]))
+    children: list[py_trees.behaviour.Behaviour] = [WaitUntil("손 대기 1", seen, cfg["hand_wait_s"])]
+    for k in range(2, tries + 1):
+        children.append(py_trees.composites.Sequence(f"안내 후 대기 {k}", memory=True, children=[
+            Do("손 안내", lambda: session.say(cfg["hand_prompt"])),
+            WaitUntil(f"손 대기 {k}", seen, cfg["hand_wait_s"]),
+        ]))
+    return py_trees.composites.Selector("손 대기", memory=True, children=children)
+
+
+def no_hand(session: Session, cfg: dict, mode: int) -> py_trees.behaviour.Behaviour:
+    """손이 끝내 안 보이면 실패 TrialResult(notes=no_hand, attempts 0, duration = 기다린 시간) 를 남기고 SUCCESS."""
+    wait = {"t0": 0.0}
+
+    def mark() -> None:
+        wait["t0"] = time.monotonic()
+
+    def record() -> None:
+        waited = time.monotonic() - wait["t0"]
+        session.node.get_logger().warn(f"[모드 {mode}] 손이 {waited:.0f} s 동안 안 보임 — 이번 시도 건너뜀")
+        session.record(TrialResult(mode=mode, success=False, duration_s=waited,
+                                   metric_keys=["attempts"], metric_values=[0.0], notes="no_hand"))
+
+    return py_trees.composites.Sequence("손 없음", memory=True, children=[
+        Do("대기 시작", mark),
+        py_trees.decorators.Inverter("손 보이면 넘어감", hand_wait(session, cfg)),
+        Do("손 없음 기록", record),
+    ])

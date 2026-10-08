@@ -34,7 +34,7 @@
 - [x] **HMI** 대시보드 골격: FastAPI + WebSocket(Redis `rally:events` 구독), 페이지 레이아웃(힘 그래프 / 예측 vs 실제 / 학습 곡선 / 세션 리포트), 안전 상태 배너(SLOW/STOP 사유) → `dashboard/app/main.py`(상태·시도·사건 API + WebSocket), `web/index.html`(안전 띠·카드·시도·사건, 그래프 자리), recorder 가 시도마다 rally:events 알림. 모드 전환·비상정지 버튼은 ROS 다리 필요(Day 6)
 
 ## Day 4 — 모드 7 통합 ✅ + 모드 3 착수
-- [ ] `trees/mode7_resist.py`: ResistPush(지난 peak_force 60 % 에서 시작) → 성공 3연속 +10 % / 실패 2회 -10 % → TrialResult(peak, hold, smoothness) → TTS
+- [x] `trees/mode7_resist.py`: ResistPush(지난 peak_force 60 % 에서 시작) → 성공 3연속 +10 % / 실패 2회 -10 % → TrialResult(peak, hold, smoothness) → TTS → (10/8) 목표 = 5 N × 1.1^난이도(rule_layer), 3~12 N, 강성 700 고정, 손 대기, 결과별 TTS. LLM 안 씀. **시작값 '지난 세션 60 %'는 brain → DB 읽기가 생길 때(Day 6 Graph RAG)**. `handle_pose` 비워 보냄 → 로봇이 정하는지 정정인 확인. 실로봇 확인은 `resist_push.py` 구현 후
 - [x] 세션 트리 순서 1 → (3 조건부) → 5 → 7, 모드 3 은 `skills.yaml mode3_challenge.enabled` 플래그로 on/off → `bt_runner.default_modes`, 모드 전환(#51)도 꺼진 모드 3 거절
 - [ ] `trees/mode3_catch.py`: CatchBall(catch_radius=0.35, lead_time, 타임아웃) → caught 면 패드 거치 → DetachBall → Handover GIVE / missed 면 TTS 격려 후 재시도. 떼어내기 실패 시 각도 변경 재시도
 - [ ] `skills.yaml` mode3 단계값(0.35 / 0.15 / 0), Phase 1은 0.35 고정. `rule_layer` 에 단계 전환 자리만

@@ -4,6 +4,7 @@
   세션 (Sequence)
    ├─ 모드 1 × 공 개수 (Repeat) ─ 시도 서브트리 (trees/mode1_push.py) — 시도 수는 TRIAL_COUNTS (거치대 공 4개 = 한 사이클)
    ├─ 모드 5 × N (Repeat) ─ 시도 서브트리 (trees/mode5_handover.py)
+   ├─ 모드 7 × N (Repeat) ─ 시도 서브트리 (trees/mode7_resist.py)
    └─ ...
 시도 서브트리는 build_trial(session) → Behaviour 를 내놓는다. 한 번 SUCCESS = 시도 1회 끝 (성공·실패는 TrialResult 에).
 아직 서브트리가 없는 모드는 로그만 남기고 건너뛴다.
@@ -19,7 +20,7 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 
 from rally_brain.behaviours import Do
-from rally_brain.trees import mode1_push, mode5_handover
+from rally_brain.trees import mode1_push, mode5_handover, mode7_resist
 from rally_interfaces.msg import SafetyStatus, SceneContext, TrialResult
 
 MODE_NAMES = {1: "공 굴리기", 3: "캐치볼", 5: "건네고 받기", 7: "팔씨름"}
@@ -28,6 +29,7 @@ NOT_PERFORMANCE = {"no_hand"}   # 환자가 자리에 없었던 시도 — 기�
 TRIAL_BUILDERS: dict[int, Callable[["Session"], py_trees.behaviour.Behaviour]] = {
     TrialResult.MODE_PUSH_BALL: mode1_push.build_trial,
     TrialResult.MODE_HANDOVER: mode5_handover.build_trial,
+    TrialResult.MODE_RESIST: mode7_resist.build_trial,
 }
 # 모드 시도 수가 장비로 정해지는 경우 (skills.yaml → 횟수). 여기 없는 모드는 trials_per_mode
 TRIAL_COUNTS: dict[int, Callable[[dict], int]] = {
