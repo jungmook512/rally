@@ -192,7 +192,8 @@ class SegmenterNode(Node):
         d("gripper2cam_path", default_gripper2cam_path())
         d("hand_eye_path", pj.default_hand_eye_path())   # rally_bringup/config/hand_eye.yaml — 있으면 npy 보다 우선, depth_scale 도 여기서
         d("depth_scale", 0.0)                     # 0 = hand_eye.yaml 값(없으면 1.0). RealSense 깊이 보정 배율
-        d("transform_source", "auto")             # 카메라→base 변환: "auto"(기본: camera_tf 의 tf 우선, 없으면 tcp_npy) · "tf" · "tcp_npy"(tcp_pose × hand_eye)
+        d("transform_source", "tcp_npy")          # 카메라→base 변환: "tcp_npy"(기본, tcp_pose × hand_eye) · "tf" · "auto"(tf 우선). 로봇 PC URDF 가 카메라
+                                                  # 체인을 설계값으로 발행하는 동안(PR #77 정정인 확인) tf/auto 는 그 값을 집어 1 cm 치우침 — URDF 에서 빼면 auto 로
         d("debug_hz", 10.0)
         d("moving_mps", 0.05)
         d("known_only", True)                     # INTERFACES 클래스(ball·velcro_ball·pad·rod·cup·hand) 만 발행
@@ -206,8 +207,8 @@ class SegmenterNode(Node):
         self.tcp_max_age = float(g("tcp_pose_max_age_s"))
         self.transform_source = str(g("transform_source"))
         if self.transform_source not in ("tcp_npy", "tf", "auto"):
-            self.get_logger().warn(f"transform_source={self.transform_source!r} 모름 → auto")
-            self.transform_source = "auto"
+            self.get_logger().warn(f"transform_source={self.transform_source!r} 모름 → tcp_npy")
+            self.transform_source = "tcp_npy"
         self._tf_src_logged = None
         self.g2c = None
         he = pj.load_hand_eye(str(g("hand_eye_path")))
@@ -269,9 +270,9 @@ class SegmenterNode(Node):
     def _cam_to_base(self, stamp, cam_frame: str):
         """(T 4x4, frame_id). transform_source 에 따라 tf2 / tcp_pose×npy 를 고르고, 둘 다 없으면 None(카메라 좌표).
 
-        기본은 auto: camera_tf(static 모드, hand_eye.yaml)가 올리는 tf 를 영상 시각으로 조회하고, 없으면 tcp_pose×hand_eye.
-        (10/7 에는 URDF 설계값 tf 가 npy 를 이겨 1 cm 치우쳤음(PR #42) → PR #73 에서 tcp_npy 기본, PR #77 에서 검증된 tf 가 생겨 auto 로.)
-        camera_tf 는 관절값이 끊기면 발행을 멈추므로 그때는 자동으로 tcp_npy 로 넘어간다.
+        기본은 tcp_npy. 로봇 PC bringup URDF(m0609_with_rg2_camera)가 tool0→bracket→camera_link→…→optical 을 설계값으로 발행해서
+        (10/8 정정인 view_frames) tf/auto 는 그 값을 집어 1 cm·2.5° 치우친다(PR #42 의 원인). URDF 에서 카메라 체인을 뺀 뒤 camera_tf(static)
+        가 유일한 camera_link 부모가 되면 auto 로 바꾼다 — 그때 영상 시각 보간이 되어 이동 중에도 정확.
 
         시각 주의 (PR #73 리뷰): tcp_npy 는 영상 stamp 가 아니라 **마지막으로 받은 tcp_pose**(10 Hz, 수신 0.5 s 안)를 쓴다.
         → 로봇이 멈춰 있을 때만 base 좌표가 정확하다. 움직이는 중의 좌표는 로봇 이동에 쓰지 말 것.

@@ -18,6 +18,10 @@ mode (파라미터):
              두산 tf 가 없는 환경(노트북·에뮬레이터)용. segmenter 의 tcp_npy 경로와 같은 값.
 
 RealSense 가 tf 를 안 내는 환경(publish_tf:=false)에서만 `optical_fallback:=true` — 기본은 RealSense tf 를 기다린다.
+
+주의 (10/8 정정인 view_frames): 로봇 PC bringup URDF(m0609_with_rg2_camera)가 tool0→bracket_link→camera_bottom_screw_frame→
+camera_link→…→optical 을 설계값으로 이미 발행한다. 그 상태에서 이 노드가 link_6→camera_link 를 내면 부모가 둘이라 핸드아이가 묻히므로
+/tf_static 에서 camera_link 의 다른 부모를 보면 error 를 내고 발행하지 않는다. URDF 에서 카메라 체인을 빼는 것이 해결책.
 폴백으로 optical 을 직접 발행하면 그걸 먼저 받은 노드는 RealSense 가 나중에 켜져도 base→optical 조회가 계속 실패한다 (PR #77 리뷰).
 
     ros2 run rally_vision camera_tf                                   # static, link_6
@@ -118,6 +122,7 @@ class CameraTfNode(Node):
         self.fallback_after = float(g("fallback_after_s"))
         self.optical_fallback = bool(g("optical_fallback"))
         self._fallback_on = False
+        self._conflict: str | None = None                      # camera_link 의 다른 부모(URDF) 발견 시 그 이름
         self._t0 = self.get_clock().now()
         self._last_T: np.ndarray | None = None               # tcp_pose 모드: 마지막 base←child
         self.dyn_bc = TransformBroadcaster(self)
@@ -174,6 +179,12 @@ class CameraTfNode(Node):
                 continue                                        # 우리(또는 다른 노드)가 올린 카메라 tf 는 체인에 넣지 않음
             tr, q = t.transform.translation, t.transform.rotation
             self._static[t.child_frame_id] = (t.header.frame_id, pj.pose_to_matrix(tr.x, tr.y, tr.z, q.x, q.y, q.z, q.w))
+        # URDF 가 camera_link 를 다른 부모(bracket 등 설계값)로 이미 내면 부모가 둘 — 발행하지 않고 error (PR #77 정정인 확인)
+        other = self._static.get(self.camera_frame)
+        if other is not None and other[0] != self.parent_frame and not self._conflict:
+            self._conflict = other[0]
+            self.get_logger().error(f"{self.camera_frame} 의 부모가 이미 있음: {other[0]} (bringup URDF 카메라 체인, 설계값). "
+                                    f"부모가 둘이면 핸드아이가 묻히므로 발행하지 않음 — URDF 에서 카메라 링크를 빼거나 camera_frame 파라미터를 바꿀 것")
 
     def _static_chain(self, root: str, leaf: str) -> np.ndarray | None:
         """/tf_static 만으로 root → … → leaf 합성 (RealSense: camera_link → camera_color_frame → camera_color_optical_frame).
@@ -239,7 +250,7 @@ class CameraTfNode(Node):
         영상(30 Hz) stamp 가 마지막 tf 보다 새로우면 tf2 는 외삽을 안 해 조회가 실패하므로(PR #77 리뷰 1),
         손 노드·segmenter 가 영상 시각으로 조회해도 되게 한다. 값은 최근 tcp_pose(≤ 0.1 s 전) — 로봇 정지 중엔 정확,
         이동 중엔 그만큼 뒤처진다. 근본 해결은 static 모드(robot_state_publisher, 관절 토픽 속도)."""
-        if self._last_T is None:
+        if self._last_T is None or self._conflict:
             return
         if self.mode == "static":
             if not self._joints_ok():
