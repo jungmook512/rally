@@ -8,12 +8,13 @@
      - 팔꿈치 펴짐 ≥ extended_deg 이고 그 팔이 잘 보일 때(뻗음)만 몸통 기울기·어깨 들림을 갱신 (window_s 중간값),
        굽히면 마지막 값 유지 — 굽힌 팔이 어깨·몸통을 가려 관절이 틀어지기 때문 (10/8 C270 실측)
      - 몸통 기울기 = 기준 자세 대비 앞으로 숙인 각, 어깨 들림 = 기준 대비 뻗는 쪽 어깨 으쓱 (양 귀 가운데 기준)
-     - 기준 = 노드 시작 후, 또는 /rally/perception/body/reset_baseline 뒤 baseline_frames 프레임 (바르게 앉은 상태)
+     - 기준 = 노드 시작 후, 또는 /rally/perception/body/reset_baseline 뒤 baseline_frames 프레임 (바르게 선 상태)
   3. 뻗은 동안 같은 보상 동작이 confirm_frames 프레임 연속이면 compensation_detected (몸통 15° 이상 > 어깨 들림 10° 이상).
      안 뻗었거나 사람을 놓치면 none (brain rule_layer.fatigue_signals 가 이 플래그를 피로 신호로 씀)
   elbow_extension_deg ≥ extended_deg 이면 '뻗음' — 이때만 몸통·어깨 값이 새 값이다. 정확한 팔꿈치 각도는 보장하지 않는다.
   header.stamp = 영상 원본 시각. 사람이 안 보이면 detected=false, 값은 NaN.
-측면 웹캠은 환자에게서 1 m 이상 (10/8 확인: 가까우면 몸이 안 잡힘).
+웹캠: 환자 측면 대각, 높이 약 2 m (모드 3 공 비행도 같이), 훈련하는 팔 쪽. 1 m 이상 떨어져야 몸이 잡힌다 (10/8 확인).
+환자는 모든 모드를 서서 한다 (10/8 결정).
 """
 import math
 import os

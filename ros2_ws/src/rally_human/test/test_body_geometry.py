@@ -8,7 +8,7 @@ from rally_human import body_geometry as bg
 
 
 def upright(lean_deg: float = 0.0, lean_axis: str = "side", hike_m: float = 0.0, elbow_deg: float = 180.0):
-    """똑바로 앉은 사람. lean_deg 만큼 엉덩이를 축으로 기울임 (side = 옆, front = 앞). hike_m 만큼 오른 어깨를 올림."""
+    """똑바로 선(앉은) 사람 상체. lean_deg 만큼 엉덩이를 축으로 기울임 (side = 옆, front = 앞). hike_m 만큼 오른 어깨를 올림."""
     w = np.zeros((33, 3))
     w[bg.L_HIP], w[bg.R_HIP] = [-0.1, 0, 0], [0.1, 0, 0]
     w[bg.L_SH], w[bg.R_SH] = [-0.18, -0.5, 0], [0.18, -0.5, 0]
@@ -102,7 +102,7 @@ def test_compensation_cleared_immediately_when_person_lost():
 
 
 def test_shoulder_baseline_reset_recaptures():
-    """자리를 잡는 동안 잡힌 기준을 버리고, 바르게 앉은 뒤 다시 잡는다 (reset_baseline 서비스)."""
+    """자리를 잡는 동안 잡힌 기준을 버리고, 바르게 선 뒤 다시 잡는다 (reset_baseline 서비스)."""
     b = bg.ShoulderBaseline(frames=3)
     for _ in range(3):
         b.update((0.10, 0.10))                 # 움직이는 중 (잘못된 기준)
@@ -130,7 +130,7 @@ def _feed(m, w, n=5, t0=0.0, vis=ALL):
 
 
 def test_reach_meter_zero_at_baseline_even_with_tilted_camera():
-    """카메라가 25° 내려다봐도 바르게 앉아 팔을 뻗으면 0 (기준 자세 대비)."""
+    """카메라가 25° 내려다봐도 바르게 서서 팔을 뻗으면 0 (기준 자세 대비)."""
     tilt = _rot_x(25)
     m = _meter()
     st = _feed(m, upright() @ tilt.T)

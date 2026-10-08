@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """몸 자세(body_pose) 확인 창 — 카메라 화면 + BodyPose 값 + 항목별 통과 여부.
 
-body_pose 노드가 켜진 상태에서 실행. 자리를 잡고 바르게 앉은 뒤 b → 2초 가만히 (몸통·어깨 기준을 다시 잡음).
+body_pose 노드가 켜진 상태에서 실행. 자리를 잡고 바르게 선 뒤 b → 2초 가만히 (몸통·어깨 기준을 다시 잡음).
 몸통·어깨 값은 팔을 뻗었을 때(팔꿈치 ≥ 140°)만 갱신된다 — 굽히면 팔이 어깨를 가려 관절이 틀어지기 때문.
     python3 scripts/check_body_live.py                              # /webcam/image_raw
     python3 scripts/check_body_live.py --no-skeleton                # 뼈대 안 그림 (CPU 아끼기)
 키: b 또는 스페이스 기준 다시 잡기 · q 종료(터미널에 결과 요약) · r 판정 다시
 뼈대: BodyPose 메시지에는 관절이 없어서, 이 창이 같은 영상에 MediaPipe Pose 를 한 번 더 돌려 그린다.
   점 색 = visibility (초록 ≥ 0.7 · 노랑 ≥ 0.5 · 빨강 < 0.5 = 가려짐을 추정한 점). 팔꿈치 옆 숫자 = 그 팔의 펴짐 각(3D).
-  왼쪽 위 = 몸통 기울기를 어떤 방법으로 쟀는지 (torso: 엉덩이→어깨 / shoulders: 어깨선, 측면에선 앞으로 숙이기를 못 잼).
+  왼쪽 위 = 이전 방식(화면 수직 기준) 참고값과 방법 (torso: 엉덩이→어깨 / shoulders: 어깨선). 판정 값은 오른쪽 패널(평소 자세 대비).
 """
 import argparse
 import math
@@ -166,7 +166,7 @@ class Checker(Node):
         det = 100 * self.n_det / self.n if self.n else 0.0
         em = (f"{self.elbow_min:.0f}~{self.elbow_max:.0f}°" if math.isfinite(self.elbow_min) else "-")
         return [
-            ("1 몸 검출", self.n >= 30 and det >= 90, f"{det:.0f}% ({self.n_det}/{self.n}) — 1 m 이상 떨어져 앉기"),
+            ("1 몸 검출", self.n >= 30 and det >= 90, f"{det:.0f}% ({self.n_det}/{self.n}) — 1 m 이상 떨어져 서기"),
             ("2 뻗음 인식", self.seen_ext and self.seen_bent, f"폈다(≥{EXTENDED_DEG:.0f}°) 굽히기 둘 다 · 팔꿈치 {em}"),
             ("3 팔 뻗고 바르게", self.upright, "b 로 기준 잡은 뒤, 팔 뻗고 몸통 5° 안 1초"),
             ("4 뻗은 채 앞으로 숙이기", self.lean_flag, f"최대 {self.lean_max:.0f}° (15° 넘게)"),
