@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """몸 자세(body_pose) 확인 창 — 카메라 화면 + BodyPose 값 + 항목별 통과 여부.
 
-body_pose 노드가 켜진 상태에서 실행. 노드를 켠 뒤 처음 2초는 바르게 앉아 있기 (어깨 들림 기준).
+body_pose 노드가 켜진 상태에서 실행. 자리를 잡고 바르게 앉은 뒤 b → 2초 가만히 (어깨 들림 기준을 다시 잡음).
     python3 scripts/check_body_live.py                              # /webcam/image_raw
     python3 scripts/check_body_live.py --no-skeleton                # 뼈대 안 그림 (CPU 아끼기)
-키: q 종료(터미널에 결과 요약) · r 다시
+키: b 기준 다시 잡기 · q 종료(터미널에 결과 요약) · r 판정 다시
 뼈대: BodyPose 메시지에는 관절이 없어서, 이 창이 같은 영상에 MediaPipe Pose 를 한 번 더 돌려 그린다.
   점 색 = visibility (초록 ≥ 0.7 · 노랑 ≥ 0.5 · 빨강 < 0.5 = 가려짐을 추정한 점). 팔꿈치 옆 숫자 = 그 팔의 펴짐 각(3D).
   왼쪽 위 = 몸통 기울기를 어떤 방법으로 쟀는지 (torso: 엉덩이→어깨 / shoulders: 어깨선, 측면에선 앞으로 숙이기를 못 잼).
@@ -24,11 +24,12 @@ from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
+from std_srvs.srv import Trigger
 
 from rally_interfaces.msg import BodyPose
 from rally_human import body_geometry as bg
 
-WIN = "check_body_live (q quit, r reset)"
+WIN = "check_body_live (b baseline, q quit, r reset)"
 GREEN, GRAY, WHITE, RED, YELLOW = (80, 200, 80), (150, 150, 150), (240, 240, 240), (60, 60, 230), (60, 200, 230)
 MODEL_NAME = "pose_landmarker_full.task"           # body_pose 노드와 같은 모델
 MODEL_CANDIDATES = [f"/opt/mediapipe/{MODEL_NAME}", str(Path(__file__).resolve().parents[1] / "models" / "mediapipe" / MODEL_NAME),
@@ -99,7 +100,19 @@ class Checker(Node):
         self.frame, self.last = None, None
         self.create_subscription(Image, image_topic, self._on_image, qos_profile_sensor_data)
         self.create_subscription(BodyPose, "/rally/perception/body", self._on_body, qos_profile_sensor_data)
+        self.reset_cli = self.create_client(Trigger, "/rally/perception/body/reset_baseline")
+        self.baseline_t: float | None = None       # b 누른 시각 (기준 잡는 중 표시용)
+        self.baseline_msg = ""
         self.reset()
+
+    def request_baseline(self) -> None:
+        """b 키 — body_pose 노드에 기준 다시 잡기 요청 (응답은 기다리지 않음)."""
+        if not self.reset_cli.service_is_ready():
+            self.baseline_msg = "기준 서비스 없음 — body_pose 노드가 이 브랜치 버전인지"
+            self.baseline_t = time.monotonic()
+            return
+        self.reset_cli.call_async(Trigger.Request())
+        self.baseline_t, self.baseline_msg = time.monotonic(), ""
 
     def reset(self) -> None:
         with getattr(self, "lock", threading.Lock()):
@@ -196,6 +209,14 @@ def render(node: Checker, skel: "Skeleton | None" = None, state: dict | None = N
     if frame.shape[0] < 480:
         frame = cv2.copyMakeBorder(frame, 0, 480 - frame.shape[0], 0, 0, cv2.BORDER_CONSTANT, value=(0, 0, 0))
     panel = np.full((frame.shape[0], 420, 3), 30, np.uint8)
+    if node.baseline_t is not None:
+        dt = time.monotonic() - node.baseline_t
+        if node.baseline_msg and dt < 3.0:
+            put(frame, node.baseline_msg, (8, frame.shape[0] - 30), RED)
+        elif not node.baseline_msg and dt < 2.5:
+            put(frame, f"기준 잡는 중 — 바르게 가만히 {max(0.0, 2.0 - dt):.1f} s", (8, frame.shape[0] - 30), YELLOW)
+        elif not node.baseline_msg and dt < 4.0:
+            put(frame, "기준 완료", (8, frame.shape[0] - 30), GREEN)
     if last is None:
         put(panel, "BodyPose 없음 — body_pose 노드 켰는지", (10, 10), RED)
     elif not last.detected:
@@ -237,6 +258,8 @@ def main() -> None:
                 break
             if k == ord("r"):
                 node.reset()
+            if k == ord("b"):
+                node.request_baseline()
     except KeyboardInterrupt:
         pass
     with node.lock:

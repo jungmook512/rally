@@ -27,6 +27,7 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.time import Time
 from sensor_msgs.msg import Image
+from std_srvs.srv import Trigger
 
 from rally_interfaces.msg import BodyPose
 from rally_human import body_geometry as bg
@@ -70,6 +71,10 @@ class BodyPoseNode(Node):
                                  callback_group=MutuallyExclusiveCallbackGroup())
         self.pub = self.create_publisher(BodyPose, "/rally/perception/body", qos_profile_sensor_data)
         self.create_timer(1.0 / float(p("rate_hz")), self._tick, callback_group=MutuallyExclusiveCallbackGroup())
+        # 기준 자세 다시 잡기 — 노드를 켤 때 자동으로도 잡지만, 사람이 자리를 잡은 뒤 이걸로 다시 잡는다 (확인 창 b 키, brain 세션 시작)
+        self._reset_req = False
+        self.create_service(Trigger, "/rally/perception/body/reset_baseline", self._on_reset,
+                            callback_group=MutuallyExclusiveCallbackGroup())
         self.get_logger().info(f"몸 자세 시작: {p('image_topic')}, 기울임 {p('lean_threshold_deg')}° · "
                                f"어깨 들림 {p('hike_threshold_deg')}° · 처음 {p('baseline_frames')} 프레임은 평소 자세로")
 
@@ -83,6 +88,15 @@ class BodyPoseNode(Node):
             base_options=BaseOptions(model_asset_path=path), running_mode=vision.RunningMode.VIDEO,
             num_poses=1, min_pose_detection_confidence=conf, min_tracking_confidence=conf))
 
+    def _on_reset(self, req: Trigger.Request, res: Trigger.Response) -> Trigger.Response:
+        with self.lock:
+            self._reset_req = True                     # 처리 스레드(_tick)에서 반영 — 기준 객체를 한 스레드만 만지게
+        n = int(self.get_parameter("baseline_frames").value)
+        res.success = True
+        res.message = f"기준 다시 잡는 중 — 다음 {n} 프레임(약 {n / float(self.get_parameter('rate_hz').value):.0f} s) 바르게"
+        self.get_logger().info(res.message)
+        return res
+
     def _on_image(self, m: Image) -> None:
         with self.lock:
             self.latest = m
@@ -90,6 +104,9 @@ class BodyPoseNode(Node):
     def _tick(self) -> None:
         with self.lock:
             msg, self.latest = self.latest, None
+            reset, self._reset_req = self._reset_req, False
+        if reset:
+            self.baseline.reset()
         if msg is None:
             return
         out = BodyPose()
@@ -135,7 +152,7 @@ class BodyPoseNode(Node):
 def main() -> None:
     rclpy.init()
     node = BodyPoseNode()
-    ex = MultiThreadedExecutor(num_threads=2)
+    ex = MultiThreadedExecutor(num_threads=3)
     ex.add_node(node)
     try:
         ex.spin()

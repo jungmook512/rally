@@ -84,6 +84,7 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 | `/rally/gripper/command` | `rally_interfaces/GripperCommand` | rally_robot/gripper_node | RG2 폭·힘 명령 |
 | `/rally/robot/go_observe_pose` | `std_srvs/Trigger` | rally_robot/skill_server | 관측 자세로 이동 (카메라가 테이블 전체를 보는 자세) |
 | `/rally/robot/reset_safety` | `std_srvs/Trigger` | rally_robot/safety_monitor | 정지 해제 (운영자만) |
+| `/rally/perception/body/reset_baseline` | `std_srvs/Trigger` | rally_human/body_pose | 몸 자세 기준(평소 자세) 다시 잡기 — 부른 뒤 약 2 s 바르게. 환자가 자리를 잡은 뒤 운영자(확인 창 `b`)·brain(세션 시작)이 부름 |
 | `/rally/db/start_session` | `std_srvs/Trigger` → 추후 커스텀 | rally_db | 세션 레코드 생성 |
 
 ## 4. 액션 (스킬)

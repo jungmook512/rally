@@ -99,3 +99,15 @@ def test_compensation_cleared_immediately_when_person_lost():
         f.update(True, 20, 0)
     assert f.update(False, math.nan, math.nan) == "none"
     assert [f.update(True, 20, 0) for _ in range(3)] == ["none", "none", "trunk_lean"]
+
+
+def test_shoulder_baseline_reset_recaptures():
+    """자리를 잡는 동안 잡힌 기준을 버리고, 바르게 앉은 뒤 다시 잡는다 (reset_baseline 서비스)."""
+    b = bg.ShoulderBaseline(frames=3)
+    for _ in range(3):
+        b.update((0.10, 0.10))                 # 움직이는 중 (잘못된 기준)
+    assert b.update((0.10, 0.10)) == (0.10, 0.10)
+    b.reset()
+    assert all(math.isnan(v) for v in b.update((0.18, 0.18)))   # 다시 쌓는 중
+    b.update((0.18, 0.18))
+    assert b.update((0.18, 0.18)) == (0.18, 0.18)

@@ -86,6 +86,11 @@ class ShoulderBaseline:
         self.samples: tuple[list[float], list[float]] = ([], [])
         self.base = [math.nan, math.nan]
 
+    def reset(self) -> None:
+        """기준을 버리고 다음 frames 프레임으로 다시 잡는다 (사람이 자리를 잡은 뒤 운영자·brain 이 부름)."""
+        self.samples = ([], [])
+        self.base = [math.nan, math.nan]
+
     def update(self, gaps: tuple[float, float]) -> tuple[float, float]:
         for i, g in enumerate(gaps):
             if math.isnan(self.base[i]) and math.isfinite(g):
