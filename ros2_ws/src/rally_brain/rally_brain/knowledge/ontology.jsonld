@@ -158,7 +158,6 @@
      "triggersLevel": "rally:level_slow", "source": "기획서 3.6"},
     {"@id": "rally:safe_hand_close", "@type": "rally:SafetyTrigger", "key": "hand_near_centerline", "label": "손이 중앙선 아주 가까이(0.15 m)", "threshold": 0.15, "unit": "m",
      "triggersLevel": "rally:level_stop", "source": "기획서 3.6"},
-    {"@id": "rally:safe_fist", "@type": "rally:SafetyTrigger", "key": "fist_gesture", "label": "주먹 제스처", "triggersLevel": "rally:level_stop", "source": "기획서 3.6"},
     {"@id": "rally:safe_voice_stop", "@type": "rally:SafetyTrigger", "key": "voice_stop", "label": "\"그만\" 음성", "triggersLevel": "rally:level_stop", "source": "기획서 3.6, 4.8"},
     {"@id": "rally:safe_nudge", "@type": "rally:SafetyTrigger", "key": "nudge", "label": "로봇 툭 치기", "triggersLevel": "rally:level_stop", "source": "기획서 3.6"},
     {"@id": "rally:safe_force_limit", "@type": "rally:SafetyTrigger", "key": "force_limit", "label": "힘 한계(25 N)", "threshold": 25.0, "unit": "N",

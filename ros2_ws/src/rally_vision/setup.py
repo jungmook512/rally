@@ -19,5 +19,6 @@ setup(
         'tracker = rally_vision.tracker_node:main',
         'flight_predictor = rally_vision.flight_predictor:main',
         'calibration = rally_vision.calibration_node:main',
+        'camera_tf = rally_vision.camera_tf_node:main',           # hand_eye.yaml → camera_link tf
     ]},
 )

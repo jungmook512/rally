@@ -1,1 +1,17 @@
-# config/hand_eye.yaml — 값은 docs/INTERFACES.md 6절 참고
+# config/hand_eye.yaml — eye-in-hand 캘리브레이션 결과 (docs/INTERFACES.md 1절·6절)
+# 10/8 박성현: 테이블 ArUco(id 5~8, 40×50 cm) 를 TCP 로 찍은 정답 4점 + 자세 4개 관측 9개로 재맞춤 (scripts/fit_hand_eye.py).
+#   기존 선생님 npy 는 각도 2.5° 오차 → 오차 10~42 mm. 재맞춤 후 평균 6 mm·최대 9 mm (새 자세 예측 6~13 mm).
+#   원본 측정은 data/measure/handeye_1008.yaml (git 제외), 같은 값의 npy 는 models/T_gripper2camera.npy.
+# TCP = RG2 손가락 끝 (펜던트 툴 오프셋 228 mm). 카메라 프레임 = camera_color_optical_frame (x 오른쪽, y 아래, z 앞).
+tcp_T_camera_optical:            # TCP ← camera_color_optical_frame
+  xyz_m: [0.03728, 0.08087, -0.20500]
+  quat_xyzw: [-0.005884, -0.004204, 0.999924, -0.009944]
+  rpy_deg: [-0.475, 0.679, -178.863]   # 참고용 (quat 과 같은 값)
+depth_scale: 0.971               # RealSense 정렬 깊이가 일관되게 3 % 길게 나옴 (10/7 15 cm→15.3, 10/8 50 cm→51.4). 깊이에 곱한다
+tcp_offset_from_flange_m: [0.0, 0.0, 0.228]   # link_6(플랜지) → TCP. static 모드에서 부모를 플랜지로 둘 때 사용
+fit:
+  date: 2026-10-08
+  poses: 4
+  observations: 9
+  rms_mm: 6.1
+  max_mm: 8.9
