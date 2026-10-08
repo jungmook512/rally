@@ -11,9 +11,10 @@
 - 접촉 예정 플래그는 contact_timeout_s(0.5 s) 안에 갱신되지 않으면 꺼진 것으로 본다 (skill_server 가 죽어도 감시 복귀).
 - 손 거리 (hand_level, #59):
   손 없음 → NORMAL / 손은 보이는데 거리 NaN(깊이·tf 없음) → SLOW (hand_distance_unknown) / slow_distance_m 안 → SLOW /
-  stop_distance_m 안 → STOP. 단 접촉 예정이고 로봇이 거의 멈춰 있거나 환자에게서 멀어지는 쪽(−x)으로만 움직이면 SLOW
-  (hand_near_contact — 건네기 당김 대기·저항 밀기에서 환자가 물체·손잡이를 잡는 순간). 손이 로봇 구역 깊이
-  (hand_deep_stop_m) 들어오면 접촉 예정이어도 STOP. tcp_pose 가 끊겼으면 움직임을 모르므로 완화하지 않는다.
+  stop_distance_m 안 → STOP. 단 skill_server 가 /rally/safety/patient_contact(환자가 물체·손잡이를 잡는 구간: 건네기 당김
+  대기 → 후퇴, 저항 밀기)를 올린 동안은 SLOW (hand_near_patient_contact). 이 구간엔 스킬이 환자 쪽(+x) 명령 이동을 하지 않는다
+  (skill_server 설계 메모) — 환자에게 끌려 움직이는 건 힘 한계가 막는다. 손이 로봇 구역 깊이(hand_deep_stop_m) 들어오거나
+  손 메시지가 끊겼으면(마지막 거리를 믿을 수 없음) 완화하지 않는다. 치기·집기·놓기의 contact_expected 는 완화 대상이 아니다.
 - 입력 끊김 (input_level, #14·#59): 손·힘·tcp_pose 를 받다가 *_timeout_s 넘게 끊기면 SLOW (hand_stale · wrench_stale ·
   tcp_stale). 한 번도 받은 적이 없으면 경고 로그만 (손 노드 없이 로봇만 시험할 때 속도가 바뀌지 않게).
 손 거리·끊김에 의한 SLOW/STOP 은 매 주기 다시 판정한다 (래치 아님). 그 밖의 STOP 은 /rally/robot/reset_safety (Trigger) 로만 해제.
@@ -42,28 +43,17 @@ def quat_angle_deg(q1, q2):
 LEVEL_NAMES = {SafetyStatus.LEVEL_NORMAL: "NORMAL", SafetyStatus.LEVEL_SLOW: "SLOW", SafetyStatus.LEVEL_STOP: "STOP"}
 
 
-def robot_still_or_retreating(speed, ang_speed, vx, cfg):
-    """접촉 중 손 거리 완화 조건: 거의 정지, 또는 −x(환자에게서 멀어짐) 방향으로만 이동 (모드 7 져주기)."""
-    if ang_speed >= cfg["contact_slow_ang_speed_max_dps"]:
-        return False
-    if speed < cfg["contact_slow_speed_max_mps"]:
-        return True
-    return vx < 0.0 and -vx >= cfg["contact_retreat_ratio"] * speed
-
-
-def hand_level(dist, contact, motion, cfg):
+def hand_level(dist, patient_contact, cfg):
     """손 거리 → (레벨, 이유). 순수 함수 (test_safety.py).
     dist: None = 손 없음, NaN = 손은 보이는데 거리 모름, 숫자 = distance_to_centerline [m] (음수 = 로봇 구역 침범).
-    motion: None = tcp_pose 없음·끊김, 아니면 (speed m/s, ang_speed deg/s, vx m/s)."""
+    patient_contact: 환자가 잡는 구간이고 손 메시지가 살아 있음 (끊겼으면 호출자가 False 로)."""
     if dist is None:
         return SafetyStatus.LEVEL_NORMAL, ""
     if math.isnan(dist):
         return SafetyStatus.LEVEL_SLOW, "hand_distance_unknown"
     if dist < cfg["stop_distance_m"]:
-        relax = (contact and dist >= cfg["hand_deep_stop_m"] and motion is not None
-                 and robot_still_or_retreating(*motion, cfg))
-        if relax:
-            return SafetyStatus.LEVEL_SLOW, "hand_near_contact"
+        if patient_contact and dist >= cfg["hand_deep_stop_m"]:
+            return SafetyStatus.LEVEL_SLOW, "hand_near_patient_contact"
         return SafetyStatus.LEVEL_STOP, "hand_near_centerline"
     if dist < cfg["slow_distance_m"]:
         return SafetyStatus.LEVEL_SLOW, "hand_near_centerline"
@@ -100,10 +90,8 @@ class SafetyMonitor(Node):
         self.declare_parameter("nudge_ang_speed_max_dps", 5.0)  # 툴이 이보다 빨리 도는 중에도 nudge 판정 안 함 (회전 중 힘 출렁임)
         self.declare_parameter("contact_timeout_s", 0.5)     # contact_expected 하트비트 유효 시간
         # 손 거리 완화 (#59) — 값은 safety.yaml
-        self.declare_parameter("hand_deep_stop_m", -0.15)            # 이보다 로봇 구역 깊이 들어오면 접촉 예정이어도 STOP
-        self.declare_parameter("contact_slow_speed_max_mps", 0.03)   # 접촉 예정 + 이보다 느리면 손 거리 STOP → SLOW
-        self.declare_parameter("contact_slow_ang_speed_max_dps", 5.0)
-        self.declare_parameter("contact_retreat_ratio", 0.7)         # 속도의 이 비율 이상이 −x(환자에게서 멀어짐)면 '후퇴'
+        self.declare_parameter("hand_deep_stop_m", -0.15)            # 이보다 로봇 구역 깊이 들어오면 환자 접촉 중이어도 STOP
+        self.declare_parameter("patient_contact_timeout_s", 0.5)     # /rally/safety/patient_contact 하트비트 유효 시간
         # 입력 끊김 (#14·#59)
         self.declare_parameter("hand_timeout_s", 0.5)
         self.declare_parameter("wrench_timeout_s", 0.5)
@@ -122,6 +110,7 @@ class SafetyMonitor(Node):
         self.create_subscription(VoiceIntent, "/rally/voice/intent", self.on_intent, reliable)
         self.create_subscription(Bool, "/rally/safety/estop", self.on_estop, latched)
         self.create_subscription(Bool, "/rally/safety/contact_expected", self.on_contact, reliable1)
+        self.create_subscription(Bool, "/rally/safety/patient_contact", self.on_patient_contact, reliable1)
         self.create_subscription(WrenchStamped, "/rally/robot/wrench", self.on_wrench, qos_profile_sensor_data)
         self.create_subscription(PoseStamped, "/rally/robot/tcp_pose", self.on_tcp, qos_profile_sensor_data)
         self.create_service(Trigger, "/rally/robot/reset_safety", self.on_reset)
@@ -132,13 +121,14 @@ class SafetyMonitor(Node):
         self.t_start = time.monotonic()
         self._warned_never = set()
         self._last_logged = (SafetyStatus.LEVEL_NORMAL, "")
+        self._last_log_t = 0.0
         self.latched_stop = False
         self.contact_until = 0.0
+        self.patient_contact_until = 0.0
         self.prev_fmag = None
         self.prev_tcp = None          # (t, x, y, z, qx, qy, qz, qw)
         self.tcp_speed = 0.0
         self.tcp_ang_speed = 0.0      # deg/s
-        self.tcp_vx = 0.0             # m/s (base x — 환자 쪽이 +)
         self.create_timer(0.01, self.tick)
 
     def p(self, name):
@@ -171,6 +161,12 @@ class SafetyMonitor(Node):
     def contact_expected(self):
         return time.monotonic() < self.contact_until
 
+    def on_patient_contact(self, m):
+        self.patient_contact_until = time.monotonic() + self.p("patient_contact_timeout_s") if m.data else 0.0
+
+    def patient_contact(self):
+        return time.monotonic() < self.patient_contact_until
+
     def on_tcp(self, m):
         now = time.monotonic()
         self.last_rx["tcp"] = now
@@ -179,9 +175,9 @@ class SafetyMonitor(Node):
         q = (o.x, o.y, o.z, o.w)
         if self.prev_tcp is not None:
             dt = now - self.prev_tcp[0]
-            if dt > 1e-3:
+            # 끊겼다 돌아온 첫 샘플은 dt 가 끊긴 시간 전체라 속도가 과소평가된다 → 이번엔 갱신하지 않고 다음 샘플부터
+            if 1e-3 < dt <= self.p("tcp_timeout_s"):
                 self.tcp_speed = math.dist((x, y, z), self.prev_tcp[1:4]) / dt
-                self.tcp_vx = (x - self.prev_tcp[1]) / dt
                 self.tcp_ang_speed = quat_angle_deg(self.prev_tcp[4:], q) / dt
         self.prev_tcp = (now, x, y, z, *q)
         if self.p("workspace_enabled"):
@@ -213,16 +209,11 @@ class SafetyMonitor(Node):
 
     # ----- 100 Hz -----
     def cfg(self):
-        keys = ("slow_distance_m", "stop_distance_m", "hand_deep_stop_m", "contact_slow_speed_max_mps",
-                "contact_slow_ang_speed_max_dps", "contact_retreat_ratio")
-        return {k: self.p(k) for k in keys}
+        return {k: self.p(k) for k in ("slow_distance_m", "stop_distance_m", "hand_deep_stop_m")}
 
-    def motion(self, now):
-        """(speed, ang_speed, vx) — tcp_pose 를 못 받았거나 끊겼으면 None (움직임 모름)."""
-        t = self.last_rx["tcp"]
-        if t is None or now - t > self.p("tcp_timeout_s"):
-            return None
-        return self.tcp_speed, self.tcp_ang_speed, self.tcp_vx
+    def hand_fresh(self, now):
+        t = self.last_rx["hand"]
+        return t is not None and now - t <= self.p("hand_timeout_s")
 
     def _warn_never_received(self, now):
         if now - self.t_start < self.p("never_received_warn_s"):
@@ -232,22 +223,30 @@ class SafetyMonitor(Node):
                 self._warned_never.add(name)
                 self.get_logger().warning(f"{name} 입력을 아직 한 번도 못 받음 — 이 입력의 안전 판정 없이 동작 중")
 
+    def _log_level(self, level, reason, now):
+        """레벨이 바뀔 때 로그. STOP 은 항상, 나머지는 1 s 에 한 번까지 (깜빡임). 못 찍은 변화는 다음에 다시 시도."""
+        if level == SafetyStatus.LEVEL_STOP:
+            self.get_logger().error(f"안전 레벨 STOP ({reason})")
+        elif now - self._last_log_t < 1.0:
+            return
+        elif level == SafetyStatus.LEVEL_SLOW:
+            self.get_logger().warning(f"안전 레벨 SLOW ({reason})")
+        else:
+            self.get_logger().info("안전 레벨 NORMAL")
+        self._last_logged, self._last_log_t = (level, reason), now
+
     def tick(self):
         now = time.monotonic()
         self._warn_never_received(now)
         if not self.latched_stop:
             timeouts = {k: self.p(f"{k}_timeout_s") for k in self.last_rx}
-            level, reason = worst(hand_level(self.hand_dist, self.contact_expected(), self.motion(now), self.cfg()),
+            relax = self.patient_contact() and self.hand_fresh(now)     # 손이 끊겼으면 마지막 거리로 완화하지 않는다
+            level, reason = worst(hand_level(self.hand_dist, relax, self.cfg()),
                                   input_level(self.last_rx, now, timeouts))
             override = {SafetyStatus.LEVEL_NORMAL: 1.0, SafetyStatus.LEVEL_SLOW: self.p("slow_override")}.get(level, 0.0)
             self.level, self.reason, self.override = level, reason, override
             if (level, reason) != self._last_logged:
-                self._last_logged = (level, reason)
-                # rclpy 로거는 같은 호출 위치에서 심각도를 바꾸면 ValueError → 호출을 나눈다
-                if level == SafetyStatus.LEVEL_NORMAL:
-                    self.get_logger().info("안전 레벨 NORMAL", throttle_duration_sec=1.0)
-                else:
-                    self.get_logger().warning(f"안전 레벨 {LEVEL_NAMES[level]} ({reason})", throttle_duration_sec=1.0)
+                self._log_level(level, reason, now)
         msg = SafetyStatus()
         msg.header.stamp = self.get_clock().now().to_msg()
         hand = 9.9 if self.hand_dist is None else self.hand_dist      # NaN = 보이는데 거리 모름 (그대로 싣는다)

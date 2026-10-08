@@ -100,6 +100,15 @@ def test_safety_payload():
     assert p == {"level": "stop", "reason": "force_limit", "speed_override": 0.0, "min_hand_distance": 0.123}
 
 
+def test_safety_payload_nan_hand_distance_is_null():
+    # safety_monitor 는 '손은 보이는데 거리 모름' 을 NaN 으로 싣는다 (#88) — jsonb·브라우저 JSON 은 NaN 을 못 받는다
+    import json
+    p = convert.safety_to_payload(NS(header=header(), level=1, reason="hand_distance_unknown", speed_override=0.5,
+                                     min_hand_distance=float("nan")))
+    assert p["min_hand_distance"] is None
+    json.dumps(p, allow_nan=False)
+
+
 def test_context_to_state():
     msg = NS(header=header(), session_id=SID, mode=5, trial_index=2, robot_state=1, safety=safety(0, ""),
              hand=hand(), last_intent=NS(intent="harder"), recent_success_rate=0.6, fatigue_score=0.2)

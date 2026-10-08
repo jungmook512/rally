@@ -10,6 +10,9 @@
 - DRL 함수(movel, task_compliance_ctrl, ...)는 init_dsr() 이후 import.
 - 접촉이 예정된 구간(집기 하강·핸드오버 당김 대기·저항 밀기)에서는 /rally/safety/contact_expected 를 True 로 올린다(5 Hz 하트비트).
   safety_monitor 는 이 동안 nudge(힘 급변) 판정만 끄고 절대 힘 한계는 그대로 둔다. skill_server 가 죽으면 0.5 s 뒤 자동으로 꺼진다.
+- 환자가 물체·손잡이를 잡는 구간(건네기 당김 대기 → 후퇴, 저항 밀기)에서만 /rally/safety/patient_contact 도 올린다(5 Hz).
+  safety_monitor 는 이 동안 손 거리 STOP 을 SLOW 로 낮춘다(#59). **이 플래그를 켠 동안 스킬은 환자 쪽(+x)으로 명령 이동을 하지 않는다**
+  — 제자리 순응 대기와 환자에게서 멀어지는 이동만. 치기·집기·놓기·ReturnBall 에서는 켜지 않는다.
 - 설정: rally_bringup/config/skills.yaml + table.yaml (share 에 설치된 것 → 없으면 소스 트리 폴백).
 - 로봇 없이: `ros2 run rally_robot skill_server --fake` 또는 RALLY_FAKE=1 → rally_robot.fake_dsr 를 DSR_ROBOT2 자리에 끼운다. 실제 모드 경로는 그대로.
 """
@@ -73,6 +76,7 @@ class SkillServer(Node):
         self.declare_parameter("status_timeout_s", 0.5)   # safety.yaml rally_skill_server. 이보다 오래 못 받으면 STOP 취급
         self.last_hand = None
         self._contact = False
+        self._patient_contact = False
         self._cm_client = None
         self.last_pick = None                # PickCompliant 성공 자세 {pose(mm·deg), grip_force} — 모드 5 내려놓기 자리
         self.holding = False                 # 물체를 쥐고 있는지 — gripper() 가 닫힘+감지면 True, 열면 False
@@ -86,6 +90,7 @@ class SkillServer(Node):
         self.objects = None                  # (monotonic 수신 시각, TrackedObjectArray) — 비전 물체 (모드 1 공 집기)
         self.create_subscription(TrackedObjectArray, "/rally/perception/objects", self._on_objects, qos_profile_sensor_data, callback_group=self.cb_state)
         self.pub_contact = self.create_publisher(Bool, "/rally/safety/contact_expected", reliable1)
+        self.pub_patient_contact = self.create_publisher(Bool, "/rally/safety/patient_contact", reliable1)
         self.create_timer(1.0 / CONTACT_HZ, self._contact_tick, callback_group=self.cb_state)
         self.gripper_cli = self.create_client(GripperCommand, "/rally/gripper/command", callback_group=self.cb_state)
         self.create_service(Trigger, "/rally/robot/go_observe_pose", self._go_observe, callback_group=self.cb_skill)
@@ -188,9 +193,16 @@ class SkillServer(Node):
         self._contact = bool(on)
         self.pub_contact.publish(Bool(data=self._contact))
 
+    def set_patient_contact(self, on: bool):
+        """환자가 물체·손잡이를 잡는 구간 (#59). 켠 동안 환자 쪽(+x) 명령 이동 금지 — 위 설계 메모."""
+        self._patient_contact = bool(on)
+        self.pub_patient_contact.publish(Bool(data=self._patient_contact))
+
     def _contact_tick(self):
         if self._contact:
             self.pub_contact.publish(Bool(data=True))
+        if self._patient_contact:
+            self.pub_patient_contact.publish(Bool(data=True))
 
     # ----- 그리퍼 -----
     def gripper_cfg(self, object_class: str):

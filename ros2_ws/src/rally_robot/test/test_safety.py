@@ -7,54 +7,39 @@ from rally_interfaces.msg import SafetyStatus
 from rally_robot.safety_monitor import hand_level, input_level, worst
 
 NORMAL, SLOW, STOP = SafetyStatus.LEVEL_NORMAL, SafetyStatus.LEVEL_SLOW, SafetyStatus.LEVEL_STOP
-CFG = {"slow_distance_m": 0.25, "stop_distance_m": 0.15, "hand_deep_stop_m": -0.15,
-       "contact_slow_speed_max_mps": 0.03, "contact_slow_ang_speed_max_dps": 5.0, "contact_retreat_ratio": 0.7}
-STILL = (0.0, 0.0, 0.0)               # (speed m/s, ang_speed deg/s, vx m/s)
-RETREAT = (0.05, 0.0, -0.05)          # 모드 7 져주기: −x 로만
-DESCEND = (0.05, 0.0, 0.0)            # 집기 하강: z 로 이동
-TOWARD = (0.05, 0.0, 0.05)            # 환자 쪽(+x)
-ROTATING = (0.0, 20.0, 0.0)           # 손끝은 제자리, 손목 회전
+CFG = {"slow_distance_m": 0.25, "stop_distance_m": 0.15, "hand_deep_stop_m": -0.15}
 
 
 def test_no_hand_is_normal():
-    assert hand_level(None, False, STILL, CFG) == (NORMAL, "")
+    assert hand_level(None, False, CFG) == (NORMAL, "")
 
 
 def test_hand_far_is_normal_and_slow_zone():
-    assert hand_level(0.40, False, STILL, CFG)[0] == NORMAL
-    assert hand_level(0.20, False, STILL, CFG) == (SLOW, "hand_near_centerline")
+    assert hand_level(0.40, False, CFG)[0] == NORMAL
+    assert hand_level(0.20, False, CFG) == (SLOW, "hand_near_centerline")
 
 
 def test_nan_distance_is_slow():
     # 손은 보이는데 거리 모름 — 예전엔 비교가 전부 거짓이라 아무 반응이 없었다 (#59)
-    assert hand_level(math.nan, False, STILL, CFG) == (SLOW, "hand_distance_unknown")
-    assert hand_level(math.nan, True, STILL, CFG) == (SLOW, "hand_distance_unknown")
+    assert hand_level(math.nan, False, CFG) == (SLOW, "hand_distance_unknown")
+    assert hand_level(math.nan, True, CFG) == (SLOW, "hand_distance_unknown")
 
 
-def test_near_without_contact_is_stop():
-    assert hand_level(0.10, False, STILL, CFG) == (STOP, "hand_near_centerline")
+def test_near_without_patient_contact_is_stop():
+    # 치기·집기·놓기(contact_expected 만)는 완화 대상이 아니다 — 호출자는 patient_contact=False 로 부른다
+    assert hand_level(0.10, False, CFG) == (STOP, "hand_near_centerline")
+    assert hand_level(-0.06, False, CFG) == (STOP, "hand_near_centerline")
 
 
-@pytest.mark.parametrize("motion", [STILL, RETREAT])
-def test_near_with_contact_and_still_or_retreating_is_slow(motion):
-    # 건네기 당김 대기·저항 밀기: 환자가 중앙선 앞 6 cm 의 물체를 잡는 순간 (#59 3번)
-    assert hand_level(-0.06, True, motion, CFG) == (SLOW, "hand_near_contact")
+def test_near_with_patient_contact_is_slow():
+    # 건네기 당김 대기·후퇴, 저항 밀기: 환자가 중앙선 앞 6 cm 의 물체를 잡는 순간 (#59 3번)
+    assert hand_level(-0.06, True, CFG) == (SLOW, "hand_near_patient_contact")
+    assert hand_level(0.10, True, CFG) == (SLOW, "hand_near_patient_contact")
 
 
-@pytest.mark.parametrize("motion", [DESCEND, TOWARD, ROTATING])
-def test_near_with_contact_but_robot_moving_is_stop(motion):
-    # 집기 하강·치기·환자 쪽 이동·손목 회전 중에는 접촉 예정이어도 STOP 유지
-    assert hand_level(-0.06, True, motion, CFG) == (STOP, "hand_near_centerline")
-
-
-def test_deep_intrusion_is_stop_even_with_contact():
-    assert hand_level(-0.20, True, STILL, CFG) == (STOP, "hand_near_centerline")
-    assert hand_level(-0.15, True, STILL, CFG)[0] == SLOW        # 경계는 완화 쪽 (>= hand_deep_stop_m)
-
-
-def test_unknown_motion_is_not_relaxed():
-    # tcp_pose 를 못 받았거나 끊김 → 움직임을 모르므로 완화하지 않음
-    assert hand_level(-0.06, True, None, CFG) == (STOP, "hand_near_centerline")
+def test_deep_intrusion_is_stop_even_with_patient_contact():
+    assert hand_level(-0.20, True, CFG) == (STOP, "hand_near_centerline")
+    assert hand_level(-0.15, True, CFG)[0] == SLOW        # 경계는 완화 쪽 (>= hand_deep_stop_m)
 
 
 TIMEOUTS = {"hand": 0.5, "wrench": 0.5, "tcp": 0.5}
