@@ -6,9 +6,13 @@
   여기서는 main()에서 init_dsr() 한 번 호출하고, 스킬 콜백은 ReentrantCallbackGroup 에서 돌려
   safety_monitor 구독(별도 그룹)이 막히지 않게 한다. Executor 는 MultiThreadedExecutor.
 - 모든 스킬은 실행 중 SafetyStatus.level == STOP 이면 즉시 abort 하고 순응 해제 → 후퇴 (dsr_helpers.move_checked / compliance).
+  안전 상태를 한 번도 못 받았거나 status_timeout_s 넘게 끊겨도 STOP 으로 본다 (#14) — safety_monitor 없이 띄우면 goal 거부.
 - DRL 함수(movel, task_compliance_ctrl, ...)는 init_dsr() 이후 import.
 - 접촉이 예정된 구간(집기 하강·핸드오버 당김 대기·저항 밀기)에서는 /rally/safety/contact_expected 를 True 로 올린다(5 Hz 하트비트).
   safety_monitor 는 이 동안 nudge(힘 급변) 판정만 끄고 절대 힘 한계는 그대로 둔다. skill_server 가 죽으면 0.5 s 뒤 자동으로 꺼진다.
+- 환자가 물체·손잡이를 잡는 구간(건네기 당김 대기 → 후퇴, 저항 밀기)에서만 /rally/safety/patient_contact 도 올린다(5 Hz).
+  safety_monitor 는 이 동안 손 거리 STOP 을 SLOW 로 낮춘다(#59). **이 플래그를 켠 동안 스킬은 환자 쪽(+x)으로 명령 이동을 하지 않는다**
+  — 제자리 순응 대기와 환자에게서 멀어지는 이동만. 치기·집기·놓기·ReturnBall 에서는 켜지 않는다.
 - 설정: rally_bringup/config/skills.yaml + table.yaml (share 에 설치된 것 → 없으면 소스 트리 폴백).
 - 로봇 없이: `ros2 run rally_robot skill_server --fake` 또는 RALLY_FAKE=1 → rally_robot.fake_dsr 를 DSR_ROBOT2 자리에 끼운다. 실제 모드 경로는 그대로.
 """
@@ -68,8 +72,11 @@ class SkillServer(Node):
         self.cb_state = MutuallyExclusiveCallbackGroup()
         self.cb_skill = ReentrantCallbackGroup()
         self.safety = SafetyStatus()
+        self.safety_rx = None                # 마지막 /rally/safety/status 수신 monotonic. None = 한 번도 못 받음 → STOP 취급 (#14)
+        self.declare_parameter("status_timeout_s", 0.5)   # safety.yaml rally_skill_server. 이보다 오래 못 받으면 STOP 취급
         self.last_hand = None
         self._contact = False
+        self._patient_contact = False
         self._cm_client = None
         self.last_pick = None                # PickCompliant 성공 자세 {pose(mm·deg), grip_force} — 모드 5 내려놓기 자리
         self.holding = False                 # 물체를 쥐고 있는지 — gripper() 가 닫힘+감지면 True, 열면 False
@@ -83,6 +90,7 @@ class SkillServer(Node):
         self.objects = None                  # (monotonic 수신 시각, TrackedObjectArray) — 비전 물체 (모드 1 공 집기)
         self.create_subscription(TrackedObjectArray, "/rally/perception/objects", self._on_objects, qos_profile_sensor_data, callback_group=self.cb_state)
         self.pub_contact = self.create_publisher(Bool, "/rally/safety/contact_expected", reliable1)
+        self.pub_patient_contact = self.create_publisher(Bool, "/rally/safety/patient_contact", reliable1)
         self.create_timer(1.0 / CONTACT_HZ, self._contact_tick, callback_group=self.cb_state)
         self.gripper_cli = self.create_client(GripperCommand, "/rally/gripper/command", callback_group=self.cb_state)
         self.create_service(Trigger, "/rally/robot/go_observe_pose", self._go_observe, callback_group=self.cb_skill)
@@ -113,6 +121,11 @@ class SkillServer(Node):
     # ----- 안전 -----
     def _on_safety(self, msg):
         self.safety = msg
+        self.safety_rx = time.monotonic()
+
+    def safety_stale(self) -> bool:
+        """안전 상태를 한 번도 못 받았거나 status_timeout_s 넘게 끊김 (#14) — safety_monitor 가 없거나 죽음."""
+        return self.safety_rx is None or time.monotonic() - self.safety_rx > float(self.get_parameter("status_timeout_s").value)
 
     def _on_objects(self, msg):
         self.objects = (time.monotonic(), msg)
@@ -142,9 +155,12 @@ class SkillServer(Node):
         self.last_hand = msg
 
     def stop_requested(self):
-        return self.safety.level == SafetyStatus.LEVEL_STOP
+        """STOP 이거나 안전 상태가 끊겼으면 참 → 새 goal 거부, 실행 중 스킬은 check_stop 에서 abort (#14)."""
+        return self.safety_stale() or self.safety.level == SafetyStatus.LEVEL_STOP
 
     def safety_reason(self):
+        if self.safety_stale():
+            return "safety_status_stale"
         return self.safety.reason or "safety_stop"
 
     def speed_scale(self):
@@ -181,9 +197,16 @@ class SkillServer(Node):
         self._contact = bool(on)
         self.pub_contact.publish(Bool(data=self._contact))
 
+    def set_patient_contact(self, on: bool):
+        """환자가 물체·손잡이를 잡는 구간 (#59). 켠 동안 환자 쪽(+x) 명령 이동 금지 — 위 설계 메모."""
+        self._patient_contact = bool(on)
+        self.pub_patient_contact.publish(Bool(data=self._patient_contact))
+
     def _contact_tick(self):
         if self._contact:
             self.pub_contact.publish(Bool(data=True))
+        if self._patient_contact:
+            self.pub_patient_contact.publish(Bool(data=True))
 
     # ----- 그리퍼 -----
     def gripper_cfg(self, object_class: str):

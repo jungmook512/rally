@@ -20,6 +20,8 @@ GIVE (물체는 이미 쥔 상태)
             release_force_threshold_n 을 pull_hold_s 동안 유지하면 '당김'. timeout_s 넘으면 실패(timeout)
   release : 그리퍼 열기(물체 클래스별 open_mm) → 0.3 s
   retreat : 순응 해제 → 베이스 쪽 retreat_m + 위 retreat_up_m 비스듬히 후퇴 → 플래그 OFF
+  환자 접촉 플래그(set_patient_contact): wait 시작 ~ retreat 끝. 이 동안 손 거리 STOP 이 SLOW 로 낮아진다(#59) —
+  그래서 이 구간엔 환자 쪽(+x) 명령 이동이 없어야 한다 (제자리 순응 대기, 베이스 쪽 + 위로 후퇴만).
 RECEIVE
   present : 그리퍼 연 채 제시 자세(receive_tilt_deg, 기본 똑바로)
   wait    : 환자가 물체를 그리퍼 사이로 밀어 넣는 힘 감지 → grasp: 닫기 → 물체 판정 → retreat
@@ -168,6 +170,7 @@ def execute(node):
 
             phase("wait")
             node.set_contact(True)
+            node.set_patient_contact(True)            # 환자가 잡는 구간 (#59) — 여기부터 후퇴 끝까지 +x 명령 이동 없음
             with compliance(cfg["stiffness"], log):
                 got = wait_for_force(threshold, timeout_s, "wait")
                 if not got:
@@ -192,7 +195,8 @@ def execute(node):
             phase("retreat")
             back = _retreat_pose(present, cfg["retreat_m"])          # 뒤로만 빼면 팔이 더 접혀 J3 한계(±150°) → 뒤 + 위로 비스듬히
             back[2] += cfg["retreat_up_m"] * 1000.0
-            move_checked(node, back, tv, ta)
+            move_checked(node, back, tv, ta)                         # 베이스 쪽(−x) + 위 — 환자에게서 멀어짐
+            node.set_patient_contact(False)
             if res.success and not give and cfg["place_after_receive"]:
                 if not place_back():
                     res.failure_reason = "placed_without_open" if getattr(node, "last_pick", None) else ""
@@ -219,4 +223,5 @@ def execute(node):
             return res
         finally:
             node.set_contact(False)
+            node.set_patient_contact(False)
     return _execute
