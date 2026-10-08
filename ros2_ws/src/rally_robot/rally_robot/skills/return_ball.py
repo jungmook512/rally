@@ -112,7 +112,8 @@ def execute(node):
             phase("find")
             posj = (node.cfg.get("observe_pose") or {}).get("posj")
             try:
-                above = pick_ball_by_vision(node, cfg, table, log, choose=choose, view_posj=posj, wait_s=timeout_s, on_frame=on_frame)
+                above = pick_ball_by_vision(node, cfg, table, log, choose=choose, view_posj=posj, wait_s=timeout_s, on_frame=on_frame,
+                                            goal_handle=goal_handle)   # 공을 기다리는 동안(최대 timeout_s)에도 세션 취소를 듣게
             except SkillAbort as e:
                 if e.reason.startswith("no_ball_detected"):
                     raise SkillAbort("ball_out_of_reach" if seen["far"] is not None else "no_ball_in_lane", stopped=e.stopped) from None
