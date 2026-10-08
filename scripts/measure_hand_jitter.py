@@ -3,6 +3,7 @@
 
 hand_pose 노드가 켜진 상태에서 실행. 지금 손 거리가 계속 표시되고, 원하는 거리에 손을 두고 **Enter** 를 누르면
 --seconds 동안 잰다 (손은 가만히). --auto 면 예전처럼 3초 뒤 자동 시작.
+결과는 터미널과 data/measure/hand_jitter_MMDD.txt 에 (실행마다 이어 붙임).
     python3 scripts/measure_hand_jitter.py                      # 10 s
     python3 scripts/measure_hand_jitter.py --seconds 20 --label 50cm
 결과
@@ -108,7 +109,16 @@ def main() -> None:
     while time.monotonic() - t0 < a.seconds:
         rclpy.spin_once(node, timeout_sec=0.05)
     node.on = False
-    node.get_logger().info(f"결과{' [' + a.label + ']' if a.label else ''}\n  {summarize(node.rows, a.seconds)}")
+    text = f"결과{' [' + a.label + ']' if a.label else ''}\n  {summarize(node.rows, a.seconds)}"
+    node.get_logger().info(text)
+    # 결과를 파일에도 쌓는다 (data/ 는 git 제외)
+    from datetime import datetime
+    from pathlib import Path
+    out = Path(__file__).resolve().parents[1] / "data" / "measure" / f"hand_jitter_{datetime.now():%m%d}.txt"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with out.open("a") as f:
+        f.write(f"[{datetime.now():%H:%M:%S}] {text}\n\n")
+    print(f"저장: {out}", flush=True)
     node.destroy_node()
     rclpy.try_shutdown()
 
