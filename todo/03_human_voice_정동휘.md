@@ -3,6 +3,16 @@
 패키지: `ros2_ws/src/rally_human`, `rally_voice` · 책임 모드: **모드 5 (건네고 받기)**
 참고: `docs/INTERFACES.md` 2.2 / 3
 
+## 10/8 회의 결정 — 모드 1 에서 손 인식이 하는 일 (정정인·조정묵 요청)
+brain 모드 1 이 `/rally/perception/hand`(HandState)를 이렇게 쓴다 (`rally_brain/trees/mode1_push.py`, 로봇 손 보기 자세에서 RealSense):
+- **레인 고르기**: `palm_pose.position.y`(**base_link**) 에 가장 가까운 레인 → header.frame_id 가 base_link 가 아니면 무작위로 대체
+- **잘 받음 판정**: `grip_closure` ≥ 0.6 을 0.3 s 유지(쥠) → ≤ 0.3 (폄)
+- **손 빼기**: `distance_to_centerline` ≥ 0.25 m 가 되면 로봇이 공을 회수
+- [ ] 로봇·인식 PC 에서 `hand_pose` 를 RealSense 토픽에 맞게 실행 — `vision_local.sh` 카메라는 `/camera/color/image_raw`·`/camera/aligned_depth_to_color/image_raw`·`/camera/color/camera_info` (노드 기본값 `/camera/camera/...` 과 다름)
+- [ ] 카메라 → base_link tf 가 이미지 시각 기준으로 나오는지 (팔이 손 보기 자세로 움직임) — 안 되면 distance NaN → 안전감시 SLOW
+- [ ] **테니스공을 쥔 손이 주먹(GESTURE_FIST → 비상정지)으로 잡히는지** 확인 — 잡히면 매 시도마다 로봇이 멈춤. 안전 규칙이라 임의로 끄지 말고 팀과 결정
+- [ ] 공을 쥐었다 폈을 때 `grip_closure` 값 범위 기록 → 임계값(0.6 / 0.3) 확정
+
 ## 지금 상태 (10/8 기준) — 한눈에
 **한 것 (머지)**: 손 인식 노드 #44 · 음성 의도 노드 #46 · TTS 노드 #53 · 모드 1 칼만 예측 코드 #67(모드 1 은 보류, #69·#70) · 손목 각도 버그 수정 + 확인 창 3개 #74
 **한 것 (PR)**: 비상어 상시 감지 연결 + 학습 도구 #50 (Draft) · body_pose #83 · 손 깊이 보정 #91 · 손목 각도 안정화 #92 · 손 떨림·지연 측정 #93

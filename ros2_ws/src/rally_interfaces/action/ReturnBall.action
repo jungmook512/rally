@@ -1,0 +1,11 @@
+# 모드 1: 시도가 끝난 공(환자가 받았다 놓은 공)을 레인에서 집어 거치대 맨 윗부분에 넣는다
+# 로봇이 닿는 곳(table.centerline_x_m 앞)에 공이 올 때까지 timeout_s 동안 기다린다. 닿지 않는 곳에 있으면 feedback.phase = out_of_reach
+int8 lane                             # 찾을 레인 (0/1/2 = skills.yaml mode1.lanes). -1 = 아무 레인
+float32 timeout_s                     # 공이 닿는 곳에 올 때까지 기다리는 시간 [s]. 0 = skills.yaml 기본
+---
+bool success
+geometry_msgs/Point ball_position     # 집은 공 위치 (base_link, m)
+string failure_reason                 # no_ball_in_lane | ball_out_of_reach | pickup_failed | no_rack_drop_posx | safety_stop ...
+---
+string phase                          # find | out_of_reach | pickup | to_rack | drop | hand_view
+geometry_msgs/Point ball_position     # 지금 보이는 공 (없으면 0)

@@ -32,7 +32,7 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool
 from std_srvs.srv import Trigger
 
-from rally_interfaces.action import CatchBall, DetachBall, Handover, MoveTarget, PickCompliant, PushBall, ResistPush
+from rally_interfaces.action import CatchBall, DetachBall, Handover, MoveTarget, PickCompliant, PushBall, ResistPush, ReturnBall
 from rally_interfaces.msg import HandState, SafetyStatus, TrackedObjectArray
 from rally_interfaces.srv import GripperCommand
 from rally_robot.dsr_helpers import OBSERVE_POS, ROBOT_ID, SkillAbort, init_dsr, motion_speeds
@@ -94,8 +94,10 @@ class SkillServer(Node):
         self.create_timer(1.0 / CONTACT_HZ, self._contact_tick, callback_group=self.cb_state)
         self.gripper_cli = self.create_client(GripperCommand, "/rally/gripper/command", callback_group=self.cb_state)
         self.create_service(Trigger, "/rally/robot/go_observe_pose", self._go_observe, callback_group=self.cb_skill)
+        self.create_service(Trigger, "/rally/robot/go_hand_view", self._go_hand_view, callback_group=self.cb_skill)
 
-        from rally_robot.skills import catch_ball, detach_ball, handover, move_target, pick_compliant, push_ball, resist_push
+        from rally_robot.skills import (catch_ball, detach_ball, handover, move_target, pick_compliant, push_ball, resist_push,
+                                        return_ball)
         self._servers = [
             ActionServer(self, PushBall, "/rally/skill/push_ball", push_ball.execute(self), callback_group=self.cb_skill,
                          goal_callback=self._accept, cancel_callback=self._cancel),
@@ -110,6 +112,8 @@ class SkillServer(Node):
             ActionServer(self, ResistPush, "/rally/skill/resist_push", resist_push.execute(self), callback_group=self.cb_skill,
                          goal_callback=self._accept, cancel_callback=self._cancel),
             ActionServer(self, PickCompliant, "/rally/skill/pick_compliant", pick_compliant.execute(self), callback_group=self.cb_skill,
+                         goal_callback=self._accept, cancel_callback=self._cancel),
+            ActionServer(self, ReturnBall, "/rally/skill/return_ball", return_ball.execute(self), callback_group=self.cb_skill,
                          goal_callback=self._accept, cancel_callback=self._cancel),
         ]
         self.get_logger().info(f"skill_server ready ({'FAKE' if fake else 'real'} DSR)")
@@ -268,6 +272,29 @@ class SkillServer(Node):
         return res
 
 
+    def _go_hand_view(self, req, res):
+        """손 보기 자세 (모드 1 시도 전 레인 고르기 — 툴을 환자 쪽으로 기울여 RealSense 가 환자 손을 봄). 관절 이동."""
+        from rally_robot.dsr_helpers import movej_to_pose
+        from rally_robot.skills.push_ball import DEFAULTS as PUSH_DEFAULTS
+        from rally_robot.skills.push_ball import hand_view_pose
+        if self.stop_requested():
+            res.success, res.message = False, f"safety STOP ({self.safety_reason()})"
+            return res
+        m1 = self.cfg.get("mode1") or {}
+        cfg = {**PUSH_DEFAULTS, **{k: v for k, v in m1.items() if k in PUSH_DEFAULTS}}
+        pose = hand_view_pose(cfg, m1.get("lanes") or [], self.cfg.get("table") or {})
+        if pose is None:
+            res.success, res.message = False, "no_lanes (skills.yaml mode1.lanes)"
+            return res
+        try:
+            movej_to_pose(self, pose, *motion_speeds(self)[4:])
+        except SkillAbort as e:
+            res.success, res.message = False, e.reason
+            return res
+        res.success, res.message = True, f"hand view {[round(v, 1) for v in pose]}"
+        return res
+
+
 def _install_sim_force(node):
     """시뮬 전용(RALLY_SIM=1, 에뮬레이터): 에뮬레이터에는 외력이 없으니 /rally/sim/external_force(Vector3, N, base)를
     get_tool_force 에 더한다. scripts/sim_gripper.py 의 환자 흉내(당기기·밀어 넣기)가 발행. 실로봇 경로에는 안 들어간다."""
@@ -303,6 +330,10 @@ def main(args=None):
     node.dsr = dsr_node
     if not fake and os.environ.get("RALLY_SIM") == "1":
         _install_sim_force(node)
+        m1 = node.cfg.get("mode1") or {}
+        if not m1.get("rack_drop_posx") and m1.get("sim_rack_drop_posx"):   # 시뮬 전용 거치대 자리 (직접교시 전)
+            m1["rack_drop_posx"] = m1["sim_rack_drop_posx"]
+            node.get_logger().warning(f"시뮬 모드: rack_drop_posx ← sim_rack_drop_posx {m1['rack_drop_posx']}")
     ex = MultiThreadedExecutor(num_threads=6)
     ex.add_node(node)
     if dsr_node is not None:

@@ -170,3 +170,37 @@ def test_safety_quat_angle():
     assert quat_angle_deg((0, 0, 0, 1), (0, 0, 0, 1)) == pytest.approx(0.0, abs=1e-6)
     assert quat_angle_deg((0, 0, 0, 1), (0, 0, s, s)) == pytest.approx(90.0, abs=1e-4)
     assert quat_angle_deg((0, 0, s, s), (0, 0, -s, -s)) == pytest.approx(0.0, abs=1e-4)
+
+
+def test_return_ball_lane_candidates():
+    """공 회수: 레인 통로 안·정지 공만, 로봇이 닿는 곳(x ≤ 0.55)과 아닌 곳을 나눔. 거치대 공(레인 밖)은 무시."""
+    pytest.importorskip("rally_interfaces")
+    from rally_interfaces.msg import TrackedObject, TrackedObjectArray
+    from rally_robot.skills.push_ball import DEFAULTS as PD
+    from rally_robot.skills.return_ball import DEFAULTS, lane_ball_candidates
+    cfg = {**PD, **DEFAULTS, "vision_offset_m": [0.0, 0.0, 0.0]}
+    lanes = [{"start": [0.43, 0.14, 0.0], "dir_deg": 0.0}, {"start": [0.43, 0.0, 0.0], "dir_deg": 0.0},
+             {"start": [0.43, -0.15, 0.0], "dir_deg": 0.0}]
+    arr = TrackedObjectArray()
+    arr.header.frame_id = "base_link"
+
+    def ball(x, y, moving=False):
+        o = TrackedObject(class_name="ball", confidence=0.9, is_moving=moving)
+        o.position.x, o.position.y, o.position.z = x, y, 0.046
+        return o
+    arr.objects = [ball(0.50, 0.01), ball(0.70, -0.14), ball(0.334, 0.282), ball(0.52, 0.15, moving=True)]
+    near, far = lane_ball_candidates(arr, cfg, lanes, -1, 0.0144)
+    assert near == [(0.50, 0.01, 0.046)] and far == [(0.70, -0.14, 0.046)]       # 거치대 공·움직이는 공 제외
+    near, far = lane_ball_candidates(arr, cfg, lanes, 2, 0.0144)
+    assert near == [] and far == [(0.70, -0.14, 0.046)]                           # 레인 2 만
+
+
+def test_hand_view_pose_is_lane_center():
+    """손 보기 자세는 레인과 상관없이 세 레인 가운데 기준 하나."""
+    pytest.importorskip("rally_interfaces")
+    from rally_robot.skills.push_ball import DEFAULTS, hand_view_pose
+    cfg = dict(DEFAULTS, tool_down_zyz=[174.8, -177.0, 175.1], push_yaw_deg=90.0)
+    lanes = [{"start": [0.43, 0.14, 0.0]}, {"start": [0.43, 0.0, 0.0]}, {"start": [0.43, -0.14, 0.0]}]
+    pose = hand_view_pose(cfg, lanes, {"z_m": 0.0144})
+    assert pose[0] == pytest.approx(330.0) and pose[1] == pytest.approx(0.0, abs=1e-6)
+    assert hand_view_pose(cfg, [], {}) is None

@@ -13,12 +13,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 from dataclasses import dataclass, field
 
 import py_trees
 from rclpy.action import ActionClient
 from rclpy.node import Node
 
+from rally_brain.config import load_table
 from rally_brain.behaviours import Do
 from rally_brain.trees import mode1_push, mode5_handover, mode7_resist
 from rally_interfaces.msg import SafetyStatus, SceneContext, TrialResult
@@ -47,6 +49,7 @@ class Session:
     action_client: Callable[[type, str], ActionClient]
     skills_cfg: dict = field(default_factory=dict)                  # skills.yaml 전체 (모드별 설정)
     say: Callable[[str], None] = lambda text: None                  # TTS 안내 (기다리지 않음)
+    service_client: Callable[[type, str], Any] | None = None        # 서비스 클라이언트 (예: go_hand_view). None 이면 그 단계 건너뜀(테스트)
     after_trial: Callable[["Session", TrialResult], None] | None = None   # 규칙 레이어 (bt_runner)
     trials: list[TrialResult] = field(default_factory=list)
     difficulty: dict[int, int] = field(default_factory=dict)        # 모드 → 난이도 단계 (0 = 시작)
@@ -54,6 +57,8 @@ class Session:
     modes: list[int] = field(default_factory=list)                  # 지금 트리의 모드 순서 (전환하면 바뀜)
     current_mode: int | None = None                                 # 지금 진행 중인 모드
     trial_active: bool = False                                      # 로봇이 시도 중 (begin_trial ~ record). 모드 전환은 이때 안 함
+
+    table_cfg: dict = field(default_factory=load_table)             # 중앙선 원본: table.yaml
 
     def safe(self) -> bool:
         ctx = self.get_context()
@@ -83,6 +88,8 @@ class Session:
 
     def trials_for_rules(self, mode: int) -> list[TrialResult]:
         """이 모드에서 난이도가 마지막으로 바뀐 뒤의 시도 (규칙 레이어의 연속 횟수·추세 계산용). no_hand 는 뺀다."""
+        if mode == TrialResult.MODE_PUSH_BALL:
+            return []  # 손동작은 받기 후보 신호. 실물 판정 검증 전 자동 난이도 금지.
         return [t for t in self.trials[self.level_changed_at.get(mode, 0):]
                 if t.mode == mode and t.notes not in NOT_PERFORMANCE]
 

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import threading
 import time
+from typing import Any
 import uuid
 
 import py_trees
@@ -85,6 +86,7 @@ class BtRunner(Node):
         self._state_name = "idle"       # tick 스레드에서만 갱신, 타이머는 읽기만
         self._busy = threading.Lock()   # 세션은 한 번에 하나
         self._skill_clients: dict[str, ActionClient] = {}
+        self._srv_clients: dict[str, Any] = {}
         self._client_group = ReentrantCallbackGroup()
         self._skills_cfg = load_skills()
         self._rule_cfg = rule_layer.rule_config(self._skills_cfg)
@@ -204,6 +206,8 @@ class BtRunner(Node):
         if d.action in ("harder", "easier"):
             old = session.difficulty.get(trial.mode, 0)
             new = rule_layer.apply_difficulty(old, d.action, self._rule_cfg)
+            if trial.mode == TrialResult.MODE_PUSH_BALL:
+                new = max(0, new)  # 모드 1의 가장 쉬운 개발 단계는 0
             session.set_difficulty(trial.mode, new)
             log.info(f"[규칙] {d.reason} — 모드 {trial.mode} 난이도 {old} → {new}"
                      + ("" if new != old else " (한계)"))
@@ -231,6 +235,11 @@ class BtRunner(Node):
         if name not in self._skill_clients:
             self._skill_clients[name] = ActionClient(self, action_type, name, callback_group=self._client_group)
         return self._skill_clients[name]
+
+    def _service_client(self, srv_type: type, name: str):
+        if name not in self._srv_clients:
+            self._srv_clients[name] = self.create_client(srv_type, name, callback_group=self._client_group)
+        return self._srv_clients[name]
 
     def _say(self, text: str) -> None:
         """TTS 안내 (기다리지 않음). tts_node 가 없거나 거절해도 로그만 — 안내가 없어도 세션은 계속된다.
@@ -275,7 +284,8 @@ class BtRunner(Node):
         n = goal.trials_per_mode or int(self.get_parameter("trials_per_mode").value)
         session = Session(node=self, session_id=str(uuid.uuid4()), get_context=lambda: self._context,
                           publish=self._trial_pub.publish, action_client=self._action_client,
-                          skills_cfg=self._skills_cfg, say=self._say, after_trial=self._after_trial)
+                          skills_cfg=self._skills_cfg, say=self._say, after_trial=self._after_trial,
+                          service_client=self._service_client)
         tree = py_trees.trees.BehaviourTree(build_session_tree(session, modes, n))
         with self._switch_lock:
             self._session, self._pending_switch = session, None

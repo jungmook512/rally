@@ -11,7 +11,7 @@
 # 공을 레인 2 입구에 놓기: ros2 service call /rally/sim/place_ball std_srvs/srv/Trigger
 # 모드 5 (막대 집기 → 기울여 건네기 → 환자 당김 → 돌려받기 → 제자리): sim_gripper 가 막대(0.30, -0.25)와 환자 손을 흉내 낸다
 #   python3 scripts/mode5_cycle.py --cycles 2 --manual rod:0.30,-0.25,0 --tilt 45 90
-# 모드 1 (거치대 공 비전 집기 → 레인 입구 → 치기): sim_gripper 가 거치대(0.36, 0.24)에 공을 두고 가상 비전으로 발행
+# 모드 1 (거치대 공 비전 집기 → 레인 입구 → 치기): sim_gripper 가 거치대(0.334, 0.282 — 10/8 실측 맨 앞 공)에 공을 두고 가상 비전으로 발행
 #   ros2 action send_goal /rally/skill/push_ball rally_interfaces/action/PushBall "{lane: 1, push_speed: 0.3}" --feedback
 SIM_DOMAIN=77
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
