@@ -7,6 +7,9 @@
              서버 없음·goal 거절·abort·취소는 FAILURE. abort 여도 결과 메시지(failure_reason 등)는 .result 에 남는다. 트리가 중단되면(terminate) goal 을 보낸 시도는 반드시 기록하고
              (이미 끝났으면 그 결과, 아니면 on_interrupt), 아직 돌고 있거나 수락 전이면 취소한다.
   Do         함수 한 번 실행 후 SUCCESS (TrialResult 발행 등). 함수가 False 를 돌려주면 FAILURE
+  Guard      시도 서브트리를 감싸, 트리가 도중에 멈추면(INVALID) on_stop 을 부른다. 자식이 먼저 멈춰
+             SkillCall.on_interrupt 가 실제 이유로 기록할 기회를 먼저 갖는다 — on_stop 은 그래도 기록이 안 된 경우
+             (스킬과 스킬 사이, 중간 스킬이 성공한 직후 등)를 위한 것이라 기록 여부는 on_stop 쪽이 확인한다
 """
 from __future__ import annotations
 
@@ -153,3 +156,14 @@ class Do(py_trees.behaviour.Behaviour):
 
     def update(self) -> Status:
         return Status.FAILURE if self.fn() is False else Status.SUCCESS
+
+
+class Guard(py_trees.composites.Sequence):
+    def __init__(self, name: str, child: py_trees.behaviour.Behaviour, on_stop: Callable[[], None]):
+        super().__init__(name, memory=True, children=[child])
+        self.on_stop = on_stop
+
+    def terminate(self, new_status: Status) -> None:
+        # Composite.stop 은 자식을 먼저 멈춘 뒤 terminate 를 부른다 (py_trees 2.x)
+        if new_status == Status.INVALID:
+            self.on_stop()

@@ -27,7 +27,7 @@
 - [x] **Ontology** `rally_brain/knowledge/ontology.yaml` 초안: 모드 → 훈련 동작 → 신체 부위, 보상 동작 → 피로 신호, 스킬 → 파라미터·허용 범위 (기획서 4.10, 필수 · 활용 방식 TBD) → 재활 해석은 `verified: false`(가정) 표시, 범위는 skills.yaml 참조만. `ontology.py` 로 LLM 맥락 문장·한국어 이름 → #60 에서 `ontology.jsonld`(RDF 관계 그래프, 근거 있는 것만)로 교체
 
 ## Day 3 — 모드 5 통합 ✅
-- [ ] 모드 5 서브트리를 실제 skill 서버에 연결, 실패 분기(손 결측 → 대기, 파지 실패 → 재시도 1회) → 실패 분기는 #64 (손 대기 10 s × 2 + TTS 안내 → no_hand, GIVE timeout 재시도 1회, 가짜 서버로 확인). **실제 skill 서버 연결은 로봇·인식 PC 확인 대기**. 파지 실패 재시도는 PickCompliant 단계가 트리에 들어올 때
+- [ ] 모드 5 서브트리를 실제 skill 서버에 연결, 실패 분기(손 결측 → 대기, 파지 실패 → 재시도 1회) → 실패 분기는 #64 (손 대기 10 s × 2 + TTS 안내 → no_hand, GIVE timeout 재시도 1회, 가짜 서버로 확인). **실제 skill 서버 연결은 로봇·인식 PC 확인 대기**. (10/8) #57 요청으로 시도 = 집기(PickCompliant, 비전 rod) → GIVE(무작위 tilt, `handover.tilt_range_deg`) → RECEIVE. 집기 실패 재시도 1회, 받기 timeout 재시도 1회, 받기 실패면 세션 종료, 건네기 실패면 다음 시도는 집기 건너뜀. 가짜 서버로 확인
 - [x] `rule_layer.py` 1차: 안전 레벨 반영, 연속 성공 3회 → 난이도 상승, 음성 `tired` → 휴식 제안 → 규칙 7개(STOP 대기 · tired · harder/easier 음성 · 연속 성공/실패 · 약한 피로 신호 2개↑ → ask_llm · 계속), 설정은 skills.yaml `brain`, bt_runner 가 시도마다 호출. suggest_rest·ask_llm 은 아직 로그만
 - [x] `SetMode` srv, 음성 intent → 트리 이벤트 연결 → `/rally/brain/set_mode` + 음성 `next_mode`(슬롯 mode). 로봇 스킬이 끝난 뒤 전환, 고른 모드부터 원래 순서대로
 - [x] **시맨틱 레이어** `rally_bringup/config/metrics.yaml` 지표 정의(성공률·피로도·개선율) + SQL 뷰 `schema_003_*.sql`, `rule_layer`가 이 정의를 쓰게 (기획서 4.10, 필수 · 활용 방식 TBD) → 성공률(최근 5회)·개선율(처음 5 vs 마지막 5)·피로도, `metrics.py` + `schema_003_metrics.sql` 뷰 3개(DB 에서 파이썬과 같은 값 확인), 테스트가 yaml↔SQL 숫자 일치 검사
@@ -44,7 +44,7 @@
 - [ ] **HMI** 모드 7 실시간 힘 게이지 + 목표선, 회차별 최대 힘 추이 / `/rally/robot/wrench` 실시간 힘 그래프 (Timescale 최근 10 s)
 
 ## Day 5 — 모드 1 + LLM 루프
-- [ ] `trees/mode1_push.py`: 손 위치 → 목표 → SuggestParams → PushBall → 판정 → TrialResult
+- [ ] `trees/mode1_push.py`: 손 위치 → 목표 → SuggestParams → PushBall → 판정 → TrialResult → (10/8, #42 요청) 1차: 레인 0→1→2 순환 · 속도 0.3 고정 · 시도 수 = `mode1.balls_per_cycle`(4). 손 대기·SuggestParams 는 로봇이 `error_mm` 을 채운 뒤
 - [ ] `prompts/suggest_params.md`: 최근 5회 + 유사 사례 3개 → 다음 파라미터 JSON → 최근 5회는 #62. 유사 사례 3개는 `find_similar_trials`(#68)를 llm_advisor 요청에 붙이는 일만 남음
 - [x] `embeddings.py`: 시도 특징 32차원 벡터(파라미터·오차·속도·방향 정규화) → `feature_vec`, pgvector 코사인 검색 `repository.find_similar_trials` → #68. 설정 `embeddings.yaml`, 검색은 코사인 대신 L2(값 크기가 중요), recorder 가 저장 때 계산, 실제 DB 확인
 - [x] `llm.yaml` 전송 필드 화이트리스트(익명화) → #62 `send_fields`(숫자 필드만, session_id·notes 제외). LLM 이 조절할 수 있는 값·범위는 `skills.yaml llm_tunable`
@@ -76,6 +76,7 @@
 - [ ] **HMI** 대시보드 모니터 세팅, 리허설 중 화면 운영, 발표 때 대시보드 시연
 
 ## 메모 / 막힌 것
+- (10/8) 모드 1 은 로봇이 아직 정지 위치를 안 채움 → brain 이 `error_mm` NaN 으로 기록, DB 는 NULL(jsonb 의 NaN 도 null), 지표·LLM 입력에서 빠짐. 로봇이 채우기 시작하면 그대로 들어감. 집기 실패·물체 못 찾음(`pick_failed`·`object_not_found`·`skill_aborted`)은 환자 수행이 아닌데 아직 지표에 들어감 → 제외 기준 3곳 통일할 때 같이
 - (10/7) 지표의 "실패 시도 제외"(#52)는 모드 1 에서 틀림 — 실패해도 오차는 진짜 값. **측정 못 함 = `error_mm` NaN** 약속을 로봇 쪽과 정하고 "NaN 만 제외"로 바꾸기 (이슈 #69 댓글). 빼는 기준 3곳(`metrics.yaml exclude_notes`·`embeddings.yaml skip_notes`·`session_tree.NOT_PERFORMANCE`)도 하나로
 - (10/7) ontology 를 JSON-LD(관계 그래프)로 바꾸면서 근거 없는 내용(신체 부위 목록, 보상 동작의 뜻, 피로 강도)을 뺐다. **보상 동작 감지 → 무엇을 할지(대응)는 근거가 없어 비어 있음** — 강사님 확인 또는 재활 자료로 채우기. 채우면 `ontology.jsonld` 에 관계 + `source` 로
 - (10/7, 정동휘) 모드 3 `lead_time_s`·CP13 관련 실측 → 이슈 #38 (비행 0.40~0.55 s, 로봇 이동 거리 한계)
