@@ -45,10 +45,10 @@
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-source /tmp/rally-mode1-build/install/setup.bash  # 본인 빌드 환경의 install 경로
+source /tmp/rally-pause-build/install/setup.bash  # 본인 빌드 환경의 install 경로
 unset ROS_DISCOVERY_SERVER
 export ROS_DOMAIN_ID=219 ROS_LOCALHOST_ONLY=1
-export ROS_LOG_DIR=/tmp/rally-mode1-build/roslog
+export ROS_LOG_DIR=/tmp/rally-pause-build/roslog
 ```
 
 저장소 루트에서 터미널별로 실행한다. 실제 로봇 launch나 context_builder는 함께 실행하지 않는다.
@@ -81,6 +81,106 @@ ros2 topic pub --once /rally/voice/intent rally_interfaces/msg/VoiceIntent '{hea
 **로봇·인식 PC에서 확인 필요:** #42/#57의 실제 PushBall 스킬, 카메라에서 밀기 전 손 관측 가능 여부,
 레인별 실제 정지 오차·범위·손동작과 실제 공 잡기의 일치, `rack_drop_posx` 티칭 및 ReturnBall 동작.
 손 보기 Trigger는 action 취소 ACK가 없으므로 일반 세션 취소 중 실제 자세 이동의 중단 연동은 로봇 담당자 확인이 필요하다. #42/#57은 통합 도중 main에 머지되어 반영됐으며 이 PR이 직접 머지한 것은 아니다.
+
+## 휴식·재개 직접 확인 (로봇 없이)
+
+현재 시도 전체가 끝나면 쉬고, 음성 또는 대시보드로 같은 난이도에서 다음 시도를 시작한다.
+모드 5에서는 집기 → 건네기 → 받기까지 끝낸다. 마지막 시도는 세션 종료로 처리한다.
+`harder`/`easier`는 모드 1의 명시적 요청 및 모드 7 레시피를 지원한다. 모드 1 자동 난이도 변경은 차단한다. 휴식 요청 후 재개까지 모드·난이도는 유지한다.
+
+먼저 ROS Jazzy에서 서버 패키지를 빌드한다 (`AGENTS.md` 검증 절차).
+Python 환경에는 ROS 외에 brain 의존성 및 `redis`, `fastapi`, `uvicorn`, `psycopg[binary]`가 필요하다.
+이번 작업환경에서는 `/tmp/rally-pause-build/install/setup.bash`와 `/tmp/rally-control-venv/bin/python`으로 검증했다.
+
+**아래 공통 설정을 테스트 터미널마다 적용한다.** 실제 로봇 launch·context_builder는 실행하지 않는다.
+
+```bash
+cd /tmp/rally-pause-integration
+source /opt/ros/jazzy/setup.bash
+source /tmp/rally-pause-build/install/setup.bash  # 다른 환경에서는 본인 install/setup.bash
+unset ROS_DISCOVERY_SERVER
+export ROS_DOMAIN_ID=219 ROS_LOCALHOST_ONLY=1 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export REDIS_URL=redis://127.0.0.1:16379/0
+export ROS_LOG_DIR=/tmp/rally-review-ros-logs
+source /tmp/rally-control-venv/bin/activate  # 다른 환경에서는 의존성 설치한 venv
+```
+
+터미널별로 하나씩 실행한다. Redis는 기존 6379와 분리된 임시 컨테이너다.
+
+```bash
+# 터미널 1: 테스트 Redis (종료는 Ctrl+C)
+docker run --rm --name rally-control-test -p 127.0.0.1:16379:6379 redis:7-alpine redis-server --save '' --appendonly no
+
+# 터미널 2: 가짜 스킬 + 가짜 상황판 + 안내 로그
+python scripts/fake_skills.py --duration 3
+
+# 터미널 3: brain — 준비 확인 해제는 이 가짜 환경에서만 사용
+python -m rally_brain.bt_runner --ros-args -p check_readiness:=false
+
+# 터미널 4: 대시보드 (DB가 없어도 휴식·재개 패널은 동작)
+python -m uvicorn dashboard.app.main:app --host 127.0.0.1 --port 18000
+
+# 터미널 5: 모드 5 세션 시작 (스킬당 3 s, 한 시도는 약 9 s)
+ros2 action send_goal /rally/session/run rally_interfaces/action/RunSession '{modes: [5], trials_per_mode: 5}'
+
+# 터미널 6: 시도 진행 중 휴식 요청
+ros2 topic pub --once /rally/voice/intent rally_interfaces/msg/VoiceIntent '{header: auto, intent: pause}'
+```
+
+브라우저에서 `http://127.0.0.1:18000`을 연다.
+
+1. **휴식 대기**가 표시돼도 터미널 2의 GIVE·RECEIVE는 끝까지 진행한다.
+2. **휴식 중**이 되면 새 `pick_compliant`가 시작되지 않는지 확인한다. 난이도를 기억한다.
+3. **훈련 재개**를 누른다. brain 승인 메시지와 함께 다음 시도가 한 번 시작하고 난이도는 같다.
+4. 다시 `pause` 후 아래 음성 의도 명령으로도 재개되는지 확인한다.
+
+```bash
+ros2 topic pub --once /rally/voice/intent rally_interfaces/msg/VoiceIntent '{header: auto, intent: resume}'
+# 휴식 중 안전 STOP 흉내: 세션이 종료돼야 하며 재개 버튼으로 살아나면 안 됨
+ros2 param set /rally_fake_skills stop true
+ros2 param set /rally_fake_skills stop false
+```
+
+Redis를 종료하면 패널은 연결 끊김으로 바뀌고 재개 버튼이 꺼진다. 복구해도 이전 재개 요청은 실행하지 않는다.
+DB/recorder를 실행하지 않은 이 테스트에서는 기록 표가 비어 있고 상단 안전 표시가 '모름'인 것이 정상이다.
+실제 마이크 인식·2 PC 통신·실물 인수인계 및 실패 시 물체 보유 상태·순응 제어 해제는 **로봇·인식 PC에서 확인 필요**.
+끝나면 각 테스트 프로세스를 Ctrl+C로 종료한다. 이 테스트는 실제 로봇 안전 reset을 호출하지 않는다.
+
+### PR #87 모드 1 통합 확인
+
+위 휴식·재개 공통 환경과 터미널 1~4를 그대로 사용한다. 터미널 5에서는 모드 5 대신 아래 명령으로 시작한다.
+손 거리 변경은 가짜 노드의 입력만 바꾸며 실제 로봇에는 사용하지 않는다.
+
+```bash
+# 시작 전: 손이 아직 회수 구역에 남아 있는 상황
+ros2 param set /rally_fake_skills hand_distance 0.20
+ros2 action send_goal /rally/session/run rally_interfaces/action/RunSession '{modes: [1]}'
+
+# 별도 터미널: 타격 진행 중 또는 손 이탈 대기 중 휴식 요청
+ros2 topic pub --once /rally/voice/intent rally_interfaces/msg/VoiceIntent '{header: auto, intent: pause}'
+```
+
+1. 화면은 **현재 시도 완료 후 휴식 예정**을 표시한다. 기본 가짜 손은 계속 펼친 상태이므로 받기 관측은 20 s 뒤 끝난다.
+2. 손 이탈 안내(8 s) 뒤에도 새 `return_ball`이나 다음 `push_ball`이 시작되지 않아야 한다. 아직 **휴식 중**이 아니므로 재개 버튼도 비활성이다.
+3. 아래처럼 손 거리를 바꾸면 `return_ball`이 한 번 실행되고 시도가 기록된 다음 **휴식 중**이 된다.
+
+```bash
+ros2 param set /rally_fake_skills hand_distance 0.30
+ros2 topic echo /rally/brain/trial_result
+```
+
+4. 화면의 **훈련 재개**를 누른다. 다음 `push_ball`이 시작하고 모드·난이도가 유지돼야 한다.
+5. 다음 시도 중 `pause`를 보내 다시 휴식한 뒤 `resume` 음성 의도로도 같은 결과를 확인한다.
+6. 별도 세션에서 손 이탈 대기/휴식 중 `stop true`를 보낸다. 세션이 종료돼야 하며 `stop false`와 `resume`으로 살아나면 안 된다.
+
+명시적 난이도는 휴식 요청이 없는 시도 도중 `intent: harder`/`intent: easier`를 보내 확인한다.
+다음 시도부터 모드 1 level이 바뀌고 0 아래로 내려가지 않는다. 받기 후보 연속 성공만으로 자동 변경되지 않는다.
+손 이탈 대기 중 휴식 요청은 회수까지 끝낸 뒤 적용한다. 마지막 시도라면 휴식 대신 세션이 끝난다.
+
+검증 기록: 서버 4패키지 격리 빌드, brain/db/dashboard pytest 결과는 담당 TODO에 기록.
+localhost ROS + 가짜 스킬 + 임시 Redis + 대시보드 API로 지연된 손 이탈→회수→휴식,
+HTTP 재개·중복 거절, 음성 재개·난이도 유지, 휴식 요청 중 STOP 및 재개 거절을 확인했다.
+이 검증은 실제 마이크·로봇·2 PC 통신과 브라우저 버튼의 사용자 확인을 대신하지 않는다.
 
 ### 고정 목표·손 시작 위치 확인 (PM 정정 반영)
 

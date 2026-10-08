@@ -27,6 +27,10 @@
   main { padding: 0 20px 24px; display: grid; gap: 14px; max-width: 1280px; margin: 0 auto; }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0; }
   .panel h2 { margin: 0 0 10px; font-size: 14px; color: var(--muted); font-weight: 600; }
+  button { background: var(--accent); color: white; border: 0; border-radius: 6px;
+           padding: 10px 18px; font: inherit; cursor: pointer; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  #control-message { min-height: 1.5em; color: var(--muted); }
 
   #safety { border-radius: 10px; padding: 12px 16px; font-weight: 600; display: flex; gap: 12px; align-items: baseline; }
   #safety.normal { background: var(--ok-bg); color: var(--ok); }
@@ -71,6 +75,13 @@
 </header>
 <main>
   <div id="safety" class="unknown">안전 상태 모름 <small>상황판 수신 전</small></div>
+  <section class="panel" aria-label="훈련 휴식과 재개">
+    <h2>훈련 진행</h2>
+    <p id="phase" role="status">세션 상태 수신 대기</p>
+    <button id="resume" type="button" disabled>훈련 재개</button>
+    <p id="control-message" role="status" aria-live="polite"></p>
+    <small>휴식 후 같은 난이도로 이어갑니다. 안전 정지 해제는 운영자의 별도 절차가 필요합니다.</small>
+  </section>
 
   <section class="cards">
     <div class="panel card"><div class="label">지금 모드</div><div class="value" id="mode">—</div><div class="sub" id="robot">로봇 —</div></div>
@@ -113,9 +124,49 @@ const modeName = (m) => m ? `${m} ${MODES[m] ?? ""}`.trim() : "—";
 const clock = (iso) => iso ? new Date(iso).toLocaleTimeString("ko-KR", {hour12: false}) : "";
 const pct = (x) => x == null ? "—" : `${Math.round(x * 100)}%`;
 const seenTrials = new Set();
+let control = null, controlReceived = 0, resuming = false, stateTime = 0;
+const PHASES = {idle: "대기", running: "진행 중", pause_pending: "현재 시도 완료 후 휴식 예정",
+                paused: "휴식 중", ended: "세션 종료"};
+
+function renderControl(s) {
+  control = s;
+  controlReceived = performance.now();
+  $("phase").textContent = s ? `${PHASES[s.phase] ?? s.phase} · ${modeName(s.mode)} · 난이도 ${s.difficulty ?? "—"}`
+    + (s.phase === "paused" && s.blocked_reason ? ` · ${s.blocked_reason}` : "") : "세션 상태 연결 끊김";
+  $("resume").disabled = resuming || !s?.can_resume || s.phase !== "paused";
+}
+
+$("resume").onclick = async () => {
+  if (!control?.can_resume || resuming) return;
+  const body = {session_id: control.session_id, pause_id: control.pause_id};
+  resuming = true;
+  $("resume").disabled = true;
+  $("control-message").textContent = "재개 승인 확인 중…";
+  try {
+    const r = await fetch("/api/session/resume", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body), signal: AbortSignal.timeout(5000)});
+    const result = await r.json();
+    $("control-message").textContent = r.ok ? result.message : result.detail;
+  } catch (e) {
+    $("control-message").textContent = "재개 결과 미확인 — 상태 갱신 후 확인해 주세요";
+  } finally {
+    resuming = false;
+    renderControl(null); // 다음 brain 상태 수신으로만 버튼·표시 갱신
+  }
+};
+
+setInterval(() => {
+  if (performance.now() - controlReceived > 2000) renderControl(null);
+  if (!stateTime || Date.now() - stateTime > 2000) {
+    $("safety").className = "unknown";
+    $("safety").textContent = "안전 상태 모름 — 최신 상황판 수신 대기";
+  }
+}, 500);
 
 function renderState(s) {
   if (!s) return;
+  stateTime = Date.parse(s.time) || 0;
+  if (!stateTime || Date.now() - stateTime > 2000) return;
   const [cls, word] = LEVELS[s.safety?.level] ?? ["unknown", "모름"];
   $("safety").className = cls;
   $("safety").innerHTML = `안전: ${word}` + (s.safety?.reason ? ` <small>${esc(s.safety.reason)}</small>` : "");
@@ -164,6 +215,7 @@ function addEvent(e, flash, atEnd) {
 async function load() {
   const get = async (url) => { const r = await fetch(url); if (!r.ok) throw new Error(await r.text()); return r.json(); };
   try { renderState(await get("/api/state")); } catch (e) { console.warn(e); }
+  try { renderControl(await get("/api/session")); } catch (e) { renderControl(null); }
   try { (await get("/api/trials")).trials.reverse().forEach((t) => addTrial(t, false)); } catch (e) { console.warn(e); }
   try { (await get("/api/events")).forEach((e) => addEvent(e, false, true)); } catch (e) { console.warn(e); }
 }
@@ -171,10 +223,11 @@ async function load() {
 function connect() {
   const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
   ws.onopen = () => { $("conn").textContent = "실시간 연결됨"; $("conn").className = ""; };
-  ws.onclose = () => { $("conn").textContent = "연결 끊김 — 다시 연결 중"; $("conn").className = "off"; setTimeout(connect, 2000); };
+  ws.onclose = () => { renderControl(null); $("conn").textContent = "연결 끊김 — 다시 연결 중"; $("conn").className = "off"; setTimeout(connect, 2000); };
   ws.onmessage = (m) => {
     const msg = JSON.parse(m.data);
     if (msg.type === "state") renderState(msg.data);
+    else if (msg.type === "session") renderControl(msg.data);
     else if (msg.type === "event") {
       addEvent(msg.data, true, false);
       if (msg.data.kind === "trial") addTrial(msg.data, true);

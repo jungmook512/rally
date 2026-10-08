@@ -21,7 +21,7 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 
 from rally_brain.config import load_table
-from rally_brain.behaviours import Do
+from rally_brain.behaviours import Do, WaitUntil
 from rally_brain.trees import mode1_push, mode5_handover, mode7_resist
 from rally_interfaces.msg import SafetyStatus, SceneContext, TrialResult
 
@@ -57,6 +57,7 @@ class Session:
     modes: list[int] = field(default_factory=list)                  # 지금 트리의 모드 순서 (전환하면 바뀜)
     current_mode: int | None = None                                 # 지금 진행 중인 모드
     trial_active: bool = False                                      # 로봇이 시도 중 (begin_trial ~ record). 모드 전환은 이때 안 함
+    allow_trial: Callable[[], bool] = lambda: True                   # 시도 전체(손 대기 포함) 시작 전 휴식 관문
 
     table_cfg: dict = field(default_factory=load_table)             # 중앙선 원본: table.yaml
 
@@ -120,8 +121,9 @@ def build_session_tree(session: Session, modes: list[int], trials_per_mode: int)
         name = f"모드 {mode} {MODE_NAMES.get(mode, '?')}"
 
         def enter(m: int = mode, n: str = name) -> None:
-            session.current_mode = m
-            session.node.get_logger().info(f"{n} 시작")
+            if session.current_mode != m:
+                session.current_mode = m
+                session.node.get_logger().info(f"{n} 시작")
 
         builder = TRIAL_BUILDERS.get(mode)
         if builder is None:
@@ -129,8 +131,9 @@ def build_session_tree(session: Session, modes: list[int], trials_per_mode: int)
                               lambda n=name: session.node.get_logger().warn(f"{n} — 시도 서브트리가 아직 없어 건너뜀")))
             continue
         count = TRIAL_COUNTS[mode](session.skills_cfg) if mode in TRIAL_COUNTS else trials_per_mode
-        root.add_child(py_trees.composites.Sequence(name, memory=True, children=[
-            Do(f"{name} 시작", enter),
-            py_trees.decorators.Repeat(f"{name} × {count}", builder(session), count),
-        ]))
+        trial = py_trees.composites.Sequence(name, memory=True, children=[
+            WaitUntil("휴식 대기", session.allow_trial),
+            Do(f"{name} 시작", enter), builder(session),
+        ])
+        root.add_child(py_trees.decorators.Repeat(f"{name} × {count}", trial, count))
     return root
