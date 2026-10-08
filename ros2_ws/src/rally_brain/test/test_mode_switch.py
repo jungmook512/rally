@@ -77,3 +77,20 @@ def test_switch_waits_for_trial_end(node):
     new = node._apply_switch(tree, s, 2)
     assert new is not tree and node._pending_switch is None
     assert s.modes == [7]
+
+
+def test_mode1_only_explicit_intent_changes_difficulty(node):
+    from rally_interfaces.msg import TrialResult, VoiceIntent
+    s = start(node, modes=(1,), current=1)
+    s.trials = [TrialResult(mode=1, success=True)] * 4
+    node._after_trial(s, s.trials[-1])
+    assert s.difficulty.get(1, 0) == 0
+    node._on_intent(VoiceIntent(intent='harder'))
+    node._after_trial(s, s.trials[-1])
+    assert s.difficulty[1] == 1
+    node._on_intent(VoiceIntent(intent='easier'))
+    node._after_trial(s, s.trials[-1])
+    assert s.difficulty[1] == 0
+    node._on_intent(VoiceIntent(intent='easier'))
+    node._after_trial(s, s.trials[-1])
+    assert s.difficulty[1] == 0

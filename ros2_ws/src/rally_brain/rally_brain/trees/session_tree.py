@@ -20,6 +20,7 @@ import py_trees
 from rclpy.action import ActionClient
 from rclpy.node import Node
 
+from rally_brain.config import load_table
 from rally_brain.behaviours import Do
 from rally_brain.trees import mode1_push, mode5_handover, mode7_resist
 from rally_interfaces.msg import SafetyStatus, SceneContext, TrialResult
@@ -57,6 +58,8 @@ class Session:
     current_mode: int | None = None                                 # 지금 진행 중인 모드
     trial_active: bool = False                                      # 로봇이 시도 중 (begin_trial ~ record). 모드 전환은 이때 안 함
 
+    table_cfg: dict = field(default_factory=load_table)             # 중앙선 원본: table.yaml
+
     def safe(self) -> bool:
         ctx = self.get_context()
         return ctx is not None and ctx.safety.level != SafetyStatus.LEVEL_STOP
@@ -85,6 +88,8 @@ class Session:
 
     def trials_for_rules(self, mode: int) -> list[TrialResult]:
         """이 모드에서 난이도가 마지막으로 바뀐 뒤의 시도 (규칙 레이어의 연속 횟수·추세 계산용). no_hand 는 뺀다."""
+        if mode == TrialResult.MODE_PUSH_BALL:
+            return []  # 손동작은 받기 후보 신호. 실물 판정 검증 전 자동 난이도 금지.
         return [t for t in self.trials[self.level_changed_at.get(mode, 0):]
                 if t.mode == mode and t.notes not in NOT_PERFORMANCE]
 

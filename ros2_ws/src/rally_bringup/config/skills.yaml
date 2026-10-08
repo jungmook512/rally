@@ -36,9 +36,72 @@ mode1:
   # recipe: 스윙 속도 v → 정지 거리 d = v²/(2·decel) + d0 (레인 입구 기준, scripts/push_recipe.py 10/8 실측, 0.2·0.3·0.4 m/s 각 3회 안팎)
   #   goal 에 target 만 주고 push_speed 0 이면 v = √(2·decel·(d − d0)). 실측 범위 ≈ 0.12 ~ 0.45 m 밖은 외삽
   lanes:
-    - {name: lane1_plus_y, start: [0.4339, +0.1416, 0.0], dir_deg: -0.9, recipe: {decel_mps2: 0.192, d0_m: 0.020}}   # 10/8 8회 RMSE 2.1 cm
-    - {name: lane2_center, start: [0.4324, -0.0058, 0.0], dir_deg: +0.3, recipe: {decel_mps2: 0.221, d0_m: 0.063}}   # 10/8 7회 RMSE 2.4 cm
-    - {name: lane3_minus_y, start: [0.4319, -0.1562, 0.0], dir_deg: -0.7, recipe: {decel_mps2: 0.193, d0_m: 0.065}}  # 10/8 7회 RMSE 2.9 cm
+  - name: lane1_plus_y
+    start:
+    - 0.4339
+    - 0.1416
+    - 0.0
+    dir_deg: -0.9
+    recipe:
+      decel_mps2: 0.192
+      d0_m: 0.02
+      rmse_m: 0.021
+      distance_range_m:
+      - 0.15
+      - 0.45
+      speed_range_mps:
+      - 0.2
+      - 0.4
+  - name: lane2_center
+    start:
+    - 0.4324
+    - -0.0058
+    - 0.0
+    dir_deg: 0.3
+    recipe:
+      decel_mps2: 0.221
+      d0_m: 0.063
+      rmse_m: 0.024
+      distance_range_m:
+      - 0.15
+      - 0.45
+      speed_range_mps:
+      - 0.2
+      - 0.4
+  - name: lane3_minus_y
+    start:
+    - 0.4319
+    - -0.1562
+    - 0.0
+    dir_deg: -0.7
+    recipe:
+      decel_mps2: 0.193
+      d0_m: 0.065
+      rmse_m: 0.029
+      distance_range_m:
+      - 0.15
+      - 0.45
+      speed_range_mps:
+      - 0.2
+      - 0.4
+  # 받기 후보 판정과 회수. 실제 공 잡기 검증 전 자동 난이도 변경은 차단.
+  catch_timeout_s: 20.0
+  catch_grab_closure: 0.6
+  catch_grab_hold_s: 0.3
+  catch_release_closure: 0.3
+  catch_prompt: "공을 잡았다가 놓아 주세요"
+  hand_clear_wait_s: 8.0        # 안내까지의 대기. 이후에도 이탈 확인까지 세션 유지
+  hand_clear_prompt: "손을 잠깐 빼 주세요"
+  return_tries: 2
+  return_timeout_s: 20.0
+  out_of_reach_prompt: "공을 로봇 쪽으로 굴려 주세요"
+  return_fail_prompt: "공을 거치대에 올려 주세요"
+  reach_rmse_multiplier: 2.0     # 사용자 합의: 초기 reach/단계 = RMSE×2, 실물 확인용
+  brain_speed_range_mps: [0.10, 0.35]  # Brain 훈련은 기존 0.35 상한 유지. 로봇 허용 범위와 교집합
+  hand_wait_s: 10.0
+  hand_wait_tries: 2
+  hand_max_age_s: 1.0
+  patient_margin_m: 0.05        # 최소 여유. Brain은 max(이 값, safety STOP 거리 + 0.05)를 적용
   push_speed_range: [0.10, 0.60]  # m/s — 스윙(타격) 속도. 10/7: 테니스공은 마찰이 커서 0.15 로는 거의 안 굴러감 → 상한 0.6
   ball_radius_m: 0.0315           # 10/7 실측 지름 63 mm
   back_off_m: 0.05                # 공 뒤 이만큼에서 내려간다
@@ -76,7 +139,7 @@ mode1:
   return_reach_x_max_m: 0.55      # 공 중심이 이 x 안쪽이어야 집는다 (보라색 선 0.568 · safety workspace_x_max 0.57). 밖이면 brain 이 굴려 달라고 안내
   return_wait_s: 20.0             # 공이 닿는 곳에 올 때까지 기다리는 시간
   end_at_hand_view: true          # PushBall 이 친 뒤 손 보기 자세에서 끝남 (brain 이 환자가 공을 받는지 본다). false 면 2 s 뒤 관측 자세로
-  hand_view: true                 # 친 뒤 툴을 환자 쪽으로 기울여 RealSense 로 환자 손 보기 (공 받는 모습). 레인 선택은 brain 이 무작위
+  hand_view: true                 # 친 뒤 툴을 환자 쪽으로 기울여 RealSense 로 환자 손 보기 (공 받는 모습). 레인 선택은 brain 이 손에 가장 가까운 레인
   hand_view_tilt_deg: 45.0        # 10/8 에뮬레이터: 45° · 30 cm 가 팔로스루 끝에서 관절 이동 가장 작음(합 74°, 60° 는 185°) + 손 후보 9/9 화면 안
   hand_view_back_m: 0.10
   hand_view_height_m: 0.30

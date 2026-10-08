@@ -3,14 +3,27 @@
 패키지: `ros2_ws/src/rally_brain`, `rally_db`, `rally_bringup`, `rally_interfaces`, `docker/`, `dashboard/` · 책임: **세션 전체 흐름**
 참고: `docs/INTERFACES.md` 전체, `rally_db/schema.sql`
 
-## 10/8 회의 결정 — 모드 1 트리 (정정인 초안, 리뷰 부탁)
-`rally_brain/trees/mode1_push.py` 를 회의 흐름으로 바꿈 (브랜치 `feat/rally_robot/mode1-hand-return`, #84 포함):
-손 보기 자세(`/rally/robot/go_hand_view`) → 손 대기(no_hand) → **손에 가까운 레인** → **난이도 → 목표 거리**(40 cm, 한 칸 5 cm, [0.27, 0.45]) → PushBall(target + 속도 0 = 레시피)
-→ **받기 확인**(grip 쥐었다 폄 = 성공, 20 s 없으면 not_caught) → 손 빼기 대기 → **ReturnBall**(out_of_reach 면 "로봇 쪽으로 굴려 주세요", 2회) → 기록
-- [ ] 리뷰: 트리 구조·기록 시점(받기 판정 뒤, 회수 실패해도 시도 결과는 그대로)·TrialResult 키 추가(param target_d_m·level, metric lane_by_hand·ball_returned)
-- [ ] 새 인터페이스 확인: `ReturnBall.action`, `/rally/robot/go_hand_view`(Trigger), `readiness.yaml` 에 추가. `Session.service_client`, `behaviours.ServiceCall`, `skill_step(on_feedback=)` 추가
-- [ ] 안내 문구(받기·손 빼기·굴려 주세요·거치대) 를 `skills.yaml mode1` 로 옮길지 (지금은 코드 DEFAULTS)
-- [ ] 받기 판정 임계값은 정동휘 실측으로 조정
+## 10/8 PR #87 수정 — #85 손 기준 목표와 회수 흐름 통합
+- [x] 가장 가까운 레인·손 보기·받기 후보·ReturnBall 흐름에 #85의 손 기준 목표/양수 속도 검증을 통합.
+- [x] 손 이탈 대기는 세션 종료 없이 유지. 8 s 후 안내하고, 뒤늦게 유효 관측으로 이탈이 확인되면 회수. 미검출은 이탈 아님. STOP·취소는 중단 유지.
+- [x] 새 표본으로 펼침→쥠 유지→펼침을 판정. 같은 표본/타격 전 표본 제외, 미검출이면 연속 판정 초기화. 자동 난이도 차단 유지.
+- [x] 목표 하한은 table 중앙선 + max(patient_margin_m, safety STOP 거리 + 5 cm), 회수 허용은 safety 감속 거리 이상. safety.yaml 값·STOP/reset 흐름 유지.
+- [x] 안내·관측 시간 설정은 skills.yaml로 이동. 자세 이동 실패·회수 실패 시 다음 시도 금지.
+- [x] 검증: 5패키지 격리 빌드, 관련 pytest 251개 통과, 패키지 Python 120개 문법 검사. localhost ROS 3세션으로 늦은 이탈 후 회수·대기 중 취소·STOP 검증.
+- [ ] 로봇·인식 PC 확인: rack_drop_posx 티칭, 실제 공 잡기와 손동작 일치(정동휘), 레인별 도달 구간·정지 오차(정정인), Trigger 자세 이동 중 취소 연동. 안전 영향은 정정인 리뷰 후 머지.
+
+## 10/8 모드 1 통합 — #81·#84
+
+- [x] #84의 fatigue_score float 수정과 목표 거리 초안을 이력 보존해 통합.
+- [x] 중앙선은 table.yaml, 실측 레인·a/d0/RMSE는 #57 cd92d1a 출처. 기존 운용 속도 상한은 유지.
+- [x] 손 기준 목표 → 거리/속도/중앙선 교집합 → brain 속도 계산 → target+양수 속도 전달.
+- [x] 사용자 결정: 손이 유효하지 않으면 시간 제한 대기 후 goal 없이 no_hand 기록. 초기 reach·단계 간격은 RMSE의 2배로 개발용 설정.
+- [x] 로봇 타격 성공만으로 자동 난이도를 올리지 않음. 명시적 harder/easier만 허용.
+- [x] 검증: 서버 4패키지 빌드, colcon 227 tests/0 failures/0 skipped, 격리 ROS 3세션(기본·harder·손 없음) 왕복 통과.
+- [x] 원시 위치 미측정은 NaN 유지, 파라미터에 목표·요청/실제 reach 기록. 문서와 재현 절차는 brain README.
+- [ ] 로봇·인식 PC에서 확인 필요: #42/#57 스킬 연동, 밀기 전 손 관측, 목표 거리별 실제 정지 오차와 환자 잡기 성공 신호.
+- [ ] 원시 레시피 CSV 기반 레인별 유효 범위 재검증·온라인 보정. 현재는 보고된 실측 계수와 보수적 공통 구간 사용.
+- 휴식·재개 및 #78 전체 문서 정리는 원 작업 디렉터리의 별도 변경으로 보존. 이 PR은 모드 1 통합에 한정.
 
 ## Day 0 (10/5)
 - [x] 레포 초기화·push, 브랜치 규칙 공지, `.github/workflows/build.yml` 첫 실행 확인 → CI 첫 통과 (#2), 브랜치 규칙은 CLAUDE.md·AGENTS.md 7절
@@ -53,7 +66,7 @@
 - [ ] **HMI** 모드 7 실시간 힘 게이지 + 목표선, 회차별 최대 힘 추이 / `/rally/robot/wrench` 실시간 힘 그래프 (Timescale 최근 10 s)
 
 ## Day 5 — 모드 1 + LLM 루프
-- [ ] `trees/mode1_push.py`: 손 위치 → 목표 → SuggestParams → PushBall → 판정 → TrialResult → (10/8, #42 요청) 1차: 레인 무작위(#75 리뷰) · 속도 0.3 고정 · 시도 수 = `mode1.balls_per_cycle`(4). 손 대기·SuggestParams 는 로봇이 `error_mm` 을 채운 뒤
+- [x] `trees/mode1_push.py`: 손 기준 목표·실측 레시피 속도 → PushBall → 받기 후보 → 손 이탈 대기 → ReturnBall → TrialResult. #85/#87 통합. 수치는 규칙 계산, 자동 난이도 차단. 실물 검증은 위 항목.
 - [ ] `prompts/suggest_params.md`: 최근 5회 + 유사 사례 3개 → 다음 파라미터 JSON → 최근 5회는 #62. 유사 사례 3개는 `find_similar_trials`(#68)를 llm_advisor 요청에 붙이는 일만 남음
 - [x] `embeddings.py`: 시도 특징 32차원 벡터(파라미터·오차·속도·방향 정규화) → `feature_vec`, pgvector 코사인 검색 `repository.find_similar_trials` → #68. 설정 `embeddings.yaml`, 검색은 코사인 대신 L2(값 크기가 중요), recorder 가 저장 때 계산, 실제 DB 확인
 - [x] `llm.yaml` 전송 필드 화이트리스트(익명화) → #62 `send_fields`(숫자 필드만, session_id·notes 제외). LLM 이 조절할 수 있는 값·범위는 `skills.yaml llm_tunable`

@@ -48,7 +48,8 @@ class WaitUntil(py_trees.behaviour.Behaviour):
 class SkillCall(py_trees.behaviour.Behaviour):
     def __init__(self, name: str, node: Node, client: ActionClient, make_goal: Callable[[], Any],
                  on_result: Callable[[Any], None], on_interrupt: Callable[[str], None] | None = None,
-                 server_timeout_s: float = 3.0, on_feedback: Callable[[Any], None] | None = None):
+                 server_timeout_s: float = 3.0, on_feedback: Callable[[Any], None] | None = None,
+                 can_send: Callable[[], bool] = lambda: True, wait_for_precondition: bool = False):
         super().__init__(name)
         self.on_feedback = on_feedback     # 스킬 feedback 메시지 (executor 스레드에서 불림 — 가볍게)
         self.node = node
@@ -56,6 +57,8 @@ class SkillCall(py_trees.behaviour.Behaviour):
         self.make_goal = make_goal
         self.on_result = on_result
         self.on_interrupt = on_interrupt   # 인자: interrupted | aborted | canceled ...
+        self.can_send = can_send
+        self.wait_for_precondition = wait_for_precondition
         self.server_timeout_s = server_timeout_s
         self._reset()
 
@@ -91,9 +94,12 @@ class SkillCall(py_trees.behaviour.Behaviour):
                     self.node.get_logger().error(f"[{self.name}] {self.feedback_message}")
                     return Status.FAILURE
                 return Status.RUNNING
+            if not self.can_send():
+                self.feedback_message = "precondition_failed"
+                return Status.RUNNING if self.wait_for_precondition else Status.FAILURE
             if self.on_feedback is not None:
                 self._send_future = self.client.send_goal_async(self.make_goal(),
-                                                                feedback_callback=lambda m: self.on_feedback(m.feedback))
+                    feedback_callback=lambda m: self.on_feedback(m.feedback))
             else:
                 self._send_future = self.client.send_goal_async(self.make_goal())
             self._send_future.add_done_callback(self._on_goal_response)
@@ -183,7 +189,11 @@ class ServiceCall(py_trees.behaviour.Behaviour):
                 self.feedback_message = f"{self.timeout_s:.0f} s 초과"
                 return Status.FAILURE
             return Status.RUNNING
-        self.response = self._future.result()
+        try:
+            self.response = self._future.result()
+        except Exception as e:
+            self.feedback_message = str(e)
+            return Status.FAILURE
         if self.response is not None and self.ok(self.response):
             return Status.SUCCESS
         self.feedback_message = getattr(self.response, "message", "") or "실패"

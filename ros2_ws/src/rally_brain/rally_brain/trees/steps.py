@@ -66,6 +66,8 @@ class TrialState:
 
 def skill_step(state: TrialState, name: str, client: ActionClient, make_goal: Callable[[], Any], *,
                tries: int = 1,
+               can_send: Callable[[], bool] = lambda: True,
+               wait_for_precondition: bool = False,
                on_success: Callable[[Any, int], None],
                on_fail: Callable[[Any | None, str, int], None],
                on_interrupt: Callable[[str], None],
@@ -93,7 +95,8 @@ def skill_step(state: TrialState, name: str, client: ActionClient, make_goal: Ca
             on_interrupt(reason)
 
         skill = SkillCall(f"{name} {k}", session.node, client, make_goal, on_result=on_result,
-                          on_interrupt=interrupted, on_feedback=on_feedback)
+                          on_interrupt=interrupted, on_feedback=on_feedback, can_send=can_send,
+                          wait_for_precondition=wait_for_precondition)
 
         def begin() -> bool:
             if k == 1:
@@ -102,7 +105,7 @@ def skill_step(state: TrialState, name: str, client: ActionClient, make_goal: Ca
 
         def take_failed() -> None:
             # abort·거절이어도 결과 메시지는 skill.result 에. goal 을 못 보냈으면(서버 없음) 시도가 아니다
-            if not skill.goal_sent:
+            if not skill.goal_sent and skill.feedback_message != "precondition_failed":
                 state.fatal = True
 
         def judge() -> bool:
@@ -136,10 +139,10 @@ def skill_step(state: TrialState, name: str, client: ActionClient, make_goal: Ca
 HAND_DEFAULTS: dict[str, Any] = {"hand_wait_s": 10.0, "hand_wait_tries": 2, "hand_prompt": "손을 앞으로 내밀어 주세요"}
 
 
-def hand_wait(session: Session, cfg: dict) -> py_trees.behaviour.Behaviour:
+def hand_wait(session: Session, cfg: dict, condition: Callable[[], bool] | None = None) -> py_trees.behaviour.Behaviour:
     """손이 보이면 SUCCESS. hand_wait_s 씩 hand_wait_tries 번 기다리고, 사이마다 안내. 끝내 안 보이면 FAILURE."""
     def seen() -> bool:
-        return session.safe() and session.hand_visible()
+        return session.safe() and (condition() if condition is not None else session.hand_visible())
 
     tries = max(1, int(cfg["hand_wait_tries"]))
     children: list[py_trees.behaviour.Behaviour] = [WaitUntil("손 대기 1", seen, cfg["hand_wait_s"])]
@@ -151,7 +154,7 @@ def hand_wait(session: Session, cfg: dict) -> py_trees.behaviour.Behaviour:
     return py_trees.composites.Selector("손 대기", memory=True, children=children)
 
 
-def no_hand(session: Session, cfg: dict, mode: int) -> py_trees.behaviour.Behaviour:
+def no_hand(session: Session, cfg: dict, mode: int, condition: Callable[[], bool] | None = None) -> py_trees.behaviour.Behaviour:
     """손이 끝내 안 보이면 실패 TrialResult(notes=no_hand, attempts 0, duration = 기다린 시간) 를 남기고 SUCCESS."""
     wait = {"t0": 0.0}
 
@@ -166,6 +169,6 @@ def no_hand(session: Session, cfg: dict, mode: int) -> py_trees.behaviour.Behavi
 
     return py_trees.composites.Sequence("손 없음", memory=True, children=[
         Do("대기 시작", mark),
-        py_trees.decorators.Inverter("손 보이면 넘어감", hand_wait(session, cfg)),
+        py_trees.decorators.Inverter("손 보이면 넘어감", hand_wait(session, cfg, condition)),
         Do("손 없음 기록", record),
     ])

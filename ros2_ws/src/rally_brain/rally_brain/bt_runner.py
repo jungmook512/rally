@@ -206,6 +206,8 @@ class BtRunner(Node):
         if d.action in ("harder", "easier"):
             old = session.difficulty.get(trial.mode, 0)
             new = rule_layer.apply_difficulty(old, d.action, self._rule_cfg)
+            if trial.mode == TrialResult.MODE_PUSH_BALL:
+                new = max(0, new)  # 모드 1의 가장 쉬운 개발 단계는 0
             session.set_difficulty(trial.mode, new)
             log.info(f"[규칙] {d.reason} — 모드 {trial.mode} 난이도 {old} → {new}"
                      + ("" if new != old else " (한계)"))

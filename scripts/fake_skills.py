@@ -26,9 +26,10 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rcl_interfaces.msg import SetParametersResult
 
-from rally_interfaces.action import Handover, PickCompliant, PushBall, ResistPush
+from rally_interfaces.action import Handover, PickCompliant, PushBall, ResistPush, ReturnBall
 from rally_interfaces.msg import SafetyStatus, SceneContext, TrackedObject
 from rally_interfaces.srv import Speak
+from std_srvs.srv import Trigger
 
 
 class FakeSkills(Node):
@@ -42,10 +43,13 @@ class FakeSkills(Node):
         self.hand = True
         group = ReentrantCallbackGroup()
         for kind, name in ((Handover, "handover"), (PickCompliant, "pick_compliant"), (PushBall, "push_ball"),
-                           (ResistPush, "resist_push")):
+                           (ResistPush, "resist_push"), (ReturnBall, "return_ball")):
             ActionServer(self, kind, f"/rally/skill/{name}", lambda h, k=kind, n=name: self._skill(h, k, n),
                          cancel_callback=lambda _: CancelResponse.ACCEPT, callback_group=group)
         self.create_service(Speak, "/rally/voice/speak", self._speak, callback_group=group)
+        self.create_service(Trigger, "/rally/robot/go_hand_view", self._hand_view, callback_group=group)
+        self.declare_parameter("hand_distance", 0.30)
+        self.declare_parameter("grip", 0.0)
         self.declare_parameter("stop", False)
         self.declare_parameter("hand", True)
         self.add_on_set_parameters_callback(self._on_params)
@@ -69,12 +73,23 @@ class FakeSkills(Node):
         ctx.safety.level = SafetyStatus.LEVEL_STOP if self.stop else SafetyStatus.LEVEL_NORMAL
         ctx.safety.reason = "fake_stop" if self.stop else ""
         ctx.hand.detected = self.hand
+        ctx.hand.header.stamp = ctx.header.stamp
+        ctx.hand.header.frame_id = "base_link"
+        ctx.hand.palm_pose.position.x = 0.86
+        ctx.hand.distance_to_centerline = self.get_parameter("hand_distance").value
+        ctx.hand.grip_closure = self.get_parameter("grip").value
+        ctx.hand.palm_pose.position.z = 0.05
         ctx.objects.header.frame_id = "base_link"
         rod = TrackedObject(class_name="rod", confidence=0.9)   # 모드 5 집기용 (거치 자리 x 0.30, y 0.20)
         rod.header.frame_id = "base_link"
         rod.position.x, rod.position.y = 0.30, 0.20
         ctx.objects.objects = [rod]
         self._ctx_pub.publish(ctx)
+
+    def _hand_view(self, request, response):
+        response.success = not self.stop
+        response.message = "fake hand view"
+        return response
 
     def _speak(self, request: Speak.Request, response: Speak.Response) -> Speak.Response:
         self.get_logger().info(f"[TTS] {request.text}")
@@ -87,7 +102,8 @@ class FakeSkills(Node):
         g = goal_handle.request
         detail = {"handover": lambda: f"dir={g.direction} tilt={g.tilt_deg:+.0f}°",
                   "pick_compliant": lambda: f"xy=({g.target.pose.position.x:.2f}, {g.target.pose.position.y:.2f})",
-                  "push_ball": lambda: f"lane={g.lane} speed={g.push_speed:.2f}",
+                  "return_ball": lambda: f"lane={g.lane}",
+                  "push_ball": lambda: f"lane={g.lane} speed={g.push_speed:.3f} target=({g.target.point.x:.3f}, {g.target.point.y:.3f})",
                   "resist_push": lambda: f"target={g.target_force_n:.1f} N stiffness={g.stiffness:.0f}"}[name]()
         self.get_logger().info(f"{name} #{n} 시작 ({detail})")
         t0 = time.monotonic()
@@ -111,6 +127,8 @@ class FakeSkills(Node):
         if kind is Handover:
             return Handover.Result(success=ok, wrist_angle_at_grasp_deg=12.5, handover_time_s=self.duration_s,
                                    failure_reason=reason)
+        if kind is ReturnBall:
+            return ReturnBall.Result(success=ok, failure_reason=reason)
         if kind is PushBall:
             return PushBall.Result(success=ok, contact_force_peak=3.0, failure_reason=reason)   # 정지 위치는 아직 안 채움 (#42 와 같게)
         if kind is ResistPush:

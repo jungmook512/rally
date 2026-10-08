@@ -27,3 +27,21 @@ def load_skills() -> dict[str, Any]:
         return {}
     with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
+
+
+def load_table() -> dict[str, Any]:
+    """중앙선은 table.yaml 한 곳에서 읽는다. 누락이면 호출자가 목표 생성을 거절한다."""
+    path = config_path("table.yaml")
+    if path is None:
+        return {}
+    with open(path, encoding="utf-8") as f:
+        return (yaml.safe_load(f) or {}).get("table", {})
+
+
+def load_safety() -> dict[str, Any]:
+    """목표/회수 관문은 기존 안전 임계값을 읽기만 한다. 누락 시 시작하지 않는다."""
+    path = config_path("safety.yaml")
+    if path is None:
+        raise FileNotFoundError("safety.yaml 없음")
+    with open(path, encoding="utf-8") as f:
+        return yaml.safe_load(f)["rally_safety_monitor"]["ros__parameters"]
