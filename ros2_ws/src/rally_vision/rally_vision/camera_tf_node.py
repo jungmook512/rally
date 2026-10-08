@@ -13,6 +13,9 @@ mode (파라미터):
   static   — `parent_frame`(기본 link_6, 플랜지) → camera_link 를 static 으로 한 번 발행.
              플랜지 → TCP 는 hand_eye.yaml 의 tcp_offset_from_flange_m. 두산 robot_state_publisher 가 떠 있을 때.
 
+RealSense 가 tf 를 안 내는 환경(publish_tf:=false)에서만 `optical_fallback:=true` — 기본은 RealSense tf 를 기다린다.
+폴백으로 optical 을 직접 발행하면 그걸 먼저 받은 노드는 RealSense 가 나중에 켜져도 base→optical 조회가 계속 실패한다 (PR #77 리뷰).
+
     ros2 run rally_vision camera_tf
     ros2 run rally_vision camera_tf --ros-args -p mode:=static -p parent_frame:=link_6
 """
@@ -82,7 +85,8 @@ class CameraTfNode(Node):
         d("optical_frame", "camera_color_optical_frame")
         d("tcp_pose_topic", "/rally/robot/tcp_pose")
         d("fallback_after_s", 5.0)                # 이 시간 안에 RealSense tf 가 없으면 optical 프레임을 자식으로 직접 발행
-        d("optical_fallback", True)               # False 면 RealSense tf 가 올 때까지 발행하지 않음
+        d("optical_fallback", False)              # True 면 fallback_after_s 뒤 optical 프레임을 직접 발행. 기본 False: RealSense tf 가 올 때까지 기다림
+                                                  # (PR #77 리뷰: 폴백 중 optical 을 dynamic 으로 받은 노드는 RealSense 가 늦게 켜져도 조회가 계속 실패)
         d("republish_hz", 30.0)                   # tcp_pose 모드: 마지막 변환을 현재 시각으로 다시 발행 (hold-last) — 영상 stamp 조회가 되게
         g = lambda k: self.get_parameter(k).value  # noqa: E731
 
