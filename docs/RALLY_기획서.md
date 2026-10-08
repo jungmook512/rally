@@ -296,11 +296,17 @@
 
 ## 6. 시스템 아키텍처
 
-현행 배치 **v3** (2026-10-06, 물리 PC 2대 — PC1+PC2 통합). 노드별 토픽·서비스·액션 상세는 `docs/images/src/architecture_v3.py`로 생성:
+**v4 — #59 주먹 정지 제거 결정 반영** (2026-10-08, 물리 PC 2대). `docs/images/src/architecture_v4.py`로 생성한다. 손 제스처는 관측값으로 유지하지만 주먹을 STOP에 연결하지 않는다. 준비·재개 제스처는 이번 변경에서 추가하지 않는다.
 
-![RALLY 시스템 아키텍처 v3 — PC 2대, 노드별 인터페이스](images/architecture_v3.png)
+이 그림은 합의한 구조이며 실제 배포 완료를 뜻하지 않는다. 손 노드·safety_monitor의 두 정지 경로 제거는 정동휘 PR과 정정인 리뷰·배포 확인에 따른다. 안전 코드·인터페이스·FR-07 변경은 해당 PR에서 함께 반영한다. 근거: [#59 PM 동의](https://github.com/ImymemineJ/rally/issues/59#issuecomment-6055479547).
 
-<details><summary>이전 버전 — v2 (10/6 오전, PC 3대 노드별 배선도) · v1 (10/5, 개요)</summary>
+![RALLY 시스템 아키텍처 v4 — 주먹 정지 제거 결정 반영](images/architecture_v4.png)
+
+<details><summary>이전 버전 — v3 (PC 2대, 주먹 정지 제거 전) · v2 (PC 3대) · v1 (개요)</summary>
+
+이전 그림의 주먹 정지 문구·연결은 과거 설계 기록이다.
+
+![RALLY 시스템 아키텍처 v3](images/architecture_v3.png)
 
 ![RALLY 시스템 아키텍처 v2](images/architecture_v2.png)
 
