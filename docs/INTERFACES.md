@@ -77,6 +77,7 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 | `/rally/voice/speak` | `rally_interfaces/Speak` | rally_voice/tts_node | TTS 발화, 발화 중 마이크 차단 |
 | `/rally/gripper/command` | `rally_interfaces/GripperCommand` | rally_robot/gripper_node | RG2 폭·힘 명령 |
 | `/rally/robot/go_observe_pose` | `std_srvs/Trigger` | rally_robot/skill_server | 관측 자세로 이동 (카메라가 테이블 전체를 보는 자세) |
+| `/rally/robot/go_hand_view` | `std_srvs/Trigger` | rally_robot/skill_server | 손 보기 자세로 이동 — 툴을 환자 쪽으로 기울여 그리퍼 위 RealSense 가 환자 손을 본다 (모드 1 시도 전 레인 고르기). `skills.yaml mode1.hand_view_*`. 이미 그 자세면 바로 성공 |
 | `/rally/robot/reset_safety` | `std_srvs/Trigger` | rally_robot/safety_monitor | 정지 해제 (운영자만) |
 | `/rally/db/start_session` | `std_srvs/Trigger` → 추후 커스텀 | rally_db | 세션 레코드 생성 |
 
@@ -86,7 +87,8 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 
 | 액션 | 타입 | 모드 | 핵심 로봇 기능 |
 |---|---|---|---|
-| `/rally/skill/push_ball` | `rally_interfaces/PushBall` | 1 | movel 속도 프로파일, check_force_condition(접촉) |
+| `/rally/skill/push_ball` | `rally_interfaces/PushBall` | 1 | 거치대 공 비전 집기 → 레인 입구 → 퍼터식 치기 → **손 보기 자세에서 끝남**(`mode1.end_at_hand_view`, 환자가 받는 모습). `target` + `push_speed 0` = 레인 레시피로 속도 |
+| `/rally/skill/return_ball` | `rally_interfaces/ReturnBall` | 1 | 시도 뒤 레인 안 공을 비전으로 찾아 집고 거치대 맨 윗부분(`mode1.rack_drop_posx`, 직접교시)에 넣기 → 손 보기 자세. 로봇이 닿는 곳(중앙선 앞)에 올 때까지 기다림 (feedback `out_of_reach` → brain 이 안내) |
 | `/rally/skill/pick_compliant` | `rally_interfaces/PickCompliant` | 1·3·5 공통 | task_compliance_ctrl(Z 저강성), 접촉 감지 후 파지 |
 | `/rally/skill/catch_ball` | `rally_interfaces/CatchBall` | 3 (챌린지) | 예측 착지점으로 amovel 선행 이동 + servol 보정, 패드 면 정렬 |
 | `/rally/skill/move_target` | `rally_interfaces/MoveTarget` | 3 (Phase 2) | movec / movesx / moveb 궤적, 환자가 맞혀야 하는 후기 단계 |

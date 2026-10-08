@@ -5,8 +5,8 @@
 | `onrobot.py` | 선생님 코드 그대로 | RG2 Pymodbus 클래스 |
 | `dsr_helpers.py` | 선생님 robot_control.py에서 분리 | DR_init 초기화, transform_to_base, 상수 |
 | `legacy_pick_and_place.py` | 선생님 robot_control.py (import만 변경) | **Day 1~2 기준선** — 먼저 이게 돌아야 함 |
-| `skill_server.py` | 신규 | 스킬 action 서버 7종, 안전 연동, 접촉 예정 플래그, 그리퍼 서비스 클라이언트, skills.yaml·table.yaml 로드 |
-| `skills/*.py` | 신규 | 각 스킬 단계가 docstring에 적혀 있음. `pick_compliant` · `handover`(GIVE, RECEIVE 간단판) 구현, 나머지 골격 |
+| `skill_server.py` | 신규 | 스킬 action 서버 8종(+ return_ball)·go_observe_pose·go_hand_view 서비스, 안전 연동, 접촉 예정 플래그, 그리퍼 서비스 클라이언트, skills.yaml·table.yaml 로드 |
+| `skills/*.py` | 신규 | 각 스킬 단계가 docstring에 적혀 있음. `push_ball`(비전 집기·퍼터식 치기·손 보기) · `return_ball`(레인 공 → 거치대) · `pick_compliant` · `handover`(GIVE·RECEIVE·제자리) 구현, 나머지 골격 |
 | `safety_monitor.py` | 신규 | 100 Hz 안전 감시 (1차 구현 포함) |
 | `gripper_node.py` | 선생님 RG 래핑 | GripperCommand srv + 상태 토픽 |
 | `force_publisher.py` | 신규 | get_tool_force → WrenchStamped · tcp_pose(quaternion) |

@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 from dataclasses import dataclass, field
 
 import py_trees
@@ -47,6 +48,7 @@ class Session:
     action_client: Callable[[type, str], ActionClient]
     skills_cfg: dict = field(default_factory=dict)                  # skills.yaml 전체 (모드별 설정)
     say: Callable[[str], None] = lambda text: None                  # TTS 안내 (기다리지 않음)
+    service_client: Callable[[type, str], Any] | None = None        # 서비스 클라이언트 (예: go_hand_view). None 이면 그 단계 건너뜀(테스트)
     after_trial: Callable[["Session", TrialResult], None] | None = None   # 규칙 레이어 (bt_runner)
     trials: list[TrialResult] = field(default_factory=list)
     difficulty: dict[int, int] = field(default_factory=dict)        # 모드 → 난이도 단계 (0 = 시작)

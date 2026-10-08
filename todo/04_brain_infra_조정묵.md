@@ -3,6 +3,15 @@
 패키지: `ros2_ws/src/rally_brain`, `rally_db`, `rally_bringup`, `rally_interfaces`, `docker/`, `dashboard/` · 책임: **세션 전체 흐름**
 참고: `docs/INTERFACES.md` 전체, `rally_db/schema.sql`
 
+## 10/8 회의 결정 — 모드 1 트리 (정정인 초안, 리뷰 부탁)
+`rally_brain/trees/mode1_push.py` 를 회의 흐름으로 바꿈 (브랜치 `feat/rally_robot/mode1-hand-return`, #84 포함):
+손 보기 자세(`/rally/robot/go_hand_view`) → 손 대기(no_hand) → **손에 가까운 레인** → **난이도 → 목표 거리**(40 cm, 한 칸 5 cm, [0.27, 0.45]) → PushBall(target + 속도 0 = 레시피)
+→ **받기 확인**(grip 쥐었다 폄 = 성공, 20 s 없으면 not_caught) → 손 빼기 대기 → **ReturnBall**(out_of_reach 면 "로봇 쪽으로 굴려 주세요", 2회) → 기록
+- [ ] 리뷰: 트리 구조·기록 시점(받기 판정 뒤, 회수 실패해도 시도 결과는 그대로)·TrialResult 키 추가(param target_d_m·level, metric lane_by_hand·ball_returned)
+- [ ] 새 인터페이스 확인: `ReturnBall.action`, `/rally/robot/go_hand_view`(Trigger), `readiness.yaml` 에 추가. `Session.service_client`, `behaviours.ServiceCall`, `skill_step(on_feedback=)` 추가
+- [ ] 안내 문구(받기·손 빼기·굴려 주세요·거치대) 를 `skills.yaml mode1` 로 옮길지 (지금은 코드 DEFAULTS)
+- [ ] 받기 판정 임계값은 정동휘 실측으로 조정
+
 ## Day 0 (10/5)
 - [x] 레포 초기화·push, 브랜치 규칙 공지, `.github/workflows/build.yml` 첫 실행 확인 → CI 첫 통과 (#2), 브랜치 규칙은 CLAUDE.md·AGENTS.md 7절
 - [x] 인터페이스 합의 회의 주도 → `rally_interfaces` 수정·커밋 (이후 변경은 PR로) → 기존 정의 그대로 사용

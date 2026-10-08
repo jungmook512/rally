@@ -98,8 +98,21 @@ DEFAULTS = dict(
     hand_view_tilt_deg=45.0,       # 수직에서 진행 방향으로 기울이는 각
     hand_view_back_m=0.10,         # 레인 입구(공 놓는 자리)에서 로봇 쪽으로 이만큼 뒤 (TCP)
     hand_view_height_m=0.30,       # 테이블 위 TCP 높이
-    hand_view_hold_s=2.0,          # 이 자세에서 기다리는 시간 (손 인식·공 받기 보기)
+    hand_view_hold_s=2.0,          # (end_at_hand_view 가 아닐 때) 이 자세에서 기다렸다 관측 자세로
+    end_at_hand_view=True,         # 친 뒤 손 보기 자세에서 끝낸다 — brain 이 환자가 공을 받는지(쥐었다 폄) 본다 (10/8 회의)
 )
+
+
+def hand_view_pose(cfg, lanes, table):
+    """레인 3개 가운데(입구 평균)를 기준으로 한 손 보기 자세 — 시도 전(레인 고르기)·친 뒤·공 회수 뒤 모두 같은 자세.
+    카메라 넓은 화각(69°)이 좌우로 놓여 레인 3개 끝을 다 본다. lanes 가 없으면 None."""
+    if not lanes:
+        return None
+    bx = sum(float(ln["start"][0]) for ln in lanes) / len(lanes)
+    by = sum(float(ln["start"][1]) for ln in lanes) / len(lanes)
+    dd = math.radians(sum(float(ln.get("dir_deg", 0.0)) for ln in lanes) / len(lanes))
+    d = (math.cos(dd), math.sin(dd))
+    return _hand_view_pose(cfg, (bx, by), d, float(table.get("z_m") or 0.0), math.degrees(dd) + cfg["push_yaw_deg"])
 
 
 def _hand_view_pose(cfg, ball_xy, d, tz, yaw):
@@ -183,7 +196,7 @@ def _plan(goal, cfg, lanes, table):
     # 놓기: 공 중심이 레인 입구 위. 파지 때 TCP(손가락 끝) ≈ 공 중심 높이(pick.grasp_above_table_m) 이므로 TCP z = 테이블 + r + 여유
     pts["place_above"] = mm(bx, by, z_above)
     pts["place"] = mm(bx, by, tz + cfg["place_min_tip_m"])           # 하한 — 실제로는 공이 테이블에 닿는 힘에서 멈춘다
-    pts["hand_view"] = _hand_view_pose(cfg, (bx, by), d, tz, yaw)
+    pts["hand_view"] = hand_view_pose(cfg, lanes, table)
     return pts, dict(ball=(bx, by), dir_deg=dir_deg, src=src, end_xy=end_xy, z_push=z_push)
 
 
@@ -260,25 +273,30 @@ def choose_ball(objects, cfg, table_z=0.0):
     return float(b.position.x), float(b.position.y), float(b.position.z), len(cand)
 
 
-def pick_ball_by_vision(node, cfg, table, log):
-    """관측 자세에서 비전으로 공을 찾아(x 최소) 위에서 순응 하강 → 접촉에서 멈춤 → 쥠 → 들기. 실패하면 SkillAbort."""
-    import time
+def pick_ball_by_vision(node, cfg, table, log, choose=None, view_posj="rack", wait_s=None, on_frame=None):
+    """보는 자세에서 비전으로 공을 찾아 위에서 순응 하강 → 접촉에서 멈춤 → 쥠 → 들기. 실패하면 SkillAbort.
+    choose(objects) → (x, y, z, n) 또는 None: 기본은 거치대(choose_ball, x 최소). view_posj: "rack" = pickup_view_posj,
+    그 밖엔 관절값(또는 None = 지금 자세). on_frame(objects): 프레임마다 (공 회수: 닿지 않는 곳 알림)."""
+    choose = choose or (lambda o: choose_ball(o, cfg, float(table.get("z_m") or 0.0)))
     if getattr(node, "objects", None) is None and not getattr(node, "fake", False):
         log.warning("[push_ball] /rally/perception/objects 를 아직 못 받음 — segmenter 가 떠 있는지 확인")
-    if cfg["pickup_view_posj"]:                    # 거치대가 보이는 자세로 (관측 자세에선 화면 밖)
-        movej_checked(node, cfg["pickup_view_posj"], *_joint(node))
+    view = cfg["pickup_view_posj"] if view_posj == "rack" else view_posj
+    if view:                                       # 공이 보이는 자세로 (관측 자세에선 거치대가 화면 밖)
+        movej_checked(node, view, *_joint(node))
     t_still = time.monotonic()                     # 보는 자세에 막 도착
     # 연속 pickup_consistent_frames 프레임이 pickup_consistent_m 안에서 일치해야 쓴다 — 10/8 실로봇: 비전이 막 켜진 직후 첫 프레임이
     # (0.370, 0.313, 0.100) 처럼 크게 틀려(평소 0.334, 0.282, 0.054) 엉뚱한 곳을 집었다
     found, t0, recent, last_stamp = None, time.monotonic(), [], None
-    while time.monotonic() - t0 < cfg["pickup_wait_s"]:
+    while time.monotonic() - t0 < (wait_s if wait_s is not None else cfg["pickup_wait_s"]):
         node.check_stop()
         obj = getattr(node, "objects", None)
         if obj is not None and obj[0] - t_still >= cfg["pickup_settle_s"] and obj[0] != last_stamp:
             last_stamp = obj[0]
             if obj[1].header.frame_id not in ("base_link", ""):
                 raise SkillAbort(f"vision_frame_{obj[1].header.frame_id} (비전 좌표가 base_link 아님 — force_publisher(tcp_pose)·T_gripper2camera.npy 확인)")
-            c = choose_ball(obj[1], cfg, float(table.get("z_m") or 0.0))
+            if on_frame:
+                on_frame(obj[1])
+            c = choose(obj[1])
             if c is None:
                 recent = []
             else:
@@ -462,17 +480,19 @@ def execute(node):
             node.set_contact(False)
             node.holding = False                       # 닫은 손가락은 '미는 면' 이지 물체를 쥔 게 아님
 
-            if cfg["hand_view"]:                       # 친 뒤 환자 손 보기 (공을 받는 모습)
+            if cfg["hand_view"] and pts["hand_view"]:  # 친 뒤 환자 손 보기 (공을 받는 모습)
                 phase("hand_view", 0.7)
                 movej_to_pose(node, pts["hand_view"], *_joint(node))
-                t_hv = time.monotonic()
-                while time.monotonic() - t_hv < cfg["hand_view_hold_s"]:
-                    node.check_stop(goal_handle)
-                    time.sleep(0.05)
+                if not cfg["end_at_hand_view"]:
+                    t_hv = time.monotonic()
+                    while time.monotonic() - t_hv < cfg["hand_view_hold_s"]:
+                        node.check_stop(goal_handle)
+                        time.sleep(0.05)
 
-            phase("observe", 0.8)
-            if posj:
-                movej_checked(node, posj, *_joint(node))
+            if not (cfg["hand_view"] and cfg["end_at_hand_view"] and pts["hand_view"]):
+                phase("observe", 0.8)
+                if posj:
+                    movej_checked(node, posj, *_joint(node))
             # TODO(박성현·정정인): /rally/perception/objects 에서 공 is_moving=false 대기 → stop_position, error_mm
             res.success = True
             res.contact_force_peak = 0.0

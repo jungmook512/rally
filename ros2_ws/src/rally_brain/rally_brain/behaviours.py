@@ -48,8 +48,9 @@ class WaitUntil(py_trees.behaviour.Behaviour):
 class SkillCall(py_trees.behaviour.Behaviour):
     def __init__(self, name: str, node: Node, client: ActionClient, make_goal: Callable[[], Any],
                  on_result: Callable[[Any], None], on_interrupt: Callable[[str], None] | None = None,
-                 server_timeout_s: float = 3.0):
+                 server_timeout_s: float = 3.0, on_feedback: Callable[[Any], None] | None = None):
         super().__init__(name)
+        self.on_feedback = on_feedback     # 스킬 feedback 메시지 (executor 스레드에서 불림 — 가볍게)
         self.node = node
         self.client = client
         self.make_goal = make_goal
@@ -90,7 +91,11 @@ class SkillCall(py_trees.behaviour.Behaviour):
                     self.node.get_logger().error(f"[{self.name}] {self.feedback_message}")
                     return Status.FAILURE
                 return Status.RUNNING
-            self._send_future = self.client.send_goal_async(self.make_goal())
+            if self.on_feedback is not None:
+                self._send_future = self.client.send_goal_async(self.make_goal(),
+                                                                feedback_callback=lambda m: self.on_feedback(m.feedback))
+            else:
+                self._send_future = self.client.send_goal_async(self.make_goal())
             self._send_future.add_done_callback(self._on_goal_response)
             return Status.RUNNING
         if self._goal_handle is None:
@@ -147,6 +152,42 @@ class SkillCall(py_trees.behaviour.Behaviour):
     def _interrupted(self, reason: str) -> None:
         if self.on_interrupt is not None:
             self.on_interrupt(reason)
+
+
+class ServiceCall(py_trees.behaviour.Behaviour):
+    """서비스 한 번 호출하고 응답을 기다린다. ok(응답) 이면 SUCCESS. 서버 없음·시간 초과·ok 아님 → FAILURE.
+    (예: /rally/robot/go_hand_view — 손 보기 자세로)"""
+
+    def __init__(self, name: str, client: Any, make_request: Callable[[], Any], timeout_s: float = 30.0,
+                 ok: Callable[[Any], bool] = lambda r: bool(getattr(r, "success", True)), server_timeout_s: float = 3.0):
+        super().__init__(name)
+        self.client, self.make_request, self.ok = client, make_request, ok
+        self.timeout_s, self.server_timeout_s = timeout_s, server_timeout_s
+        self._future, self._t0, self.response = None, 0.0, None
+
+    def initialise(self) -> None:
+        self._future, self._t0, self.response = None, time.monotonic(), None
+
+    def update(self) -> Status:
+        waited = time.monotonic() - self._t0
+        if self._future is None:
+            if not self.client.service_is_ready():
+                if waited > self.server_timeout_s:
+                    self.feedback_message = f"서비스 없음 ({self.server_timeout_s:.0f} s)"
+                    return Status.FAILURE
+                return Status.RUNNING
+            self._future = self.client.call_async(self.make_request())
+            return Status.RUNNING
+        if not self._future.done():
+            if waited > self.timeout_s:
+                self.feedback_message = f"{self.timeout_s:.0f} s 초과"
+                return Status.FAILURE
+            return Status.RUNNING
+        self.response = self._future.result()
+        if self.response is not None and self.ok(self.response):
+            return Status.SUCCESS
+        self.feedback_message = getattr(self.response, "message", "") or "실패"
+        return Status.FAILURE
 
 
 class Do(py_trees.behaviour.Behaviour):

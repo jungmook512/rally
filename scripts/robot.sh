@@ -3,7 +3,9 @@
 #   터미널 1:  scripts/robot.sh bringup            # 두산 bringup (real). 이미 떠 있으면 거부
 #   터미널 2:  scripts/robot.sh nodes              # 비전 컨테이너 + 안전감시·힘·그리퍼·스킬서버. Ctrl+C 면 비전까지 끔
 #              scripts/robot.sh nodes novision     #   비전 없이
+#   터미널 4:  scripts/robot.sh brain              # (세션으로 돌릴 때만) brain: context_builder + bt_runner (준비 확인 끔). DB·LLM·음성 없이
 #   터미널 3:  source scripts/robot.sh env         # 명령 터미널 (그 뒤 ros2 action send_goal ... / python3 scripts/...)
+#              scripts/robot.sh session 1          # 모드 1 세션 한 번 (brain 이 레인 무작위로 공 4개). 모드 5 는 session 5
 #              scripts/robot.sh status             # 뭐가 떠 있는지 + check_controller + 비전 공 한 번
 #              scripts/robot.sh observe            # 관측 자세로 (특이점에서 힘 0 일 때)
 #              scripts/robot.sh estop | reset      # 소프트 비상정지 / 해제
@@ -11,6 +13,9 @@
 # 로컬 모드(RALLY_LOCAL=1, Discovery Server 없이 이 PC 안에서만). 서버 PC brain 과 붙일 때는 README 순서대로.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ROBOT_IP=${ROBOT_IP:-192.168.1.100}
+# brain 코드 위치 — 이 저장소에 빌드된 rally_brain 이 있으면 그것, 없으면 ~/rally_main (BRAIN_WS 로 바꿀 수 있음)
+BRAIN_WS=${BRAIN_WS:-$([ -d "$ROOT/ros2_ws/install/rally_brain" ] && echo "$ROOT" || echo "$HOME/rally_main")}
+BRAIN_PY=${BRAIN_PY:-$HOME/.local/rally_brain_py}     # brain 파이썬 의존성(py_trees·rdflib) — pip install --target 로 설치한 곳
 SIM_DOMAIN=77
 
 robot_env() {
@@ -61,6 +66,30 @@ case "$1" in
     ros2 launch rally_bringup pc1_robot.launch.py
     ;;
 
+  brain)
+    # 순서: brain 코드(BRAIN_WS) 먼저 → 그 위에 이 브랜치(robot_env) — 설정(skills.yaml 레인·레시피)은 이 브랜치 것이 이긴다
+    source /opt/ros/jazzy/setup.bash
+    source "$BRAIN_WS/ros2_ws/install/setup.bash"
+    robot_env
+    if [ -n "$(real_pids 'rally_brain/lib/rally_brain/(bt_runner|context_builder)')" ]; then
+      echo "[robot] brain 이 이미 떠 있음 — 그 터미널에서 Ctrl+C, 또는 scripts/robot.sh down"; exit 1
+    fi
+    export PYTHONPATH="$BRAIN_PY:$PYTHONPATH"
+    python3 -c "from rally_brain.config import config_path; print('[robot] brain 설정:', config_path('skills.yaml'))"
+    python3 -c "import py_trees, rdflib" 2>/dev/null || { echo "[robot] py_trees·rdflib 없음 → python3 -m pip install --target $BRAIN_PY py_trees 'rdflib>=6.1,<8'"; exit 1; }
+    echo "[robot] brain ($BRAIN_WS) — context_builder + bt_runner(준비 확인 끔). 끌 때 Ctrl+C. 세션: 터미널 3 에서 scripts/robot.sh session 1"
+    ros2 run rally_brain context_builder & CB=$!
+    trap 'kill $CB 2>/dev/null' EXIT
+    ros2 run rally_brain bt_runner --ros-args -p check_readiness:=false
+    ;;
+
+  session)
+    robot_env
+    [ -n "$2" ] || { echo "사용법: scripts/robot.sh session 1   (모드 번호, 여러 개면 \"1,5\")"; exit 1; }
+    source "$BRAIN_WS/ros2_ws/install/setup.bash"
+    exec ros2 action send_goal /rally/session/run rally_interfaces/action/RunSession "{patient_id: test, modes: [$2], trials_per_mode: 0}" --feedback
+    ;;
+
   status)
     robot_env
     [ -n "$(real_pids 'ros2_control_node')" ] && echo "  ok   터미널 1 두산 bringup" || echo "  --   두산 bringup 없음"
@@ -82,7 +111,7 @@ case "$1" in
   down)
     "$ROOT/scripts/vision_local.sh" stop
     # launch 를 죽여도 자식(ros2_control_node·OnRobot 그리퍼 서버·rviz·노드)이 남는 경우가 있어 실행 파일로 다 찾는다 (10/8)
-    PAT='ros2 launch|cobot2_ws/install|ros2_control_node|/opt/ros/jazzy/lib/(rviz2|robot_state_publisher|joint_state_publisher)|rally_robot/lib/rally_robot/'
+    PAT='ros2 launch|cobot2_ws/install|ros2_control_node|/opt/ros/jazzy/lib/(rviz2|robot_state_publisher|joint_state_publisher)|rally_robot/lib/rally_robot/|rally_brain/lib/rally_brain/'
     pids=$(real_pids "$PAT")
     [ -n "$pids" ] && kill -INT $pids 2>/dev/null
     sleep 4
@@ -91,5 +120,5 @@ case "$1" in
     echo "[robot] 정리 끝 — 다시: 터미널 1 bringup → 터미널 2 nodes"
     ;;
 
-  *) sed -n '2,11p' "$0" ;;
+  *) sed -n '2,13p' "$0" ;;
 esac
