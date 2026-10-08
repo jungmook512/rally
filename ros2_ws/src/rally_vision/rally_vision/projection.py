@@ -10,6 +10,8 @@
 """
 from __future__ import annotations
 
+import os
+
 import numpy as np
 
 
@@ -83,3 +85,41 @@ def yaw_in_frame(T_cam_to_frame: np.ndarray, center_cam: np.ndarray, axis_px, z_
     q = transform_points(T_cam_to_frame, np.vstack([p0, p1]))
     d = q[1] - q[0]
     return float(np.arctan2(d[1], d[0]))
+
+
+# ------------------------------------------------------------------ hand_eye.yaml
+def default_hand_eye_path() -> str:
+    """rally_bringup/config/hand_eye.yaml — 설치된 패키지, 없으면 소스 트리·/models·~/rally/models 순."""
+    cands = []
+    try:
+        from ament_index_python.packages import get_package_share_directory
+        cands.append(os.path.join(get_package_share_directory("rally_bringup"), "config", "hand_eye.yaml"))
+    except Exception:  # noqa: BLE001
+        pass
+    here = os.path.dirname(os.path.realpath(__file__))        # symlink-install 이면 소스 트리로 풀림
+    cands += [os.path.normpath(os.path.join(here, "..", "..", "rally_bringup", "config", "hand_eye.yaml")),
+              "/models/hand_eye.yaml", os.path.expanduser("~/rally/models/hand_eye.yaml")]
+    for p in cands:
+        if os.path.isfile(p):
+            return p
+    return ""
+
+
+def load_hand_eye(path: str) -> dict:
+    """hand_eye.yaml → {"T_tcp_cam_mm": 4x4 (TCP ← camera_optical, mm) | None, "depth_scale": float,
+    "tcp_offset_m": (3,)}. 파일이 비었거나 키가 없으면 T 는 None (npy 폴백용)."""
+    import yaml
+    out = {"T_tcp_cam_mm": None, "depth_scale": 1.0, "tcp_offset_m": np.array([0.0, 0.0, 0.228])}
+    if not path or not os.path.isfile(path):
+        return out
+    cfg = yaml.safe_load(open(path)) or {}
+    out["depth_scale"] = float(cfg.get("depth_scale", 1.0))
+    if "tcp_offset_from_flange_m" in cfg:
+        out["tcp_offset_m"] = np.array(cfg["tcp_offset_from_flange_m"], float)
+    t = cfg.get("tcp_T_camera_optical")
+    if t and "xyz_m" in t and "quat_xyzw" in t:
+        x, y, z = (float(v) for v in t["xyz_m"])
+        qx, qy, qz, qw = (float(v) for v in t["quat_xyzw"])
+        T = pose_to_matrix(x * 1000.0, y * 1000.0, z * 1000.0, qx, qy, qz, qw)
+        out["T_tcp_cam_mm"] = T
+    return out

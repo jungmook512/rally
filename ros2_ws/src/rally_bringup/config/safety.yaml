@@ -10,6 +10,18 @@ rally_safety_monitor:
     nudge_speed_max_mps: 0.02  # TCP 가 이보다 빨리 움직이는 중에는 nudge 판정 안 함 (가속 관성 오탐, CP7)
     nudge_ang_speed_max_dps: 5.0  # 툴이 이보다 빨리 도는 중에도 nudge 판정 안 함. 10/8: 손 보기 자세로 손목만 45° 도는 관절 이동(손끝 거의 제자리)에서 nudge 오탐 STOP. 힘 임계·STOP 흐름은 그대로
     contact_timeout_s: 0.5     # skill_server 의 /rally/safety/contact_expected 하트비트 유효 시간. 접촉 예정 동안 nudge 만 끔, 힘 한계는 유지
+    # 손 거리 (#59) — 손 NaN(보이는데 거리 모름) → SLOW. 환자 접촉(/rally/safety/patient_contact) 중엔 손 거리 STOP → SLOW.
+    #   10/8 완화 이유: 모드 5 건네기(물체를 중앙선 앞 6 cm 에 제시)·모드 7 손잡이는 환자 손끝이 중앙선 근처까지 와야 잡을 수 있어
+    #   stop_distance_m 0.15 에 항상 걸려 스킬이 abort 됨 (#59 3번). 완화는 skill_server 가 '환자가 잡는 구간'(건네기 당김 대기 →
+    #   후퇴, 저항 밀기 — 환자 쪽 명령 이동 없음)에만 올리는 플래그로 한정. 치기·집기·놓기·ReturnBall 은 STOP 그대로.
+    #   힘 한계 25 N·순응 상태는 그대로, 손이 로봇 구역 깊이 들어오거나 손 메시지가 끊기면 STOP.
+    hand_deep_stop_m: -0.15            # distance_to_centerline 이 이보다 작으면(중앙선 너머 15 cm) 환자 접촉 중이어도 STOP
+    patient_contact_timeout_s: 0.5     # skill_server 의 /rally/safety/patient_contact 하트비트(5 Hz) 유효 시간
+    # 입력 끊김 (#14·#59) — 받다가 이 시간 넘게 끊기면 SLOW (*_stale). 한 번도 못 받은 입력은 경고 로그만
+    hand_timeout_s: 0.5                # hand_pose 30 Hz
+    wrench_timeout_s: 0.5              # force_publisher 50 Hz (특이점 근처 0 값은 건너뛰므로 끊길 수 있음 → 그 자세를 피할 것)
+    tcp_timeout_s: 0.5                 # force_publisher tcp_pose 10 Hz. 끊기면 손 거리 완화도 안 함
+    never_received_warn_s: 5.0
     workspace_enabled: true    # tcp_pose 가 아래 범위 밖이면 STOP (workspace_limit)
     # 작업 공간 (base_link, m) — table.yaml 중앙선과 맞춘다. TODO(정정인) 관측 자세 티칭 후 실측
     workspace_x_min_m: 0.20    # 10/6: 테이블 가까운 쪽 접촉점 x=0.231 m 포함
@@ -19,3 +31,8 @@ rally_safety_monitor:
     workspace_z_min_m: 0.00
     workspace_z_max_m: 0.60
     return_speed_mm_s: 30.0    # 모드 7 복귀·STOP 후 후퇴 속도 상한 (CP14)
+
+# skill_server (#14) — 안전 상태를 한 번도 못 받았거나 이 시간 넘게 끊기면 STOP 취급: 새 goal 거부, 실행 중 스킬 abort
+rally_skill_server:
+  ros__parameters:
+    status_timeout_s: 0.5            # safety_monitor 100 Hz 발행 → 50 주기. 같은 PC 라 네트워크 지연 없음

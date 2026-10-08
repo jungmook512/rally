@@ -15,6 +15,7 @@
   <depend>python3-numpy</depend>
   <depend>ament_index_python</depend>
   <depend>realsense2_camera</depend>
+  <exec_depend>rally_bringup</exec_depend>   <!-- config/hand_eye.yaml (segmenter·camera_tf) -->
   <test_depend>ament_copyright</test_depend>
   <test_depend>pytest</test_depend>
   <export><build_type>ament_python</build_type></export>
