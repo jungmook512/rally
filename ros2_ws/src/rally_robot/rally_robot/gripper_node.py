@@ -2,13 +2,17 @@
 담당: 정정인
 - /rally/gripper/command (GripperCommand srv): width_mm, force_n → RG.move_gripper(width*10, force*10)
     wait_until_done=True 면 motion 비트가 꺼질 때까지(최대 3 s) 기다렸다가 실제 폭을 돌려준다.
-    object_detected = grip detected 비트 OR (닫는 명령인데 목표보다 5 mm 이상 벌어진 채 멈춤)
-- /rally/gripper/state   (sensor_msgs/JointState, 20 Hz): name=[rg2_width_mm, rg2_grip], position=[폭 mm, grip 비트]
+    object_detected = 폭 ≥ 20 mm AND (grip detected 비트 OR 닫는 명령인데 목표보다 5 mm 이상 벌어진 채 멈춤)
+    (빈손으로 끝까지 닫아도 폭 12.4 mm·grip 비트 1 — 10/7 실측)
+- /rally/gripper/state   (sensor_msgs/JointState, 20 Hz): name=[rg2_width_mm, rg2_grip, rg2_target_mm], position=[폭 mm, grip 비트, 마지막 명령 폭 mm(-1=없음)]
+  RG2 grip 비트는 공을 손가락 끝에 걸쳐 쥐면 0 일 수 있다 (10/7) — 쥠 판단은 '닫는 명령인데 목표보다 5 mm 이상 벌어져 멈춤' 도 같이 본다
 - 파지 방식: 물체별 목표 폭을 정밀하게 주지 않는다. 폭 0 + 물체별 힘(skills.yaml gripper.*)으로 닫으면 물체에서 멈춘다.
 - pymodbus 동기 클라이언트는 스레드 안전하지 않으므로 Lock 으로 감싼다. 서비스와 타이머는 Reentrant 그룹 + MultiThreadedExecutor.
 - 연결 실패 시 onrobot.RG 는 조용히 '가상 그리퍼' 모드로 빠지므로 connected 를 직접 확인해 로그를 남긴다.
 TODO(정정인): 이동 중에도 명령을 받으려면 AsyncModbusTcpClient 로 교체 (지금은 wait_until_done 동안 서비스가 점유됨)
 """
+import os
+import sys
 import threading
 import time
 
@@ -27,6 +31,8 @@ WIDTH_MIN_MM, WIDTH_MAX_MM = 0.0, 110.0     # RG2
 FORCE_MIN_N, FORCE_MAX_N = 3.0, 40.0
 MOVE_TIMEOUT_S = 3.0
 CLOSE_GAP_DETECT_MM = 5.0                   # 닫는 명령인데 이보다 벌어진 채 멈추면 물체 있음
+EMPTY_CLOSED_MM = 12.5     # 10/7 실측: 빈손으로 끝까지 닫아도 폭 12.4 mm, grip 비트 1 — 이보다 넓어야 물체로 본다
+OBJECT_MIN_MM = 20.0       # 물체 판정 최소 폭 (공 63 mm, 빈손 12.4 mm)
 
 
 class GripperNode(Node):
@@ -47,6 +53,7 @@ class GripperNode(Node):
         self.create_service(GripperCommand, "/rally/gripper/command", self.on_cmd, callback_group=self.cb)
         self.create_timer(0.05, self.publish_state, callback_group=self.cb)
         self._last_width, self._last_grip = 0.0, 0
+        self._target = -1.0                   # 마지막 명령 폭 mm (-1 = 아직 명령 없음) — 상태 토픽 3번째 값
 
     # ----- 서비스 -----
     def on_cmd(self, req, res):
@@ -64,6 +71,7 @@ class GripperNode(Node):
             with self.lock:
                 start_width = float(self.rg.get_width())
                 self.rg.move_gripper(int(round(width * 10)), int(round(force * 10)))
+            self._target = width
             closing = width < start_width
             if req.wait_until_done:
                 done = self._wait_motion_done()
@@ -77,7 +85,8 @@ class GripperNode(Node):
             return res
         res.success = True
         res.actual_width_mm = actual
-        res.object_detected = bool(grip) or (closing and actual - width >= CLOSE_GAP_DETECT_MM)
+        # 빈손으로 닫아도 grip 비트가 1 이고 폭이 12.4 mm 라서, 폭이 OBJECT_MIN_MM 이상일 때만 물체로 본다 (10/7)
+        res.object_detected = actual >= OBJECT_MIN_MM and (bool(grip) or (closing and actual - width >= CLOSE_GAP_DETECT_MM))
         self.get_logger().info(
             f"gripper {start_width:.1f} → 목표 {width:.1f} / 실제 {actual:.1f} mm, {force:.0f} N, grip={grip}, object={res.object_detected}")
         return res
@@ -105,12 +114,19 @@ class GripperNode(Node):
                 self.lock.release()
         msg = JointState()
         msg.header.stamp = self.get_clock().now().to_msg()
-        msg.name = ["rg2_width_mm", "rg2_grip"]
-        msg.position = [self._last_width, float(self._last_grip)]
+        msg.name = ["rg2_width_mm", "rg2_grip", "rg2_target_mm"]
+        msg.position = [self._last_width, float(self._last_grip), float(self._target)]
         self.pub.publish(msg)
 
 
+SIM_DOMAIN = "77"   # scripts/sim_robot.sh 의 시뮬 도메인 — 여기서 실제 그리퍼를 잡으면 시뮬 스킬이 실물 그리퍼를 움직인다
+
+
 def main(args=None):
+    if os.environ.get("RALLY_SIM") == "1" or os.environ.get("ROS_DOMAIN_ID") == SIM_DOMAIN:
+        print(f"[rally_gripper] 시뮬 환경(RALLY_SIM=1 또는 ROS_DOMAIN_ID={SIM_DOMAIN})에서는 실제 그리퍼 노드를 띄우지 않습니다. "
+              "새 터미널에서 source scripts/env_robot_pc.sh 후 다시 실행하세요 (시뮬은 scripts/sim_gripper.py).", file=sys.stderr)
+        return 2
     rclpy.init(args=args)
     node = GripperNode()
     ex = MultiThreadedExecutor(num_threads=2)

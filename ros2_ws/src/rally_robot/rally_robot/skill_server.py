@@ -24,13 +24,14 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallb
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
+from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool
 from std_srvs.srv import Trigger
 
 from rally_interfaces.action import CatchBall, DetachBall, Handover, MoveTarget, PickCompliant, PushBall, ResistPush
-from rally_interfaces.msg import HandState, SafetyStatus
+from rally_interfaces.msg import HandState, SafetyStatus, TrackedObjectArray
 from rally_interfaces.srv import GripperCommand
-from rally_robot.dsr_helpers import ACC, OBSERVE_POS, ROBOT_ID, VELOCITY, SkillAbort, init_dsr
+from rally_robot.dsr_helpers import OBSERVE_POS, ROBOT_ID, SkillAbort, init_dsr, motion_speeds
 
 CONTACT_HZ = 5.0
 CONFIG_FILES = ("skills.yaml", "table.yaml")
@@ -70,11 +71,17 @@ class SkillServer(Node):
         self.last_hand = None
         self._contact = False
         self._cm_client = None
+        self.last_pick = None                # PickCompliant 성공 자세 {pose(mm·deg), grip_force} — 모드 5 내려놓기 자리
+        self.holding = False                 # 물체를 쥐고 있는지 — gripper() 가 닫힘+감지면 True, 열면 False
 
         reliable = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=10)
         reliable1 = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=1)
         self.create_subscription(SafetyStatus, "/rally/safety/status", self._on_safety, reliable, callback_group=self.cb_safety)
         self.create_subscription(HandState, "/rally/perception/hand", self._on_hand, qos_profile_sensor_data, callback_group=self.cb_state)
+        self.gripper_state = None            # (monotonic 수신 시각, 폭 mm, grip 비트) — gripper_node 의 실제 상태
+        self.create_subscription(JointState, "/rally/gripper/state", self._on_gripper_state, qos_profile_sensor_data, callback_group=self.cb_state)
+        self.objects = None                  # (monotonic 수신 시각, TrackedObjectArray) — 비전 물체 (모드 1 공 집기)
+        self.create_subscription(TrackedObjectArray, "/rally/perception/objects", self._on_objects, qos_profile_sensor_data, callback_group=self.cb_state)
         self.pub_contact = self.create_publisher(Bool, "/rally/safety/contact_expected", reliable1)
         self.create_timer(1.0 / CONTACT_HZ, self._contact_tick, callback_group=self.cb_state)
         self.gripper_cli = self.create_client(GripperCommand, "/rally/gripper/command", callback_group=self.cb_state)
@@ -102,6 +109,30 @@ class SkillServer(Node):
     # ----- 안전 -----
     def _on_safety(self, msg):
         self.safety = msg
+
+    def _on_objects(self, msg):
+        self.objects = (time.monotonic(), msg)
+
+    def _on_gripper_state(self, msg):
+        d = dict(zip(msg.name, msg.position))
+        if "rg2_width_mm" in d:
+            self.gripper_state = (time.monotonic(), float(d["rg2_width_mm"]), int(round(d.get("rg2_grip", 0.0))),
+                                  float(d.get("rg2_target_mm", -1.0)))
+
+    def holding_now(self, min_width_mm: float = 20.0, max_age_s: float = 1.0) -> bool:
+        """물체를 쥐고 있는지. 스킬 서버가 보낸 명령 기록(self.holding) 또는 그리퍼 실제 상태(grip 비트, 또는 명령 폭보다 벌어져 멈춤)가 쥠이면 True.
+        그리퍼 서비스를 손으로 불러 공을 쥐게 한 경우도 잡는다."""
+        if self.holding:
+            return True
+        st = self.gripper_state
+        if st is None or time.monotonic() - st[0] > max_age_s:
+            return False
+        width, grip, target = st[1], st[2], st[3]
+        if width < min_width_mm:          # 빈손으로 닫으면 폭 12.4 mm 에 grip 비트 1 (10/7) — 폭으로 먼저 거른다
+            return False
+        # gripper_node 의 object_detected 와 같은 규칙: grip 비트 또는 '닫으라 했는데 5 mm 이상 벌어져 멈춤'
+        # (10/7 실로봇: 공을 손가락 끝에 걸쳐 쥐면 grip 비트가 0 → 빈손으로 오판해 공을 쥔 채 백스윙했다)
+        return grip == 1 or (0.0 <= target < width - 5.0)
 
     def _on_hand(self, msg):
         self.last_hand = msg
@@ -158,10 +189,27 @@ class SkillServer(Node):
 
     def gripper(self, width_mm: float, force_n: float, wait: bool = True, timeout_s: float = 4.0):
         """/rally/gripper/command 호출 → (success, actual_width_mm, object_detected). fake 면 닫을 때 물체 있음으로 흉내."""
+        ok, width, detected = self._gripper_call(width_mm, force_n, wait, timeout_s)
+        if ok:
+            self.holding = bool(detected) if width_mm < 50.0 else False
+        return ok, width, detected
+
+    def _gripper_call(self, width_mm, force_n, wait, timeout_s):
         if self.fake:
+            # 가짜 그리퍼: 물체를 놓은 자리를 기억 — 그 자리에서 3 cm 넘게 떨어진 곳에서 닫으면 빈손(폭 0).
+            # 처음 집기(놓은 적 없음)·놓은 자리 근처에서 닫기는 물체 있음(폭 45). 치기 전 '빈손 확인'을 흉내 내기 위함.
             time.sleep(0.3)
-            closing = width_mm < 50.0
-            return True, (45.0 if closing else float(width_mm)), closing
+            from DSR_ROBOT2 import get_current_posx
+            here = get_current_posx()[0][:3]
+            rel = getattr(self, "_fake_release_xyz", None)
+            if width_mm >= 50.0:
+                if self.holding:
+                    self._fake_release_xyz = list(here)
+                return True, float(width_mm), False
+            near = rel is None or sum((a - b) ** 2 for a, b in zip(here, rel)) ** 0.5 < 30.0
+            if near:
+                self._fake_release_xyz = None
+            return True, (45.0 if near else 0.0), near
         if not self.gripper_cli.wait_for_service(timeout_sec=1.0):
             self.get_logger().error("/rally/gripper/command 서비스 없음 — gripper_node 를 먼저 띄우세요")
             return False, 0.0, False
@@ -190,10 +238,32 @@ class SkillServer(Node):
             res.success, res.message = False, f"safety STOP ({self.safety_reason()})"
             return res
         posj = (self.cfg.get("observe_pose") or {}).get("posj") or OBSERVE_POS   # skills.yaml 티칭 값 우선
-        movej([float(v) for v in posj], vel=VELOCITY * self.speed_scale(), acc=ACC * self.speed_scale())
+        jv, ja = motion_speeds(self)[4:]                                          # skills.yaml motion: joint_vel_deg_s
+        movej([float(v) for v in posj], vel=jv * self.speed_scale(), acc=ja * self.speed_scale())
         mwait()
         res.success, res.message = True, f"observe pose {posj}"
         return res
+
+
+def _install_sim_force(node):
+    """시뮬 전용(RALLY_SIM=1, 에뮬레이터): 에뮬레이터에는 외력이 없으니 /rally/sim/external_force(Vector3, N, base)를
+    get_tool_force 에 더한다. scripts/sim_gripper.py 의 환자 흉내(당기기·밀어 넣기)가 발행. 실로봇 경로에는 안 들어간다."""
+    import DSR_ROBOT2
+    from geometry_msgs.msg import Vector3
+    ext = [0.0, 0.0, 0.0]
+
+    def on_force(m):
+        ext[:] = [m.x, m.y, m.z]
+
+    node.create_subscription(Vector3, "/rally/sim/external_force", on_force, 10)
+    orig = DSR_ROBOT2.get_tool_force
+
+    def get_tool_force(*a, **k):
+        f = list(orig(*a, **k))
+        return [f[0] + ext[0], f[1] + ext[1], f[2] + ext[2], *f[3:]]
+
+    DSR_ROBOT2.get_tool_force = get_tool_force
+    node.get_logger().warning("시뮬 모드: /rally/sim/external_force 를 툴 힘에 더함 (RALLY_SIM=1)")
 
 
 def main(args=None):
@@ -208,6 +278,8 @@ def main(args=None):
         dsr_node = init_dsr()                        # DR_init 먼저
     node = SkillServer(fake=fake)
     node.dsr = dsr_node
+    if not fake and os.environ.get("RALLY_SIM") == "1":
+        _install_sim_force(node)
     ex = MultiThreadedExecutor(num_threads=6)
     ex.add_node(node)
     if dsr_node is not None:
@@ -218,7 +290,7 @@ def main(args=None):
         node.destroy_node()
         if dsr_node is not None:
             dsr_node.destroy_node()
-        rclpy.shutdown()
+        rclpy.try_shutdown()
 
 
 if __name__ == "__main__":

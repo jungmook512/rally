@@ -54,6 +54,8 @@ def _cur():
 
 
 def _start_move(target6, vel):
+    if isinstance(vel, (list, tuple)):          # [직선 mm/s, 회전 deg/s] 형식 — 직선만 쓴다
+        vel = vel[0]
     S.pose = _cur()
     S.target = [float(v) for v in target6]
     dist = math.dist(S.pose[:3], S.target[:3])
@@ -82,9 +84,34 @@ def amovel(pos, vel=None, acc=None, **kw):
 
 
 def movej(pos, vel=None, acc=None, **kw):
+    S.joints = [float(v) for v in pos]
     S.move_until = time.monotonic() + 0.5
     mwait()
     return 0
+
+
+def amovec(pos1, pos2, vel=None, acc=None, **kw):
+    """원호 흉내 — 끝점으로 직선 보간 (경로 모양은 흉내 내지 않음)."""
+    _start_move(pos2, vel)
+    return 0
+
+
+def amovesx(pos_list, vel=None, acc=None, **kw):
+    """스플라인 흉내 — 마지막 점으로 직선 보간."""
+    _start_move(pos_list[-1], vel)
+    return 0
+
+
+def amovej(pos, vel=None, acc=None, **kw):
+    """관절 이동 흉내 — 관절값만 바꾸고 TCP 자세는 그대로 둔다 (FK 없음). 1 s 동안 이동 중."""
+    S.joints = [float(v) for v in pos]
+    S.move_start = time.monotonic()
+    S.move_until = S.move_start + 1.0
+    return 0
+
+
+def get_current_posj():
+    return list(getattr(S, "joints", [0.0] * 6))
 
 
 def servol(pos, vel=None, acc=None, time=None, **kw):

@@ -41,7 +41,7 @@ class ForcePublisher(Node):
             self.get_logger().warning(f"DRL 읽기 실패, 발행 생략: {e}", throttle_duration_sec=5.0)
             return
         if not any(abs(float(v)) > 1e-9 for v in f):
-            self.get_logger().warning("get_tool_force 가 전부 0 — 컨트롤러 서비스 실패/과부하로 보고 발행 생략 (중복 force_publisher 확인)", throttle_duration_sec=5.0)
+            self.get_logger().warning("get_tool_force 가 전부 0 — 발행 생략. ① 특이점 근처 자세면 컨트롤러가 툴 힘을 0 으로 낸다 → 관측 자세처럼 팔을 뻗은 자세로 옮기기 ② 중복 force_publisher·서비스 과부하 확인", throttle_duration_sec=5.0)
             return
         now = self.get_clock().now().to_msg()
         w = WrenchStamped()

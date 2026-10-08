@@ -9,6 +9,7 @@ models/*.pt
 models/*.npy
 models/*.engine
 models/*.onnx
+models/*.npy
 models/**/*.task
 data/datasets/
 data/bags/

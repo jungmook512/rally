@@ -1,5 +1,18 @@
 # config/skills.yaml — 값은 docs/INTERFACES.md 6절 참고
 
+# ═══ motion — 로봇 이동 속도 (모든 스킬 공통: 모드 1 공 굴리기 · 집기 · 모드 5 건네기). 속도는 여기서만 바꾼다 ═══
+#   실제 명령 = 이 값 × 안전 속도 배율(safety_monitor speed_override, 평소 1.0). 바꾼 뒤 skill_server 재시작 (터미널 2 Ctrl+C → nodes)
+#   예외: 모드 1 스윙(치기) 속도는 goal.push_speed(m/s), 스윙 가속은 mode1.push_acc_mm_s2
+motion:
+  move_vel_mm_s: 150.0            # 공중 직선 이동 — 공 위로 가기·들기·놓으러 가기·백스윙 위치·후퇴 (10/7 피드백: 60 은 느림 → 150)
+  move_acc_mm_s2: 150.0           #   가속도. 크게 하면 출발·정지가 덜컹거린다
+  move_ang_vel_deg_s: 90.0        #   이동 중 툴 회전 속도 (안 주면 기본 한도로 느려짐)
+  move_ang_acc_deg_s2: 180.0
+  contact_vel_mm_s: 36.0          # 접촉 감지하며 천천히 내려가는 마지막 구간 — 공 집기·공 놓기·막대 집기·내려놓기
+  contact_acc_mm_s2: 72.0
+  joint_vel_deg_s: 60.0           # 관절 이동 — 관측 자세·거치대 보기·손 보기 자세·막대 집으러 가기·모드 5 제시
+  joint_acc_deg_s2: 120.0
+
 # observe_pose (10/6 티칭) — 카메라가 테이블 작업 구역(x 0.23~0.68 m)·중앙선이 다 보이는 자세. 환자(+x) 쪽으로 약 11° 기울임.
 # 캘리브레이션 순회(calib_sweep --center) 중심이자 go_observe_pose 복귀 자세. posj 로 복귀(movej), posx 는 참고·순회용.
 observe_pose:
@@ -16,12 +29,58 @@ mode3:
   max_ball_speed_mps: 3.0
 
 # mode1 (공 굴려주기) — 가이드 길 3개 (폭 10~12 cm, 높이 ≤ 공 반지름)
+#   start: 공을 놓는 자리 (base, m). 공 위에 TCP 를 대고 scripts/print_pose.py 로 읽는다. z 는 안 쓴다(table.yaml 사용)
+#   dir_deg: base XY 에서 +x(환자 쪽)로부터 반시계 [deg]. 0 = 정면. 길이 비스듬하면 그 각도
 mode1:
+  # 10/7 실측: 공을 쥐고 입구 점·20 cm 앞 점 (scripts/print_pose.py). goal.lane 0/1/2 = 현장 레인 1/2/3. 간격 ≈ 15 cm
+  # recipe: 스윙 속도 v → 정지 거리 d = v²/(2·decel) + d0 (레인 입구 기준, scripts/push_recipe.py 10/8 실측, 0.2·0.3·0.4 m/s 각 3회 안팎)
+  #   goal 에 target 만 주고 push_speed 0 이면 v = √(2·decel·(d − d0)). 실측 범위 ≈ 0.12 ~ 0.45 m 밖은 외삽
   lanes:
-    - {name: left,   start: [0.45, -0.20, 0.02], dir_deg: 100}   # TODO 실측
-    - {name: center, start: [0.45,  0.00, 0.02], dir_deg: 90}
-    - {name: right,  start: [0.45,  0.20, 0.02], dir_deg: 80}
-  push_speed_range: [0.05, 0.35]
+    - {name: lane1_plus_y, start: [0.4339, +0.1416, 0.0], dir_deg: -0.9, recipe: {decel_mps2: 0.192, d0_m: 0.020}}   # 10/8 8회 RMSE 2.1 cm
+    - {name: lane2_center, start: [0.4324, -0.0058, 0.0], dir_deg: +0.3, recipe: {decel_mps2: 0.221, d0_m: 0.063}}   # 10/8 7회 RMSE 2.4 cm
+    - {name: lane3_minus_y, start: [0.4319, -0.1562, 0.0], dir_deg: -0.7, recipe: {decel_mps2: 0.193, d0_m: 0.065}}  # 10/8 7회 RMSE 2.9 cm
+  push_speed_range: [0.10, 0.60]  # m/s — 스윙(타격) 속도. 10/7: 테니스공은 마찰이 커서 0.15 로는 거의 안 굴러감 → 상한 0.6
+  ball_radius_m: 0.0315           # 10/7 실측 지름 63 mm
+  back_off_m: 0.05                # 공 뒤 이만큼에서 내려간다
+  stroke_m: 0.06                  # 공 뒤면을 지나 이만큼 더 민다 (= 손가락이 공을 미는 거리)
+  approach_height_m: 0.10
+  # 이동 속도는 맨 위 motion: 에서 (모든 스킬 공통)
+  pickup_slow_above_m: 0.03       # 집기: 공 중심 + 3 cm 까지 빠르게
+  place_slow_above_m: 0.07        # 놓기: 테이블 + 7 cm 까지 빠르게
+  push_acc_mm_s2: 2000.0          # ★ 스윙(치기) 가속도 — 스윙 속도는 goal.push_speed (≈0.2 g). 백스윙 원호 ≈110 mm 안에서 0.6 m/s 까지 붙는 최소 ≈1600 + 여유. 10/7 3000 → 2000
+  tool_down_zyz: [174.8, -177.0, 175.1]   # 10/6 테이블 접촉 자세 (툴 수직 아래)
+  push_yaw_deg: 90.0              # 놓기·치기 때 툴 Z 회전 = 집을 때(pickup_yaw_deg)와 같게 → 집은 뒤 90° 돌리지 않음 (10/8). 손가락이 좌우로 열려도 레인 벽 0.5 cm 라 안 닿음. 카메라가 그리퍼 앞쪽 → 손 보기 자세에서 위로 감
+  gripper_close_force_n: 10.0
+  # 공 거치대 (10/7 확정: 기울어진 레일에 공 4개, 늘 같은 자리로 내려옴 → 4번 밀기가 한 사이클)
+  # 공 집기 — 10/7: 직접교시 대신 비전(rally_vision segmenter, models/yolov8n-seg_ball.pt)으로. 공이 여러 개면 x 가 가장 작은 것(거치대 맨 앞)
+  pickup_source: vision           # vision | posx(pickup_posx 고정 자세) | none(사람이 쥐여 주거나 레인 입구에 놓음)
+  pickup_yaw_deg: 90.0            # 집을 때 툴 Z 회전 — 거치대에서 공들이 x 로 붙어 있어 손가락이 y 로 닫히게. 손가락이 옆 공에 닿으면 0 으로
+  pickup_below_center_m: 0.05     # 비전 공 중심에서 이만큼 아래를 향해 순응 하강 (거치대 바닥·공에 닿으면 멈춤)
+  pickup_x_range_m: [0.15, 0.60]  # 이 x 범위의 공만 후보
+  pickup_wait_s: 6.0              # 거치대를 보는 자세에서 이 시간 안에 공이 (연속 3프레임 같은 자리로) 보여야 함
+  # 거치대를 내려다보는 자세 — 관측 자세에선 거치대가 카메라 화면 위쪽 밖 (10/7). 손끝 (380, 200, 380) mm 툴 수직, J5 120° (한계 ≈135°)
+  pickup_view_posj: [28.0, 15.0, 43.0, -2.0, 120.0, 28.0]
+  # 비전 좌표 보정 (base, m, 더함). 10/7: 레인 입구 실측 공을 두 자세(관측·거치대)에서 비교 → 둘 다 x +9.5, y −9.2 mm 치우침.
+  #   segmenter 가 T_gripper2camera.npy 대신 bringup URDF 의 카메라 브래킷 설계 치수(tf)를 쓰는 탓으로 추정 (박성현 확인 필요)
+  vision_offset_m: [-0.0095, 0.0092, 0.0]
+  pickup_posx: null               # (pickup_source: posx 일 때만) 공을 쥔 자세 posx
+  pickup_approach_m: 0.08         # 집는 자리 위 접근 높이
+  place_open_mm: 80.0             # 레인 입구에 놓을 때 여는 폭 (레인 안쪽 폭 ≈ 87 mm 보다 작게)
+  place_contact_force_n: 8.0      # 놓기: 순응 하강 중 Z 힘 변화가 이 이상(연속 3 샘플) 또는 목표 전에 멈춤 = 공이 테이블에 닿음 → 연다
+                                  # 10/7: 4 N 은 이동 중 힘 튐(최대 6.5 N)에 걸려 공중에서 열렸다
+  # 치기 — 10/7 실로봇: 수직 밀기는 공이 미끄러지기만 하고 안 굴러서, 닫은 손가락을 퍼터처럼 휘두르는 방식으로 변경
+  hand_view: true                 # 친 뒤 툴을 환자 쪽으로 기울여 RealSense 로 환자 손 보기 (공 받는 모습). 레인 선택은 brain 이 무작위
+  hand_view_tilt_deg: 45.0        # 10/8 에뮬레이터: 45° · 30 cm 가 팔로스루 끝에서 관절 이동 가장 작음(합 74°, 60° 는 185°) + 손 후보 9/9 화면 안
+  hand_view_back_m: 0.10
+  hand_view_height_m: 0.30
+  hand_view_hold_s: 2.0
+  push_mode: strike               # strike | push(예전 수직 밀기)
+  strike_radius_m: 0.18           # 손가락 끝이 그리는 원호 반지름 (클수록 직선에 가까움)
+  strike_back_deg: 35.0           # 백스윙 (툴이 뒤로 기우는 각) — 길수록 타격 전 속도가 더 붙음
+  strike_follow_deg: 20.0         # 팔로스루 — 끝점 x 가 table.centerline_x_m − 0.03 안이어야 함
+  strike_tip_height_m: 0.006      # 타격 순간 손가락 끝 높이(테이블 기준). 앞면이 공 중심 높이를 친다 (10/7: 58 mm 는 공 윗부분만 스침, 10 mm 도 높다는 피드백)
+  strike_face_offset_m: 0.008     # 손가락 끝 → 앞면 거리
+  balls_per_cycle: 4
   # 굴러가는 공 정지 예측 (rally_vision/predictor.py RollingParams 와 같은 키). 값은 합성 궤적 기준 — 실측 후 조정
   # 지금 안 씀 (#69): 모드 1 정지 예측은 밀기 전 레시피(lanes[].recipe). 칼만은 모드 3 먼저, 그때 다시 결정
   rolling:
@@ -84,19 +143,36 @@ pick:
   lift_m: 0.10
   contact_force_n: 8.0            # Z 힘 변화가 이 이상이면 접촉
   open_mm: 90.0                   # 접근 전 열림 폭 (가이드 길 벽 10~12 cm 안)
-  descend_vel_scale: 0.3
   z_from_table: true
-  grasp_above_table_m: 0.03       # 테이블 면 + 이만큼 = 파지 높이 (공 반지름 ≈ 3 cm)
+  grasp_above_table_m: 0.0315     # 테이블 면 + 이만큼 = 파지 높이 (공 반지름 31.5 mm, 10/7 실측 지름 63 mm)
   z_stiffness_default: 300.0
+  tool_down_zyz: [174.8, -177.0, 175.1]   # 집는 자세 기준(툴 수직 아래, 10/6 실측). 마스크 yaw 는 이 자세에서 툴 Z 회전
 
 # handover (모드 5) — present_pose 는 티칭 후 기입 (posx mm·deg, 중앙선 앞 · 환자 팔 높이). 없으면 현재 자세에서 제시
 handover:
-  present_pose: null              # TODO(정정인) 예: [500.0, 0.0, 300.0, 0.0, 180.0, 0.0]
+  # 제시 자세 — present_pose(posx 티칭값)가 있으면 그것, 없으면 계산: x = table.centerline_x_m − present_margin_m,
+  #   y = present_y_m, z = 테이블 + present_height_m, 자세 = present_zyz. 교시 없이 동작.
+  present_pose: null
+  present_zyz: [0.0, 90.0, 90.0]  # 제시 자세: 툴 z = +x (테이블과 수평, 환자 쪽), 툴 +y(그리퍼 위 RealSense) = 위 → 카메라가 환자 손을 봄
+  present_margin_m: 0.06          # 한계선(중앙선)에서 로봇 쪽으로 이만큼 앞
+  present_y_m: 0.0
+  present_height_m: 0.29          # 테이블 위 높이. 툴 수평 + 한계선 6 cm 앞이면 팔이 접혀 22 cm 는 J3 152.6° > 한계 150° (10/8 에뮬레이터). 29 cm → J3 146°
+  # 기울이기 — goal.tilt_deg 를 tilt_range_deg 로 클램프, 베이스 tilt_axis 축으로 돌린다.
+  #   x = 환자를 향한 축(= 제시 자세의 툴 z) → 물체가 환자 기준 좌우로 기울어짐 (손목 회전 훈련). 0° 막대 세로, ±90° 가로
+  tilt_axis: x
+  tilt_range_deg: [-90.0, 90.0]
+  # 이동 속도는 맨 위 motion: — 집기 자세(툴 아래) ↔ 제시 자세(툴 수평)는 관절 이동(joint_vel_deg_s). movel 은 손목 특이점(J5≈0)에 걸림
+  receive_tilt_deg: 0.0           # RECEIVE 때 그리퍼 자세 (돌려받을 땐 똑바로)
+  place_after_receive: true       # RECEIVE 성공 후 마지막 PickCompliant 자리에 내려놓기
+  place_above_m: 0.08
+  place_contact_force_n: 6.0      # 내려놓으며 테이블 접촉 판정 (Z 힘 변화)
+  place_below_m: 0.02             # 집었던 높이보다 이만큼 아래를 향해 순응 하강 (접촉에서 멈춤)
   stiffness: [2000, 2000, 2000, 200, 200, 200]
   pull_hold_s: 0.2                # 임계 이상 힘이 이 시간 유지되면 당김으로 판정
   default_threshold_n: 6.0        # goal 에 없을 때. scripts/measure_wrench.py --pull 결과로 확정
   default_timeout_s: 20.0
-  retreat_m: 0.10
+  retreat_m: 0.03                 # 제시 자세(툴 수평)에서 베이스 쪽 후퇴 — 뒤로만 빼면 팔이 더 접혀 J3 한계에 걸린다
+  retreat_up_m: 0.06              # 그래서 위로도 같이 (비스듬히 물러남)
   release_wait_s: 0.3
 
 # mode5 (brain) — 모드 5 시도의 실패 분기. 위 handover: 는 로봇 스킬 쪽 설정. 숫자는 초기값, 리허설 후 조정

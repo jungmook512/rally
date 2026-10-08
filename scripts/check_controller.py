@@ -10,10 +10,12 @@
   3. 툴·TCP 이름                              — 'Tool Weight_2FG' / '2FG_TCP' 가 아니면 펜던트에서 선택
   4. get_tool_force 3회 모두 0 이 아님        — 전부 0 이면 컨트롤러가 툴 힘(ETT)을 0 으로 보내는 상태 (2026-10-07 미해결)
   5. get_external_torque 0 이 아님            — 모니터링 스트림 자체 확인
-  6. force_publisher 프로세스 0~1개            — 2개면 서비스 과부하 (project-dsr-service-overload)
+  6. force_publisher 프로세스 0~1개            — 2개면 서비스 과부하
+  7. 특이점 거리 (URDF 자코비안 조건수)       — 특이점 근처면 컨트롤러가 툴 힘을 0 으로 낸다 (10-06·07 툴 힘 0 의 유력 원인)
 종료 코드 0 = 전부 PASS (force_publisher·스킬 실행 가능), 1 = FAIL 있음.
 """
 import argparse
+import pathlib
 import subprocess
 import sys
 import time
@@ -25,6 +27,7 @@ from dsr_msgs2.srv import (GetCurrentSolutionSpace, GetCurrentTcp, GetCurrentToo
 
 PREFIX = "/dsr01/dsr_controller2/"
 TOOL, TCP = "Tool Weight_2FG", "2FG_TCP"
+SINGULAR_COND = 100.0      # 10-07 실측: 접힌 자세 298(툴 힘 0) · 관측 자세 22 · 작업 자세 8~12
 MODE = {0: "MANUAL", 1: "AUTONOMOUS", 2: "MEASURE"}
 STATE = {0: "INITIAL", 1: "STANDBY", 2: "MOVING", 3: "SAFE_OFF", 4: "TEACHING", 5: "SAFE_STOP", 6: "EMERGENCY_STOP",
          7: "HOMMING", 8: "RECOVERY", 9: "SAFE_STOP2", 10: "SAFE_OFF2", 15: "NOT_READY"}
@@ -99,6 +102,20 @@ def main() -> int:
         r = n.call(GetExternalTorque, "aux_control/get_external_torque", GetExternalTorque.Request())
         ejt = list(r.ext_torque) if r not in (None, "TIMEOUT") else []
         n.item(any(abs(v) > 1e-6 for v in ejt), "get_external_torque ≠ 0", f"{[round(v, 2) for v in ejt]}" if ejt else str(r))
+
+        try:                                             # 특이점 근처면 툴 힘(ETT) 0 — 4번 FAIL 의 원인 구분용
+            sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+            import numpy as np
+            from ejt_wrench import Chain
+            from dsr_msgs2.srv import GetCurrentPosj
+            r = n.call(GetCurrentPosj, "aux_control/get_current_posj", GetCurrentPosj.Request())
+            q = np.radians(np.array(r.pos, dtype=float))
+            J, Tf = Chain().jacobian(q)
+            cond = float(np.linalg.cond(J))
+            n.item(cond < SINGULAR_COND, f"특이점 거리 (자코비안 조건수 {cond:.0f})",
+                   "" if cond < SINGULAR_COND else "특이점 근처 자세 — 툴 힘이 0 으로 나온다. 관측 자세처럼 팔을 앞으로 뻗은 자세로 옮긴 뒤 재점검")
+        except Exception as e:                           # noqa: BLE001 — 진단 보조라 실패해도 점검은 계속
+            print(f"  [SKIP] 특이점 거리 — {e}")
 
         ps = subprocess.run(["pgrep", "-fc", "rally_robot/force_publisher$"], capture_output=True, text=True)
         cnt = int(ps.stdout.strip() or 0)
