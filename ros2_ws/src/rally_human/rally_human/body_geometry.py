@@ -45,6 +45,47 @@ def trunk_lean_deg(w: np.ndarray, vis: np.ndarray, thr: float = 0.5) -> tuple[fl
     return math.nan, "none"
 
 
+def trunk_vector(w: np.ndarray, vis: np.ndarray, thr: float = 0.5) -> tuple[np.ndarray | None, str]:
+    """몸통 방향 벡터와 방법 — trunk_lean_deg 와 같은 규칙 (torso: 엉덩이→어깨 / shoulders: 왼어깨→오른어깨)."""
+    if _seen(vis, L_SH, R_SH, L_HIP, R_HIP, thr=thr):
+        return (w[L_SH] + w[R_SH]) / 2 - (w[L_HIP] + w[R_HIP]) / 2, "torso"
+    if _seen(vis, L_SH, R_SH, thr=thr):
+        return w[R_SH] - w[L_SH], "shoulders"
+    return None, "none"
+
+
+class TrunkBaseline:
+    """몸통 기울기의 기준(평소 자세의 몸통 방향). 방법(torso/shoulders)마다 따로, 처음 frames 프레임의 평균 방향.
+    기준이 있으면 기울기 = 지금 몸통 방향과 기준 방향 사이 각 → 카메라가 기울어져 있어도(대각 위·측면) 바르게 앉으면 0.
+    기준이 아직 없으면 예전처럼 영상 수직 기준 (trunk_lean_deg)."""
+
+    def __init__(self, frames: int = 30) -> None:
+        self.frames = frames
+        self.reset()
+
+    def reset(self) -> None:
+        self.samples: dict[str, list[np.ndarray]] = {"torso": [], "shoulders": []}
+        self.base: dict[str, np.ndarray] = {}
+
+    def lean_deg(self, w: np.ndarray, vis: np.ndarray, thr: float = 0.5) -> tuple[float, str]:
+        vec, how = trunk_vector(w, vis, thr)
+        if vec is None:
+            return math.nan, how
+        if how not in self.base:
+            n = np.linalg.norm(vec)
+            if n > 1e-9:
+                self.samples[how].append(vec / n)
+            if len(self.samples[how]) >= self.frames:
+                m = np.mean(self.samples[how], axis=0)
+                self.base[how] = m / np.linalg.norm(m)
+            return trunk_lean_deg(w, vis, thr)[0], how + "(기준 전)"
+        if how == "torso":
+            return _angle_deg(vec, self.base[how]), how
+        # 어깨선은 방향(좌→우)만 의미 — 기준과 같은 쪽으로 맞춰 각을 잼
+        a = _angle_deg(vec, self.base[how])
+        return (180.0 - a if a > 90 else a), how
+
+
 def ear_shoulder_gaps(w: np.ndarray, vis: np.ndarray, thr: float = 0.5) -> tuple[float, float]:
     """(왼쪽, 오른쪽) 귀–어깨 세로 거리 [m]. 어깨가 귀 쪽으로 올라가면(으쓱) 줄어든다. 안 보이면 NaN."""
     out = []

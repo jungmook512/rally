@@ -58,6 +58,7 @@ class BodyPoseNode(Node):
         self.vis_thr = float(p("min_visibility"))
         self.arm = str(p("arm"))
         self.baseline = bg.ShoulderBaseline(int(p("baseline_frames")))
+        self.trunk_base = bg.TrunkBaseline(int(p("baseline_frames")))      # 몸통 기울기도 평소 자세 대비 (카메라 각도 무관)
         self.comp = bg.CompensationFilter(float(p("lean_threshold_deg")), float(p("hike_threshold_deg")),
                                           int(p("confirm_frames")))
         self.landmarker = self._make_landmarker()
@@ -107,6 +108,7 @@ class BodyPoseNode(Node):
             reset, self._reset_req = self._reset_req, False
         if reset:
             self.baseline.reset()
+            self.trunk_base.reset()
         if msg is None:
             return
         out = BodyPose()
@@ -142,7 +144,7 @@ class BodyPoseNode(Node):
             out.detected = False
             return
         out.detected = True
-        out.trunk_lean_deg, _ = bg.trunk_lean_deg(w, vis, self.vis_thr)
+        out.trunk_lean_deg, _ = self.trunk_base.lean_deg(w, vis, self.vis_thr)
         gaps = bg.ear_shoulder_gaps(w, vis, self.vis_thr)
         base = self.baseline.update(gaps)
         out.shoulder_elevation_deg = bg.shoulder_elevation_deg(gaps, base, bg.shoulder_half_width(w))   # 기준 없는 쪽은 빠짐

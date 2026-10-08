@@ -111,3 +111,33 @@ def test_shoulder_baseline_reset_recaptures():
     assert all(math.isnan(v) for v in b.update((0.18, 0.18)))   # 다시 쌓는 중
     b.update((0.18, 0.18))
     assert b.update((0.18, 0.18)) == (0.18, 0.18)
+
+
+def _rot_x(deg: float) -> np.ndarray:
+    r = np.radians(deg)
+    return np.array([[1, 0, 0], [0, np.cos(r), -np.sin(r)], [0, np.sin(r), np.cos(r)]])
+
+
+def test_trunk_baseline_cancels_tilted_camera():
+    """카메라가 25° 내려다보면 바르게 앉아도 영상 수직 대비 25° — 기준을 잡으면 0, 거기서 숙인 만큼만."""
+    tilt = _rot_x(25)
+    w0 = upright() @ tilt.T
+    assert bg.trunk_lean_deg(w0, ALL)[0] == pytest.approx(25, abs=0.5)   # 예전 방식
+    tb = bg.TrunkBaseline(frames=3)
+    for _ in range(3):
+        tb.lean_deg(w0, ALL)
+    assert tb.lean_deg(w0, ALL)[0] == pytest.approx(0, abs=1e-6)
+    lean_more = upright(20, "front") @ tilt.T                            # 거기서 20° 숙임
+    assert tb.lean_deg(lean_more, ALL)[0] == pytest.approx(20, abs=1.0)
+
+
+def test_trunk_baseline_reset():
+    tb = bg.TrunkBaseline(frames=2)
+    for _ in range(2):
+        tb.lean_deg(upright(30, "front"), ALL)                        # 자리 잡는 중 (기울어진 기준)
+    assert tb.lean_deg(upright(), ALL)[0] == pytest.approx(30, abs=1.0)
+    tb.reset()
+    for _ in range(2):
+        tb.lean_deg(upright(), ALL)
+    assert tb.lean_deg(upright(), ALL)[0] == pytest.approx(0, abs=1e-6)
+

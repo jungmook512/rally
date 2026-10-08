@@ -90,7 +90,8 @@ class Skeleton:
         lean, how = bg.trunk_lean_deg(w, vis)
         hint = {"torso": "torso (엉덩이→어깨)", "shoulders": "shoulders (어깨선 · 측면은 앞으로 숙이기 못 잼)",
                 "none": "어깨 안 보임"}.get(how, how)
-        put(frame, f"몸통: {hint}  {lean:.0f}°" if math.isfinite(lean) else f"몸통: {hint}", (8, 6), WHITE)
+        # 여기 숫자는 화면 수직 기준(카메라 각도가 섞임). 오른쪽 패널의 몸통 기울기는 b 로 잡은 평소 자세 기준
+        put(frame, f"몸통 방법: {hint}  (화면 수직 {lean:.0f}°)" if math.isfinite(lean) else f"몸통 방법: {hint}", (8, 6), WHITE)
 
 
 class Checker(Node):
