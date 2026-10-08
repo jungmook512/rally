@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """손 따라가기(모드 5 RECEIVE servol) 준비 측정 — HandState 지연 · 손바닥 위치 떨림 · 발행 간격.
 
-hand_pose 노드가 켜진 상태에서, 손을 카메라 앞에 **가만히** 두고 실행한다. 3초 뒤부터 --seconds 동안 잰다.
+hand_pose 노드가 켜진 상태에서 실행. 지금 손 거리가 계속 표시되고, 원하는 거리에 손을 두고 **Enter** 를 누르면
+--seconds 동안 잰다 (손은 가만히). --auto 면 예전처럼 3초 뒤 자동 시작.
     python3 scripts/measure_hand_jitter.py                      # 10 s
     python3 scripts/measure_hand_jitter.py --seconds 20 --label 50cm
 결과
@@ -27,9 +28,11 @@ class Meter(Node):
         super().__init__("rally_measure_hand_jitter")
         self.rows: list[tuple] = []          # (받은 시각 s, 지연 ms, 검출, x, y, z, 손목, frame)
         self.on = False
+        self.last: HandState | None = None
         self.create_subscription(HandState, "/rally/perception/hand", self._on, qos_profile_sensor_data)
 
     def _on(self, m: HandState) -> None:
+        self.last = m
         if not self.on:
             return
         now = self.get_clock().now()
@@ -68,13 +71,37 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--seconds", type=float, default=10.0)
     ap.add_argument("--label", default="", help="결과 앞에 붙일 이름 (예: 50cm)")
+    ap.add_argument("--auto", action="store_true", help="Enter 없이 3초 뒤 자동 시작")
     a = ap.parse_args()
     rclpy.init()
     node = Meter()
-    print("손을 카메라 앞에 가만히 두세요. 3초 뒤 시작", flush=True)
-    end_wait = time.monotonic() + 3.0
-    while time.monotonic() < end_wait:
-        rclpy.spin_once(node, timeout_sec=0.1)
+    if a.auto:
+        print("손을 카메라 앞에 가만히 두세요. 3초 뒤 시작", flush=True)
+        end_wait = time.monotonic() + 3.0
+        while time.monotonic() < end_wait:
+            rclpy.spin_once(node, timeout_sec=0.1)
+    else:
+        import select
+        import sys
+        print("손을 원하는 거리에 두고 Enter 를 누르면 시작 (지금 거리가 아래에 계속 표시됨)", flush=True)
+        while True:
+            rclpy.spin_once(node, timeout_sec=0.1)
+            m = node.last
+            if m is None:
+                state = "HandState 없음 — hand_pose 노드 확인"
+            elif not m.detected:
+                state = "손 없음"
+            elif m.header.frame_id.startswith("camera") and m.palm_pose.position.z > 0:
+                state = f"카메라 {m.palm_pose.position.z * 100:5.1f} cm"
+            elif m.header.frame_id == "base_link":
+                state = f"base_link x {m.palm_pose.position.x:.3f} m (tf 있음 — 카메라 거리 아님)"
+            else:
+                state = "깊이 없음"
+            print(f"\r  {state:<60}", end="", flush=True)
+            if select.select([sys.stdin], [], [], 0)[0]:
+                sys.stdin.readline()
+                print()
+                break
     node.on = True
     t0 = time.monotonic()
     print(f"측정 중 {a.seconds:.0f} s ...", flush=True)
