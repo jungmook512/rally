@@ -29,7 +29,7 @@ cd ~/rally && scripts/robot.sh nodes novision    # 비전 없이 (모드 5 수�
 cd ~/rally && scripts/robot.sh brain             # context_builder + bt_runner (준비 확인 끔, DB·LLM·음성 없이)
 ```
 그다음 터미널 3 에서 `scripts/robot.sh session 1` → 모드 1 세션 (10/8 회의 흐름, 공 4번):
-손 보기 자세 → 환자 손에 가까운 레인 → 손 기준 목표(reach 초기값·단계 = 레인 RMSE × 2, 실측·안전·속도 범위 제한) → 거치대 공 집어 치기 →
+손 보기 자세 → 환자 손에 가까운 레인 → 레인별 고정 목표(개발용 입구 +35 cm, 실측·안전·속도 상한 0.37 범위 제한) → 손 시작 거리(reach 초기값·단계 = 레인 RMSE × 2) 및 NORMAL 확인 → 거치대 공 집어 치기 →
 타격 후 새 표본으로 펼침→쥠 유지→펼침을 관측하면 받기 후보(실물 검증 전 자동 난이도 차단) → 손 이탈을 최신 관측으로 확인할 때까지 세션을 유지하며 대기한 뒤 로봇이 레인 공을 집어 거치대 맨 윗부분에 넣기.
 필요한 것: 손 인식(`/rally/perception/hand`, 정동휘 hand_pose) · 비전 · `skills.yaml mode1.rack_drop_posx`(아래 직접교시).
 모드 5 는 `session 5`. 처음 한 번만 brain 의존성 설치: `python3 -m pip install --target ~/.local/rally_brain_py py_trees "rdflib>=6.1,<8"`

@@ -1,13 +1,14 @@
-"""모드 1: 신선한 손 → 레인 목표 → 실측 레시피 속도 → PushBall → 시도 기록.
+"""모드 1: 레인별 고정 목표 → 손 시작 위치·NORMAL 대기 → PushBall → 받기·회수·기록.
 
 중앙선은 table.yaml. 목표와 양수 속도를 함께 전달하며 LLM은 수치를 정하지 않는다.
 손 미검출은 제한 시간 대기 후 no_hand, 레시피/도달 범위 오류는 goal 없이 기록한다.
-스킬 success는 타격 성공일 뿐 환자의 잡기 성공이 아니다. 자동 난이도 학습에 쓰지 않는다.
+받기 후보는 실제 공 접촉 증거가 아니다. 자동 난이도 학습에 쓰지 않는다.
 """
 from __future__ import annotations
 
 import math
 import random
+import time
 from typing import TYPE_CHECKING, Any
 
 import py_trees
@@ -17,7 +18,7 @@ from rally_brain.config import load_safety
 from rally_brain.behaviours import Do, Guard, ServiceCall, WaitUntil
 from rally_brain.trees.steps import HAND_DEFAULTS, TrialState, no_hand, reason_code, skill_step
 from rally_interfaces.action import PushBall, ReturnBall
-from rally_interfaces.msg import HandState, TrialResult
+from rally_interfaces.msg import HandState, TrialResult, SafetyStatus
 
 if TYPE_CHECKING:
     from rally_brain.trees.session_tree import Session
@@ -62,25 +63,8 @@ def lane_geometry(lane_cfg: dict) -> tuple[float, float, float, float]:
         raise ValueError("invalid_lane") from e
 
 
-def reach_target(hand: HandState, lane_cfg: dict, reach_m: float, centerline_x: float,
-                 margin_m: float = 0.05) -> tuple[float, float] | None:
-    """손 위치를 레인 축에 투영한 뒤 reach만큼 앞을 목표로 한다. 중앙선+여유보다 환자 쪽으로 제한."""
-    p = hand.palm_pose.position
-    if (not hand.detected or hand.header.frame_id != "base_link"
-            or not all(math.isfinite(v) for v in (p.x, p.y, p.z, reach_m, centerline_x, margin_m))
-            or reach_m < 0 or margin_m < 0.05):
-        return None
-    sx, sy, dx, dy = lane_geometry(lane_cfg)
-    hand_d = (p.x - sx) * dx + (p.y - sy) * dy
-    minimum = (centerline_x + margin_m - sx) / dx
-    if hand_d < minimum:
-        return None
-    d = max(hand_d - reach_m, minimum)
-    return sx + d * dx, sy + d * dy
-
-
 def plan_push(hand: HandState, lane: int, level: int, cfg: dict, table: dict) -> dict:
-    """검증된 거리·속도·중앙선·손 앞의 교집합에서만 목표를 만든다. 오류면 goal 금지."""
+    """레인별 고정 목표를 실측·속도·중앙선 범위로 제한. 난이도는 필요한 손 시작 거리."""
     try:
         ln = cfg["lanes"][lane]
         recipe = ln.get("recipe")
@@ -101,24 +85,23 @@ def plan_push(hand: HandState, lane: int, level: int, cfg: dict, table: dict) ->
             raise ValueError("invalid_recipe")
         sx, sy, dx, dy = lane_geometry(ln)
         reach = (max(0, level) + 1) * factor * rmse
-        target = reach_target(hand, ln, reach, center, margin)
-        if target is None:
-            raise ValueError("invalid_hand_target")
         p = hand.palm_pose.position
         hand_d = (p.x - sx) * dx + (p.y - sy) * dy
         vlo, vhi = max(measured_lo, allowed_lo, brain_lo), min(measured_hi, allowed_hi, brain_hi)
         if vlo > vhi:
             raise ValueError("unreachable_target")
         lo = max(dmin, d0 + vlo * vlo / (2 * a), (center + margin - sx) / dx)
-        hi = min(dmax, d0 + vhi * vhi / (2 * a), hand_d)
+        hi = min(dmax, d0 + vhi * vhi / (2 * a))
         if lo > hi:
             raise ValueError("unreachable_target")
-        wanted = (target[0] - sx) * dx + (target[1] - sy) * dy
+        wanted = float(ln["target_d_m"])
+        if not math.isfinite(wanted) or wanted < 0:
+            raise ValueError("invalid_target")
         d = min(max(wanted, lo), hi)
         speed = min(max(math.sqrt(2 * a * (d - d0)), vlo), vhi)
         return {"lane": lane, "speed": speed, "target": (sx + d * dx, sy + d * dy),
                 "target_d": d, "level": max(0, level), "reach_requested": reach,
-                "reach_actual": hand_d - d, "hand_stamp_ns": hand.header.stamp.sec * 1_000_000_000 + hand.header.stamp.nanosec}
+                "reach_actual": hand_d - d, "hand_start_d": d + reach, "hand_stamp_ns": hand.header.stamp.sec * 1_000_000_000 + hand.header.stamp.nanosec}
     except (KeyError, TypeError, IndexError, OverflowError) as e:
         raise ValueError("invalid_recipe") from e
 
@@ -136,10 +119,10 @@ def measured_error_mm(result: PushBall.Result) -> float:
 
 
 def trial_from_result(plan: dict, result: PushBall.Result | None, notes: str, success: bool = False) -> TrialResult:
-    keys = ["lane", "push_speed", "target_d_m", "level", "reach_requested_m", "reach_actual_m", "target_x_m", "target_y_m"]
+    keys = ["lane", "push_speed", "target_d_m", "level", "reach_requested_m", "reach_actual_m", "target_x_m", "target_y_m", "hand_start_d_m"]
     target = plan.get("target", (math.nan, math.nan))
     values = [plan.get("lane", -1), plan.get("speed", math.nan), plan.get("target_d", math.nan),
-              plan.get("level", 0), plan.get("reach_requested", math.nan), plan.get("reach_actual", math.nan), *target]
+              plan.get("level", 0), plan.get("reach_requested", math.nan), plan.get("reach_actual", math.nan), *target, plan.get("hand_start_d", math.nan)]
     trial = TrialResult(mode=TrialResult.MODE_PUSH_BALL, success=success, notes=notes,
                         error_mm=measured_error_mm(result) if result is not None else math.nan,
                         param_keys=keys, param_values=[float(v) for v in values])
@@ -241,7 +224,7 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
             record()
             return False
         state.data.update(plan)
-        log.info(f"[모드 1] 손 기준 레인 {lane} · 목표 {plan['target_d']:.3f} m · 속도 {plan['speed']:.3f} m/s")
+        log.info(f"[모드 1] 고정 목표 레인 {lane} · 목표 {plan['target_d']:.3f} m · 속도 {plan['speed']:.3f} m/s")
         return True
 
     def record() -> None:
@@ -256,16 +239,36 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
     def on_push_fail(result: PushBall.Result | None, reason: str, _k: int) -> None:
         log.warn(f"[모드 1] 밀기 실패: {reason}")
         state.data.update(push=result, notes=reason_code(reason))
+        state.fatal = True  # 공/그리퍼 상태가 불명확하므로 다음 타격 금지. 운영자 확인 필요.
         record()
 
     def on_interrupt(reason: str) -> None:
         state.data["notes"] = reason_code(reason)
         record()
 
+    def ready_to_push() -> bool:
+        ctx = session.get_context()
+        ready = False
+        prompt = cfg["start_wait_prompt"]
+        if hand_ready() and ctx.safety.level == SafetyStatus.LEVEL_NORMAL:
+            try:
+                lane = lane_for_hand(cfg, ctx.hand)
+                plan = plan_push(ctx.hand, lane, session.difficulty.get(1, 0), cfg, session.table_cfg)
+                state.data.update(plan)
+                ready = plan["reach_actual"] >= plan["reach_requested"]
+                if not ready:
+                    prompt = cfg["hand_start_prompt"]
+            except ValueError:
+                # 최초 설정 오류는 start에서 기록. 대기 중 잘못된 입력은 명령으로 쓰지 않는다.
+                ready = False
+        if not ready and time.monotonic() >= state.data.get("next_start_prompt", 0):
+            session.say(prompt)
+            state.data["next_start_prompt"] = time.monotonic() + cfg["hand_clear_wait_s"]
+        return ready
+
     push = skill_step(state, "밀기", client, lambda: push_goal(state.data["lane"], state.data["speed"], state.data["target"]),
                       on_success=lambda r, _k: state.data.update(push=r),
-                      can_send=lambda: session.safe() and hand_ready() and
-                          0 <= session.node.get_clock().now().nanoseconds - state.data["hand_stamp_ns"] <= cfg["hand_max_age_s"] * 1e9,
+                      can_send=ready_to_push, wait_for_precondition=True,
                       on_fail=on_push_fail, on_interrupt=on_interrupt)
 
     # ── 받기 확인 ──
@@ -359,7 +362,7 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
         ]),
     ])
     proceed = py_trees.composites.Sequence("진행", memory=True, children=[
-        Do("시작", start), push, Do("받기 관측 시작", begin_watch),
+        Do("시작", start), WaitUntil("손 시작 위치·NORMAL 대기", ready_to_push), push, Do("받기 관측 시작", begin_watch),
         Do("받기 안내", lambda: session.say(cfg["catch_prompt"]) if cfg["catch_prompt"] else None),
         catch, recover, Do("기록", record), Do("다음 시도 가능", lambda: not state.fatal),
     ])

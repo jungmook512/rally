@@ -16,6 +16,7 @@
              쥐고 있지 않으면 "공이 이미 레인 입구에 있다"고 보고 건너뛴다 (require_held_ball: true 면 중단)
   approach : 그리퍼 닫기(닫힌 손가락 등을 미는 면으로) → 공 뒤쪽 위(approach_height) → 공 뒤로 하강(공 적도 높이)
   contact  : 접촉 예정 플래그 ON (공을 치는 순간 nudge 가 STOP 내지 않게. 절대 힘 한계 25 N 은 그대로)
+  (치기 직전 안전 SLOW 면 slow_at_strike 로 중단 — 감속된 스윙은 정지 거리가 크게 짧아진다)
   push     : push_mode=strike(기본): 닫은 손가락을 퍼터처럼 휘두른다 — 백스윙(툴이 뒤로 strike_back_deg) → 타격점(툴 수직,
              손가락 끝이 테이블 위 strike_tip_height_m, 앞면이 공 중심 높이를 침) → 팔로스루. amovec 원호, 속도 push_speed.
              (10/7 실로봇: 끝을 공 중심보다 위(58 mm)에 두니 공 윗부분만 스쳐 잘 못 쳤다)
@@ -273,10 +274,11 @@ def choose_ball(objects, cfg, table_z=0.0):
     return float(b.position.x), float(b.position.y), float(b.position.z), len(cand)
 
 
-def pick_ball_by_vision(node, cfg, table, log, choose=None, view_posj="rack", wait_s=None, on_frame=None):
+def pick_ball_by_vision(node, cfg, table, log, choose=None, view_posj="rack", wait_s=None, on_frame=None, goal_handle=None):
     """보는 자세에서 비전으로 공을 찾아 위에서 순응 하강 → 접촉에서 멈춤 → 쥠 → 들기. 실패하면 SkillAbort.
     choose(objects) → (x, y, z, n) 또는 None: 기본은 거치대(choose_ball, x 최소). view_posj: "rack" = pickup_view_posj,
-    그 밖엔 관절값(또는 None = 지금 자세). on_frame(objects): 프레임마다 (공 회수: 닿지 않는 곳 알림)."""
+    그 밖엔 관절값(또는 None = 지금 자세). on_frame(objects): 프레임마다 (공 회수: 닿지 않는 곳 알림).
+    goal_handle: 넘기면 공을 기다리는 동안 action 취소도 확인 (ReturnBall 은 최대 return_wait_s 기다린다)."""
     choose = choose or (lambda o: choose_ball(o, cfg, float(table.get("z_m") or 0.0)))
     if getattr(node, "objects", None) is None and not getattr(node, "fake", False):
         log.warning("[push_ball] /rally/perception/objects 를 아직 못 받음 — segmenter 가 떠 있는지 확인")
@@ -288,7 +290,7 @@ def pick_ball_by_vision(node, cfg, table, log, choose=None, view_posj="rack", wa
     # (0.370, 0.313, 0.100) 처럼 크게 틀려(평소 0.334, 0.282, 0.054) 엉뚱한 곳을 집었다
     found, t0, recent, last_stamp = None, time.monotonic(), [], None
     while time.monotonic() - t0 < (wait_s if wait_s is not None else cfg["pickup_wait_s"]):
-        node.check_stop()
+        node.check_stop(goal_handle)
         obj = getattr(node, "objects", None)
         if obj is not None and obj[0] - t_still >= cfg["pickup_settle_s"] and obj[0] != last_stamp:
             last_stamp = obj[0]
@@ -397,7 +399,7 @@ def execute(node):
 
             if not getattr(node, "holding", False) and cfg["pickup_source"] == "vision":
                 phase("pickup", 0.1)
-                lift_from = pick_ball_by_vision(node, cfg, table, log)
+                lift_from = pick_ball_by_vision(node, cfg, table, log, goal_handle=goal_handle)
             elif not getattr(node, "holding", False) and cfg["pickup_source"] == "posx" and cfg["pickup_posx"]:
                 phase("pickup", 0.1)
                 open_mm, grip_n = node.gripper_cfg("ball")
@@ -465,6 +467,11 @@ def execute(node):
             if paddle_w > cfg["paddle_max_width_mm"] and not getattr(node, "fake", False):   # 닫았는데 벌어져 있음 = 아직 뭔가 쥐고 있다 → 치지 않는다 (가짜 그리퍼는 물체 유무를 모름)
                 raise SkillAbort(f"ball_still_in_gripper (손가락을 닫았는데 폭 {paddle_w:.0f} mm — 공을 쥔 채 치지 않음)")
 
+            # 손 근접 SLOW 면 치지 않는다 — 스윙이 speed_scale 배로 느려져 공이 목표의 일부만 간다(0.5 배 → 거리 약 1/4, #87 리뷰).
+            # 원호 도중 배율이 바뀌면 어차피 speed_changed_during_arc 로 멈춘다. 손이 물러나 NORMAL 이 된 뒤 brain 이 다시 부른다
+            node.check_stop(goal_handle)
+            if node.speed_scale() < 1.0:
+                raise SkillAbort(f"slow_at_strike (안전 SLOW {node.safety_reason()} — 감속된 스윙으로는 치지 않음)")
             phase("contact", 0.4)
             node.set_contact(True)
             phase("push", 0.5)

@@ -49,6 +49,8 @@ class FakeSkills(Node):
         self.create_service(Speak, "/rally/voice/speak", self._speak, callback_group=group)
         self.create_service(Trigger, "/rally/robot/go_hand_view", self._hand_view, callback_group=group)
         self.declare_parameter("hand_distance", 0.30)
+        self.declare_parameter("hand_x", 0.86)
+        self.declare_parameter("slow", False)
         self.declare_parameter("grip", 0.0)
         self.declare_parameter("stop", False)
         self.declare_parameter("hand", True)
@@ -70,12 +72,13 @@ class FakeSkills(Node):
     def _publish_context(self) -> None:
         ctx = SceneContext()
         ctx.header.stamp = self.get_clock().now().to_msg()
-        ctx.safety.level = SafetyStatus.LEVEL_STOP if self.stop else SafetyStatus.LEVEL_NORMAL
+        ctx.safety.level = (SafetyStatus.LEVEL_STOP if self.stop else
+                            SafetyStatus.LEVEL_SLOW if self.get_parameter("slow").value else SafetyStatus.LEVEL_NORMAL)
         ctx.safety.reason = "fake_stop" if self.stop else ""
         ctx.hand.detected = self.hand
         ctx.hand.header.stamp = ctx.header.stamp
         ctx.hand.header.frame_id = "base_link"
-        ctx.hand.palm_pose.position.x = 0.86
+        ctx.hand.palm_pose.position.x = self.get_parameter("hand_x").value
         ctx.hand.distance_to_centerline = self.get_parameter("hand_distance").value
         ctx.hand.grip_closure = self.get_parameter("grip").value
         ctx.hand.palm_pose.position.z = 0.05

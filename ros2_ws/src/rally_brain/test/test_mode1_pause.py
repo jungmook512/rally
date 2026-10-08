@@ -22,6 +22,7 @@ def test_pause_waits_for_whole_mode1_then_resumes(request_at, monkeypatch):
     control.start('session')
     session.allow_trial = lambda: control.at_boundary(10)
     ret = session.action_client(ReturnBall, '/rally/skill/return_ball')
+    session.get_context().hand = hand(1.0)
     session.get_context().hand.distance_to_centerline = .20
     tree = build_session_tree(session, [1], 2)
     tree.tick_once()  # 타격 goal
@@ -36,7 +37,7 @@ def test_pause_waits_for_whole_mode1_then_resumes(request_at, monkeypatch):
     assert client.sent == 1 and ret.sent == 0 and trials == []
     if request_at != 'return':
         assert control.phase == 'pause_pending'
-    session.get_context().hand = hand()
+    session.get_context().hand = hand(1.0)
     tree.tick_once()  # 이탈 확인·회수 goal
     assert ret.sent == 1 and trials == []
     if request_at == 'return': control.pause('test')
@@ -45,7 +46,7 @@ def test_pause_waits_for_whole_mode1_then_resumes(request_at, monkeypatch):
     assert len(trials) == 1 and client.sent == ret.sent == 1
     assert session.difficulty == {1: 2}
     assert control.resume('session', control.pause_id, '')[0]
-    session.get_context().hand = hand()
+    session.get_context().hand = hand(1.0)
     tree.tick_once()
     assert client.sent == 2 and session.difficulty == {1: 2}
     control.pause('last trial')

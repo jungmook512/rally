@@ -54,7 +54,7 @@ def test_nearest_lane_and_positive_recipe_speed():
     for g, t in zip(client.goals, published):
         lane = session.skills_cfg['mode1']['lanes'][g.lane]
         r = lane['recipe']
-        assert .2 <= g.push_speed <= .35
+        assert .2 <= g.push_speed <= .37
         assert g.target.header.frame_id == 'base_link' and g.target.point.x >= .618 - 1e-7
         assert param(t, 'push_speed') == pytest.approx(g.push_speed)
         assert param(t, 'target_d_m') == pytest.approx(g.push_speed**2 / (2*r['decel_mps2']) + r['d0_m'])
@@ -62,19 +62,19 @@ def test_nearest_lane_and_positive_recipe_speed():
     assert session.trials_for_rules(1) == []  # 타격 4회 성공이어도 환자 성공으로 승급하지 않음
 
 
-def test_goal_changes_with_hand_and_level_and_saturates():
+def test_fixed_goal_and_hand_start_increase_with_level():
     c = m.mode1_config(cfg())
-    c['brain_speed_range_mps'] = [.1, .4]  # 수학 테스트: 실측 범위 내에서 목표 변화 확인
-    # 속도 .4는 실측 범위지만 운용 상한 .35는 그대로 유지. 각 경우 수식 일치.
     for lane in range(3):
         a = m.plan_push(hand(.86), lane, 0, c, {'centerline_x_m': .568})
         b = m.plan_push(hand(.86), lane, 2, c, {'centerline_x_m': .568})
-        near = m.plan_push(hand(.82), lane, 0, c, {'centerline_x_m': .568})
-        assert b['target_d'] < a['target_d'] and b['speed'] < a['speed']
-        assert near['target_d'] < a['target_d']
-        assert a['reach_requested'] == pytest.approx(2*c['lanes'][lane]['recipe']['rmse_m'])
-        far = m.plan_push(hand(.9), lane, 0, c, {'centerline_x_m': .568})
-        assert far['speed'] <= .4 and far['reach_actual'] >= far['reach_requested'] - 1e-9
+        near = m.plan_push(hand(.80), lane, 0, c, {'centerline_x_m': .568})
+        assert a['target'] == b['target'] == near['target']
+        assert a['speed'] == b['speed'] == near['speed']
+        assert .2 <= a['speed'] <= .37
+        assert a['target_d'] == pytest.approx(.35)
+        step = 2*c['lanes'][lane]['recipe']['rmse_m']
+        assert b['hand_start_d'] - a['hand_start_d'] == pytest.approx(2*step)
+        assert a['reach_requested'] == pytest.approx(step)
 
 
 @pytest.mark.parametrize('invalid', ['absent', 'frame', 'nan', 'stale', 'future', 'zero'])
@@ -128,22 +128,13 @@ def test_table_is_only_centerline_source():
     assert p['target'][0] >= .80 - 1e-9
 
 
-def test_reach_projection_and_boundary():
-    lane = {'start': [.43, .1], 'dir_deg': 30}
-    p = m.reach_target(hand(.8, .3), lane, .1, .568)
-    sx, sy, dx, dy = m.lane_geometry(lane)
-    assert (p[0]-sx)*dy == pytest.approx((p[1]-sy)*dx)
-    assert p[0] >= .618
-    assert m.reach_target(hand(.5), lane, .1, .568) is None
-
-
 def test_measured_error_and_failure_recorded():
     result = (True, {'success': True, 'error_mm': 42.0, 'stop_position': Point(x=.7, y=.1)})
     client, session, published = arrange([result, (False, {'failure_reason': 'no_ball_detected (설명)'})])
     tree = m.build_trial(session)
     assert run(tree) == Status.SUCCESS
     assert published[0].error_mm == pytest.approx(42) and metric(published[0], 'stop_x_m') == pytest.approx(.7)
-    assert run(tree) == Status.SUCCESS
+    assert run(tree) == Status.FAILURE
     assert published[1].notes == 'no_ball_detected' and client.sent == 2
 
 
@@ -159,15 +150,45 @@ def test_server_missing_fails_session(monkeypatch):
     assert client.sent == 0 and published == []
 
 
-def test_target_expires_while_waiting_for_server():
-    client, session, published = arrange([])
+def test_stale_hand_while_waiting_for_server_waits_for_new_sample():
+    client, session, published = arrange([OK])
     client.ready = False
     tree = m.build_trial(session)
-    tree.tick_once()  # 손 확인·목표 계산 후 서버 대기
-    session.node.get_clock = lambda: NS(now=lambda: NS(nanoseconds=time.time_ns()+2_000_000_000, to_msg=lambda: hand().header.stamp))
+    tree.tick_once()
+    session.get_context().hand.header.stamp.sec -= 10
     client.ready = True
-    assert run(tree) == Status.SUCCESS
-    assert client.sent == 0 and len(published) == 1 and published[0].notes == 'skill_precondition_failed'
+    tree.tick_once()
+    assert tree.status == Status.RUNNING and client.sent == 0 and published == []
+    session.get_context().hand = hand()
+    assert run(tree) == Status.SUCCESS and client.sent == 1
+
+
+@pytest.mark.parametrize('blocked', ['short_reach', 'slow', 'unknown'])
+def test_start_wait_rechecks_latest_hand_and_normal(blocked):
+    from rally_interfaces.msg import SafetyStatus
+    client, session, published = arrange([OK])
+    said = []
+    session.say = said.append
+    ctx = session.get_context()
+    if blocked == 'short_reach': ctx.hand = hand(.80)
+    if blocked == 'slow': ctx.safety.level = SafetyStatus.LEVEL_SLOW
+    if blocked == 'unknown': ctx.safety.level = 99
+    tree = m.build_trial(session)
+    for _ in range(4): tree.tick_once()
+    assert tree.status == Status.RUNNING and client.sent == 0 and published == []
+    assert said
+    ctx.hand = hand(.90)
+    ctx.safety.level = SafetyStatus.LEVEL_NORMAL
+    assert run(tree) == Status.SUCCESS and client.sent == 1
+    assert param(published[0], 'reach_actual_m') >= param(published[0], 'reach_requested_m')
+
+
+def test_failed_push_does_not_start_another_ball():
+    client, session, published = arrange([(False, {'failure_reason': 'slow_at_strike'}), OK])
+    assert run(build_session_tree(session, [1], 10)) == Status.FAILURE
+    assert client.sent == 1 and len(published) == 1
+    assert published[0].notes == 'slow_at_strike'
+    assert session.action_client(ReturnBall, m.RETURN_ACTION).sent == 0
 
 
 def test_stop_records_once():
