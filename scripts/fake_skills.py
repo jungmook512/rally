@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """가짜 스킬 서버 + 가짜 상황판 — 로봇·카메라 없이 bt_runner 흐름 확인용.
 
-    python3 scripts/fake_skills.py                    # 스킬(push_ball·pick_compliant·handover) 1 s 뒤 성공, 손 보임·막대 1개·안전 NORMAL 상황판 5 Hz
+    python3 scripts/fake_skills.py                    # 스킬(push_ball·pick_compliant·handover·resist_push) 1 s 뒤 성공, 손 보임·막대 1개·안전 NORMAL 상황판 5 Hz
     python3 scripts/fake_skills.py --fail-every 3     # 3번째마다 실패 (실제 스킬처럼 abort + failure_reason)
     python3 scripts/fake_skills.py --fail-every 1 --fail-reason no_object   # 매번 실패, 이유 지정
     python3 scripts/fake_skills.py --duration 5       # 스킬 하나에 5 s
@@ -26,7 +26,7 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rcl_interfaces.msg import SetParametersResult
 
-from rally_interfaces.action import Handover, PickCompliant, PushBall
+from rally_interfaces.action import Handover, PickCompliant, PushBall, ResistPush
 from rally_interfaces.msg import SafetyStatus, SceneContext, TrackedObject
 from rally_interfaces.srv import Speak
 
@@ -41,7 +41,8 @@ class FakeSkills(Node):
         self.stop = False
         self.hand = True
         group = ReentrantCallbackGroup()
-        for kind, name in ((Handover, "handover"), (PickCompliant, "pick_compliant"), (PushBall, "push_ball")):
+        for kind, name in ((Handover, "handover"), (PickCompliant, "pick_compliant"), (PushBall, "push_ball"),
+                           (ResistPush, "resist_push")):
             ActionServer(self, kind, f"/rally/skill/{name}", lambda h, k=kind, n=name: self._skill(h, k, n),
                          cancel_callback=lambda _: CancelResponse.ACCEPT, callback_group=group)
         self.create_service(Speak, "/rally/voice/speak", self._speak, callback_group=group)
@@ -86,7 +87,8 @@ class FakeSkills(Node):
         g = goal_handle.request
         detail = {"handover": lambda: f"dir={g.direction} tilt={g.tilt_deg:+.0f}°",
                   "pick_compliant": lambda: f"xy=({g.target.pose.position.x:.2f}, {g.target.pose.position.y:.2f})",
-                  "push_ball": lambda: f"lane={g.lane} speed={g.push_speed:.2f}"}[name]()
+                  "push_ball": lambda: f"lane={g.lane} speed={g.push_speed:.2f}",
+                  "resist_push": lambda: f"target={g.target_force_n:.1f} N stiffness={g.stiffness:.0f}"}[name]()
         self.get_logger().info(f"{name} #{n} 시작 ({detail})")
         t0 = time.monotonic()
         while time.monotonic() - t0 < self.duration_s:
@@ -111,6 +113,9 @@ class FakeSkills(Node):
                                    failure_reason=reason)
         if kind is PushBall:
             return PushBall.Result(success=ok, contact_force_peak=3.0, failure_reason=reason)   # 정지 위치는 아직 안 채움 (#42 와 같게)
+        if kind is ResistPush:
+            return ResistPush.Result(success=ok, peak_force_n=8.0 if ok else 4.0, hold_time_achieved_s=2.0 if ok else 0.5,
+                                     force_smoothness=0.1, failure_reason=reason)
         return PickCompliant.Result(success=ok, grip_width_mm=20.0)
 
 

@@ -28,14 +28,13 @@ from __future__ import annotations
 
 import math
 import random
-import time
 from typing import TYPE_CHECKING, Any
 
 import py_trees
 from geometry_msgs.msg import PoseStamped
 
 from rally_brain.behaviours import Do, Guard, WaitUntil
-from rally_brain.trees.steps import TrialState, reason_code, skill_step
+from rally_brain.trees.steps import HAND_DEFAULTS, TrialState, no_hand, reason_code, skill_step
 from rally_interfaces.action import Handover, PickCompliant
 from rally_interfaces.msg import TrackedObject, TrialResult
 
@@ -45,7 +44,7 @@ if TYPE_CHECKING:
 ACTION = "/rally/skill/handover"
 PICK_ACTION = "/rally/skill/pick_compliant"
 DEFAULTS: dict[str, Any] = {
-    "hand_wait_s": 10.0, "hand_wait_tries": 2, "hand_prompt": "손을 앞으로 내밀어 주세요",
+    **HAND_DEFAULTS,
     "retry_reasons": ["timeout", "no_object"], "max_retries": 1, "retry_prompt": "한 번 더 해 볼게요",
     "object_class": "rod", "object_wait_s": 5.0, "object_min_confidence": 0.5, "pick_x_range_m": [0.15, 0.55],
     "pick_retry_reasons": ["pick_failed"], "receive_prompt": "물체를 로봇 손 사이로 다시 넣어 주세요",
@@ -106,21 +105,6 @@ def trial_from_result(result: Handover.Result | None, tilt_deg: float, attempts:
         notes=notes)
 
 
-def hand_wait(session: Session, cfg: dict) -> py_trees.behaviour.Behaviour:
-    """손이 보이면 SUCCESS. hand_wait_s 씩 hand_wait_tries 번 기다리고, 사이마다 안내. 끝내 안 보이면 FAILURE."""
-    def seen() -> bool:
-        return session.safe() and session.hand_visible()
-
-    tries = max(1, int(cfg["hand_wait_tries"]))
-    children: list[py_trees.behaviour.Behaviour] = [WaitUntil("손 대기 1", seen, cfg["hand_wait_s"])]
-    for k in range(2, tries + 1):
-        children.append(py_trees.composites.Sequence(f"안내 후 대기 {k}", memory=True, children=[
-            Do("손 안내", lambda: session.say(cfg["hand_prompt"])),
-            WaitUntil(f"손 대기 {k}", seen, cfg["hand_wait_s"]),
-        ]))
-    return py_trees.composites.Selector("손 대기", memory=True, children=children)
-
-
 def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.behaviour.Behaviour:
     cfg = mode5_config(session.skills_cfg)
     rng = rng or random.Random()
@@ -130,7 +114,6 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
     pick_client = session.action_client(PickCompliant, PICK_ACTION)
     log = session.node.get_logger()
     robot = {"holding": False}    # 시도를 넘어 유지: 건네기에 실패하면 로봇이 아직 쥐고 있다
-    wait = {"t0": 0.0}
 
     # ── 기록 ──
     def record(notes: str, received: float = 0.0) -> None:
@@ -140,15 +123,6 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
 
     def record_interrupt(reason: str) -> None:
         record(reason_code(reason))
-
-    def mark_wait() -> None:
-        wait["t0"] = time.monotonic()
-
-    def record_no_hand() -> None:
-        waited = time.monotonic() - wait["t0"]
-        log.warn(f"[모드 5] 손이 {waited:.0f} s 동안 안 보임 — 이번 시도 건너뜀")
-        session.record(TrialResult(mode=TrialResult.MODE_HANDOVER, success=False, duration_s=waited,
-                                   metric_keys=["attempts"], metric_values=[0.0], notes="no_hand"))
 
     def start() -> None:
         state.start()
@@ -243,11 +217,7 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
             record("interrupted")
 
     return Guard("모드 5 시도", py_trees.composites.Selector("모드 5", memory=True, children=[
-        py_trees.composites.Sequence("손 없음", memory=True, children=[
-            Do("대기 시작", mark_wait),
-            py_trees.decorators.Inverter("손 보이면 넘어감", hand_wait(session, cfg)),
-            Do("손 없음 기록", record_no_hand),
-        ]),
+        no_hand(session, cfg, TrialResult.MODE_HANDOVER),
         py_trees.composites.Selector("진행", memory=True, children=[
             py_trees.composites.Sequence("집기 → 건네기 → 받기", memory=True, children=[
                 Do("시작", start), pick_branch, give, receive]),
