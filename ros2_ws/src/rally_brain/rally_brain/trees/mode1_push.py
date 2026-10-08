@@ -83,13 +83,14 @@ def plan_push(hand: HandState, lane: int, level: int, cfg: dict, table: dict) ->
         dmin, dmax = map(float, recipe["distance_range_m"])
         measured_lo, measured_hi = map(float, recipe["speed_range_mps"])
         allowed_lo, allowed_hi = map(float, cfg["push_speed_range"])
+        brain_lo, brain_hi = map(float, cfg["brain_speed_range_mps"])
         center = float(table["centerline_x_m"])
         margin = float(cfg["patient_margin_m"])
         factor = float(cfg["reach_rmse_multiplier"])
-        values = (a, d0, rmse, dmin, dmax, measured_lo, measured_hi, allowed_lo, allowed_hi, center, margin, factor)
+        values = (a, d0, rmse, dmin, dmax, measured_lo, measured_hi, allowed_lo, allowed_hi, brain_lo, brain_hi, center, margin, factor)
         if (not all(math.isfinite(v) for v in values) or a <= 0 or rmse <= 0 or factor <= 0
                 or not 0 <= dmin < dmax or not 0 < measured_lo < measured_hi
-                or not 0 < allowed_lo < allowed_hi or margin < 0.05):
+                or not 0 < allowed_lo < allowed_hi or not 0 < brain_lo < brain_hi or margin < 0.05):
             raise ValueError("invalid_recipe")
         sx, sy, dx, dy = lane_geometry(ln)
         reach = (max(0, level) + 1) * factor * rmse
@@ -98,7 +99,7 @@ def plan_push(hand: HandState, lane: int, level: int, cfg: dict, table: dict) ->
             raise ValueError("invalid_hand_target")
         p = hand.palm_pose.position
         hand_d = (p.x - sx) * dx + (p.y - sy) * dy
-        vlo, vhi = max(measured_lo, allowed_lo), min(measured_hi, allowed_hi)
+        vlo, vhi = max(measured_lo, allowed_lo, brain_lo), min(measured_hi, allowed_hi, brain_hi)
         if vlo > vhi:
             raise ValueError("unreachable_target")
         lo = max(dmin, d0 + vlo * vlo / (2 * a), (center + margin - sx) / dx)

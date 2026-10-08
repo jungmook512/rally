@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1900" height="1120" viewBox="0 0 1900 1120">
+<defs>
+<marker id="ah-1C2A30" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1C2A30"/></marker>
+<marker id="ah-F28C28" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#F28C28"/></marker>
+<marker id="ah-4A78D0" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4A78D0"/></marker>
+<marker id="ah-9B4FD0" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#9B4FD0"/></marker>
+<marker id="ah-55666D" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#55666D"/></marker>
+<pattern id="grain" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M0 20 Q10 16 20 20 T40 20" stroke="#DCC291" stroke-width="1.2" fill="none"/></pattern>
+<filter id="sh" x="-10%" y="-10%" width="130%" height="130%"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-opacity="0.18"/></filter>
+</defs>
+<rect width="1900" height="1120" fill="#F6F4EF"/>
+<text x="60" y="72" font-size="40" fill="#1C2A30" font-weight="800" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">RALLY 작업대 배치</text>
+<text x="60" y="110" font-size="21" fill="#55666D" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">위에서 본 모습 · 두산 M0609 + RG2 + 손목 RealSense · 모든 상호작용은 물체(공·패드·막대·손잡이)를 통해서만</text>
+<rect x="290.8" y="195.2" width="1003.2" height="790.4000000000001" rx="46" fill="#EBD5AA" stroke="#C9AE7C" stroke-width="3" filter="url(#sh)"/>
+<rect x="290.8" y="195.2" width="1003.2" height="790.4000000000001" rx="46" fill="url(#grain)" opacity="0.6"/>
+<rect x="853.2" y="195.2" width="440.79999999999995" height="790.4000000000001" fill="#9B4FD0" fill-opacity="0.05"/>
+<line x1="853.2" y1="205.2" x2="853.2" y2="975.6" stroke="#9B4FD0" stroke-width="4" stroke-dasharray="14 9"/>
+<rect x="846.2" y="286.40000000000003" width="14" height="53.2" rx="4" fill="#9B4FD0"/>
+<text x="867" y="964" font-size="19" fill="#9B4FD0" font-weight="700" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">로봇 이동 한계선 — 로봇은 넘지 않는다</text>
+<rect x="762.0" y="395.384" width="425.5999999999999" height="25.840000000000003" rx="5" fill="#3FBF7F" stroke="#00000022"/>
+<rect x="762.0" y="483.544" width="425.5999999999999" height="25.840000000000003" rx="5" fill="#3FBF7F" stroke="#00000022"/>
+<text x="1200" y="459" font-size="18" fill="#55666D" font-weight="600" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">레인 1</text>
+<rect x="762.0" y="507.408" width="425.5999999999999" height="25.840000000000003" rx="5" fill="#4A78D0" stroke="#00000022"/>
+<rect x="762.0" y="595.568" width="425.5999999999999" height="25.840000000000003" rx="5" fill="#4A78D0" stroke="#00000022"/>
+<text x="1200" y="571" font-size="18" fill="#55666D" font-weight="600" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">레인 2</text>
+<rect x="762.0" y="621.712" width="425.5999999999999" height="25.840000000000003" rx="5" fill="#3FBF7F" stroke="#00000022"/>
+<rect x="762.0" y="709.872" width="425.5999999999999" height="25.840000000000003" rx="5" fill="#3FBF7F" stroke="#00000022"/>
+<text x="1200" y="686" font-size="18" fill="#55666D" font-weight="600" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">레인 3</text>
+<circle cx="787.1" cy="452.4" r="23.9" fill="#FFFFFF" fill-opacity="0.9" stroke="#F28C28" stroke-width="2" stroke-dasharray="5 4"/>
+<circle cx="787.1" cy="564.4" r="23.9" fill="#FFFFFF" fill-opacity="0.9" stroke="#F28C28" stroke-width="2" stroke-dasharray="5 4"/>
+<circle cx="787.1" cy="678.7" r="23.9" fill="#FFFFFF" fill-opacity="0.9" stroke="#F28C28" stroke-width="2" stroke-dasharray="5 4"/>
+<circle cx="787.1" cy="564.4" r="23.9" fill="#FFFFFF" fill-opacity="0.9" stroke="#F28C28" stroke-width="2" stroke-dasharray="5 4"/>
+<line x1="819.0" y1="452.4" x2="1040.0" y2="452.4" stroke="#F28C28" stroke-width="4" marker-end="url(#ah-F28C28)" stroke-dasharray="10 7"/>
+<circle cx="1066.0" cy="452.4" r="23.9" fill="#F28C28" fill-opacity="1.0" stroke="#B85F10" stroke-width="2"/>
+<circle cx="1066" cy="412" r="17" fill="#F28C28"/>
+<text x="1066" y="419" font-size="19" fill="#FFFFFF" font-weight="700" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">1</text>
+<line x1="819.0" y1="564.4" x2="1100.8" y2="564.4" stroke="#F28C28" stroke-width="4" marker-end="url(#ah-F28C28)" stroke-dasharray="10 7"/>
+<circle cx="1126.8" cy="564.4" r="23.9" fill="#F28C28" fill-opacity="1.0" stroke="#B85F10" stroke-width="2"/>
+<circle cx="1127" cy="524" r="17" fill="#F28C28"/>
+<text x="1127" y="531" font-size="19" fill="#FFFFFF" font-weight="700" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">2</text>
+<line x1="819.0" y1="678.7" x2="994.4" y2="678.7" stroke="#F28C28" stroke-width="4" marker-end="url(#ah-F28C28)" stroke-dasharray="10 7"/>
+<circle cx="1020.4" cy="678.7" r="23.9" fill="#F28C28" fill-opacity="1.0" stroke="#B85F10" stroke-width="2"/>
+<circle cx="1020" cy="639" r="17" fill="#F28C28"/>
+<text x="1020" y="646" font-size="19" fill="#FFFFFF" font-weight="700" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">3</text>
+<line x1="819.0" y1="564.4" x2="933.6" y2="564.4" stroke="#F28C28" stroke-width="4" marker-end="url(#ah-F28C28)" stroke-dasharray="10 7"/>
+<circle cx="959.6" cy="564.4" r="23.9" fill="#F28C28" fill-opacity="1.0" stroke="#B85F10" stroke-width="2"/>
+<circle cx="960" cy="524" r="17" fill="#F28C28"/>
+<text x="960" y="531" font-size="19" fill="#FFFFFF" font-weight="700" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">4</text>
+<path d="M600.0,225.60000000000002 L600.0,294.0 L822.8000000000001,294.0 L822.8000000000001,214.2" fill="#DCE8FA" stroke="#4A78D0" stroke-width="5" stroke-linejoin="round"/>
+<circle cx="640.4" cy="259.8" r="23.9" fill="#F28C28" fill-opacity="1.0" stroke="#B85F10" stroke-width="2"/>
+<circle cx="690.6" cy="259.8" r="23.9" fill="#F28C28" fill-opacity="1.0" stroke="#B85F10" stroke-width="2"/>
+<circle cx="740.7" cy="259.8" r="23.9" fill="#F28C28" fill-opacity="1.0" stroke="#B85F10" stroke-width="2"/>
+<circle cx="790.9" cy="259.8" r="23.9" fill="#F28C28" fill-opacity="1.0" stroke="#B85F10" stroke-width="2"/>
+<circle cx="640.4000000000001" cy="259.8" r="34" fill="none" stroke="#1C2A30" stroke-width="2.5" stroke-dasharray="6 5"/>
+<line x1="812.8" y1="202.8" x2="701.2" y2="202.8" stroke="#4A78D0" stroke-width="3" marker-end="url(#ah-4A78D0)"/>
+<text x="564" y="256" font-size="17" fill="#1C2A30" font-weight="700" text-anchor="end" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">집는 자리</text>
+<text x="564" y="280" font-size="15" fill="#55666D" font-weight="500" text-anchor="end" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">(늘 같은 위치)</text>
+<text x="606" y="323" font-size="19" fill="#4A78D0" font-weight="700" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">공 거치대 (모드 1, 공 4개)</text>
+<text x="606" y="347" font-size="15" fill="#4A78D0" font-weight="500" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">기울어져 있어 공이 앞으로 내려온다</text>
+<rect x="678.4" y="689.2" width="26.6" height="190.0" rx="6" fill="#F8D6D7" stroke="#E0454B" stroke-width="4"/>
+<text x="666" y="788" font-size="19" fill="#E0454B" font-weight="700" text-anchor="end" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">패드 거치대</text>
+<text x="666" y="814" font-size="17" fill="#E0454B" font-weight="500" text-anchor="end" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">(모드 3)</text>
+<rect x="363.0" y="465.0" width="190" height="190" rx="22" fill="#D9DDE0" stroke="#9AA3A8" stroke-width="3" filter="url(#sh)"/>
+<circle cx="458.0" cy="560.0" r="62" fill="#FFFFFF" stroke="#B6BDC2" stroke-width="3"/>
+<circle cx="458.0" cy="560.0" r="22" fill="#4AA3D8"/>
+<text x="458" y="688" font-size="22" fill="#1C2A30" font-weight="800" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">두산 M0609</text>
+<text x="458" y="716" font-size="17" fill="#55666D" font-weight="500" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">로봇 베이스 (원점)</text>
+<line x1="458.0" y1="560.0" x2="684.0" y2="564.56" stroke="#FFFFFF" stroke-width="44" stroke-linecap="round" opacity="0.95"/>
+<line x1="458.0" y1="560.0" x2="684.0" y2="564.56" stroke="#B6BDC2" stroke-width="2" stroke-linecap="round"/>
+<rect x="672.0" y="534.56" width="52" height="60" rx="8" fill="#5E6B73"/>
+<rect x="724.0" y="538.56" width="20" height="14" rx="3" fill="#2F3A40"/><rect x="724.0" y="576.56" width="20" height="14" rx="3" fill="#2F3A40"/>
+<rect x="678.0" y="512.56" width="40" height="18" rx="4" fill="#20262A"/>
+<text x="698" y="503" font-size="15" fill="#55666D" font-weight="600" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">RealSense</text>
+<text x="698" y="621" font-size="16" fill="#55666D" font-weight="600" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">RG2 그리퍼</text>
+<line x1="336.4" y1="909.6" x2="406.4" y2="909.6" stroke="#55666D" stroke-width="3" marker-end="url(#ah-55666D)"/>
+<line x1="336.4" y1="909.6" x2="336.4" y2="839.6" stroke="#55666D" stroke-width="3" marker-end="url(#ah-55666D)"/>
+<text x="414" y="916" font-size="15" fill="#55666D" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">x (환자 쪽)</text>
+<text x="330" y="832" font-size="15" fill="#55666D" font-weight="500" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">y</text>
+<rect x="1345.2" y="316.79999999999995" width="80" height="486.40000000000003" rx="40" fill="#D7E9F3" stroke="#7FA9C2" stroke-width="3"/>
+<circle cx="1403.2" cy="560.0" r="44" fill="#F3D2B8" stroke="#C9A285" stroke-width="3"/>
+<text x="1389" y="256" font-size="24" fill="#1C2A30" font-weight="800" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">환자</text>
+<text x="1389" y="841" font-size="16" fill="#55666D" font-weight="500" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">앉아서 팔 뻗기</text>
+<rect x="1440" y="170" width="410" height="880" rx="22" fill="#FFFFFF" stroke="#E2DED5" stroke-width="2" filter="url(#sh)"/>
+<text x="1468" y="220" font-size="25" fill="#1C2A30" font-weight="800" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">모드 1 · 공 굴려주기</text>
+<text x="1468" y="250" font-size="17" fill="#55666D" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">팔 뻗기 훈련 — 한 사이클 = 공 4개</text>
+<circle cx="1484" cy="293" r="17" fill="#F28C28"/>
+<text x="1484" y="300" font-size="19" fill="#FFFFFF" font-weight="700" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">1</text>
+<text x="1514" y="300" font-size="20" fill="#1C2A30" font-weight="700" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">거치대에서 집기</text>
+<text x="1514" y="328" font-size="16" fill="#55666D" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">기울어진 레일 덕분에 공이 늘 같은</text>
+<text x="1514" y="350" font-size="16" fill="#55666D" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">자리로 내려온다 (볼링공 리필 방식)</text>
+<circle cx="1484" cy="395" r="17" fill="#F28C28"/>
+<text x="1484" y="402" font-size="19" fill="#FFFFFF" font-weight="700" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">2</text>
+<text x="1514" y="402" font-size="20" fill="#1C2A30" font-weight="700" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">레인 입구에 놓기</text>
+<text x="1514" y="430" font-size="16" fill="#55666D" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">환자 손 위치에 맞춰 레인 1·2·3 중</text>
+<text x="1514" y="452" font-size="16" fill="#55666D" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">하나를 고른다</text>
+<circle cx="1484" cy="497" r="17" fill="#F28C28"/>
+<text x="1484" y="504" font-size="19" fill="#FFFFFF" font-weight="700" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">3</text>
+<text x="1514" y="504" font-size="20" fill="#1C2A30" font-weight="700" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">밀어서 굴리기</text>
+<text x="1514" y="532" font-size="16" fill="#55666D" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">속도를 골라 밀면 레인 벽을 따라</text>
+<text x="1514" y="554" font-size="16" fill="#55666D" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">곧게 굴러간다</text>
+<circle cx="1484" cy="599" r="17" fill="#F28C28"/>
+<text x="1484" y="606" font-size="19" fill="#FFFFFF" font-weight="700" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">4</text>
+<text x="1514" y="606" font-size="20" fill="#1C2A30" font-weight="700" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">목표 근처에 정지</text>
+<text x="1514" y="634" font-size="16" fill="#55666D" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">비전이 정지 위치를 재고, 다음 시도의</text>
+<text x="1514" y="656" font-size="16" fill="#55666D" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">속도를 고쳐 오차를 줄인다 (학습)</text>
+<line x1="1468" y1="696" x2="1822" y2="696" stroke="#E2DED5" stroke-width="2"/>
+<text x="1468" y="734" font-size="20" fill="#1C2A30" font-weight="800" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">범례</text>
+<g transform="translate(1470,752)"><rect width="34" height="14" rx="3" fill="#3FBF7F"/></g>
+<text x="1520" y="764" font-size="17" fill="#1C2A30" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">가이드 레인 벽</text>
+<g transform="translate(1470,788)"><rect width="34" height="14" rx="3" fill="#4A78D0"/></g>
+<text x="1520" y="800" font-size="17" fill="#1C2A30" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">가운데 레인 벽</text>
+<g transform="translate(1470,824)"><circle cx="17" cy="7" r="9" fill="#F28C28" stroke="#B85F10" stroke-width="2"/></g>
+<text x="1520" y="836" font-size="17" fill="#1C2A30" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">공 (지름 63 mm)</text>
+<g transform="translate(1470,860)"><circle cx="17" cy="7" r="9" fill="#FFF" stroke="#F28C28" stroke-width="2" stroke-dasharray="4 3"/></g>
+<text x="1520" y="872" font-size="17" fill="#1C2A30" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">레인 입구 (공 놓는 자리)</text>
+<g transform="translate(1470,896)"><rect width="34" height="14" rx="3" fill="#F8D6D7" stroke="#E0454B" stroke-width="2"/></g>
+<text x="1520" y="908" font-size="17" fill="#1C2A30" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">패드 거치대 (모드 3 예정)</text>
+<g transform="translate(1470,932)"><line x1="0" y1="7" x2="34" y2="7" stroke="#9B4FD0" stroke-width="4" stroke-dasharray="8 5"/></g>
+<text x="1520" y="944" font-size="17" fill="#1C2A30" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">로봇 이동 한계선</text>
+<text x="1468" y="1002" font-size="16" fill="#55666D" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">모드 5·7(건네기·저항 밀기)도 한계선</text>
+<text x="1468" y="1024" font-size="16" fill="#55666D" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, Pretendard, sans-serif">앞에서 물체를 내밀어 진행한다</text>
+</svg>

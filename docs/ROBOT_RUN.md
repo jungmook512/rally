@@ -1,0 +1,99 @@
+# 실로봇 실행 가이드 (로봇·인식 PC, 혼자 시험할 때)
+
+터미널 **3개**로 나눈다. 1·2 는 띄워 둔 채로 두고, 끌 때는 그 터미널에서 **Ctrl+C**.
+서버 PC brain·대시보드와 붙이는 전체 실행은 `README.md` 순서를 따른다 (이 문서는 로컬 모드 `RALLY_LOCAL=1`).
+
+## 0. 시작 전
+
+- 컨트롤러 전원 ON, 펜던트 **자동 모드**, 서보 ON
+- 코드를 고쳤으면 빌드: `cd ~/rally/ros2_ws && colcon build --packages-up-to rally_bringup`
+
+## 1. 터미널 1 — 두산 bringup
+
+```bash
+cd ~/rally && scripts/robot.sh bringup
+```
+`Successfully switched controllers` 가 나오면 터미널 2 로. 이미 떠 있으면 거부한다 (두 번 띄우면 컨트롤러 연결이 꼬임).
+
+## 2. 터미널 2 — 안전감시 · 힘 · 그리퍼 · 스킬서버 (+ 비전)
+
+```bash
+cd ~/rally && scripts/robot.sh nodes             # 비전 컨테이너도 같이 (Ctrl+C 하면 비전도 꺼짐)
+cd ~/rally && scripts/robot.sh nodes novision    # 비전 없이 (모드 5 수동 좌표, 레시피 --manual)
+```
+`skill_server ready` 가 나오면 터미널 3 에서 명령. 이 터미널에 로봇 노드 로그가 그대로 나온다.
+
+## 3. 터미널 3 — 명령
+
+```bash
+cd ~/rally && source scripts/robot.sh env        # 터미널 열 때마다 한 번
+```
+
+필요할 때 하나씩 (차례로 치는 목록 아님):
+
+```bash
+scripts/robot.sh status          # 뭐가 떠 있는지 + 컨트롤러 점검 + 비전 공 한 번
+scripts/robot.sh observe         # 관측 자세로 (특이점이라 힘이 0 일 때)
+scripts/robot.sh estop           # 멈출 때만: 소프트 비상정지 → 이후 동작 거부. 풀려면 scripts/robot.sh reset
+scripts/robot.sh down            # 꼬였을 때만: 남은 bringup·노드·비전 전부 정리 → 다시 터미널 1, 2
+```
+
+### 모드 1 — 공 굴리기 (거치대 공 비전 집기 → 레인 입구 → 치기 → 환자 손 보기)
+
+```bash
+ros2 action send_goal /rally/skill/push_ball rally_interfaces/action/PushBall "{lane: 1, push_speed: 0.3}" --feedback
+```
+- `lane`: 0 왼쪽 · 1 가운데 · 2 오른쪽. `push_speed`: 0.10 ~ 0.60 m/s
+- 거치대에 공이 여러 개면 x 가 가장 작은 공(로봇 쪽)을 집는다
+
+**레시피 실측** (속도 → 굴러간 거리)
+```bash
+python3 scripts/push_recipe.py --lane 1 --speeds 0.2 0.3 0.4 0.5 --repeats 3          # 정지 위치 비전 (못 재면 cm 입력)
+python3 scripts/push_recipe.py --lane 1 --speeds 0.2 0.3 0.4 0.5 --repeats 3 --manual # 줄자만
+```
+끝에 나오는 `recipe: {decel_mps2: …, d0_m: …}` 를 `skills.yaml mode1.lanes[레인]` 에 넣는다.
+
+### 모드 5 — 건네고 받기
+
+막대 위치를 먼저 잰다: 수동 모드에서 손끝을 막대 가운데에 대고 `python3 scripts/print_pose.py` → x, y 기록 → 자동 모드.
+막대는 **y 방향(보라색 한계선과 평행)** 으로 눕힌다. 굵기 2 cm 이상.
+
+```bash
+# 단계별 (X, Y 는 잰 값, m)
+ros2 action send_goal /rally/skill/pick_compliant rally_interfaces/action/PickCompliant "{target: {header: {frame_id: base_link}, pose: {position: {x: X, y: Y}}}, yaw: 0.0, grip_force_n: 20.0, z_stiffness: 300.0}" --feedback
+ros2 action send_goal /rally/skill/handover rally_interfaces/action/Handover "{direction: 0, object_class: rod, tilt_deg: 0.0, timeout_s: 30.0}" --feedback   # 건네기
+ros2 action send_goal /rally/skill/handover rally_interfaces/action/Handover "{direction: 1, object_class: rod, tilt_deg: 0.0, timeout_s: 30.0}" --feedback   # 받기 → 제자리
+
+# 한 사이클 자동 (집기 → 기울여 건네기 → 받기 → 제자리)
+python3 scripts/mode5_cycle.py --cycles 1 --manual rod:X,Y,0 --tilt 30 30
+python3 scripts/mode5_cycle.py --cycles 2 --manual rod:X,Y,0 --tilt 45 90
+```
+
+### 자주 쓰는 확인
+
+```bash
+python3 scripts/check_controller.py                         # 컨트롤러·힘·특이점 점검
+python3 scripts/print_pose.py                               # 지금 손끝 좌표 (수동 모드에서도)
+ros2 topic echo /rally/perception/objects --once            # 비전 (frame_id: base_link 여야 함)
+ros2 service call /rally/gripper/command rally_interfaces/srv/GripperCommand "{width_mm: 90.0, force_n: 20.0, wait_until_done: true}"   # 그리퍼 열기 (닫기: width_mm 0.0)
+```
+
+## 4. 실로봇 없이 — 시뮬 (RViz)
+
+```bash
+scripts/sim_robot.sh up          # 에뮬레이터 + RViz + 가상 그리퍼·비전·막대·환자 손 (도메인 77, 실로봇과 안 섞임)
+source scripts/sim_robot.sh env  # 명령 터미널 — 위 3절 명령을 그대로 (모드 5 막대는 rod:0.30,-0.25,0)
+scripts/sim_robot.sh down
+```
+
+## 문제가 생기면
+
+| 증상 | 확인 |
+|---|---|
+| 힘이 0, 접촉 감지 안 됨 | 특이점 자세 → `scripts/robot.sh observe` |
+| goal 거부 | 안전 STOP → 원인 해소 후 `scripts/robot.sh reset` |
+| `not_arrived` · `amovel_rejected` | 터미널 1 bringup 로그의 알람 (관절 한계·속도 한계·특이점) |
+| 비전 공 없음 | `scripts/vision_local.sh logs`, 거치대가 카메라에 보이는지 |
+| 그리퍼 서비스 대기만 | 시뮬 도메인(77) 터미널인지 확인 → `source scripts/robot.sh env` |
+| "more than one action server" · goal 거부 | 로봇 노드 중복 → `scripts/robot.sh down` 후 터미널 1, 2 다시 |
+| 로그 보기 | 터미널 1(bringup)·2(노드)에 그대로 나온다. 비전은 `scripts/vision_local.sh logs` |

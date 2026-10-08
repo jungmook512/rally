@@ -128,7 +128,7 @@ def test_schema_and_prompt():
 
 def test_real_tunable_list_from_skills_yaml():
     limits = tunable_limits(load_skills())
-    assert limits[1]["push_speed"] == Limit(0.05, 0.35)
+    assert limits[1]["push_speed"] == Limit(0.10, 0.60)                # skills.yaml mode1.push_speed_range (10/7 실측: 테니스공은 0.15 로 거의 안 굴러감 → 0.10~0.60, #42)
     assert limits[7]["target_force_n"].default == 5.0          # mode7.target_force_start_n
     assert 3 not in limits                                      # 모드 3 은 LLM 조절 금지
 

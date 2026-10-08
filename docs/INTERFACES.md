@@ -29,7 +29,7 @@ webcam_link          측면 웹캠 (table_link 기준 static)
 | `/webcam/image_raw` | `sensor_msgs/Image` | usb_cam (측면) | 60 Hz | SensorData |
 | `/rally/robot/wrench` | `geometry_msgs/WrenchStamped` | rally_robot/force_publisher | 50 Hz (두산 서비스 폴링 — 100 Hz 면 컨트롤러 서비스가 막힘) | SensorData |
 | `/rally/robot/tcp_pose` | `geometry_msgs/PoseStamped` | rally_robot/force_publisher | 10 Hz | SensorData |
-| `/rally/gripper/state` | `sensor_msgs/JointState` — name `[rg2_width_mm, rg2_grip]`, position `[폭 mm, grip 감지 0/1]`, effort 미사용 | rally_robot/gripper_node | 20 Hz | SensorData |
+| `/rally/gripper/state` | `sensor_msgs/JointState` — name `[rg2_width_mm, rg2_grip, rg2_target_mm]`, position `[폭 mm, grip 감지 0/1, 마지막 명령 폭 mm(-1 = 없음)]`, effort 미사용. 쥠 판단 = grip 비트 **또는** 명령 폭보다 5 mm 이상 벌어져 멈춤(공을 손가락 끝에 걸치면 grip 비트 0) | rally_robot/gripper_node | 20 Hz | SensorData |
 | `/joint_states` | `sensor_msgs/JointState` | dsr_bringup2 | 100 Hz | SensorData |
 | `/tf`, `/tf_static` | `tf2_msgs/TFMessage` | 여러 노드 | - | 표준 |
 
@@ -137,7 +137,7 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 - 중앙선은 `table.yaml table.centerline_x_m` 한 곳. 레인별 입구·방향·실측 `recipe`는 `skills.yaml mode1.lanes`.
   recipe에 `decel_mps2`, `d0_m`, `rmse_m`, `distance_range_m`, `speed_range_mps`를 사용한다.
 - 난이도는 개발용 `reach_m = (max(level, 0) + 1) × mode1.reach_rmse_multiplier × rmse_m`.
-  목표는 손을 레인 축에 투영한 위치에서 reach만큼 앞이며 중앙선+5 cm, 실측 거리·속도 범위와 운용 속도 제한의 교집합으로 제한한다.
+  목표는 손을 레인 축에 투영한 위치에서 reach만큼 앞이며 중앙선+5 cm, 실측 거리·속도 범위와 로봇·Brain 속도 제한의 교집합으로 제한한다.
   단일 목표를 정한 뒤 `v = sqrt(2a(d-d0))`를 계산한다. 교집합이 없거나 레시피가 유효하지 않으면 goal 없이 실패 사유 기록.
 - `/rally/skill/push_ball`에 **target(base_link) + 양수 push_speed**를 함께 보낸다. Brain이 속도를 계산하고 로봇은 최종 클램프·안전 감시.
   `push_speed=0`으로 로봇이 계산하는 경로는 단독 시험용이며 본 훈련 트리에서 사용하지 않는다.
