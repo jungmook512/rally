@@ -2,8 +2,8 @@
 담당: 정정인 · 모드 1 (10/8 회의: 환자가 공을 받았다 놓으면 로봇이 집어 거치대 맨 윗부분에 넣는다)
 
 단계 (feedback.phase)
-  find         : 관측 자세(관절 이동)에서 비전 공 중 레인 통로 안(goal.lane, -1 = 아무 레인)이고 정지한 것을 찾는다.
-                 연속 3 프레임 1 cm 안 일치 (PushBall 거치대 집기와 같은 규칙). 거치대 공은 레인 통로 밖이라 무시
+  find         : 관측 자세(관절 이동)에서 비전 공 중 회수 구역(return_zone_*, 레인 무관 — 10/8) 안이고 정지한 것을 찾는다.
+                 연속 3 프레임 1 cm 안 일치 (PushBall 거치대 집기와 같은 규칙). 거치대 공은 구역 밖(+y)이라 무시
   out_of_reach : 공이 레인 안에 있지만 로봇이 닿는 곳(return_reach_x_max_m, 중앙선 앞)보다 멀다 → 그대로 기다림.
                  brain 이 이 피드백을 보고 "공을 로봇 쪽으로 굴려 주세요" 안내 (timeout_s 넘으면 ball_out_of_reach)
   pickup       : 공 위 → 멈춤 → 순응 → 천천히 하강, 접촉에서 멈춤 → 쥠 → 들기 (PushBall 과 같은 집기)
@@ -19,7 +19,7 @@ import time
 from rally_interfaces.action import ReturnBall
 from rally_robot.dsr_helpers import SkillAbort, move_checked, movej_checked, movej_to_pose
 from rally_robot.skills.push_ball import DEFAULTS as PUSH_DEFAULTS
-from rally_robot.skills.push_ball import _joint, _speeds, hand_view_pose, pick_ball_by_vision
+from rally_robot.skills.push_ball import _joint, _speeds, hand_view_joint, hand_view_pose, pick_ball_by_vision
 
 DEFAULTS = dict(
     rack_drop_posx=None,           # 거치대 맨 윗부분에 공을 놓는 TCP 자세 (mm, ZYZ deg) — 직접교시
@@ -27,13 +27,19 @@ DEFAULTS = dict(
     rack_drop_wait_s=0.5,          # 연 뒤 공이 굴러 내려갈 시간
     return_wait_s=20.0,            # goal.timeout_s 가 0 이면 — 공이 닿는 곳에 올 때까지 기다림
     return_reach_x_max_m=0.55,     # 공 중심 x 가 이 이하여야 집는다 (TCP 가 safety workspace_x_max 0.57 안)
-    return_lane_halfwidth_m=0.07,  # 레인 통로 반폭 (레인 벽 간격 ≈ 11.7 cm 의 반 + 여유)
+    return_lane_halfwidth_m=0.07,  # 레인 통로 반폭 (레인 벽 간격 ≈ 11.7 cm 의 반 + 여유) — return_zone_enabled false 일 때만
+    # 회수 구역 (10/8 정정인): 레인과 상관없이 이 범위 안 공이면 집는다. 환자가 굴린 공이 레인 밖으로 가도 회수
+    return_zone_enabled=True,
+    return_zone_x_min_m=0.28,      # 이보다 로봇 쪽은 팔이 너무 접힘 → 무시
+    return_zone_y_min_m=-0.30,
+    return_zone_y_max_m=0.21,      # 이보다 +y 는 거치대(y ≈ 0.28) — 거치대 공을 집지 않게
 )
 
 
 def lane_ball_candidates(objects, cfg, lanes, lane, table_z):
     """TrackedObjectArray → (닿는 공 [(x, y, z)], 닿지 않는 공 [(x, y, z)]) — 비전 보정(vision_offset_m) 뒤 base 좌표.
-    레인 통로 안·정지·신뢰도·테이블 근처 높이인 공만. 순수 함수 — 테스트용."""
+    정지·신뢰도·테이블 근처 높이인 공 중 회수 구역(return_zone_*, 레인 무관) 안 — return_zone_enabled false 면 레인 통로 안.
+    닿는 공 = x ≤ return_reach_x_max_m, 닿지 않는 공 = 그보다 먼(선 너머) 공. 순수 함수 — 테스트용."""
     if objects is None or objects.header.frame_id not in ("base_link", ""):
         return [], []
     ox, oy, oz = cfg["vision_offset_m"]
@@ -44,6 +50,10 @@ def lane_ball_candidates(objects, cfg, lanes, lane, table_z):
             continue
         x, y, z = o.position.x + ox, o.position.y + oy, o.position.z + oz
         if z > table_z + cfg["pickup_z_max_above_table_m"]:
+            continue
+        if cfg["return_zone_enabled"]:
+            if x >= cfg["return_zone_x_min_m"] and cfg["return_zone_y_min_m"] <= y <= cfg["return_zone_y_max_m"]:
+                (near if x <= cfg["return_reach_x_max_m"] else far).append((x, y, z))
             continue
         for i in want:
             if i >= len(lanes):
@@ -139,7 +149,7 @@ def execute(node):
             hv = hand_view_pose(cfg, lanes, table)
             if cfg["hand_view"] and hv:
                 phase("hand_view")
-                movej_to_pose(node, hv, *_joint(node))
+                movej_to_pose(node, hv, *hand_view_joint(node, cfg))
             elif posj:
                 movej_checked(node, posj, *_joint(node))
 

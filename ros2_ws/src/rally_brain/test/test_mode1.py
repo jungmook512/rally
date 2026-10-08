@@ -281,7 +281,7 @@ def test_cancel_during_clear_wait_records_once_and_never_returns(monkeypatch):
     assert published[0].notes == 'interrupted'
 
 
-def test_catch_needs_fresh_open_grab_hold_release():
+def test_catch_needs_fresh_grab_hold_release():
     c = m.mode1_config(cfg())
     w = m.CatchWatch(c, 1_000_000_000)
     def sample(t, grip, **kwargs):
@@ -291,8 +291,8 @@ def test_catch_needs_fresh_open_grab_hold_release():
         for k, v in kwargs.items(): setattr(h, k, v)
         return h
     assert not w.update(sample(.9, 0), 1_100_000_000)  # 타격 전
-    assert not w.update(sample(1.1, .8), 1_100_000_000)  # 펼침부터 필요
-    assert not w.update(sample(1.2, 0), 1_200_000_000)
+    assert not w.update(sample(1.1, .8), 1_100_000_000)
+    assert not w.update(sample(1.2, 0), 1_200_000_000)  # 쥠 0.1 s — 유지 부족
     assert not w.update(sample(1.3, .8), 1_300_000_000)
     assert not w.update(sample(1.3, .8), 1_800_000_000)  # 반복 표본으로 유지 판정 금지
     assert not w.grabbed
@@ -304,6 +304,11 @@ def test_catch_needs_fresh_open_grab_hold_release():
         assert not w.update(sample(t, g), int(t*1e9))
     assert not w.update(sample(1.7, 0, detected=False), 1_700_000_000)
     assert not w.update(sample(1.8, 0), 1_800_000_000)  # 미검출 이후 이전 파지로 성공 금지
+    # 10/8 실로봇: 쥔 채로 화면에 들어옴(펼침 못 봄) → 0.3 s 넘게 쥐었다 펴면 받기
+    w = m.CatchWatch(c, 1_000_000_000)
+    for t in (1.1, 1.2, 1.3, 1.45):
+        assert not w.update(sample(t, .8), int(t*1e9))
+    assert w.grabbed and w.update(sample(1.5, .1), 1_500_000_000)
 
 
 def test_hand_view_failure_does_not_push():
@@ -399,3 +404,52 @@ def test_clear_wait_logs_reason_on_change_and_period(monkeypatch):
     session.get_context().hand = hand()
     assert run(tree) == Status.SUCCESS
     assert '[모드 1] 손 이탈 확인 — 회수 진행' in logged
+
+
+def test_stop_measured_during_catch_watch():
+    # 받기 관측 중 레인 공이 멈춰 있으면 정지 위치 → error_mm·stop_d_m (vision_offset_m 보정 뒤)
+    from rally_interfaces.msg import TrackedObject
+    config = cfg()
+    config['mode1']['stop_still_s'] = 0.0
+    client, session, published = arrange([OK], config)
+    c = m.mode1_config(config)
+    plan = m.plan_push(hand(), 1, 0, c, session.table_cfg)
+    sx, sy, dx, dy = m.lane_geometry(c['lanes'][1])
+    ox, oy, _ = c['vision_offset_m']
+    ball = TrackedObject(class_name='ball', confidence=.9)
+    ball.position.x = plan['target'][0] + .02 * dx - ox
+    ball.position.y = plan['target'][1] + .02 * dy - oy
+    ball.position.z = .046
+    session.get_context().objects.objects = [ball]
+    assert run(m.build_trial(session)) == Status.SUCCESS
+    t = published[0]
+    assert t.error_mm == pytest.approx(20.0, abs=.5)
+    assert metric(t, 'stop_d_m') == pytest.approx(plan['target_d'] + .02, abs=1e-3)
+
+
+def test_lane_ball_and_stopwatch():
+    from rally_interfaces.msg import TrackedObject, TrackedObjectArray
+    c = m.mode1_config(cfg())
+    c['vision_offset_m'] = [0., 0., 0.]
+    sx, sy, dx, dy = m.lane_geometry(c['lanes'][1])
+    arr = TrackedObjectArray()
+    arr.header.frame_id = 'base_link'
+
+    def ball(along, lat=0., z=.046):
+        o = TrackedObject(class_name='ball', confidence=.9)
+        o.position.x, o.position.y, o.position.z = sx + along * dx - lat * dy, sy + along * dy + lat * dx, z
+        return o
+    # 입구 2 cm(너무 가까움)·옆 레인·들린 공은 빼고 레인 안에서 가장 멀리 간 공
+    arr.objects = [ball(.02), ball(.30), ball(.25, lat=.15), ball(.40, z=.20)]
+    assert m.lane_ball(c, arr, 1)[0] == pytest.approx(.30)
+    w = m.StopWatch(.5, .01)
+    assert w.add(0., (.7, 0.)) is None and w.add(.6, (.705, 0.)) == (.7, 0.)
+    assert w.add(.7, None) is None and w.add(.8, (.7, 0.)) is None
+
+
+def test_hand_clear_not_narrower_than_return_margin(monkeypatch):
+    # #98: 선 기준 SLOW 가 0.10 으로 줄어도 회수 전 손 이탈 기준은 0.25 (회수 때 로봇이 선 근처까지 옴)
+    monkeypatch.setattr(m, 'load_safety', lambda: {'stop_distance_m': .15, 'slow_distance_m': .10})
+    assert m.mode1_config(cfg())['hand_clear_m'] == pytest.approx(.25)
+    monkeypatch.setattr(m, 'load_safety', lambda: {'stop_distance_m': .15, 'slow_distance_m': .30})
+    assert m.mode1_config(cfg())['hand_clear_m'] == pytest.approx(.30)
