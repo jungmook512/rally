@@ -3,7 +3,7 @@ from geometry_msgs.msg import TransformStamped
 from rclpy.time import Time
 from tf2_ros import Buffer
 
-from rally_human.hand_pose_node import load_depth_scale, lookup_camera_tf
+from rally_human.hand_pose_node import checked_depth_scale, load_depth_scale, lookup_camera_tf
 
 
 def _buf_with_tf_at(sec: float) -> Buffer:
@@ -43,6 +43,25 @@ def test_no_tf_at_all():
 def test_depth_scale_from_yaml(tmp_path):
     p = tmp_path / "hand_eye.yaml"
     p.write_text("depth_scale: 0.971\n")
-    assert load_depth_scale(str(p)) == 0.971
-    assert load_depth_scale(str(tmp_path / "none.yaml")) == 1.0
-    assert load_depth_scale("") == 1.0
+    assert load_depth_scale(str(p)) == (0.971, "")
+    assert load_depth_scale("") == (1.0, "")                       # 설치 안 됨 → 조용히 1.0
+
+
+def test_depth_scale_warns_when_file_unusable(tmp_path):
+    """파일은 있는데 못 쓰면 1.0 + 경고 문구 (#91 리뷰 2)."""
+    missing = tmp_path / "none.yaml"
+    assert load_depth_scale(str(missing))[0] == 1.0 and load_depth_scale(str(missing))[1]
+    nokey = tmp_path / "a.yaml"
+    nokey.write_text("tcp_T_camera_optical: {}\n")
+    assert load_depth_scale(str(nokey))[0] == 1.0 and "depth_scale" in load_depth_scale(str(nokey))[1]
+    broken = tmp_path / "b.yaml"
+    broken.write_text("depth_scale: [\n")
+    assert load_depth_scale(str(broken))[0] == 1.0 and load_depth_scale(str(broken))[1]
+
+
+def test_depth_scale_out_of_range_falls_back():
+    """손 거리가 안전 판정에 바로 쓰이므로 이상한 배율은 1.0 (#91 리뷰 1)."""
+    assert checked_depth_scale(0.971) == (0.971, "")
+    for bad in (0.0971, 9.71, float("nan"), -1.0):
+        v, why = checked_depth_scale(bad)
+        assert v == 1.0 and why

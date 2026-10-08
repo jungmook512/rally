@@ -104,8 +104,14 @@ class HandPoseNode(Node):
             raise ValueError("image_rotation_deg 는 0/90/180/270")
         self.base_frame = self.get_parameter("base_frame").value
         self.centerline_x = self._load_centerline()
-        self.depth_scale = float(self.get_parameter("depth_scale").value) or load_depth_scale(
-            self.get_parameter("hand_eye_path").value or default_hand_eye_path())
+        # 깊이 배율 (#77): 파라미터 > hand_eye.yaml > 1.0. 손 거리가 safety_monitor 판정에 바로 쓰이므로 범위 밖이면 1.0 (#91 리뷰)
+        scale, why = float(self.get_parameter("depth_scale").value), ""
+        if not scale:
+            scale, why = load_depth_scale(self.get_parameter("hand_eye_path").value or default_hand_eye_path())
+        self.depth_scale, why_range = checked_depth_scale(scale)
+        for w in (why, why_range):
+            if w:
+                self.get_logger().warn(w)
         self._tf_fallback_logged = False
         self.gestures = GestureFilter(int(self.get_parameter("gesture_frames").value))
         self.landmarker = self._make_landmarker()
@@ -308,12 +314,34 @@ def default_hand_eye_path() -> str:
         return ""
 
 
-def load_depth_scale(path: str) -> float:
-    """hand_eye.yaml 의 depth_scale (#77, RealSense 정렬 깊이 약 3 % 길게 나옴). 파일·키가 없으면 1.0."""
+DEPTH_SCALE_RANGE = (0.9, 1.1)      # 이 밖의 배율은 잘못 넣은 값으로 본다 (10/8 실측 0.971)
+
+
+def load_depth_scale(path: str) -> tuple[float, str]:
+    """hand_eye.yaml 의 depth_scale (#77, RealSense 정렬 깊이 약 3 % 길게 나옴) → (배율, 문제 설명 — 없으면 "").
+    파일이 없으면(설치 안 됨) 조용히 1.0. 파일은 있는데 못 읽거나 키가 없으면 1.0 + 설명 (노드가 경고로 남김)."""
+    if not path:
+        return 1.0, ""
     try:
-        return float((yaml.safe_load(Path(path).read_text()) or {}).get("depth_scale", 1.0)) if path else 1.0
-    except Exception:               # noqa: BLE001
-        return 1.0
+        data = yaml.safe_load(Path(path).read_text()) or {}
+        if not isinstance(data, dict):
+            raise ValueError("최상위가 dict 가 아님")
+    except Exception as e:          # noqa: BLE001
+        return 1.0, f"{path} 를 못 읽음 ({type(e).__name__}: {e}) → 깊이 배율 1.0 (보정 없음)"
+    if "depth_scale" not in data:
+        return 1.0, f"{path} 에 depth_scale 이 없음 → 깊이 배율 1.0 (보정 없음)"
+    try:
+        return float(data["depth_scale"]), ""
+    except (TypeError, ValueError):
+        return 1.0, f"{path} 의 depth_scale={data['depth_scale']!r} 를 숫자로 못 읽음 → 1.0"
+
+
+def checked_depth_scale(scale: float) -> tuple[float, str]:
+    """범위(DEPTH_SCALE_RANGE) 밖·NaN 이면 1.0 + 설명. 손 거리가 안전 판정에 바로 들어가서 잘못된 배율을 그대로 쓰지 않는다 (#91 리뷰 1)."""
+    lo, hi = DEPTH_SCALE_RANGE
+    if not (lo <= scale <= hi):     # NaN 도 여기서 걸림
+        return 1.0, f"깊이 배율 {scale} 이 {lo}~{hi} 밖 → 1.0 으로 씀 (hand_eye.yaml·파라미터 확인)"
+    return scale, ""
 
 
 def rotate_up(up_cam: np.ndarray, deg: int) -> np.ndarray:
