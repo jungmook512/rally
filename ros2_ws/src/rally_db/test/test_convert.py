@@ -59,6 +59,19 @@ def test_trial_to_event_is_json_and_has_end_time():
     assert ev["ended_at"].startswith("2025-10-09T08:53:20.5")   # header.stamp 그대로
 
 
+def test_unmeasured_values_become_null():
+    # 못 잰 값(NaN, #69) → DB NULL·JSON null. jsonb 는 NaN 을 거부하고, AVG 는 NULL 을 건너뛴다
+    import json
+    nan = float("nan")
+    msg = NS(header=header(), session_id=SID, mode=1, trial_index=1, success=True, error_mm=nan,
+             duration_s=2.0, param_keys=["lane"], param_values=[0.0],
+             metric_keys=["contact_force_peak", "stop_x_m"], metric_values=[3.0, nan], notes="")
+    row = convert.trial_to_row(msg, SID)
+    assert row["error_mm"] is None and row["metrics"] == {"contact_force_peak": 3.0, "stop_x_m": None}
+    ev = convert.trial_to_event(row, trial_id=1)
+    assert json.loads(json.dumps(ev, allow_nan=False))["error_mm"] is None
+
+
 def test_wrench_row_matches_columns():
     msg = NS(header=header(), wrench=NS(force=vec(1, 2, 3), torque=vec(4, 5, 6)))
     row = convert.wrench_to_row(msg, SID)

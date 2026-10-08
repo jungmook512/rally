@@ -134,7 +134,7 @@ function addTrial(t, flash) {
   $("trials-empty").hidden = true;
   const tr = document.createElement("tr");
   if (flash) tr.className = "new";
-  const err = t.mode === 1 || t.mode === 3 ? `${Number(t.error_mm).toFixed(0)} mm` : "—";
+  const err = (t.mode === 1 || t.mode === 3) && t.error_mm != null ? `${Number(t.error_mm).toFixed(0)} mm` : "—";
   tr.innerHTML = `<td>${t.trial_index}</td><td>${esc(modeName(t.mode))}</td>` +
     `<td class="${t.success ? "ok" : "fail"}">${t.success ? "성공" : "실패"}</td>` +
     `<td>${err}</td><td>${t.duration_s != null ? Number(t.duration_s).toFixed(1) + " s" : "—"}</td>` +

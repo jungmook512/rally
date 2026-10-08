@@ -3,7 +3,7 @@
 
   /rally/session/run (RunSession action 서버)  대시보드·음성이 세션 시작 요청
      goal.modes 가 비면 [1, 3, 5, 7] (skills.yaml mode3_challenge.enabled 가 false 면 3 제외)
-     goal.trials_per_mode 가 0 이면 파라미터 trials_per_mode (기본 5)
+     goal.trials_per_mode 가 0 이면 파라미터 trials_per_mode (기본 5) — 모드 1 은 거치대 공 개수(mode1.balls_per_cycle)로 고정 (session_tree.TRIAL_COUNTS)
   /rally/brain/context      구독 — 트리의 조건(안전·손)은 모두 이 상황판을 본다 (context_builder 가 발행)
   /rally/brain/trial_result 발행 — 시도마다 (Reliable)
   /rally/brain/state        발행 — 지금 실행 중인 트리 블록 이름, 2 Hz (대시보드용)

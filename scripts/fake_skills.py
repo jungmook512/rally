@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """가짜 스킬 서버 + 가짜 상황판 — 로봇·카메라 없이 bt_runner 흐름 확인용.
 
-    python3 scripts/fake_skills.py                    # handover 1 s 뒤 성공, 손 보임·안전 NORMAL 상황판 5 Hz
+    python3 scripts/fake_skills.py                    # 스킬(push_ball·pick_compliant·handover) 1 s 뒤 성공, 손 보임·막대 1개·안전 NORMAL 상황판 5 Hz
     python3 scripts/fake_skills.py --fail-every 3     # 3번째마다 실패 (실제 스킬처럼 abort + failure_reason)
     python3 scripts/fake_skills.py --fail-every 1 --fail-reason no_object   # 매번 실패, 이유 지정
     python3 scripts/fake_skills.py --duration 5       # 스킬 하나에 5 s
@@ -26,8 +26,8 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rcl_interfaces.msg import SetParametersResult
 
-from rally_interfaces.action import Handover
-from rally_interfaces.msg import SafetyStatus, SceneContext
+from rally_interfaces.action import Handover, PickCompliant, PushBall
+from rally_interfaces.msg import SafetyStatus, SceneContext, TrackedObject
 from rally_interfaces.srv import Speak
 
 
@@ -41,15 +41,16 @@ class FakeSkills(Node):
         self.stop = False
         self.hand = True
         group = ReentrantCallbackGroup()
-        ActionServer(self, Handover, "/rally/skill/handover", self._handover,
-                     cancel_callback=lambda _: CancelResponse.ACCEPT, callback_group=group)
+        for kind, name in ((Handover, "handover"), (PickCompliant, "pick_compliant"), (PushBall, "push_ball")):
+            ActionServer(self, kind, f"/rally/skill/{name}", lambda h, k=kind, n=name: self._skill(h, k, n),
+                         cancel_callback=lambda _: CancelResponse.ACCEPT, callback_group=group)
         self.create_service(Speak, "/rally/voice/speak", self._speak, callback_group=group)
         self.declare_parameter("stop", False)
         self.declare_parameter("hand", True)
         self.add_on_set_parameters_callback(self._on_params)
         self._ctx_pub = self.create_publisher(SceneContext, "/rally/brain/context", qos_profile_sensor_data)
         self.create_timer(0.2, self._publish_context)
-        self.get_logger().info(f"가짜 handover {duration_s} s" + (f", {fail_every}번째마다 실패" if fail_every else ""))
+        self.get_logger().info(f"가짜 스킬 {duration_s} s" + (f", {fail_every}번째마다 실패" if fail_every else ""))
 
     def _on_params(self, params) -> SetParametersResult:
         for p in params:
@@ -67,6 +68,11 @@ class FakeSkills(Node):
         ctx.safety.level = SafetyStatus.LEVEL_STOP if self.stop else SafetyStatus.LEVEL_NORMAL
         ctx.safety.reason = "fake_stop" if self.stop else ""
         ctx.hand.detected = self.hand
+        ctx.objects.header.frame_id = "base_link"
+        rod = TrackedObject(class_name="rod", confidence=0.9)   # 모드 5 집기용 (거치 자리 x 0.30, y 0.20)
+        rod.header.frame_id = "base_link"
+        rod.position.x, rod.position.y = 0.30, 0.20
+        ctx.objects.objects = [rod]
         self._ctx_pub.publish(ctx)
 
     def _speak(self, request: Speak.Request, response: Speak.Response) -> Speak.Response:
@@ -74,27 +80,38 @@ class FakeSkills(Node):
         response.done = True
         return response
 
-    def _handover(self, goal_handle) -> Handover.Result:
+    def _skill(self, goal_handle, kind, name):
         self.count += 1
         n = self.count
-        self.get_logger().info(f"handover #{n} 시작 (dir={goal_handle.request.direction})")
+        g = goal_handle.request
+        detail = {"handover": lambda: f"dir={g.direction} tilt={g.tilt_deg:+.0f}°",
+                  "pick_compliant": lambda: f"xy=({g.target.pose.position.x:.2f}, {g.target.pose.position.y:.2f})",
+                  "push_ball": lambda: f"lane={g.lane} speed={g.push_speed:.2f}"}[name]()
+        self.get_logger().info(f"{name} #{n} 시작 ({detail})")
         t0 = time.monotonic()
         while time.monotonic() - t0 < self.duration_s:
             if goal_handle.is_cancel_requested:
                 goal_handle.canceled()
-                self.get_logger().info(f"handover #{n} 취소됨")
-                return Handover.Result(success=False, failure_reason="canceled")
+                self.get_logger().info(f"{name} #{n} 취소됨")
+                return self._result(kind, False, "canceled")
             if self.stop:
                 goal_handle.abort()
-                self.get_logger().info(f"handover #{n} abort (STOP)")
-                return Handover.Result(success=False, failure_reason="safety_stop")
+                self.get_logger().info(f"{name} #{n} abort (STOP)")
+                return self._result(kind, False, "safety_stop")
             time.sleep(0.05)
         ok = not (self.fail_every and n % self.fail_every == 0)
-        # 실제 skills/handover.py 처럼 실패는 abort (결과 메시지에 failure_reason)
+        # 실제 스킬처럼 실패는 abort (결과 메시지에 failure_reason)
         goal_handle.succeed() if ok else goal_handle.abort()
-        self.get_logger().info(f"handover #{n} {'성공' if ok else f'실패 ({self.fail_reason})'}")
-        return Handover.Result(success=ok, wrist_angle_at_grasp_deg=12.5, handover_time_s=self.duration_s,
-                               failure_reason="" if ok else self.fail_reason)
+        self.get_logger().info(f"{name} #{n} {'성공' if ok else f'실패 ({self.fail_reason})'}")
+        return self._result(kind, ok, "" if ok else self.fail_reason)
+
+    def _result(self, kind, ok: bool, reason: str):
+        if kind is Handover:
+            return Handover.Result(success=ok, wrist_angle_at_grasp_deg=12.5, handover_time_s=self.duration_s,
+                                   failure_reason=reason)
+        if kind is PushBall:
+            return PushBall.Result(success=ok, contact_force_peak=3.0, failure_reason=reason)   # 정지 위치는 아직 안 채움 (#42 와 같게)
+        return PickCompliant.Result(success=ok, grip_width_mm=20.0)
 
 
 def main() -> None:

@@ -169,7 +169,8 @@ def trial_payload(trial, send_fields: Sequence[str]) -> dict[str, Any]:
         elif f == "success":
             out[f] = bool(trial.success)
         elif f in ("error_mm", "duration_s"):
-            out[f] = round(float(getattr(trial, f)), 3)
+            value = float(getattr(trial, f))
+            out[f] = round(value, 3) if math.isfinite(value) else None   # 못 잰 값(NaN) → null (JSON 에 NaN 금지)
         else:
             raise ValueError(f"send_fields 에 모르는 필드 {f!r} — 숫자 필드만 허용")
     return out
