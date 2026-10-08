@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""손 인식 체크리스트 1·2·4·5·6·7번 자동 판정 창 — 카메라 화면 + HandState 값 + 항목별 통과 여부.
+"""손 인식 체크리스트 1·2·4·5·7번 자동 판정 창 (6번 주먹 정지는 #59 에서 뺌) — 카메라 화면 + HandState 값 + 항목별 통과 여부.
 
 hand_pose 노드가 켜진 상태에서 실행. 창 안내대로 손을 움직이면 항목이 하나씩 초록(통과)으로 바뀐다.
     python3 scripts/check_hand_live.py --image /webcam/image_raw --min-hz 15     # 노트북 웹캠 (20 fps)
@@ -16,9 +16,8 @@ import numpy as np
 import rclpy
 from cv_bridge import CvBridge
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
+from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
-from std_msgs.msg import Bool
 
 from rally_interfaces.msg import HandState
 
@@ -36,8 +35,6 @@ class Checker(Node):
         self.frame: np.ndarray | None = None
         self.create_subscription(Image, image_topic, self._on_image, qos_profile_sensor_data)
         self.create_subscription(HandState, "/rally/perception/hand", self._on_hand, qos_profile_sensor_data)
-        latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
-        self.create_subscription(Bool, "/rally/safety/estop", self._on_estop, latched)
         self.reset()
 
     def reset(self) -> None:
@@ -49,9 +46,6 @@ class Checker(Node):
             self.no_hand_ok = False
             self.grip_min, self.grip_max = 1.0, 0.0
             self.gestures_seen: set[int] = set()
-            self.prev_gesture = 0
-            self.fist_episodes = 0
-            self.estops = 0
             self.wrist_bins = {"아래(≤30)": False, "옆(60~120)": False, "위(≥150)": False}
 
     # ----- 입력 -----
@@ -75,9 +69,6 @@ class Checker(Node):
             self.grip_max = max(self.grip_max, m.grip_closure)
             if m.gesture:
                 self.gestures_seen.add(m.gesture)
-            if m.gesture == 1 and self.prev_gesture != 1:
-                self.fist_episodes += 1
-            self.prev_gesture = m.gesture
             w = m.wrist_angle_deg
             if w <= 30:
                 self.wrist_bins["아래(≤30)"] = True
@@ -85,11 +76,6 @@ class Checker(Node):
                 self.wrist_bins["옆(60~120)"] = True
             elif w >= 150:
                 self.wrist_bins["위(≥150)"] = True
-
-    def _on_estop(self, m: Bool) -> None:
-        if m.data and time.monotonic() - self.t_start > 1.0:     # 켤 때 받는 지난 값(latched)은 무시
-            with self.lock:
-                self.estops += 1
 
     # ----- 판정 -----
     def hz(self) -> float:
@@ -108,8 +94,6 @@ class Checker(Node):
             ("4 쥔 정도", self.grip_min <= 0.2 and self.grip_max >= 0.8,
              f"최소 {self.grip_min:.2f}(≤0.2) 최대 {self.grip_max:.2f}(≥0.8)"),
             ("5 제스처", len(self.gestures_seen & {1, 2, 3}) == 3, f"본 것: {seen or '-'} / 주먹·펼침·검지"),
-            ("6 주먹 정지", self.estops >= 1 and self.estops == self.fist_episodes,
-             f"정지 요청 {self.estops}회 / 주먹 {self.fist_episodes}회 (같아야 함)"),
             ("7 손목 각도", all(self.wrist_bins.values()), (f"남은 것: {todo_w}" if todo_w else "아래·옆·위 다 봄")
              + "  (손가락은 카메라 쪽·옆으로 눕혀서, 위로 세우면 각도 없음)"),
         ]

@@ -1,9 +1,9 @@
 """rally_robot/safety_monitor.py — 100 Hz 안전 감시 → /rally/safety/status (Reliable)
 담당: 정정인
-입력: /rally/perception/hand (distance_to_centerline, gesture), /rally/voice/intent (is_emergency), /rally/safety/estop (Bool),
+입력: /rally/perception/hand (distance_to_centerline), /rally/voice/intent (is_emergency), /rally/safety/estop (Bool),
       /rally/robot/wrench (힘 한계·nudge), /rally/robot/tcp_pose (작업 공간·이동 속도), /rally/safety/contact_expected (skill_server)
 규칙 (safety.yaml): 손 0.25 m → SLOW 0.5, 0.15 m → STOP / |F| > 25 N → STOP / nudge: 정지 중·접촉 예정 아님 && 한 주기 |Δ|F|| > 임계 → STOP
-      / TCP 가 작업 공간 밖 → STOP / 주먹·"그만"·estop → STOP
+      / TCP 가 작업 공간 밖 → STOP / "그만"·estop → STOP (주먹 제스처 정지는 #59 에서 뺌)
 - nudge 는 "접촉이 없어야 할 때 누가 로봇을 쳤다" 용이다. 스킬이 접촉 예정 플래그를 올린 동안(집기 하강·핸드오버 당김·저항 밀기)과
   로봇이 움직이는 동안(가속 관성)은 판정하지 않는다. 절대 힘 한계는 항상 적용한다.
   '움직이는 중' = TCP 직선 속도 ≥ nudge_speed_max_mps **또는** 툴 회전 속도 ≥ nudge_ang_speed_max_dps.
@@ -144,8 +144,6 @@ class SafetyMonitor(Node):
     def on_hand(self, m):
         self.last_rx["hand"] = time.monotonic()
         self.hand_dist = float(m.distance_to_centerline) if m.detected else None
-        if m.detected and m.gesture == HandState.GESTURE_FIST:
-            self._stop("fist_gesture")
 
     def on_intent(self, m):
         if m.is_emergency:

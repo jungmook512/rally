@@ -10,7 +10,7 @@
      NaN = "손은 보이는데 거리 모름" (INTERFACES 2.2). safety_monitor 가 detected && NaN 이면 SLOW (#44 리뷰)
      깊이는 컬러와 시각이 가장 가까운 프레임 (50 ms 초과면 깊이 없음)
   4. 손 모양 값(쥔 정도·제스처)은 MediaPipe hand_world_landmarks(손 모양만의 3D)로 — 깊이 없이 계산, 회전과 무관
-  5. 제스처는 N 프레임 연속일 때만 확정 (gesture.py). 주먹 확정 시 /rally/safety/estop 한 번
+  5. 제스처는 N 프레임 연속일 때만 확정 (gesture.py). 정지 수단이 아니다 (주먹 정지는 #59 에서 뺌)
 손이 없으면 detected=false 를 계속 발행한다 (안 보내면 "손 없음" 과 "노드 죽음" 을 구분할 수 없음).
 """
 import math
@@ -29,10 +29,9 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.duration import Duration
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
+from rclpy.qos import qos_profile_sensor_data
 from rclpy.time import Time
 from sensor_msgs.msg import CameraInfo, Image
-from std_msgs.msg import Bool
 from tf2_ros import Buffer, TransformListener
 
 from rally_interfaces.msg import HandState
@@ -94,7 +93,6 @@ class HandPoseNode(Node):
         self.declare_parameter("image_rotation_deg", 0)          # 세로 장착이면 270 시험 가능 (10/7 bag 에선 차이 없음)
         self.declare_parameter("rate_hz", 30.0)
         self.declare_parameter("gesture_frames", 5)               # 30 Hz 기준 약 0.17 s
-        self.declare_parameter("fist_estop_enabled", True)
         self.declare_parameter("centerline_x_m", float("nan"))    # NaN 이면 rally_bringup/config/table.yaml
         self.declare_parameter("min_detection_confidence", 0.5)
 
@@ -103,8 +101,7 @@ class HandPoseNode(Node):
             raise ValueError("image_rotation_deg 는 0/90/180/270")
         self.base_frame = self.get_parameter("base_frame").value
         self.centerline_x = self._load_centerline()
-        self.gestures = GestureFilter(int(self.get_parameter("gesture_frames").value),
-                                      bool(self.get_parameter("fist_estop_enabled").value))
+        self.gestures = GestureFilter(int(self.get_parameter("gesture_frames").value))
         self.landmarker = self._make_landmarker()
 
         self.bridge = CvBridge()
@@ -127,12 +124,8 @@ class HandPoseNode(Node):
         self.create_subscription(CameraInfo, p("info_topic").value, self._on_info, qos_profile_sensor_data,
                                  callback_group=io_group)
         self.pub = self.create_publisher(HandState, "/rally/perception/hand", qos_profile_sensor_data)
-        latched = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL,
-                             history=HistoryPolicy.KEEP_LAST, depth=1)
-        self.estop_pub = self.create_publisher(Bool, "/rally/safety/estop", latched)
         self.create_timer(1.0 / float(p("rate_hz").value), self._tick, callback_group=work_group)
-        self.get_logger().info(f"손 인식 시작: 회전 {self.rot}°, 중앙선 x={self.centerline_x:.3f} m, "
-                               f"주먹 정지 {'켬' if self.gestures.fist_enabled else '끔'}")
+        self.get_logger().info(f"손 인식 시작: 회전 {self.rot}°, 중앙선 x={self.centerline_x:.3f} m")
 
     # ----- 준비 -----
     def _make_landmarker(self):
@@ -198,12 +191,8 @@ class HandPoseNode(Node):
         except Exception as e:      # noqa: BLE001 — 한 프레임 실패로 노드가 죽으면 안전 감시가 손을 잃는다
             self.get_logger().error(f"손 처리 실패: {type(e).__name__}: {e}", throttle_duration_sec=2.0)
             out.detected = False
-        stable, estop = self.gestures.update(out.detected, out.gesture)
-        out.gesture = stable
+        out.gesture = self.gestures.update(out.detected, out.gesture)
         self.pub.publish(out)
-        if estop:
-            self.estop_pub.publish(Bool(data=True))
-            self.get_logger().warn("주먹 제스처 → 비상정지 요청")
 
     def _process(self, cmsg: Image, dmsg: Image | None, out: HandState) -> None:
         import mediapipe as mp

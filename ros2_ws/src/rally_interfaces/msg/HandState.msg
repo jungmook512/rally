@@ -1,6 +1,6 @@
 # 3D 손 관절 상태 (MediaPipe + RealSense 깊이). 좌표는 header.frame_id (기본 base_link).
 uint8 GESTURE_NONE=0
-uint8 GESTURE_FIST=1      # 즉시 정지
+uint8 GESTURE_FIST=1      # 주먹 (정지 수단 아님 — #59)
 uint8 GESTURE_OPEN=2      # 재개 / 준비
 uint8 GESTURE_POINT=3
 
