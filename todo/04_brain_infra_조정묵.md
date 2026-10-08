@@ -44,7 +44,7 @@
 - [ ] **HMI** 모드 7 실시간 힘 게이지 + 목표선, 회차별 최대 힘 추이 / `/rally/robot/wrench` 실시간 힘 그래프 (Timescale 최근 10 s)
 
 ## Day 5 — 모드 1 + LLM 루프
-- [ ] `trees/mode1_push.py`: 손 위치 → 목표 → SuggestParams → PushBall → 판정 → TrialResult → (10/8, #42 요청) 1차: 레인 0→1→2 순환 · 속도 0.3 고정 · 시도 수 = `mode1.balls_per_cycle`(4). 손 대기·SuggestParams 는 로봇이 `error_mm` 을 채운 뒤
+- [ ] `trees/mode1_push.py`: 손 위치 → 목표 → SuggestParams → PushBall → 판정 → TrialResult → (10/8, #42 요청) 1차: 레인 무작위(#75 리뷰) · 속도 0.3 고정 · 시도 수 = `mode1.balls_per_cycle`(4). 손 대기·SuggestParams 는 로봇이 `error_mm` 을 채운 뒤
 - [ ] `prompts/suggest_params.md`: 최근 5회 + 유사 사례 3개 → 다음 파라미터 JSON → 최근 5회는 #62. 유사 사례 3개는 `find_similar_trials`(#68)를 llm_advisor 요청에 붙이는 일만 남음
 - [x] `embeddings.py`: 시도 특징 32차원 벡터(파라미터·오차·속도·방향 정규화) → `feature_vec`, pgvector 코사인 검색 `repository.find_similar_trials` → #68. 설정 `embeddings.yaml`, 검색은 코사인 대신 L2(값 크기가 중요), recorder 가 저장 때 계산, 실제 DB 확인
 - [x] `llm.yaml` 전송 필드 화이트리스트(익명화) → #62 `send_fields`(숫자 필드만, session_id·notes 제외). LLM 이 조절할 수 있는 값·범위는 `skills.yaml llm_tunable`

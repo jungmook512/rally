@@ -12,6 +12,7 @@
   <depend>sensor_msgs</depend>
   <depend>tf2_ros</depend>
   <depend>cv_bridge</depend>
+  <depend>python3-numpy</depend>
   <depend>ament_index_python</depend>
   <depend>realsense2_camera</depend>
   <test_depend>ament_copyright</test_depend>

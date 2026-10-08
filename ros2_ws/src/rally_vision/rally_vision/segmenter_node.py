@@ -180,6 +180,7 @@ class SegmenterNode(Node):
         d("tcp_pose_topic", "/rally/robot/tcp_pose")
         d("tcp_pose_max_age_s", 0.5)
         d("gripper2cam_path", default_gripper2cam_path())
+        d("transform_source", "tcp_npy")          # 카메라→base 변환: "tcp_npy"(tcp_pose × npy, 기본) · "tf"(tf2 만) · "auto"(tf 우선, 없으면 tcp_npy)
         d("debug_hz", 10.0)
         d("moving_mps", 0.05)
         d("known_only", True)                     # INTERFACES 클래스(ball·velcro_ball·pad·rod·cup·hand) 만 발행
@@ -191,11 +192,16 @@ class SegmenterNode(Node):
         self.known_only = bool(g("known_only"))
         self.base_frame = g("base_frame")
         self.tcp_max_age = float(g("tcp_pose_max_age_s"))
+        self.transform_source = str(g("transform_source"))
+        if self.transform_source not in ("tcp_npy", "tf", "auto"):
+            self.get_logger().warn(f"transform_source={self.transform_source!r} 모름 → tcp_npy")
+            self.transform_source = "tcp_npy"
+        self._tf_src_logged = None
         self.g2c = None
         if g("gripper2cam_path"):
             try:
                 self.g2c = np.load(g("gripper2cam_path"))
-                self.get_logger().info(f"T_gripper2camera: {g('gripper2cam_path')} (tf 없을 때 폴백)")
+                self.get_logger().info(f"T_gripper2camera: {g('gripper2cam_path')} (transform_source={self.transform_source})")
             except Exception as e:  # noqa: BLE001
                 self.get_logger().warn(f"npy 로드 실패 {g('gripper2cam_path')}: {e}")
 
@@ -242,19 +248,35 @@ class SegmenterNode(Node):
 
     # --- 변환 ---
     def _cam_to_base(self, stamp, cam_frame: str):
-        """(T 4x4, frame_id). tf → tcp_pose 폴백 → None(카메라 좌표)."""
-        try:
-            tf = self.tf_buffer.lookup_transform(self.base_frame, cam_frame, Time.from_msg(stamp), timeout=Duration(seconds=0.02))
-            tr, q = tf.transform.translation, tf.transform.rotation
-            return pj.pose_to_matrix(tr.x, tr.y, tr.z, q.x, q.y, q.z, q.w), self.base_frame
-        except Exception:  # noqa: BLE001
-            pass
+        """(T 4x4, frame_id). transform_source 에 따라 tf2 / tcp_pose×npy 를 고르고, 둘 다 없으면 None(카메라 좌표).
+
+        기본은 tcp_npy: 로봇 PC 의 URDF 가 카메라 프레임을 설계 치수로 발행하면 tf 가 캘리브레이션값(npy)을 이겨
+        좌표가 치우친다(10/7 실측 x +9.5, y −9.2 mm, PR #42). 검증된 static tf 를 올린 뒤 "tf" 또는 "auto" 로 바꾼다.
+        """
+        src = self.transform_source
+        if src in ("tf", "auto"):
+            try:
+                tf = self.tf_buffer.lookup_transform(self.base_frame, cam_frame, Time.from_msg(stamp), timeout=Duration(seconds=0.02))
+                tr, q = tf.transform.translation, tf.transform.rotation
+                self._log_source("tf", f"{self.base_frame}←{cam_frame}")
+                return pj.pose_to_matrix(tr.x, tr.y, tr.z, q.x, q.y, q.z, q.w), self.base_frame
+            except Exception:  # noqa: BLE001
+                if src == "tf":
+                    self.get_logger().warn(f"tf {self.base_frame}←{cam_frame} 없음 (transform_source=tf) → 카메라 좌표로 발행", throttle_duration_sec=5.0)
+                    return None, cam_frame
         if self.tcp is not None and self.g2c is not None and time.monotonic() - self.tcp[1] < self.tcp_max_age:
             p, q = self.tcp[0].pose.position, self.tcp[0].pose.orientation
             T = pj.base_from_tcp(pj.pose_to_matrix(p.x, p.y, p.z, q.x, q.y, q.z, q.w), self.g2c)
+            self._log_source("tcp_npy", "tcp_pose × T_gripper2camera.npy")
             return T, self.base_frame
-        self.get_logger().warn(f"tf {self.base_frame}←{cam_frame} 없음, tcp_pose 도 없음 → 카메라 좌표로 발행", throttle_duration_sec=5.0)
+        why = "tcp_pose 없음" if self.tcp is None else ("npy 없음" if self.g2c is None else "tcp_pose 오래됨")
+        self.get_logger().warn(f"base 변환 불가({why}, transform_source={src}) → 카메라 좌표로 발행", throttle_duration_sec=5.0)
         return None, cam_frame
+
+    def _log_source(self, kind: str, detail: str):
+        if self._tf_src_logged != kind:
+            self._tf_src_logged = kind
+            self.get_logger().info(f"카메라→base 변환: {kind} ({detail})")
 
     # --- 주기 ---
     def _tick(self):

@@ -127,6 +127,16 @@ def wrist_rotation_deg(palm_R: np.ndarray, up: np.ndarray) -> float:
     return _angle_deg(n, d)
 
 
+IMAGE_UP = np.array([0.0, -1.0, 0.0])    # MediaPipe hand_world_landmarks 축은 영상과 같음 (x 오른쪽, y 아래)
+
+
+def wrist_rotation_from_world(world: np.ndarray, handedness: str) -> float:
+    """깊이·tf 없이 MediaPipe 손 모양 3D(world)만으로 손목 회전. '위' 를 영상 위(−y)로 본다 — 카메라가 기울면 그만큼 오차.
+    깊이·tf 로 위치를 구하면 hand_pose 가 base_link 위(+z) 기준으로 다시 계산한다."""
+    _, R = palm_frame(world, handedness)
+    return wrist_rotation_deg(R, IMAGE_UP)
+
+
 def distance_to_centerline(points_base: np.ndarray, centerline_x: float) -> float:
     """중앙선까지 거리 [m]. 환자 구역은 x 가 큰 쪽 (table.yaml). 로봇 쪽으로 가장 많이 나온 점 기준.
     양수 = 환자 구역 안 (중앙선까지 남은 거리), 음수 = 로봇 구역 침범."""
