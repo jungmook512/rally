@@ -5,13 +5,14 @@
   1. 웹캠 영상(/webcam/image_raw, webcam_pub 또는 usb_cam)을 MediaPipe PoseLandmarker(VIDEO 모드, 1명)로
   2. pose_world_landmarks(엉덩이 원점 3D, m) → body_geometry.ReachMeter (10/8 결정: 모드 1·5·7 팔 뻗기 보상)
      - 뻗는 팔(arm, auto = 카메라 쪽) 어깨만 보여도 사람으로 봄
-     - 팔꿈치 펴짐 ≥ extended_deg 이고 그 팔이 잘 보일 때(뻗음)만 몸통 기울기·어깨 들림을 갱신 (window_s 중간값),
-       굽히면 마지막 값 유지 — 굽힌 팔이 어깨·몸통을 가려 관절이 틀어지기 때문 (10/8 C270 실측)
+     - 팔꿈치 펴짐 ≥ extended_deg 이고 그 팔이 잘 보이고 기준이 준비됐을 때만 몸통 기울기·어깨 들림이 숫자 (window_s 중간값),
+       아니면 NaN — 굽힌 팔이 어깨·몸통을 가려 관절이 틀어지고(10/8 C270 실측), brain 이 숫자 = 유효 관측으로 보게(#83 리뷰 3)
      - 몸통 기울기 = 기준 자세 대비 앞으로 숙인 각, 어깨 들림 = 기준 대비 뻗는 쪽 어깨 으쓱 (양 귀 가운데 기준)
      - 기준 = 노드 시작 후, 또는 /rally/perception/body/reset_baseline 뒤 baseline_frames 프레임 (바르게 선 상태)
   3. 뻗은 동안 같은 보상 동작이 confirm_frames 프레임 연속이면 compensation_detected (몸통 20° 이상 > 어깨 들림 20° 이상).
      안 뻗었거나 사람을 놓치면 none (brain rule_layer.fatigue_signals 가 이 플래그를 피로 신호로 씀)
-  elbow_extension_deg ≥ extended_deg 이면 '뻗음' — 이때만 몸통·어깨 값이 새 값이다. 정확한 팔꿈치 각도는 보장하지 않는다.
+  trunk_lean_deg·shoulder_elevation_deg 가 숫자 = 기준 준비됨 + 이번 프레임 유효 관측. reset_baseline 뒤엔 숫자가 다시 나올 때가 준비 완료.
+  정확한 팔꿈치 각도는 보장하지 않는다 (뻗음 판단용).
   header.stamp = 영상 원본 시각. 사람이 안 보이면 detected=false, 값은 NaN.
 웹캠: 환자 측면 대각, 높이 약 2 m (모드 3 공 비행도 같이), 훈련하는 팔 쪽. 1 m 이상 떨어져야 몸이 잡힌다 (10/8 확인).
 환자는 모든 모드를 서서 한다 (10/8 결정).
@@ -116,6 +117,7 @@ class BodyPoseNode(Node):
             reset, self._reset_req = self._reset_req, False
         if reset:
             self.meter.reset_baseline()
+            self.comp.update(False, math.nan, math.nan)   # 이전 보상 판정도 바로 none (#83 조정묵 리뷰 1)
         if msg is None:
             return
         out = BodyPose()

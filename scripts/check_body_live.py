@@ -2,7 +2,7 @@
 """몸 자세(body_pose) 확인 창 — 카메라 화면 + BodyPose 값 + 항목별 통과 여부.
 
 body_pose 노드가 켜진 상태에서 실행. 자리를 잡고 바르게 선 뒤 b → 2초 가만히 (몸통·어깨 기준을 다시 잡음).
-몸통·어깨 값은 팔을 뻗었을 때(팔꿈치 ≥ 140°)만 갱신된다 — 굽히면 팔이 어깨를 가려 관절이 틀어지기 때문.
+몸통·어깨 값은 팔을 뻗었을 때(팔꿈치 ≥ 140°)만 숫자, 아니면 NaN — 굽히면 팔이 어깨를 가려 관절이 틀어지기 때문.
     python3 scripts/check_body_live.py                              # /webcam/image_raw
     python3 scripts/check_body_live.py --no-skeleton                # 뼈대 안 그림 (CPU 아끼기)
 키: b 또는 스페이스 기준 다시 잡기 · q 종료(터미널에 결과 요약) · r 판정 다시
@@ -238,7 +238,7 @@ def render(node: Checker, skel: "Skeleton | None" = None, state: dict | None = N
         bar(panel, 126, "팔꿈치 펴짐", last.elbow_extension_deg, 180, None)
         e = last.elbow_extension_deg
         reaching = math.isfinite(e) and e >= EXTENDED_DEG
-        put(frame, "팔: 뻗음 — 판정 중" if reaching else "팔: 굽힘·안 보임 — 값 유지(판정 안 함)",
+        put(frame, "팔: 뻗음 — 판정 중" if reaching else "팔: 굽힘·안 보임 — 판정 안 함 (값 NaN)",
             (8, 30), GREEN if reaching else GRAY)
     y = 186
     for name, ok, info in items:

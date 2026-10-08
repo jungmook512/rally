@@ -147,14 +147,51 @@ def test_reach_meter_forward_lean_when_extended():
     assert st.lean_deg == pytest.approx(20, abs=1.0)
 
 
-def test_reach_meter_holds_value_while_arm_bent():
-    """팔을 굽히면 관절이 틀어지므로 값을 갱신하지 않고 직전 값 유지."""
+def test_reach_meter_nan_while_arm_bent():
+    """팔을 굽히면 관절이 틀어지므로 값을 내지 않음(NaN) — 숫자 = 이번 유효 관측 (#83 리뷰 3)."""
     m = _meter()
     _feed(m, upright())
-    _feed(m, upright(), t0=1.0)
+    assert _feed(m, upright(), t0=1.0).lean_deg == pytest.approx(0, abs=1e-6)
     st = _feed(m, upright(30, "front", elbow_deg=80), n=10, t0=2.0)   # 굽힌 채 크게 숙임 (믿을 수 없는 값)
     assert not st.extended
+    assert math.isnan(st.lean_deg) and math.isnan(st.hike_deg)
+    st = _feed(m, upright(), n=3, t0=3.0)                               # 다시 뻗으면 새 표본으로 바로 숫자
     assert st.lean_deg == pytest.approx(0, abs=1e-6)
+
+
+def test_reach_meter_nan_until_baseline_ready():
+    """기준이 준비되기 전에는 NaN — brain 은 숫자가 나오기 시작하면 준비 완료로 본다 (#83 리뷰 3)."""
+    m = _meter(frames=5)
+    st = _feed(m, upright(), n=4)
+    assert not st.baseline_ready and math.isnan(st.lean_deg)
+    st = _feed(m, upright(), n=2, t0=1.0)
+    assert st.baseline_ready and st.lean_deg == pytest.approx(0, abs=1e-6)
+
+
+def test_reach_meter_arm_switch_does_not_mix():
+    """auto 에서 왼팔 → 오른팔로 바뀌면 왼팔 표본·기준을 오른팔 값에 쓰지 않음 (#83 리뷰 2)."""
+    m = bg.ReachMeter(arm="auto", baseline_frames=3, window_s=0.5)
+    left = ALL.copy()
+    left[[bg.R_SH, bg.R_EL, bg.R_WR]] = 0.6                            # 왼팔이 더 잘 보임
+    w = upright()
+    w[bg.L_EL], w[bg.L_WR] = w[bg.L_SH] + [0, 0.3, 0], w[bg.L_SH] + [0, 0.55, 0]   # 왼팔도 쭉 폄
+    st = _feed(m, w, n=6, vis=left)
+    assert st.side == "left" and st.extended and math.isfinite(st.hike_deg)
+    right = ALL.copy()
+    right[[bg.L_SH, bg.L_EL, bg.L_WR]] = 0.6                           # 이제 오른팔이 더 잘 보임
+    st = m.update(1.0, upright(hike_m=0.04), right)
+    assert st.side == "right"
+    assert math.isnan(st.hike_deg)                                     # 오른팔 어깨 기준이 없음 → NaN (왼팔 값 아님)
+
+
+def test_reset_clears_compensation_immediately():
+    """기준 다시 잡기 직후 이전 보상 판정이 남지 않음 — 노드는 reset 때 CompensationFilter 에 미검출을 한 번 넣는다 (#83 리뷰 1)."""
+    f = bg.CompensationFilter(lean_deg=20, hike_deg=20, frames=3)
+    for _ in range(3):
+        f.update(True, 30.0, math.nan)
+    assert f.stable == "trunk_lean"
+    f.update(False, math.nan, math.nan)                                # reset
+    assert f.update(True, math.nan, math.nan) == "none"
 
 
 def test_reach_meter_shoulder_hike_reaching_side():

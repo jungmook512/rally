@@ -156,7 +156,9 @@ class ReachMeter:
       쓰고, 기준과의 차이만 봐서 그 치우침을 상쇄한다
     - 어깨 으쓱: 양 귀 가운데 → 뻗는 쪽 어깨 거리(기준 몸통 위쪽 방향 성분)가 줄어든 만큼을 쇄골(어깨 폭 절반) 대비 각으로.
       한 귀가 아니라 양 귀 가운데라 고개를 옆으로 기울여도 거의 안 변함
-    - 뻗은 동안(extended)만 window_s 중간값으로 갱신, 굽히면 마지막 값 유지"""
+    - 값은 '지금 믿을 수 있을 때만' 숫자: 뻗음(extended) + 기준 준비(몸통, 어깨는 그 팔의 기준) 일 때 window_s 중간값,
+      아니면 NaN (#83 조정묵 리뷰 3: brain 이 숫자 = 기준 준비 + 이번 유효 관측 으로 볼 수 있게. 예전엔 굽히면 마지막 값 유지)
+    - 뻗는 팔이 바뀌거나 뻗음이 끊기면 중간값 창을 비운다 — 다른 팔·이전 뻗기 표본이 섞이지 않게 (#83 리뷰 2)"""
 
     def __init__(self, arm: str = "auto", vis_thr: float = 0.5, good_vis: float = 0.7, extended_deg: float = 140.0,
                  baseline_frames: int = 30, window_s: float = 0.5) -> None:
@@ -172,7 +174,7 @@ class ReachMeter:
         self.base_gap: dict[str, float] = {}
         self.base_half = math.nan
         self._buf: deque = deque()
-        self._lean = self._hike = math.nan
+        self._side = ""
 
     def _pick_side(self, vis: np.ndarray) -> str:
         if self.arm in SIDES:
@@ -208,9 +210,13 @@ class ReachMeter:
 
     def update(self, t: float, w: np.ndarray, vis: np.ndarray) -> ReachState:
         side = self._pick_side(vis)
+        if side != self._side:                             # 팔이 바뀌면 이전 팔 표본을 버림 (#83 리뷰 2)
+            self._buf.clear()
+            self._side = side
         sh, el, wr = SIDES[side]
         st = ReachState(side=side, baseline_ready=self.base_torso is not None)
         if vis[sh] < self.vis_thr:
+            self._buf.clear()
             return st                                      # 사람(뻗는 쪽 어깨) 안 보임
         st.detected = True
         if self.base_torso is None:
@@ -230,8 +236,9 @@ class ReachMeter:
                 self._buf.popleft()
             leans = [x[1] for x in self._buf if math.isfinite(x[1])]
             hikes = [x[2] for x in self._buf if math.isfinite(x[2])]
-            self._lean = float(np.median(leans)) if leans else math.nan
-            self._hike = float(np.median(hikes)) if hikes else math.nan
-        st.lean_deg, st.hike_deg = self._lean, self._hike
+            st.lean_deg = float(np.median(leans)) if leans else math.nan
+            st.hike_deg = float(np.median(hikes)) if hikes else math.nan
+        else:
+            self._buf.clear()                              # 안 뻗었거나 기준 전 → NaN, 다음 뻗기는 새 표본으로
         return st
 
