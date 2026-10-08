@@ -5,8 +5,10 @@
   1. 웹캠 영상(/webcam/image_raw, webcam_pub 또는 usb_cam)을 MediaPipe PoseLandmarker(VIDEO 모드, 1명)로
   2. pose_world_landmarks(엉덩이 원점 3D, m) 로 몸통 기울기·어깨 들림·팔꿈치 펴짐 (body_geometry.py)
      - 몸통 기울기: 엉덩이가 보이면 엉덩이→어깨 선과 수직의 각, 책상에 가려지면 어깨선 기울기 (옆 기울임만)
-     - 어깨 들림: 처음 baseline_frames 프레임의 귀–어깨 거리를 평소로 잡고 줄어든 만큼 (기준 잡기 전엔 NaN)
-  3. 같은 보상 동작이 confirm_frames 프레임 연속이면 compensation_detected (몸통 15° 이상 > 어깨 들림 10° 이상)
+     - 어깨 들림: 좌우 각각 처음 보인 baseline_frames 프레임의 귀–어깨 거리를 평소로 잡고 줄어든 만큼 (기준 잡기 전엔 NaN)
+  3. 같은 보상 동작이 confirm_frames 프레임 연속이면 compensation_detected (몸통 15° 이상 > 어깨 들림 10° 이상).
+     사람을 놓치면 바로 none (brain rule_layer.fatigue_signals 가 이 플래그를 피로 신호로 씀)
+  주의: 골반이 가려져 어깨선으로 대신할 때는 앞으로 숙이기를 못 잰다 (옆 기울임만) — 0 이 '바른 자세' 라는 뜻은 아님
   header.stamp = 영상 원본 시각. 사람이 안 보이면 detected=false, 값은 NaN.
 측면 웹캠은 환자에게서 1 m 이상 (10/8 확인: 가까우면 몸이 안 잡힘).
 """
@@ -126,8 +128,7 @@ class BodyPoseNode(Node):
         out.trunk_lean_deg, _ = bg.trunk_lean_deg(w, vis, self.vis_thr)
         gaps = bg.ear_shoulder_gaps(w, vis, self.vis_thr)
         base = self.baseline.update(gaps)
-        out.shoulder_elevation_deg = (bg.shoulder_elevation_deg(gaps, base, bg.shoulder_half_width(w))
-                                      if base is not None else math.nan)
+        out.shoulder_elevation_deg = bg.shoulder_elevation_deg(gaps, base, bg.shoulder_half_width(w))   # 기준 없는 쪽은 빠짐
         out.elbow_extension_deg = bg.elbow_extension_deg(w, vis, self.arm, self.vis_thr)
 
 

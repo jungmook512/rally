@@ -60,8 +60,20 @@ def test_shoulder_hike_from_baseline():
 def test_baseline_needs_frames():
     b = bg.ShoulderBaseline(frames=3)
     g = bg.ear_shoulder_gaps(upright(), ALL)
-    assert b.update(g) is None and b.update(g) is None
+    assert all(math.isnan(v) for v in b.update(g)) and all(math.isnan(v) for v in b.update(g))
     assert b.update(g) == pytest.approx(g)
+
+
+def test_baseline_hidden_side_fills_later():
+    """측면 촬영: 처음엔 한쪽 귀가 가려졌다가 나중에 보이면 그쪽 기준도 그때 잡힌다 (#83 리뷰 1)."""
+    b = bg.ShoulderBaseline(frames=3)
+    for _ in range(3):
+        base = b.update((0.18, math.nan))
+    assert base[0] == pytest.approx(0.18) and math.isnan(base[1])
+    for _ in range(3):
+        base = b.update((0.18, 0.17))
+    assert base == pytest.approx((0.18, 0.17))
+    assert b.update((0.10, 0.10)) == pytest.approx((0.18, 0.17))     # 확정된 뒤엔 안 바뀜
 
 
 @pytest.mark.parametrize("deg", [180.0, 120.0, 90.0])
@@ -78,3 +90,12 @@ def test_compensation_needs_consecutive_frames_and_priority():
     assert [f.update(True, 5, 12) for _ in range(3)][-1] == "shoulder_hike"
     assert [f.update(True, 20, 12) for _ in range(3)][-1] == "trunk_lean"   # 둘 다면 몸통 기울임 먼저
     assert [f.update(False, math.nan, math.nan) for _ in range(3)][-1] == "none"
+
+
+def test_compensation_cleared_immediately_when_person_lost():
+    """확정 뒤 사람을 놓치면 첫 프레임부터 none, 다시 보이면 처음부터 연속 확인 (#83 리뷰 2)."""
+    f = bg.CompensationFilter(lean_deg=15, hike_deg=10, frames=3)
+    for _ in range(3):
+        f.update(True, 20, 0)
+    assert f.update(False, math.nan, math.nan) == "none"
+    assert [f.update(True, 20, 0) for _ in range(3)] == ["none", "none", "trunk_lean"]

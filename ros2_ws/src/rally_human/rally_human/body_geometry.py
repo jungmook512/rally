@@ -77,21 +77,22 @@ def shoulder_half_width(w: np.ndarray) -> float:
 
 
 class ShoulderBaseline:
-    """어깨 들림의 기준(평소 귀–어깨 거리). 처음 frames 개 프레임의 중간값 — 시작할 때 환자가 편히 앉아 있다고 본다."""
+    """어깨 들림의 기준(평소 귀–어깨 거리). 왼쪽·오른쪽을 **따로**, 그쪽이 보인 처음 frames 개 프레임의 중간값으로 확정한다.
+    시작할 때 환자가 편히 앉아 있다고 본다. 처음에 가려졌던 쪽(측면 촬영의 먼 쪽 귀)은 나중에 보이기 시작하면 그때 확정 (#83 리뷰 1).
+    update() 는 (왼쪽, 오른쪽) 기준 — 아직 확정 안 된 쪽은 NaN."""
 
     def __init__(self, frames: int = 30) -> None:
         self.frames = frames
-        self.samples: list[tuple[float, float]] = []
-        self.base: tuple[float, float] | None = None
+        self.samples: tuple[list[float], list[float]] = ([], [])
+        self.base = [math.nan, math.nan]
 
-    def update(self, gaps: tuple[float, float]) -> tuple[float, float] | None:
-        if self.base is None and any(math.isfinite(g) for g in gaps):
-            self.samples.append(gaps)
-            if len(self.samples) >= self.frames:
-                arr = np.array(self.samples, dtype=float)
-                self.base = tuple(float(np.nanmedian(arr[:, i])) if np.isfinite(arr[:, i]).any() else math.nan
-                                  for i in range(2))
-        return self.base
+    def update(self, gaps: tuple[float, float]) -> tuple[float, float]:
+        for i, g in enumerate(gaps):
+            if math.isnan(self.base[i]) and math.isfinite(g):
+                self.samples[i].append(g)
+                if len(self.samples[i]) >= self.frames:
+                    self.base[i] = float(np.median(self.samples[i]))
+        return self.base[0], self.base[1]
 
 
 class CompensationFilter:
@@ -103,10 +104,14 @@ class CompensationFilter:
         self.candidate, self.count, self.stable = "none", 0, "none"
 
     def update(self, detected: bool, lean: float, hike: float) -> str:
+        if not detected:
+            # 사람을 놓치면 바로 none + 연속 확인 초기화 — 이전 판정이 남으면 brain 이 피로 신호로 집계한다 (#83 리뷰 2)
+            self.candidate, self.count, self.stable = "none", 0, "none"
+            return "none"
         raw = "none"
-        if detected and math.isfinite(lean) and lean >= self.lean_deg:
+        if math.isfinite(lean) and lean >= self.lean_deg:
             raw = "trunk_lean"
-        elif detected and math.isfinite(hike) and hike >= self.hike_deg:
+        elif math.isfinite(hike) and hike >= self.hike_deg:
             raw = "shoulder_hike"
         self.count = self.count + 1 if raw == self.candidate else 1
         self.candidate = raw
