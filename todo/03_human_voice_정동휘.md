@@ -6,9 +6,9 @@
 ## Day 0 (10/5)
 - [x] 웹캠 60 fps 확인(`v4l2-ctl`), 환자 측면 위치 가설정 — C270 640×480 은 약 20 fps (이슈 #38)
 - [x] MediaPipe Hands·Pose 단독 실행, RealSense 컬러에서 손 검출 확인 — `scripts/check_mediapipe.py`. 손은 잘 잡힘, 전신은 상반신만 보이면 약함
-- [!] USB 마이크·스피커 장치 확인(`arecord -l`, `aplay -l`), 컨테이너 `/dev/snd` 패스스루 테스트 — USB 마이크 없음. 노트북 내장 마이크는 잡음·깨짐 심함 (`scripts/check_voice.py mic`)
-- [ ] openWakeWord·faster-whisper·Piper 설치, 한국어 Piper 음성 모델 다운로드 → `models/`
-- [ ] 웨이크워드 "랠리야" 녹음 샘플 수집 시작 (팀원 4명 × 20회)
+- [!] USB 마이크·스피커 장치 확인(`arecord -l`, `aplay -l`), 컨테이너 `/dev/snd` 패스스루 테스트 — USB 마이크 없음 → 시연은 로봇·인식 PC 내장 마이크로 결정 (10/7). 컨테이너 `/dev/snd` 는 #50 녹음 때 그 PC 에서 확인
+- [x] openWakeWord·faster-whisper·Piper 설치, 한국어 Piper 음성 모델 다운로드 → `models/` — openWakeWord·Piper(`models/piper/ko_KR-kss-medium`) 완료. faster-whisper(로컬 STT)는 팀 결정 전까지 보류
+- [ ] 웨이크워드 "랠리야" 녹음 샘플 수집 시작 (팀원 4명 × 20회) — 비상어 녹음(#50)에 합침: 1인 랠리야 30회, 로봇·인식 PC 에서
 
 ## Day 1 — 손 관절 · STT 기반
 - [x] `hand_pose_node.py`: MediaPipe 2D 21점 + 정렬 깊이 → 3D (결측 픽셀 주변 보간) → tf2로 base_link 변환 → `HandState` 30 Hz — bag 재생 19~26 Hz(노트북 CPU), base_link 변환은 로봇·인식 PC에서 확인 필요
@@ -20,9 +20,10 @@
 ## Day 2 — 제스처 · 의도 · TTS
 - [x] `gesture.py`: 손가락 굽힘 각도 → `grip_closure`, 주먹/펼침/가리키기 분류, 주먹 → `/rally/safety/estop` 직결 — 5 프레임일 때만 확정 (손 놓친 프레임은 건너뜀, 3 프레임 넘게 놓치면 초기화)
 - [x] `wrist_angle_deg`: 전완 방향 대비 손바닥 회전각 — 팔꿈치가 없어 손 방향을 아래팔 축으로 근사 (0 손바닥 아래 · 90 옆 · 180 위)
-- [ ] `intent_node.py`: LLM function calling → `VoiceIntent` (intent 목록은 msg 주석), "그만/멈춰" 키워드 스팟팅은 STT 전에 처리 → `is_emergency` — function calling 완료. STT 전 비상어(호출어 없이 항상 듣기)는 별도 모델 필요로 미룸
-- [ ] `tts_node.py`: `Speak` srv, Piper TTS, 발화 중 마이크 차단 플래그
-- [ ] 한국어 웨이크워드 모델 학습, 오탐 측정 (목표 ≤ 1회/10분) — **비상어 "그만"·"멈춰" 키워드 모델도 같이** (기획 CP9·FR-07: STT 없이 키워드 스팟팅, 0.3 s 이내, 네트워크 안 탐). 10/7 미착수 → 착수. 지금 intent_node 는 호출어 뒤 STT 로 판정(약 6 s)이라 교체 필요
+- [ ] `intent_node.py`: LLM function calling → `VoiceIntent` (intent 목록은 msg 주석), "그만/멈춰" 키워드 스팟팅은 STT 전에 처리 → `is_emergency` — function calling 완료. STT 전 비상어(호출어 없이 항상 듣기)는 아래 키워드 모델(#50) 연결로
+- [x] `tts_node.py`: `Speak` srv, Piper TTS, 발화 중 마이크 차단 플래그 — #53. 4 s 문장 합성 0.37 s, speaking false→true→false 확인. 로봇·인식 PC 스피커는 확인 필요
+- [ ] 손 인식 실기 확인 (#44 머지됨): RealSense·로봇 받으면 체크리스트 11개 (https://claude.ai/artifact/84vs1ciQAmjyMbz8Pu9G2X). 10·11번은 정정인과
+- [ ] 한국어 웨이크워드 모델 학습, 오탐 측정 (목표 ≤ 1회/10분) — **비상어 "그만"·"멈춰" 키워드 모델도 같이** (기획 CP9·FR-07: STT 없이 키워드 스팟팅, 0.3 s 이내, 네트워크 안 탐). #50 (Draft): 녹음·학습 도구 완료, 호출어 "랠리야" 도 같은 모델로. 로봇·인식 PC 에서 녹음 → 학습 → intent_node 연결 → 실측 남음
 
 ## Day 3 — 모드 5 ✅
 - [ ] (정정인과) `HandState` → servol 추종 통합: 지연 측정, 필터 파라미터 공유
@@ -66,6 +67,6 @@
 - (10/6) HMI 대시보드는 조정묵이 맡음 → 대시보드 항목을 모두 `todo/04`로 옮김. 손·몸 인식과 음성에 집중
 - (10/7) 3D 출력물(패드 손잡이·거치대)은 정동휘 담당, Day 4 마감. 릴리스 순간 검출은 박성현과 공동 그대로 (넘긴 항목 없음)
 - (10/7) 모드 3 실측값이 계획과 다른 점 → 이슈 #38 (웹캠 20 fps, 가속 1000 mm/s² 로 0.5 s 에 6~12 cm, 비행 0.40~0.55 s, 색 오검출, servol 연속 추종 위험)
-- (조정묵, 10/6) `rally_human/setup.py` 에 `hand_pose`, `body_pose` 실행 등록(console_scripts)이 없어 `pc2_perception.launch.py part:=human` 이 두 노드를 건너뛴다. 노드 이름을 이 두 개로 등록하면 launch 가 바로 띄운다. `intent_node`·`tts_node` 는 등록돼 있지만 아직 `main()` 이 없어 켜자마자 종료됨
+- (조정묵, 10/6) `rally_human/setup.py` 에 `hand_pose`, `body_pose` 실행 등록(console_scripts)이 없어 `pc2_perception.launch.py part:=human` 이 두 노드를 건너뛴다. 노드 이름을 이 두 개로 등록하면 launch 가 바로 띄운다. `intent_node`·`tts_node` 는 등록돼 있지만 아직 `main()` 이 없어 켜자마자 종료됨 → 해결: hand_pose 등록(#44), intent_node(#46)·tts_node(#53) main 있음. body_pose 는 Day 4
 - (조정묵, 10/7) 음성으로 훈련 이름 고르기 요청: "공 굴리기 하자" → `intent: next_mode` + 슬롯 `mode=1` (1 공 굴리기 · 3 캐치볼 · 5 건네고 받기 · 7 팔씨름). 약속은 `docs/INTERFACES.md` 2.2 표 아래. `intent_node` 의 function calling 스키마에 `mode` 인자만 추가하면 됨, 메시지 변경 없음
 - (10/7) 모드 1 칼만 예측(`rally_vision/predictor.py`)을 박성현 대신 맡음. 칼만 검증 → 완성 순서. 모드 3 착지 예측에 칼만 전처리 넣는 건 그 다음에 이슈 #38 에서 제안

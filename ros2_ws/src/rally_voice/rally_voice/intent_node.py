@@ -72,6 +72,7 @@ class IntentNode(Node):
         self.declare_parameter("llm_model", "gpt-4o")              # 팀 키(OpenAI 프로젝트)는 gpt-4o·whisper-1 만 허용 (10/7 확인)
         self.declare_parameter("llm_timeout_s", 3.0)
         self.declare_parameter("speaking_tail_s", 0.0)            # 잔향 여유는 tts_node 가 처리 (INTERFACES 2.2). 필요하면 추가로
+        self.declare_parameter("speaking_max_s", 30.0)            # speaking=true 가 이보다 길면 tts_node 가 죽은 것으로 봄 (#53 리뷰)
 
         reliable = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=10)
         latched = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -82,6 +83,8 @@ class IntentNode(Node):
         self.create_subscription(Bool, "/rally/voice/speaking", self._on_speaking, latched)
 
         self.speaking = False
+        self.speaking_since = 0.0
+        self.speaking_stuck_warned = False
         self.mute_until = 0.0
         self.api_key = load_api_key()
         if not self.api_key:
@@ -96,12 +99,21 @@ class IntentNode(Node):
         self.thread.start()
 
     def _on_speaking(self, m: Bool) -> None:
+        if m.data and not self.speaking:
+            self.speaking_since, self.speaking_stuck_warned = time.monotonic(), False
         self.speaking = m.data
         if not m.data:
             self.mute_until = time.monotonic() + float(self.get_parameter("speaking_tail_s").value)
 
     def _robot_speaking(self) -> bool:
-        return self.speaking or time.monotonic() < self.mute_until
+        now = time.monotonic()
+        if self.speaking and now - self.speaking_since > float(self.get_parameter("speaking_max_s").value):
+            # TransientLocal 이라 tts_node 가 말하다 죽으면 true 가 남는다 → 일반 명령을 영영 버리지 않게
+            if not self.speaking_stuck_warned:
+                self.get_logger().warn("speaking=true 가 너무 오래 이어짐 → tts_node 가 꺼진 것으로 보고 일반 명령도 받음")
+                self.speaking_stuck_warned = True
+            return now < self.mute_until
+        return self.speaking or now < self.mute_until
 
     # ----- 마이크 스레드 -----
     def _audio_loop(self) -> None:
