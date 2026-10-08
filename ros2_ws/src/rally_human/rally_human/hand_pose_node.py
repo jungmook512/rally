@@ -270,7 +270,7 @@ class HandPoseNode(Node):
         tf, fallback = lookup_camera_tf(self.tf_buffer, self.base_frame, src, Time.from_msg(cmsg.header.stamp),
                                         float(self.get_parameter("tf_fallback_max_age_s").value))
         if fallback and not self._tf_fallback_logged:
-            self.get_logger().info("영상 시각 tf 가 아직 없어 최근 tf 로 대신 씀 (camera_tf 10 Hz) — 로봇 이동 중엔 그만큼 오차")
+            self.get_logger().info("영상 시각 tf 가 아직 없어 tf_fallback_max_age_s 안의 최신 tf 로 대신 씀 — 로봇 이동 중엔 그 시간차만큼 오차")
             self._tf_fallback_logged = True
         if tf is None:
             self.get_logger().warn(f"tf {self.base_frame} ← {src} 없음 → 카메라 좌표로 발행, 중앙선 거리 NaN",
