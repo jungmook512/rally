@@ -4,7 +4,7 @@
 body_pose 노드가 켜진 상태에서 실행. 자리를 잡고 바르게 앉은 뒤 b → 2초 가만히 (어깨 들림 기준을 다시 잡음).
     python3 scripts/check_body_live.py                              # /webcam/image_raw
     python3 scripts/check_body_live.py --no-skeleton                # 뼈대 안 그림 (CPU 아끼기)
-키: b 기준 다시 잡기 · q 종료(터미널에 결과 요약) · r 판정 다시
+키: b 또는 스페이스 기준 다시 잡기 · q 종료(터미널에 결과 요약) · r 판정 다시
 뼈대: BodyPose 메시지에는 관절이 없어서, 이 창이 같은 영상에 MediaPipe Pose 를 한 번 더 돌려 그린다.
   점 색 = visibility (초록 ≥ 0.7 · 노랑 ≥ 0.5 · 빨강 < 0.5 = 가려짐을 추정한 점). 팔꿈치 옆 숫자 = 그 팔의 펴짐 각(3D).
   왼쪽 위 = 몸통 기울기를 어떤 방법으로 쟀는지 (torso: 엉덩이→어깨 / shoulders: 어깨선, 측면에선 앞으로 숙이기를 못 잼).
@@ -29,7 +29,7 @@ from std_srvs.srv import Trigger
 from rally_interfaces.msg import BodyPose
 from rally_human import body_geometry as bg
 
-WIN = "check_body_live (b baseline, q quit, r reset)"
+WIN = "check_body_live (b/space baseline, q quit, r reset)"
 GREEN, GRAY, WHITE, RED, YELLOW = (80, 200, 80), (150, 150, 150), (240, 240, 240), (60, 60, 230), (60, 200, 230)
 MODEL_NAME = "pose_landmarker_full.task"           # body_pose 노드와 같은 모델
 MODEL_CANDIDATES = [f"/opt/mediapipe/{MODEL_NAME}", str(Path(__file__).resolve().parents[1] / "models" / "mediapipe" / MODEL_NAME),
@@ -258,7 +258,7 @@ def main() -> None:
                 break
             if k == ord("r"):
                 node.reset()
-            if k == ord("b"):
+            if k in (ord("b"), ord("B"), ord(" ")):     # 한글 입력 상태면 b 가 안 들어와서 스페이스도 받음
                 node.request_baseline()
     except KeyboardInterrupt:
         pass
