@@ -339,6 +339,8 @@ class BtRunner(Node):
                 "trial_index": len(session.trials) if session else 0,
                 "can_resume": self.control.phase == "paused" and not blocked,
                 "blocked_reason": blocked, "updated_at": time.time(),
+                "bt_node": self._state_name,
+                "mode3_enabled": mode3_enabled(self._skills_cfg),
             }
 
     def _action_client(self, action_type: type, name: str) -> ActionClient:
