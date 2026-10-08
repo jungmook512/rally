@@ -37,6 +37,7 @@ from tf2_ros import Buffer, TransformListener
 from rally_interfaces.msg import HandState
 from rally_human import hand_geometry as hg
 from rally_human.gesture import GestureFilter
+from rally_human.wrist_filter import WristFilter
 
 # 모델 찾는 순서: 파라미터 → 컨테이너(/opt/mediapipe) → 저장소 models/mediapipe (git 제외, scripts/check_mediapipe.py 참고)
 MODEL_CANDIDATES = ["/opt/mediapipe/hand_landmarker.task",
@@ -95,6 +96,11 @@ class HandPoseNode(Node):
         self.declare_parameter("gesture_frames", 5)               # 30 Hz 기준 약 0.17 s
         self.declare_parameter("centerline_x_m", float("nan"))    # NaN 이면 rally_bringup/config/table.yaml
         self.declare_parameter("min_detection_confidence", 0.5)
+        # 손목 각도 안정화 (wrist_filter.py). 초기값은 10/8 노트북 RealSense 실측 기준 — 로봇에서 조정
+        self.declare_parameter("wrist_window_s", 0.5)             # 이 시간 동안 좋은 프레임의 중간값
+        self.declare_parameter("wrist_lost_s", 1.0)               # 손이 이보다 오래 안 보이면 NaN
+        self.declare_parameter("wrist_near_m", 0.30)              # 손바닥–카메라 거리가 이보다 가까우면 각도를 안 씀 (깊이 있을 때)
+        self.declare_parameter("wrist_max_hand_frac", 0.45)       # 깊이가 없을 때(웹캠)만: 화면 가로 대비 손 크기가 이보다 크면 가까움
 
         self.rot = int(self.get_parameter("image_rotation_deg").value) % 360
         if self.rot not in (0, 90, 180, 270):
@@ -102,6 +108,9 @@ class HandPoseNode(Node):
         self.base_frame = self.get_parameter("base_frame").value
         self.centerline_x = self._load_centerline()
         self.gestures = GestureFilter(int(self.get_parameter("gesture_frames").value))
+        self.wrist = WristFilter(float(self.get_parameter("wrist_window_s").value),
+                                 float(self.get_parameter("wrist_lost_s").value))
+        self.too_close = False                                     # 이번 프레임 손이 카메라에 너무 가까운지 (손목 각도 안정화용)
         self.landmarker = self._make_landmarker()
 
         self.bridge = CvBridge()
@@ -191,6 +200,9 @@ class HandPoseNode(Node):
         except Exception as e:      # noqa: BLE001 — 한 프레임 실패로 노드가 죽으면 안전 감시가 손을 잃는다
             self.get_logger().error(f"손 처리 실패: {type(e).__name__}: {e}", throttle_duration_sec=2.0)
             out.detected = False
+        out.wrist_angle_deg = self.wrist.update(Time.from_msg(cmsg.header.stamp).nanoseconds * 1e-9, out.detected,
+                                                out.wrist_angle_deg if out.detected else float("nan"),
+                                                out.detected and self.too_close)
         out.gesture = self.gestures.update(out.detected, out.gesture)
         self.pub.publish(out)
 
@@ -213,6 +225,9 @@ class HandPoseNode(Node):
         sizes = [np.ptp([p.x for p in h]) * np.ptp([p.y for p in h]) for h in res.hand_landmarks]
         i = int(np.argmax(sizes))
         norm = res.hand_landmarks[i]
+        h_r, w_r = img.shape[:2]                     # 돌린 영상 크기 (정규화 좌표 기준)
+        hand_frac = max(np.ptp([p.x for p in norm]) * w_r, np.ptp([p.y for p in norm]) * h_r) / w_r
+        self.too_close = hand_frac > float(self.get_parameter("wrist_max_hand_frac").value)   # 깊이 없을 때 대신 (아래에서 덮어씀)
         world = np.array([[p.x, p.y, p.z] for p in res.hand_world_landmarks[i]])
         out.detected = True
         out.handedness = res.handedness[i][0].category_name.lower()
@@ -234,6 +249,8 @@ class HandPoseNode(Node):
             return
         depth = self.bridge.imgmsg_to_cv2(dmsg).astype(np.float32) * 1e-3
         z_palm = palm_depth(depth, px[list(hg.PALM_POINTS)])
+        # 손목 각도용 "너무 가까움": 깊이가 있으면 손바닥 거리로. 손은 보이는데 손바닥 깊이가 비면 너무 가까워 끊긴 것으로 본다
+        self.too_close = math.isnan(z_palm) or z_palm < float(self.get_parameter("wrist_near_m").value)
         if math.isnan(z_palm):
             out.distance_to_centerline = float("nan")
             return
