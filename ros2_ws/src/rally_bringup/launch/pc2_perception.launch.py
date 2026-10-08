@@ -1,7 +1,7 @@
 """rally_bringup/launch/pc2_perception.launch.py — 로봇·인식 PC 추론 컨테이너 (역할 pc2)
 
 compose 서비스마다 part 를 하나씩 준다:
-  vision    → realsense2_camera(/camera/color/image_raw, 정렬 깊이) + segmenter · tracker · flight_predictor
+  vision    → realsense2_camera(/camera/color/image_raw, 정렬 깊이) + camera_tf · segmenter · tracker · flight_predictor
   human     → usb_cam(/webcam/image_raw) + hand_pose · body_pose
   voice     → intent_node · tts_node
   all       → 셋 다 (컨테이너 없이 한 터미널에서 확인할 때)
@@ -19,7 +19,8 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 PARTS = {
-    "vision": [("rally_vision", "segmenter"), ("rally_vision", "tracker"), ("rally_vision", "flight_predictor")],
+    "vision": [("rally_vision", "camera_tf"),                 # hand_eye.yaml → base_link→camera_link tf (손 노드·segmenter 가 조회)
+               ("rally_vision", "segmenter"), ("rally_vision", "tracker"), ("rally_vision", "flight_predictor")],
     "human": [("rally_human", "hand_pose"), ("rally_human", "body_pose")],
     "voice": [("rally_voice", "intent_node"), ("rally_voice", "tts_node")],
 }

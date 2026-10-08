@@ -75,3 +75,54 @@ def test_simple_tracks_velocity_and_moving():
 
 def test_parse_alias():
     assert parse_alias("sports ball:ball, cup:cup") == {"sports ball": "ball", "cup": "cup"}
+
+
+# ---------------------------------------------------------------- hand_eye.yaml · camera_tf
+def test_load_hand_eye_roundtrip(tmp_path):
+    import yaml
+    from rally_vision import projection as pj
+    p = tmp_path / "hand_eye.yaml"
+    yaml.safe_dump({"tcp_T_camera_optical": {"xyz_m": [0.03728, 0.08087, -0.205],
+                                             "quat_xyzw": [-0.005884, -0.004204, 0.999924, -0.009944]},
+                    "depth_scale": 0.971, "tcp_offset_from_flange_m": [0, 0, 0.228]}, open(p, "w"))
+    he = pj.load_hand_eye(str(p))
+    assert abs(he["depth_scale"] - 0.971) < 1e-9
+    T = he["T_tcp_cam_mm"]
+    assert T.shape == (4, 4)
+    assert np.allclose(T[:3, 3], [37.28, 80.87, -205.0], atol=1e-6)          # m → mm
+    assert np.allclose(T[:3, :3] @ T[:3, :3].T, np.eye(3), atol=1e-5)          # 회전 행렬
+    assert T[0, 0] < -0.99 and T[2, 2] > 0.99                                  # 카메라 z 는 TCP z 와 같은 방향(아래), x·y 는 반대
+    assert np.allclose(he["tcp_offset_m"], [0, 0, 0.228])
+
+
+def test_load_hand_eye_empty(tmp_path):
+    from rally_vision import projection as pj
+    p = tmp_path / "hand_eye.yaml"
+    p.write_text("# 비어 있음\n")
+    he = pj.load_hand_eye(str(p))
+    assert he["T_tcp_cam_mm"] is None and he["depth_scale"] == 1.0
+    assert pj.load_hand_eye("")["T_tcp_cam_mm"] is None
+
+
+def test_rot_to_quat_matches_quat_to_rot():
+    from rally_vision import projection as pj
+    from rally_vision.camera_tf_node import _rot_to_quat
+    rng = np.random.default_rng(0)
+    for _ in range(20):
+        q = rng.normal(size=4); q /= np.linalg.norm(q)
+        Rm = pj.quat_to_rot(*q)
+        q2 = np.array(_rot_to_quat(Rm))
+        assert np.allclose(Rm, pj.quat_to_rot(*q2), atol=1e-9)   # 부호 모호성은 행렬로 비교
+
+
+# ---------------------------------------------------------------- transform_source 선택 (PR #73 리뷰)
+def test_pick_transform_source_matrix():
+    from rally_vision.segmenter_node import pick_transform_source as pick
+    # (source, tf_ok, tcp_ok) → 기대
+    cases = {
+        ("tcp_npy", True, True): "tcp_npy", ("tcp_npy", True, False): None, ("tcp_npy", False, True): "tcp_npy",
+        ("tf", True, True): "tf", ("tf", False, True): None, ("tf", False, False): None,
+        ("auto", True, True): "tf", ("auto", False, True): "tcp_npy", ("auto", True, False): "tf", ("auto", False, False): None,
+    }
+    for (src, tf_ok, tcp_ok), want in cases.items():
+        assert pick(src, tf_ok, tcp_ok) == want, (src, tf_ok, tcp_ok)

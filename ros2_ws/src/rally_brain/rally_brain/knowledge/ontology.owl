@@ -535,13 +535,6 @@
     <rally:key>continue</rally:key>
     <rally:source>skills.yaml brain.actions</rally:source>
   </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#safe_fist">
-    <rdf:type rdf:resource="https://rally.local/ontology#SafetyTrigger"/>
-    <rdfs:label xml:lang="ko">주먹 제스처</rdfs:label>
-    <rally:key>fist_gesture</rally:key>
-    <rally:source>기획서 3.6</rally:source>
-    <rally:triggersLevel rdf:resource="https://rally.local/ontology#level_stop"/>
-  </rdf:Description>
   <rdf:Description rdf:about="https://rally.local/ontology#FatigueSignal">
     <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
     <rdfs:label xml:lang="ko">피로 신호</rdfs:label>
