@@ -10,6 +10,8 @@
    저속 movel (환자가 미는 방향, 즉 환자에게서 멀어지는 방향으로만) → success=True
 4. 힘이 0 근처로 떨어지면(환자가 손 놓음) → 'return': 저속·저힘으로 handle_pose 복귀, 복귀 중 접촉 감지 시 즉시 정지
 5. 종료 시 반드시 release_compliance_ctrl (try/finally)
+6. 2~4(환자가 손잡이를 쥔 구간) 동안 node.set_patient_contact(True), finally 에서 False — 손 거리 STOP 이 SLOW 로 낮아지므로(#59)
+   이 구간엔 환자 쪽(+x) 명령 이동을 절대 넣지 않는다 (져주기·복귀만)
 안전
 - force_limit_n(기본 15 N) 초과 → 순응 해제·후퇴·abort, failure_reason='force_limit'
 - SafetyStatus STOP → abort. 환자 손이 손잡이 외 로봇 링크에 접근(HandState)하면 정지는 safety_monitor 가 담당

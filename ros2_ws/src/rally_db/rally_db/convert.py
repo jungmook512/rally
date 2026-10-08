@@ -97,7 +97,7 @@ def safety_to_payload(msg) -> dict[str, Any]:
         "level": SAFETY_LEVELS.get(int(msg.level), str(msg.level)),
         "reason": msg.reason,
         "speed_override": round(float(msg.speed_override), 3),
-        "min_hand_distance": round(float(msg.min_hand_distance), 3),
+        "min_hand_distance": finite_or_none(round(float(msg.min_hand_distance), 3)),   # NaN = 손은 보이는데 거리 모름 → null (jsonb 는 NaN 거부)
     }
 
 
