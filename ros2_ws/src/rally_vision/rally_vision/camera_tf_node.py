@@ -21,11 +21,10 @@ from __future__ import annotations
 import numpy as np
 import rclpy
 from geometry_msgs.msg import PoseStamped, TransformStamped
-from rclpy.duration import Duration
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
-from rclpy.time import Time
-from tf2_ros import Buffer, StaticTransformBroadcaster, TransformBroadcaster, TransformListener
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
+from tf2_msgs.msg import TFMessage
+from tf2_ros import StaticTransformBroadcaster, TransformBroadcaster
 
 from rally_vision import projection as pj
 
@@ -83,6 +82,8 @@ class CameraTfNode(Node):
         d("optical_frame", "camera_color_optical_frame")
         d("tcp_pose_topic", "/rally/robot/tcp_pose")
         d("fallback_after_s", 5.0)                # 이 시간 안에 RealSense tf 가 없으면 optical 프레임을 자식으로 직접 발행
+        d("optical_fallback", True)               # False 면 RealSense tf 가 올 때까지 발행하지 않음
+        d("republish_hz", 30.0)                   # tcp_pose 모드: 마지막 변환을 현재 시각으로 다시 발행 (hold-last) — 영상 stamp 조회가 되게
         g = lambda k: self.get_parameter(k).value  # noqa: E731
 
         self.mode = str(g("mode"))
@@ -96,47 +97,84 @@ class CameraTfNode(Node):
         self.tcp_offset = np.asarray(he["tcp_offset_m"], float)
         self.get_logger().info(f"hand_eye.yaml {g('hand_eye_path')} (TCP←optical xyz {np.round(self.T_tcp_opt[:3, 3], 4)} m, mode={self.mode})")
 
-        self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self._static: dict[str, tuple[str, np.ndarray]] = {}   # child → (parent, T_parent_child) — /tf_static 에서 모음
+        qos_static = QoSProfile(depth=100, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        self.create_subscription(TFMessage, "/tf_static", self._on_tf_static, qos_static)
         self.T_tcp_cam: np.ndarray | None = None               # TCP ← child_frame (RealSense 내부 tf 반영 뒤)
         self.child_frame = self.camera_frame
         self.fallback_after = float(g("fallback_after_s"))
+        self.optical_fallback = bool(g("optical_fallback"))
+        self._fallback_on = False
         self._t0 = self.get_clock().now()
+        self._last_T: np.ndarray | None = None               # tcp_pose 모드: 마지막 base←child
         self.static_bc = StaticTransformBroadcaster(self)
         self.dyn_bc = TransformBroadcaster(self)
         self._static_done = False
         self._warned = False
         if self.mode == "tcp_pose":
             self.create_subscription(PoseStamped, str(g("tcp_pose_topic")), self._on_tcp, qos_profile_sensor_data)
+            hz = float(g("republish_hz"))
+            if hz > 0:
+                self.create_timer(1.0 / hz, self._republish)
         self.create_timer(1.0, self._tick)
 
-    # RealSense 가 발행하는 camera_link → optical 을 읽어 TCP ← camera_link 로 바꾼다
+    # RealSense 가 발행하는 camera_link → optical 을 읽어 TCP ← camera_link 로 바꾼다.
+    # 폴백(optical 직접 발행) 중에도 매번 다시 찾아, RealSense 가 늦게 켜지면 camera_link 로 바꿔 부모가 둘이 되지 않게 한다.
     def _resolve(self) -> bool:
-        if self.T_tcp_cam is not None:
+        if self.T_tcp_cam is not None and not self._fallback_on:
             return True
-        try:
-            tf = self.tf_buffer.lookup_transform(self.camera_frame, self.optical_frame, Time(), timeout=Duration(seconds=0.1))
-        except Exception:  # noqa: BLE001
+        T_cam_opt = self._static_chain(self.camera_frame, self.optical_frame)
+        if T_cam_opt is None:
+            if self._fallback_on:
+                return True
             waited = (self.get_clock().now() - self._t0).nanoseconds * 1e-9
-            if waited < self.fallback_after:
+            if not self.optical_fallback or waited < self.fallback_after:
                 if not self._warned:
-                    self.get_logger().warn(f"tf {self.camera_frame}→{self.optical_frame} 없음 — {self.fallback_after:.0f} s 기다린 뒤 {self.optical_frame} 을 직접 발행")
+                    what = f"{self.fallback_after:.0f} s 기다린 뒤 {self.optical_frame} 을 직접 발행" if self.optical_fallback else "올 때까지 발행 안 함"
+                    self.get_logger().warn(f"tf {self.camera_frame}→{self.optical_frame} 없음 — RealSense 가 떠 있어야 함. {what}")
                     self._warned = True
                 return False
-            # RealSense 가 tf 를 안 내면(publish_tf:=false 등) optical 프레임을 자식으로 직접 발행 — 부모 충돌 없음
+            # RealSense 가 tf 를 안 내면(publish_tf:=false 등) optical 프레임을 자식으로 직접 발행. 나중에 나타나면 아래서 전환
             self.child_frame = self.optical_frame
             self.T_tcp_cam = self.T_tcp_opt.copy()
-            self.get_logger().info(f"RealSense tf 없음 → {self.base_frame if self.mode == 'tcp_pose' else self.parent_frame}→{self.optical_frame} 을 직접 발행")
+            self._fallback_on = True
+            self.get_logger().info(f"RealSense tf 없음 → {self.base_frame if self.mode == 'tcp_pose' else self.parent_frame}→{self.optical_frame} 을 직접 발행 (RealSense tf 가 나타나면 {self.camera_frame} 로 전환)")
             return True
-        tr, q = tf.transform.translation, tf.transform.rotation
-        T_cam_opt = pj.pose_to_matrix(tr.x, tr.y, tr.z, q.x, q.y, q.z, q.w)
         self.T_tcp_cam = self.T_tcp_opt @ np.linalg.inv(T_cam_opt)
+        if self._fallback_on:
+            self.get_logger().info(f"RealSense tf 나타남 → 자식을 {self.optical_frame} 에서 {self.camera_frame} 로 전환")
+            self._fallback_on = False
+            self._static_done = False
+            self._last_T = None
         self.child_frame = self.camera_frame
         self.get_logger().info(f"TCP←{self.camera_frame} xyz {np.round(self.T_tcp_cam[:3, 3], 4)} m 확정")
         return True
 
+    def _on_tf_static(self, msg: TFMessage):
+        for t in msg.transforms:
+            if t.header.frame_id == self.base_frame or t.header.frame_id == self.parent_frame:
+                continue                                        # 우리(또는 다른 노드)가 올린 카메라 tf 는 체인에 넣지 않음
+            tr, q = t.transform.translation, t.transform.rotation
+            self._static[t.child_frame_id] = (t.header.frame_id, pj.pose_to_matrix(tr.x, tr.y, tr.z, q.x, q.y, q.z, q.w))
+
+    def _static_chain(self, root: str, leaf: str) -> np.ndarray | None:
+        """/tf_static 만으로 root → … → leaf 합성 (RealSense: camera_link → camera_color_frame → camera_color_optical_frame).
+        tf2 버퍼 조회 대신 쓰는 이유: 폴백으로 optical 을 직접 발행하는 동안엔 optical 의 부모가 둘이라 버퍼 조회가 안 됨."""
+        T = np.eye(4)
+        f = leaf
+        for _ in range(8):
+            if f == root:
+                return T
+            if f not in self._static:
+                return None
+            parent, T_pc = self._static[f]
+            T = T_pc @ T
+            f = parent
+        return None
+
     def _tick(self):
-        if not self._resolve() or self.mode != "static" or self._static_done:
+        ok = self._resolve()
+        if not ok or self.mode != "static" or self._static_done:
             return
         T_fl_tcp = np.eye(4)
         T_fl_tcp[:3, 3] = self.tcp_offset
@@ -151,7 +189,20 @@ class CameraTfNode(Node):
         p, q = msg.pose.position, msg.pose.orientation
         T_base_tcp = pj.pose_to_matrix(p.x, p.y, p.z, q.x, q.y, q.z, q.w)
         T = T_base_tcp @ self.T_tcp_cam
-        self.dyn_bc.sendTransform(matrix_to_tf(T, self.base_frame, self.child_frame, msg.header.stamp))
+        self._last_T = T
+        stamp = msg.header.stamp
+        if stamp.sec == 0 and stamp.nanosec == 0:               # stamp 없는 발행기(ros2 topic pub 등) → 현재 시각
+            stamp = self.get_clock().now().to_msg()
+        self.dyn_bc.sendTransform(matrix_to_tf(T, self.base_frame, self.child_frame, stamp))
+
+    def _republish(self):
+        """tcp_pose(10 Hz) 사이를 메운다: 마지막 변환을 현재 시각으로 다시 발행(hold-last).
+        영상(30 Hz) stamp 가 마지막 tf 보다 새로우면 tf2 는 외삽을 안 해 조회가 실패하므로(PR #77 리뷰 1),
+        손 노드·segmenter 가 영상 시각으로 조회해도 되게 한다. 값은 최근 tcp_pose(≤ 0.1 s 전) — 로봇 정지 중엔 정확,
+        이동 중엔 그만큼 뒤처진다. 근본 해결은 static 모드(robot_state_publisher, 관절 토픽 속도)."""
+        if self._last_T is None:
+            return
+        self.dyn_bc.sendTransform(matrix_to_tf(self._last_T, self.base_frame, self.child_frame, self.get_clock().now().to_msg()))
 
 
 def main(args=None):
@@ -159,7 +210,7 @@ def main(args=None):
     node = CameraTfNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
