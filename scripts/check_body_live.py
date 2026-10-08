@@ -169,8 +169,8 @@ class Checker(Node):
             ("1 몸 검출", self.n >= 30 and det >= 90, f"{det:.0f}% ({self.n_det}/{self.n}) — 1 m 이상 떨어져 서기"),
             ("2 뻗음 인식", self.seen_ext and self.seen_bent, f"폈다(≥{EXTENDED_DEG:.0f}°) 굽히기 둘 다 · 팔꿈치 {em}"),
             ("3 팔 뻗고 바르게", self.upright, "b 로 기준 잡은 뒤, 팔 뻗고 몸통 5° 안 1초"),
-            ("4 뻗은 채 앞으로 숙이기", self.lean_flag, f"최대 {self.lean_max:.0f}° (15° 넘게)"),
-            ("5 뻗은 채 어깨 으쓱", self.hike_flag, f"최대 {self.hike_max:.0f}° (뻗는 쪽 10° 넘게, 몸은 바르게)"),
+            ("4 뻗은 채 앞으로 숙이기", self.lean_flag, f"최대 {self.lean_max:.0f}° (20° 넘게)"),
+            ("5 뻗은 채 어깨 으쓱", self.hike_flag, f"최대 {self.hike_max:.0f}° (뻗는 쪽 20° 넘게, 몸은 바르게)"),
         ]
 
 
@@ -233,8 +233,8 @@ def render(node: Checker, skel: "Skeleton | None" = None, state: dict | None = N
         kind = last.compensation_type
         put(panel, {"none": "보상 동작 없음", "trunk_lean": "보상: 몸통 기울임", "shoulder_hike": "보상: 어깨 으쓱"}.get(kind, kind),
             (10, 6), RED if last.compensation_detected else GREEN)
-        bar(panel, 34, "몸통 기울기", last.trunk_lean_deg, 40, 15)
-        bar(panel, 80, "어깨 들림", last.shoulder_elevation_deg, 30, 10)
+        bar(panel, 34, "몸통 기울기", last.trunk_lean_deg, 60, 20)       # body_pose lean_threshold_deg 와 같게
+        bar(panel, 80, "어깨 들림", last.shoulder_elevation_deg, 50, 20)    # body_pose hike_threshold_deg 와 같게
         bar(panel, 126, "팔꿈치 펴짐", last.elbow_extension_deg, 180, None)
         e = last.elbow_extension_deg
         reaching = math.isfinite(e) and e >= EXTENDED_DEG

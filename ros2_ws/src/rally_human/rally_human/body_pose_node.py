@@ -9,7 +9,7 @@
        굽히면 마지막 값 유지 — 굽힌 팔이 어깨·몸통을 가려 관절이 틀어지기 때문 (10/8 C270 실측)
      - 몸통 기울기 = 기준 자세 대비 앞으로 숙인 각, 어깨 들림 = 기준 대비 뻗는 쪽 어깨 으쓱 (양 귀 가운데 기준)
      - 기준 = 노드 시작 후, 또는 /rally/perception/body/reset_baseline 뒤 baseline_frames 프레임 (바르게 선 상태)
-  3. 뻗은 동안 같은 보상 동작이 confirm_frames 프레임 연속이면 compensation_detected (몸통 15° 이상 > 어깨 들림 10° 이상).
+  3. 뻗은 동안 같은 보상 동작이 confirm_frames 프레임 연속이면 compensation_detected (몸통 20° 이상 > 어깨 들림 20° 이상).
      안 뻗었거나 사람을 놓치면 none (brain rule_layer.fatigue_signals 가 이 플래그를 피로 신호로 씀)
   elbow_extension_deg ≥ extended_deg 이면 '뻗음' — 이때만 몸통·어깨 값이 새 값이다. 정확한 팔꿈치 각도는 보장하지 않는다.
   header.stamp = 영상 원본 시각. 사람이 안 보이면 detected=false, 값은 NaN.
@@ -52,8 +52,8 @@ class BodyPoseNode(Node):
         d("rate_hz", 15.0)                         # INTERFACES 2.2: 15 Hz
         d("min_detection_confidence", 0.5)
         d("min_visibility", 0.5)                   # 관절 visibility 가 이보다 낮으면 안 보이는 것으로
-        d("lean_threshold_deg", 15.0)              # 기획 FR-05
-        d("hike_threshold_deg", 10.0)              # 어깨 들림 — 초기값, 실측 후 조정
+        d("lean_threshold_deg", 20.0)              # 기획 FR-05 — 10/8 C270 선 자세: 그냥 뻗어도 오탐이 나 15 → 20
+        d("hike_threshold_deg", 20.0)              # 10/8 C270 선 자세: 팔을 앞으로 뻗기만 해도 어깨가 같이 올라가 오탐 → 10 → 20 (시연은 크게 으쓱)
         d("confirm_frames", 5)                     # 15 Hz 기준 약 0.3 s
         d("baseline_frames", 30)                   # 처음 약 2 s 를 평소 자세로
         d("arm", "auto")                           # 뻗는 팔: left | right | auto(카메라 쪽 = 더 잘 보이는 팔)
