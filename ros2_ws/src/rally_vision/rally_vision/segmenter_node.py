@@ -130,6 +130,16 @@ def extract_objects(res, depth_mm: np.ndarray, K, T_cam_to_frame: np.ndarray | N
     return out
 
 
+def pick_transform_source(source: str, tf_ok: bool, tcp_ok: bool) -> str | None:
+    """transform_source 규칙 (순수 함수, 테스트용).
+    tcp_npy: tcp_pose×npy 만 · tf: tf2 만 · auto: tf 우선, 없으면 tcp_npy. 쓸 수 있는 게 없으면 None(카메라 좌표)."""
+    if source == "tf":
+        return "tf" if tf_ok else None
+    if source == "auto" and tf_ok:
+        return "tf"
+    return "tcp_npy" if tcp_ok else None
+
+
 class SimpleTracks:
     """클래스별 최근 위치로 velocity·is_moving·track_id. ByteTrack 전 임시."""
 
@@ -180,6 +190,8 @@ class SegmenterNode(Node):
         d("tcp_pose_topic", "/rally/robot/tcp_pose")
         d("tcp_pose_max_age_s", 0.5)
         d("gripper2cam_path", default_gripper2cam_path())
+        d("hand_eye_path", pj.default_hand_eye_path())   # rally_bringup/config/hand_eye.yaml — 있으면 npy 보다 우선, depth_scale 도 여기서
+        d("depth_scale", 0.0)                     # 0 = hand_eye.yaml 값(없으면 1.0). RealSense 깊이 보정 배율
         d("transform_source", "tcp_npy")          # 카메라→base 변환: "tcp_npy"(tcp_pose × npy, 기본) · "tf"(tf2 만) · "auto"(tf 우선, 없으면 tcp_npy)
         d("debug_hz", 10.0)
         d("moving_mps", 0.05)
@@ -198,10 +210,15 @@ class SegmenterNode(Node):
             self.transform_source = "tcp_npy"
         self._tf_src_logged = None
         self.g2c = None
-        if g("gripper2cam_path"):
+        he = pj.load_hand_eye(str(g("hand_eye_path")))
+        self.depth_scale = float(g("depth_scale")) or he["depth_scale"]
+        if he["T_tcp_cam_mm"] is not None:
+            self.g2c = he["T_tcp_cam_mm"]
+            self.get_logger().info(f"hand_eye.yaml: {g('hand_eye_path')} (transform_source={self.transform_source}, depth_scale={self.depth_scale})")
+        elif g("gripper2cam_path"):
             try:
                 self.g2c = np.load(g("gripper2cam_path"))
-                self.get_logger().info(f"T_gripper2camera: {g('gripper2cam_path')} (transform_source={self.transform_source})")
+                self.get_logger().info(f"T_gripper2camera: {g('gripper2cam_path')} (transform_source={self.transform_source}, depth_scale={self.depth_scale})")
             except Exception as e:  # noqa: BLE001
                 self.get_logger().warn(f"npy 로드 실패 {g('gripper2cam_path')}: {e}")
 
@@ -252,24 +269,34 @@ class SegmenterNode(Node):
 
         기본은 tcp_npy: 로봇 PC 의 URDF 가 카메라 프레임을 설계 치수로 발행하면 tf 가 캘리브레이션값(npy)을 이겨
         좌표가 치우친다(10/7 실측 x +9.5, y −9.2 mm, PR #42). 검증된 static tf 를 올린 뒤 "tf" 또는 "auto" 로 바꾼다.
+
+        시각 주의 (PR #73 리뷰): tcp_npy 는 영상 stamp 가 아니라 **마지막으로 받은 tcp_pose**(10 Hz, 수신 0.5 s 안)를 쓴다.
+        → 로봇이 멈춰 있을 때만 base 좌표가 정확하다. 움직이는 중의 좌표는 로봇 이동에 쓰지 말 것.
+        tf 경로는 영상 stamp 로 조회하므로(tf2 보간) camera_tf 노드가 있으면 "auto" 가 더 낫다.
         """
         src = self.transform_source
+        tf_T = None
         if src in ("tf", "auto"):
             try:
                 tf = self.tf_buffer.lookup_transform(self.base_frame, cam_frame, Time.from_msg(stamp), timeout=Duration(seconds=0.02))
                 tr, q = tf.transform.translation, tf.transform.rotation
-                self._log_source("tf", f"{self.base_frame}←{cam_frame}")
-                return pj.pose_to_matrix(tr.x, tr.y, tr.z, q.x, q.y, q.z, q.w), self.base_frame
+                tf_T = pj.pose_to_matrix(tr.x, tr.y, tr.z, q.x, q.y, q.z, q.w)
             except Exception:  # noqa: BLE001
-                if src == "tf":
-                    self.get_logger().warn(f"tf {self.base_frame}←{cam_frame} 없음 (transform_source=tf) → 카메라 좌표로 발행", throttle_duration_sec=5.0)
-                    return None, cam_frame
-        if self.tcp is not None and self.g2c is not None and time.monotonic() - self.tcp[1] < self.tcp_max_age:
+                pass
+        tcp_ok = self.tcp is not None and self.g2c is not None and time.monotonic() - self.tcp[1] < self.tcp_max_age
+        pick = pick_transform_source(src, tf_T is not None, tcp_ok)
+        if pick == "tf":
+            self._log_source("tf", f"{self.base_frame}←{cam_frame}")
+            return tf_T, self.base_frame
+        if pick == "tcp_npy":
             p, q = self.tcp[0].pose.position, self.tcp[0].pose.orientation
             T = pj.base_from_tcp(pj.pose_to_matrix(p.x, p.y, p.z, q.x, q.y, q.z, q.w), self.g2c)
-            self._log_source("tcp_npy", "tcp_pose × T_gripper2camera.npy")
+            self._log_source("tcp_npy", "tcp_pose × hand_eye (마지막 tcp_pose 기준 — 로봇 정지 중에만 정확)")
             return T, self.base_frame
-        why = "tcp_pose 없음" if self.tcp is None else ("npy 없음" if self.g2c is None else "tcp_pose 오래됨")
+        if src == "tf":
+            why = "tf 없음"
+        else:
+            why = "tcp_pose 없음" if self.tcp is None else ("hand_eye/npy 없음" if self.g2c is None else "tcp_pose 오래됨")
         self.get_logger().warn(f"base 변환 불가({why}, transform_source={src}) → 카메라 좌표로 발행", throttle_duration_sec=5.0)
         return None, cam_frame
 
@@ -284,6 +311,8 @@ class SegmenterNode(Node):
             return
         img, depth, stamp, cam_frame = self.color, self.depth, self.color_stamp, self.color_frame
         self._done_stamp = stamp
+        if abs(self.depth_scale - 1.0) > 1e-6:                 # hand_eye.yaml depth_scale (RealSense 깊이 3 % 보정)
+            depth = (depth.astype(np.float32) * self.depth_scale).astype(np.uint16)
         if depth.shape[:2] != img.shape[:2]:
             self.get_logger().warn("컬러·깊이 해상도 불일치 — align_depth.enable:=true 확인", throttle_duration_sec=5.0)
             return
