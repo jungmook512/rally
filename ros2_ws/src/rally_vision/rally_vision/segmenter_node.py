@@ -216,6 +216,8 @@ class SegmenterNode(Node):
             self.g2c = he["T_tcp_cam_mm"]
             self.get_logger().info(f"hand_eye.yaml: {g('hand_eye_path')} (transform_source={self.transform_source}, depth_scale={self.depth_scale})")
         elif g("gripper2cam_path"):
+            self.get_logger().warn(f"hand_eye.yaml 없음({g('hand_eye_path') or '경로 못 찾음'}) → 선생님 npy + depth_scale {self.depth_scale} 로 폴백 "
+                                   "(10/8 검증 오차 10~42 mm — rally_bringup 이 설치됐는지, hand_eye_path 파라미터 확인)")
             try:
                 self.g2c = np.load(g("gripper2cam_path"))
                 self.get_logger().info(f"T_gripper2camera: {g('gripper2cam_path')} (transform_source={self.transform_source}, depth_scale={self.depth_scale})")
