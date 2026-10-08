@@ -94,6 +94,26 @@ def test_push_ball_strike_arc():
     pivot = np.array(tips["mid"]) - L * z_mid
     for k in ("start", "end"):
         assert float(np.linalg.norm(np.array(tips[k]) - pivot)) == pytest.approx(L, abs=1e-6)
+def test_handover_present_pose_and_tilt():
+    """제시 자세: 중앙선 − 여유, 테이블 + 높이, 툴 z = 베이스 +x(수평), 툴 +y(카메라) 위. tilt 는 ±90° 클램프, 베이스 x 축 회전."""
+    pytest.importorskip("rally_interfaces")
+    from rally_robot.skills.handover import DEFAULTS, present_pose
+    cfg = dict(DEFAULTS)
+    table = {"centerline_x_m": 0.52, "z_m": 0.0144}
+    cur = [300.0, 0.0, 400.0, 0.0, 180.0, 0.0]                     # 툴 수직 아래 (집은 자세)
+    pose, tilt = present_pose(cfg, table, cur, 0.0)
+    assert pose[0] == pytest.approx(460.0) and pose[1] == pytest.approx(0.0) and pose[2] == pytest.approx(304.4)
+    m = Rotation.from_euler("ZYZ", pose[3:6], degrees=True).as_matrix()
+    assert m[:, 2] == pytest.approx([1, 0, 0], abs=1e-6)                         # 툴 z = 베이스 +x (테이블과 수평, 환자 쪽)
+    assert m[:, 1] == pytest.approx([0, 0, 1], abs=1e-6)                         # 툴 +y(카메라 쪽) = 위
+    pose30, tilt30 = present_pose(cfg, table, cur, 30.0)
+    assert tilt30 == 30.0 and pose30[:3] == pose[:3]
+    m30 = Rotation.from_euler("ZYZ", pose30[3:6], degrees=True).as_matrix()
+    assert m30[:, 2] == pytest.approx([1, 0, 0], abs=1e-6)                       # 기울여도 툴 z 는 그대로 (x 축 회전)
+    assert math.degrees(math.acos(m30[2, 1])) == pytest.approx(30.0, abs=0.1)    # 카메라 쪽이 위에서 30° 기울어짐
+    _, tilt_c = present_pose(cfg, table, cur, 120.0)
+    assert tilt_c == 90.0                                                         # 범위 클램프
+
 
 
 def test_push_ball_speed_for_target():
@@ -127,3 +147,26 @@ def test_push_ball_choose_ball_smallest_x():
     x, y, z, n = choose_ball(arr, dict(DEFAULTS))
     assert (x, y, n) == (0.31, 0.38, 2)
     assert choose_ball(NS(header=NS(frame_id="camera_color_optical_frame"), objects=arr.objects), dict(DEFAULTS)) is None
+
+
+def test_push_ball_hand_view_pose():
+    """친 뒤 손 보기 자세: 툴 z 가 진행 방향(+x)으로 tilt 만큼 기울고, yaw 90(집을 때 방향)이면 카메라 쪽(툴 +y)이 위."""
+    pytest.importorskip("rally_interfaces")
+    from rally_robot.skills.push_ball import DEFAULTS, _hand_view_pose
+    cfg = dict(DEFAULTS, tool_down_zyz=[174.8, -177.0, 175.1], hand_view_tilt_deg=45.0)
+    pose = _hand_view_pose(cfg, (0.43, 0.0), (1.0, 0.0), 0.0144, 90.0)
+    m = Rotation.from_euler("ZYZ", pose[3:6], degrees=True).as_matrix()
+    assert m[0, 2] > 0.6                                                   # 툴 z 가 환자 쪽(+x)
+    assert math.degrees(math.acos(-m[2, 2])) == pytest.approx(45.0, abs=4.0)   # 수직에서 ≈45° (tool_down 이 3° 기울어 있음)
+    assert m[2, 1] > 0.6                                                   # 카메라 쪽(툴 +y)이 위
+    assert pose[0] == pytest.approx(330.0) and pose[2] == pytest.approx(314.4)
+
+
+def test_safety_quat_angle():
+    """nudge '움직이는 중' 판정용 툴 회전각: 같은 자세 0°, z 축 90° 회전 90°, 부호 반대 쿼터니언(같은 자세)도 0°."""
+    pytest.importorskip("rally_interfaces")
+    from rally_robot.safety_monitor import quat_angle_deg
+    s = math.sqrt(0.5)
+    assert quat_angle_deg((0, 0, 0, 1), (0, 0, 0, 1)) == pytest.approx(0.0, abs=1e-6)
+    assert quat_angle_deg((0, 0, 0, 1), (0, 0, s, s)) == pytest.approx(90.0, abs=1e-4)
+    assert quat_angle_deg((0, 0, s, s), (0, 0, -s, -s)) == pytest.approx(0.0, abs=1e-4)

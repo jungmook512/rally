@@ -3,6 +3,19 @@
 패키지: `ros2_ws/src/rally_robot` · 책임 모드: **모드 1 (공 굴려주기)**
 참고: `docs/INTERFACES.md` 2.1 / 3 / 4, `rally_bringup/config/safety.yaml`, `skills.yaml`
 
+## 오늘 (10/8) — 모드 1 밀기 레시피 실험 (#69 결정: 레시피 먼저, 칼만 보류)
+- [ ] 준비: `skill_server`·`safety_monitor`·`gripper_node`·segmenter 기동, segmenter 로그 `카메라→base 변환: tcp_npy` 확인 (#73)
+- [ ] 레인별 실험: `python3 scripts/push_recipe.py --lane N --speeds 0.2 0.3 0.4 0.5 --repeats 3` (레인 0/1/2 = 현장 1/2/3)
+  - 레인 1개 제대로: 속도 4종 × 3번 = 12회 → 나머지 2개 레인은 마찰 비슷하면 속도 2종 × 3번 (합계 24~36회, 약 20~40분)
+  - 속도는 **실제로 쓸 거리 범위** 안에서만 (저속은 미끄럼 구간 비중이 커서 v²/2a 에서 벗어남, 상한 `push_speed_range` 0.60)
+  - **한 번 굴릴 때마다 레인 비우기** (앞서 멈춘 공에 다음 공이 부딪힘)
+  - 치는 높이·자세·놓는 자리가 매번 같아야 함 — 놓기 뒤 공이 입구에서 흔들리면 d0 가 흔들림
+- [ ] 몇 번은 `--manual`(줄자)과 비전을 같이 재서 비교 → `vision_offset_m`(≈9.5 mm) 치우침 확인 (박성현 핸드아이 검증 전후)
+- [ ] 판정: 같은 속도 3번 정지 위치 표준편차(반복성) + **한 속도 빼고 맞춘 식의 예측 오차 표준편차 ≤ 15 mm** (→ 약 95 % 가 30 mm 안, FR-03)
+- [ ] 결과 `a`·`d0` → `skills.yaml mode1.lanes[].recipe: {decel_mps2, d0_m}` (brain 은 이걸 초기값으로). 이 `a` 는 스윙 속도 기준이라 마찰 감속도가 아님 → `mode1.rolling.decel_init_mps2` 에 옮기지 않기
+- [ ] CSV 는 `data/measure/` (git 제외). 가능하면 RealSense bag 같이 녹화 → 나중에 칼만 검증용 (박성현 제안)
+- [ ] (박성현) 오전 로봇 30분: 핸드아이 검증·중앙선 실측·카메라 static tf (#59) — 시간 맞추기
+
 ## Day 0 (10/5)
 - [x] `rally_robot/README.md` 읽기 — 선생님 코드가 어디로 옮겨졌는지, `dsr_helpers.init_dsr()` 패턴
 - [x] dsr_bringup2 빌드, M0609 연결, `movel` 기본 이동 확인
@@ -24,6 +37,11 @@
 - [x] `pick_compliant.py`: `task_compliance_ctrl` Z 저강성 → 하강 → Z 힘 변화로 접촉 감지 → 파지 → 들기 — 코드 완료(가짜 모드 통과), 로봇 확인 필요. Z 는 table.yaml 평면 우선
 - [x] `handover.py` GIVE: 물체를 `tilt_deg`로 기울여 중앙선 앞 제시 → 당김 힘 임계 감지 → RG2 해제 → 후퇴 — 코드 완료(가짜 모드 통과). `skills.yaml handover.present_pose` 티칭 값 필요
 - [ ] 당김 힘 임계값 실험 (사람이 당길 때 힘 곡선 10회 기록)
+- [ ] (10/8, #75 brain 모드 5 트리 연결 후속)
+  - [ ] `pick_compliant.py` 못 쥐면 이유 보내기: 지금은 이유 없이 `abort()` → brain 이 "안전 정지일 수 있음"으로 보고 `pick_failed` 1회 재시도가 실제로는 안 일어남. `PickCompliant.Result` 끝에 `string failure_reason` 추가(+ `docs/INTERFACES.md`) → 못 쥠 = `"pick_failed"`
+  - [ ] `handover.py` 손이 안 보이면 `wrist_angle_at_grasp_deg` 를 0.0 대신 NaN (0° 는 "손바닥 아래" 정상 값으로 보임). 30 cm 안쪽은 손목 각도가 ±20° 흔들림(#74) → 잡기 직전 접근 구간 중간값 쓰기 정동휘와 정하기
+  - [ ] 기울기 `handover.tilt_range_deg` ±90° (`skills.yaml`·`embeddings.yaml`) 커밋·push — 원격 #57 은 아직 ±45°
+  - [ ] 모드 5 물체 거치 자리가 brain `mode5.pick_x_range_m` [0.15, 0.55] 안인지 실측
 
 ## Day 3 — 모드 5 완성 + 안전 ✅
 - [ ] `handover.py` RECEIVE: `HandState.palm_pose`를 `servol`로 추종(30 Hz, One-Euro 필터) → 순응 상태로 받기 → 파지 판정
@@ -32,9 +50,11 @@
 - [x] `SafetyStatus` Reliable 발행, `LEVEL_STOP` 시 실행 중 action abort — 가짜 모드에서 확인(estop → 이동 중 abort, STOP 중 goal 거부). 로봇에서 재확인
 - [x] `/rally/robot/reset_safety`
 - [ ] 3중 정지 전수 테스트 10회
+- [ ] (#59 1단계) `safety_monitor.py` 손 거리 `detected && NaN` → SLOW + 손·힘·tcp_pose 데이터 끊김 감지(#14). 지금 카메라 tf 가 없어 손 거리가 늘 NaN → 손 근접 감속·정지가 사실상 꺼져 있음. 그 뒤 박성현 tf + 체크리스트 8~10 → 주먹→STOP 제거
 
 ## Day 4 — 모드 7 완성 ✅ (오전) + 모드 3 착수
 - [ ] `resist_push.py`: 손잡이 제시 → `task_compliance_ctrl` + `set_stiffnessx`(밀리는 축만 저강성) → 20 Hz 힘 누적 → 목표 유지 2 s → 져주기 저속 movel(환자 힘 벡터 방향) → 손 놓으면 저속 복귀(접촉 감지 정지) → `finally` 해제
+  - (10/8, #76) brain 은 `handle_pose` 를 비워 보낸다 → frame_id 가 비었으면 `skills.yaml` 기본 제시 자세 사용, **(0,0,0) 으로 이동 금지**. 강성은 brain 기본 700 N/m. 구현 전까지는 무조건 abort 라 모드 7 시도는 `skill_aborted` 로 기록됨
 - [ ] 힘 한계 15 N 전수 테스트, 로그로 "이동 방향이 항상 환자에게서 멀어짐" 확인
 - [ ] 강성 3단계(200/700/1500 N/m) 실제 느낌 확인, Day 2 당김 힘 데이터로 target_force 초기값 결정
 - [ ] 패드 손잡이 어댑터 파지 자세 티칭, 충격 시 회전 여부 확인 — 10/7 충격 측정: 로봇이 느끼는 힘은 노이즈(≈2 N) 수준, 센서가 0.1 s 단위라 순간 피크 측정 불가. 3D 프린팅 설계 하중은 계산값(약 100 N) 전달
@@ -52,6 +72,8 @@
 - [x] `push_ball.py`: `lane` 으로 가이드 길 선택(skills.yaml) → 공을 길 입구에 놓고 뒤로 접근 → `push_speed` 속도 프로파일 movel → 접촉 힘 감지 → 정해진 거리 밀고 정지 → 관측 자세 복귀 — 10/7 코드 완료(집기 후 레인 입구에 놓기 → 닫은 손가락으로 위치 기반 밀기, 툴 힘 0 이라 접촉 감지 없음). 가짜 모드·두산 에뮬레이터(scripts/sim_robot.sh) 통과, 실로봇 미확인. 레인 입구·방향·공 지름 실측 필요
 - [ ] 가이드 길 3개 위치 실측 → `skills.yaml mode1.lanes` 기입, 그리퍼가 길 벽에 안 걸리는지 확인
 - [ ] 밀기 파라미터 ↔ 정지 거리 사전 실험 20회 (박성현 정지 위치 측정) → 초기 룩업 테이블
+- [ ] (10/8, #69·#75) PushBall observe 단계(`push_ball.py` TODO): 관측 자세 → 공 `is_moving=false` 대기 → `stop_position`·`error_mm` 채우기, 못 재면 `error_mm = NaN`. 지금은 안 채워서 brain 이 NaN 으로 기록 중 (박성현과)
+- [ ] (10/8, #73) segmenter 로그 `카메라→base 변환: tcp_npy` 확인 → `mode1.vision_offset_m: [0,0,0]` 으로 집기 치우침 사라지는지
 - [ ] 돌아온 공 `PickCompliant`로 집기 (테이블 접촉 감지)
 
 ## Day 6 — 모드 1 학습 루프 ✅
