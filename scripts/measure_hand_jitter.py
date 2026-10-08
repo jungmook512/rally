@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+"""손 따라가기(모드 5 RECEIVE servol) 준비 측정 — HandState 지연 · 손바닥 위치 떨림 · 발행 간격.
+
+hand_pose 노드가 켜진 상태에서, 손을 카메라 앞에 **가만히** 두고 실행한다. 3초 뒤부터 --seconds 동안 잰다.
+    python3 scripts/measure_hand_jitter.py                      # 10 s
+    python3 scripts/measure_hand_jitter.py --seconds 20 --label 50cm
+결과
+- 지연: 받은 시각 − header.stamp(카메라 프레임 시각). 카메라 드라이버 + 손 노드 처리 시간 합 (같은 PC 시계 기준)
+- 떨림: 손바닥 위치 x·y·z 표준편차 [mm], 손목 각도 표준편차 [°] — 정정인 servol 필터(One-Euro 등) 값 정할 때 씀
+- 발행: 평균 Hz, 손 검출 비율, 가장 긴 끊김 (손 놓침·프레임 누락)
+좌표: tf 가 있으면 base_link, 없으면 카메라 좌표 (frame_id 로 표시). 떨림 크기는 어느 좌표든 비슷하다.
+"""
+import argparse
+import time
+
+import numpy as np
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
+from rclpy.time import Time
+
+from rally_interfaces.msg import HandState
+
+
+class Meter(Node):
+    def __init__(self) -> None:
+        super().__init__("rally_measure_hand_jitter")
+        self.rows: list[tuple] = []          # (받은 시각 s, 지연 ms, 검출, x, y, z, 손목, frame)
+        self.on = False
+        self.create_subscription(HandState, "/rally/perception/hand", self._on, qos_profile_sensor_data)
+
+    def _on(self, m: HandState) -> None:
+        if not self.on:
+            return
+        now = self.get_clock().now()
+        lat_ms = (now - Time.from_msg(m.header.stamp)).nanoseconds * 1e-6
+        p = m.palm_pose.position
+        self.rows.append((time.monotonic(), lat_ms, m.detected, p.x, p.y, p.z, m.wrist_angle_deg, m.header.frame_id))
+
+
+def summarize(rows: list[tuple], seconds: float) -> str:
+    if not rows:
+        return "HandState 를 못 받음 — hand_pose 노드가 켜져 있는지, 같은 ROS 설정(도메인·RMW)인지"
+    t = np.array([r[0] for r in rows])
+    lat = np.array([r[1] for r in rows])
+    det = np.array([r[2] for r in rows])
+    gaps = np.diff(t) * 1000 if len(t) > 1 else np.array([0.0])
+    lines = [f"메시지 {len(rows)}개 / {seconds:.0f} s → {len(rows) / seconds:.1f} Hz, 손 검출 {det.mean() * 100:.0f} %, "
+             f"가장 긴 간격 {gaps.max():.0f} ms (평균 {gaps.mean():.0f} ms)",
+             f"지연(카메라 프레임 → 손 메시지): 평균 {lat.mean():.0f} ms · 중간값 {np.median(lat):.0f} ms · 95% {np.percentile(lat, 95):.0f} ms"]
+    d = [r for r in rows if r[2]]
+    pos = np.array([r[3:6] for r in d if r[5] and np.isfinite(r[5])])
+    if len(pos) >= 10:
+        std = pos.std(axis=0) * 1000
+        step = np.linalg.norm(np.diff(pos, axis=0), axis=1) * 1000
+        lines.append(f"손바닥 위치 떨림 ({d[-1][7]}, 거리 약 {np.median(pos[:, 2]) * 100:.0f} cm, {len(pos)} 프레임): "
+                     f"표준편차 x {std[0]:.1f} · y {std[1]:.1f} · z {std[2]:.1f} mm, "
+                     f"프레임 간 이동 중간값 {np.median(step):.1f} mm · 95% {np.percentile(step, 95):.1f} mm")
+    else:
+        lines.append("손바닥 위치 없음 (깊이 없음 — RealSense 정렬 깊이가 켜져 있는지) 또는 손 검출 부족")
+    w = np.array([r[6] for r in d if np.isfinite(r[6])])
+    if len(w) >= 10:
+        lines.append(f"손목 각도: 평균 {w.mean():.0f}°, 표준편차 {w.std():.1f}°, 범위 {w.min():.0f}~{w.max():.0f}°")
+    return "\n  ".join(lines)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--seconds", type=float, default=10.0)
+    ap.add_argument("--label", default="", help="결과 앞에 붙일 이름 (예: 50cm)")
+    a = ap.parse_args()
+    rclpy.init()
+    node = Meter()
+    print("손을 카메라 앞에 가만히 두세요. 3초 뒤 시작", flush=True)
+    end_wait = time.monotonic() + 3.0
+    while time.monotonic() < end_wait:
+        rclpy.spin_once(node, timeout_sec=0.1)
+    node.on = True
+    t0 = time.monotonic()
+    print(f"측정 중 {a.seconds:.0f} s ...", flush=True)
+    while time.monotonic() - t0 < a.seconds:
+        rclpy.spin_once(node, timeout_sec=0.05)
+    node.on = False
+    node.get_logger().info(f"결과{' [' + a.label + ']' if a.label else ''}\n  {summarize(node.rows, a.seconds)}")
+    node.destroy_node()
+    rclpy.try_shutdown()
+
+
+if __name__ == "__main__":
+    main()
