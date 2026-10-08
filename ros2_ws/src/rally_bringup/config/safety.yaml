@@ -8,6 +8,7 @@ rally_safety_monitor:
     force_limit_n: 25.0        # 합력 |F| 초과 → STOP (모드 7 은 스킬 자체 한계 15 N 이 먼저 걸림)
     nudge_dfdt_n: 5.0          # 정지 구간 힘 급변 (N, wrench 한 샘플 = 20 ms @ 50 Hz 기준) → STOP. 10/6 실측: 정지 노이즈 |ΔF| ≤ 0.25 N, |F| ≤ 2.5 N → 노이즈 20배. 실제 톡 쳐서 안 걸리면 3.0 으로
     nudge_speed_max_mps: 0.02  # TCP 가 이보다 빨리 움직이는 중에는 nudge 판정 안 함 (가속 관성 오탐, CP7)
+    nudge_ang_speed_max_dps: 5.0  # 툴이 이보다 빨리 도는 중에도 nudge 판정 안 함. 10/8: 손 보기 자세로 손목만 45° 도는 관절 이동(손끝 거의 제자리)에서 nudge 오탐 STOP. 힘 임계·STOP 흐름은 그대로
     contact_timeout_s: 0.5     # skill_server 의 /rally/safety/contact_expected 하트비트 유효 시간. 접촉 예정 동안 nudge 만 끔, 힘 한계는 유지
     workspace_enabled: true    # tcp_pose 가 아래 범위 밖이면 STOP (workspace_limit)
     # 작업 공간 (base_link, m) — table.yaml 중앙선과 맞춘다. TODO(정정인) 관측 자세 티칭 후 실측

@@ -6,6 +6,8 @@
       / TCP 가 작업 공간 밖 → STOP / 주먹·"그만"·estop → STOP
 - nudge 는 "접촉이 없어야 할 때 누가 로봇을 쳤다" 용이다. 스킬이 접촉 예정 플래그를 올린 동안(집기 하강·핸드오버 당김·저항 밀기)과
   로봇이 움직이는 동안(가속 관성)은 판정하지 않는다. 절대 힘 한계는 항상 적용한다.
+  '움직이는 중' = TCP 직선 속도 ≥ nudge_speed_max_mps **또는** 툴 회전 속도 ≥ nudge_ang_speed_max_dps.
+  (10/8 실로봇: 손끝은 거의 제자리에서 손목만 45° 도는 관절 이동 중 툴 힘이 출렁여 nudge STOP — 직선 속도만 봐서 '정지'로 오판)
 - 접촉 예정 플래그는 contact_timeout_s(0.5 s) 안에 갱신되지 않으면 꺼진 것으로 본다 (skill_server 가 죽어도 감시 복귀).
 STOP 은 /rally/robot/reset_safety (Trigger) 로만 해제.
 """
@@ -22,6 +24,14 @@ from std_srvs.srv import Trigger
 from rally_interfaces.msg import HandState, SafetyStatus, VoiceIntent
 
 
+def quat_angle_deg(q1, q2):
+    """두 쿼터니언 (x, y, z, w) 사이 회전각 [deg]. 단위 쿼터니언이 아니어도 정규화해서 쓴다."""
+    n1 = math.sqrt(sum(v * v for v in q1)) or 1.0
+    n2 = math.sqrt(sum(v * v for v in q2)) or 1.0
+    d = abs(sum(a * b for a, b in zip(q1, q2))) / (n1 * n2)
+    return math.degrees(2.0 * math.acos(min(1.0, d)))
+
+
 class SafetyMonitor(Node):
     def __init__(self):
         super().__init__("rally_safety_monitor")
@@ -31,6 +41,7 @@ class SafetyMonitor(Node):
         self.declare_parameter("force_limit_n", 25.0)
         self.declare_parameter("nudge_dfdt_n", 8.0)          # wrench 한 샘플(50 Hz = 20 ms) 사이 |F| 변화량 [N]. scripts/measure_wrench.py 로 확정
         self.declare_parameter("nudge_speed_max_mps", 0.02)  # 이보다 빨리 움직이는 중에는 nudge 판정 안 함 (가속 관성 오탐, CP7)
+        self.declare_parameter("nudge_ang_speed_max_dps", 5.0)  # 툴이 이보다 빨리 도는 중에도 nudge 판정 안 함 (회전 중 힘 출렁임)
         self.declare_parameter("contact_timeout_s", 0.5)     # contact_expected 하트비트 유효 시간
         for k, v in dict(x_min=0.25, x_max=0.80, y_min=-0.45, y_max=0.45, z_min=0.0, z_max=0.60).items():
             self.declare_parameter(f"workspace_{k}_m", v)
@@ -53,8 +64,9 @@ class SafetyMonitor(Node):
         self.latched_stop = False
         self.contact_until = 0.0
         self.prev_fmag = None
-        self.prev_tcp = None          # (t, x, y, z)
+        self.prev_tcp = None          # (t, x, y, z, qx, qy, qz, qw)
         self.tcp_speed = 0.0
+        self.tcp_ang_speed = 0.0      # deg/s
         self.create_timer(0.01, self.tick)
 
     def p(self, name):
@@ -89,11 +101,14 @@ class SafetyMonitor(Node):
     def on_tcp(self, m):
         now = time.monotonic()
         x, y, z = m.pose.position.x, m.pose.position.y, m.pose.position.z
+        o = m.pose.orientation
+        q = (o.x, o.y, o.z, o.w)
         if self.prev_tcp is not None:
             dt = now - self.prev_tcp[0]
             if dt > 1e-3:
-                self.tcp_speed = math.dist((x, y, z), self.prev_tcp[1:]) / dt
-        self.prev_tcp = (now, x, y, z)
+                self.tcp_speed = math.dist((x, y, z), self.prev_tcp[1:4]) / dt
+                self.tcp_ang_speed = quat_angle_deg(self.prev_tcp[4:], q) / dt
+        self.prev_tcp = (now, x, y, z, *q)
         if self.p("workspace_enabled"):
             for axis, v in (("x", x), ("y", y), ("z", z)):
                 if not self.p(f"workspace_{axis}_min_m") <= v <= self.p(f"workspace_{axis}_max_m"):
@@ -104,10 +119,14 @@ class SafetyMonitor(Node):
         f = math.sqrt(m.wrench.force.x ** 2 + m.wrench.force.y ** 2 + m.wrench.force.z ** 2)
         if f > self.p("force_limit_n"):
             self._stop("force_limit")                       # 접촉 예정이어도 절대 한계는 항상
-        if self.prev_fmag is not None and not self.contact_expected() and self.tcp_speed < self.p("nudge_speed_max_mps"):
+        if self.prev_fmag is not None and not self.contact_expected() and not self.moving():
             if abs(f - self.prev_fmag) > self.p("nudge_dfdt_n"):
                 self._stop("nudge")
         self.prev_fmag = f
+
+    def moving(self):
+        """nudge 판정을 쉬는 '움직이는 중' — 직선 속도 또는 툴 회전 속도."""
+        return self.tcp_speed >= self.p("nudge_speed_max_mps") or self.tcp_ang_speed >= self.p("nudge_ang_speed_max_dps")
 
     def on_reset(self, req, res):
         self.latched_stop = False
