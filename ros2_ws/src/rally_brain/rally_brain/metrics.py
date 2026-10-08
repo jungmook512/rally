@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable, Sequence
 from functools import lru_cache
 from typing import Any
@@ -30,9 +31,11 @@ def key_value(trial: TrialResult, cfg: dict[str, Any] | None = None) -> float | 
     if spec is None:
         return None
     if spec["source"] == "field":
-        return float(getattr(trial, spec["name"]))
-    pairs = dict(zip(trial.metric_keys, trial.metric_values))
-    return float(pairs[spec["name"]]) if spec["name"] in pairs else None
+        value = float(getattr(trial, spec["name"]))
+    else:
+        pairs = dict(zip(trial.metric_keys, trial.metric_values))
+        value = float(pairs[spec["name"]]) if spec["name"] in pairs else math.nan
+    return value if math.isfinite(value) else None   # 못 잰 값(NaN, #69) = 없음
 
 
 def counted(trials: Iterable[TrialResult], cfg: dict[str, Any] | None = None) -> list[TrialResult]:

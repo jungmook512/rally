@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import math
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -17,6 +18,12 @@ HAND_COLUMNS = ("time", "session_id", "trial_id",
 SAFETY_LEVELS = {0: "normal", 1: "slow", 2: "stop"}
 ROBOT_STATES = {0: "idle", 1: "moving", 2: "holding", 3: "stopped"}
 SESSION_NAMESPACE = uuid.UUID("6f1c8a52-3d4e-4b7a-9c1e-5a0d2b7e9f10")   # 고정값 — 바꾸면 같은 이름이 다른 세션이 된다
+
+
+def finite_or_none(value: float) -> float | None:
+    """못 잰 값(NaN, #69) → None (DB NULL, JSON null). AVG 등 SQL 집계가 NULL 은 건너뛴다."""
+    value = float(value)
+    return value if math.isfinite(value) else None
 
 
 def stamp_to_datetime(stamp) -> datetime:
@@ -47,7 +54,7 @@ def trial_to_row(msg, session_id: str) -> dict[str, Any]:
         "started_at": ended_at - timedelta(seconds=max(0.0, float(msg.duration_s))),
         "duration_s": float(msg.duration_s),
         "success": bool(msg.success),
-        "error_mm": float(msg.error_mm),
+        "error_mm": finite_or_none(msg.error_mm),
         "params": _pairs(msg.param_keys, msg.param_values),
         "metrics": _pairs(msg.metric_keys, msg.metric_values),
         "decision": {"notes": msg.notes} if msg.notes else None,
@@ -62,7 +69,7 @@ def trial_to_event(row: dict[str, Any], trial_id: int) -> dict[str, Any]:
         "mode": row["mode"],
         "trial_index": row["trial_index"],
         "success": row["success"],
-        "error_mm": round(row["error_mm"], 1),
+        "error_mm": None if row["error_mm"] is None else round(row["error_mm"], 1),
         "duration_s": round(row["duration_s"], 2),
         "metrics": row["metrics"],
         "notes": (row["decision"] or {}).get("notes", ""),
@@ -121,5 +128,6 @@ def context_to_state(msg) -> dict[str, Any]:
     }
 
 
-def _pairs(keys, values) -> dict[str, float]:
-    return {k: float(v) for k, v in zip(keys, values)}
+def _pairs(keys, values) -> dict[str, float | None]:
+    # JSON 에는 NaN 이 없다 (Postgres jsonb 가 거부) → 못 잰 값은 null
+    return {k: finite_or_none(v) for k, v in zip(keys, values)}
