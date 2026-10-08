@@ -71,4 +71,4 @@ def improvement(trials: Sequence[TrialResult], cfg: dict[str, Any] | None = None
 def fatigue_score(signals: Iterable[str], cfg: dict[str, Any] | None = None) -> float:
     """신호(voice_tired · rule_layer.SIGNAL_LABELS 키) → 0~1. 모르는 신호는 0."""
     weights = (cfg or load())["metrics"]["fatigue_score"]["weights"]
-    return min(1.0, sum(weights.get(s, 0.0) for s in set(signals)))
+    return float(min(1.0, sum(weights.get(s, 0.0) for s in set(signals))))
