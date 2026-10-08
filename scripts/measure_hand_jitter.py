@@ -11,6 +11,8 @@ hand_pose 노드가 켜진 상태에서 실행. 지금 손 거리가 계속 표�
 - 떨림: 손바닥 위치 x·y·z 표준편차 [mm], 손목 각도 표준편차 [°] — 정정인 servol 필터(One-Euro 등) 값 정할 때 씀
 - 발행: 평균 Hz, 손 검출 비율, 가장 긴 끊김 (손 놓침·프레임 누락)
 좌표: tf 가 있으면 base_link, 없으면 카메라 좌표 (frame_id 로 표시). 떨림 크기는 어느 좌표든 비슷하다.
+손목 각도는 hand_pose 의 손목 필터(0.5 s 중간값) 뒤 값이다 — 원래 흔들림이 아니라 내보내는 값의 흔들림.
+print: Enter 를 기다리는 동안 지금 손 거리를 한 줄에 덮어써 보여 주려고 씀 (로거는 줄을 덮어쓸 수 없음). 결과는 로거로.
 """
 import argparse
 import time
@@ -53,11 +55,13 @@ def summarize(rows: list[tuple], seconds: float) -> str:
              f"가장 긴 간격 {gaps.max():.0f} ms (평균 {gaps.mean():.0f} ms)",
              f"지연(카메라 프레임 → 손 메시지): 평균 {lat.mean():.0f} ms · 중간값 {np.median(lat):.0f} ms · 95% {np.percentile(lat, 95):.0f} ms"]
     d = [r for r in rows if r[2]]
-    pos = np.array([r[3:6] for r in d if r[5] and np.isfinite(r[5])])
+    # 카메라 좌표는 깊이가 없으면 z = 0 → 뺀다. base_link 는 z 가 테이블 높이라 0 근처도 정상
+    pos = np.array([r[3:6] for r in d if np.isfinite(r[5]) and (r[5] > 0 or not r[7].startswith("camera"))])
     if len(pos) >= 10:
         std = pos.std(axis=0) * 1000
         step = np.linalg.norm(np.diff(pos, axis=0), axis=1) * 1000
-        lines.append(f"손바닥 위치 떨림 ({d[-1][7]}, 거리 약 {np.median(pos[:, 2]) * 100:.0f} cm, {len(pos)} 프레임): "
+        where = "높이 z" if d[-1][7] == "base_link" else "카메라 거리"
+        lines.append(f"손바닥 위치 떨림 ({d[-1][7]}, {where} 약 {np.median(pos[:, 2]) * 100:.0f} cm, {len(pos)} 프레임): "
                      f"표준편차 x {std[0]:.1f} · y {std[1]:.1f} · z {std[2]:.1f} mm, "
                      f"프레임 간 이동 중간값 {np.median(step):.1f} mm · 95% {np.percentile(step, 95):.1f} mm")
     else:
