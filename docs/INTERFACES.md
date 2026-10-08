@@ -62,7 +62,7 @@ webcam_link          측면 웹캠 (table_link 기준 static)
 | 토픽 | 타입 | 발행 | 구독 | 주기 | QoS |
 |---|---|---|---|---|---|
 | `/rally/safety/status` | `rally_interfaces/SafetyStatus` | rally_robot/safety_monitor | brain, dashboard, skill_server | 100 Hz (변화 시 즉시) | **Reliable, depth 10** |
-| `/rally/safety/estop` | `std_msgs/Bool` | voice, hand_pose, 대시보드 버튼 | safety_monitor | 이벤트 | **Reliable, TransientLocal** |
+| `/rally/safety/estop` | `std_msgs/Bool` | voice, 대시보드 버튼 (hand_pose 주먹 정지는 #59 에서 뺌) | safety_monitor | 이벤트 | **Reliable, TransientLocal** |
 | `/rally/safety/contact_expected` | `std_msgs/Bool` | rally_robot/skill_server | safety_monitor | 접촉 예정 구간 동안 5 Hz 하트비트 (집기 하강 · 핸드오버 당김 대기 · 저항 밀기) | Reliable, depth 1 — 0.5 s 안에 갱신 없으면 꺼진 것으로 봄 |
 | `/rally/safety/patient_contact` | `std_msgs/Bool` | rally_robot/skill_server | safety_monitor | 환자가 물체·손잡이를 잡는 구간 동안 5 Hz 하트비트 (건네기 당김 대기 → 후퇴, 저항 밀기). 이 동안 스킬은 환자 쪽(+x) 명령 이동 금지 | Reliable, depth 1 — 0.5 s 안에 갱신 없으면 꺼진 것으로 봄 |
 | `/rally/brain/context` | `rally_interfaces/SceneContext` | rally_brain/context_builder | llm_advisor, dashboard | 5 Hz | BestEffort |
