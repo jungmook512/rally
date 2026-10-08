@@ -14,7 +14,8 @@ table_link           테이블 원점 (base_link 기준 static, 중앙선 y=0)
 webcam_link          측면 웹캠 (table_link 기준 static)
 ```
 
-- `camera_link`는 `RunCalibration` 서비스 결과를 `static_transform_publisher`로 올린다. 값은 `rally_bringup/config/hand_eye.yaml`에 저장.
+- `camera_link`는 `rally_vision/camera_tf`(`ros2 run rally_vision camera_tf`)가 `hand_eye.yaml`을 읽어 올린다. 기본 `mode: static`은 두산 `base_link → link_6`(robot_state_publisher, 10/8 실로봇 약 56 Hz) 아래에 `link_6 → camera_link`(플랜지→TCP 0.228 m + hand_eye)를 `republish_hz`로 발행한다 — 영상 시각으로 보간되는 정확한 tf. **`/dsr01/joint_states`가 1 s 넘게 끊기거나 팔 6축이 전부 0이면(ros2_control 죽음) 발행을 멈추고 error 로그** — 그래야 받는 쪽이 NaN/폴백으로 가고 '그럴듯하지만 틀린 좌표'(손 z 1.4 m)가 안 나간다. `mode: tcp_pose`는 `/rally/robot/tcp_pose`(10 Hz)로 `base_link → camera_link`(두산 tf 없는 노트북·에뮬레이터용, segmenter `tcp_npy`와 같은 값). **`camera_link` 에 다른 부모(URDF `camera_bottom_screw_frame`)가 /tf_static 에 있으면 부모가 둘이 되므로 error 를 내고 발행하지 않는다** — bringup URDF 에서 카메라 체인(bracket·camera_*)을 빼야 static 모드가 켜진다(@정정인). tcp_pose 모드는 마지막 변환을 `republish_hz`(30 Hz)로 현재 시각에 다시 발행(hold-last)해 영상 stamp 조회가 되게 한다 — 값은 최근 tcp_pose(≤ 0.1 s 전)라 로봇 정지 중에만 정확 (static 모드는 두산 tf 가 보간하므로 이동 중에도 정확). 기본은 RealSense의 `camera_link → … → optical` static tf를 기다렸다가 `camera_link`를 자식으로 발행한다. RealSense가 tf를 안 내는 환경(`publish_tf:=false`)에서만 `optical_fallback: true`로 optical 프레임을 직접 발행한다(기본 false — 폴백 중 optical을 받은 노드는 RealSense가 늦게 켜져도 조회가 계속 실패하므로). `RunCalibration` 서비스는 아직 없음(Day 7 여유 시).
+- **깊이 보정**: 이 RealSense는 정렬 깊이가 일관되게 약 3 % 길게 나온다(10/7·10/8 ArUco 실측). `hand_eye.yaml depth_scale`(0.971)을 segmenter가 깊이에 곱한다. 깊이를 직접 쓰는 다른 노드(손 인식)도 같은 값을 곱해야 base 좌표가 맞는다.
 - 비전 노드는 `camera_color_optical_frame` → `base_link` 변환을 tf2로 매 프레임 조회한다 (카메라가 팔과 함께 움직이므로 반드시 timestamp 일치).
 
 ## 2. 토픽
@@ -46,7 +47,7 @@ webcam_link          측면 웹캠 (table_link 기준 static)
 | `/rally/voice/transcript` | `std_msgs/String` | rally_voice/intent_node | dashboard | 이벤트 | Reliable |
 | `/rally/voice/speaking` | `std_msgs/Bool` | rally_voice/tts_node | rally_voice/intent_node (dashboard 선택) | 발화 시작·끝 이벤트 | **Reliable, TransientLocal**, depth 1 |
 
-**objects 좌표 프레임** (#66): `/rally/perception/objects` 의 `header.frame_id` 가 `base_link` 가 아니면(카메라 프레임 `camera_color_optical_frame`) 카메라→base 변환을 못 구한 것이다 — 그 좌표로 로봇을 움직이지 않는다(abort 또는 대기). segmenter 는 파라미터 `transform_source` 로 변환을 고른다: `tcp_npy`(기본, `/rally/robot/tcp_pose` × `T_gripper2camera.npy`) · `tf`(tf2 만) · `auto`(tf 우선). 검증된 `camera_link` static tf 를 올리기 전에는 URDF 설계값 tf 가 캘리브레이션값을 이기므로 기본을 `tcp_npy` 로 둔다 (10/7 실측 치우침 약 1 cm, PR #42).
+**objects 좌표 프레임** (#66): `/rally/perception/objects` 의 `header.frame_id` 가 `base_link` 가 아니면(카메라 프레임 `camera_color_optical_frame`) 카메라→base 변환을 못 구한 것이다 — 그 좌표로 로봇을 움직이지 않는다(abort 또는 대기). segmenter 는 파라미터 `transform_source` 로 변환을 고른다: `tcp_npy`(기본, `/rally/robot/tcp_pose` × hand_eye) · `tf` · `auto`(tf 우선). **로봇 PC bringup URDF(`m0609_with_rg2_camera`)가 `tool0 → bracket_link → camera_bottom_screw_frame → camera_link → … → camera_color_optical_frame` 을 설계값으로 발행**(10/8 정정인 view_frames)하므로, 그 체인이 있는 동안 `tf`/`auto` 는 설계값을 집어 1 cm·2.5° 치우친다(PR #42 원인). URDF 에서 카메라 체인을 빼고 `camera_tf` 가 유일한 `camera_link` 부모가 되면 기본을 `auto` 로 바꾼다. `tcp_npy` 는 영상 시각이 아니라 마지막 `tcp_pose`(10 Hz) 를 쓰므로 **로봇이 멈춰 있을 때의 좌표만 정확**하다 — 이동 중 좌표로 로봇을 보내지 않는다. `camera_tf` 가 떠 있으면 `auto`(tf 는 영상 시각으로 보간) 가 낫다.
 
 **HandState 거리 NaN** (#44): `detected=true` 인데 손 위치를 못 구하면(정렬 깊이 없음·컬러와 시각이 맞는 깊이 없음·`base_link` tf 없음) `distance_to_centerline = NaN` = "손은 보이는데 거리 모름". 가짜 거리를 만들지 않는다. safety_monitor 는 `detected && NaN` 이면 SLOW. tf 가 없을 때는 `header.frame_id` 가 카메라 프레임.
 
@@ -126,7 +127,7 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 
 ## 6. 파라미터 파일 (rally_bringup/config)
 
-- `hand_eye.yaml` — tool0 → camera_link 변환
+- `hand_eye.yaml` — `tcp_T_camera_optical`(TCP ← camera_color_optical_frame, xyz m + 쿼터니언), `depth_scale`, `tcp_offset_from_flange_m`. 10/8 ArUco 터치 재맞춤 값(`scripts/fit_hand_eye.py`, 평균 6 mm·최대 9 mm). 재검증은 `scripts/aruco_detect.py --json` → `scripts/verify_calibration.py --depth-scale 0.971`
 - `table.yaml` — table_link 원점, 중앙선 위치, 작업 공간 한계(x,y,z min/max)
 - `safety.yaml` — 손 근접 감속 거리(기본 0.25 m → 50 %, 0.15 m → 정지), 힘 한계(기본 25 N, 항상 적용), nudge 임계(한 주기 |Δ|F|| 8 N — 로봇 정지 중이고 `/rally/safety/contact_expected` 가 아닐 때만 판정), 작업 공간(x·y·z min/max → 밖이면 STOP)
 - `skills.yaml` — 관측 자세, 모드별 기본 파라미터와 허용 범위(LLM 클램핑 범위와 동일), `gripper.<class>` 열림 폭·힘, `pick.*`, `handover.*`(제시 자세·당김 임계)
