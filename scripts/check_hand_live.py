@@ -142,6 +142,8 @@ def render(node: Checker) -> np.ndarray:
     if frame is None:
         frame = np.zeros((480, 640, 3), np.uint8)
     frame = cv2.resize(frame, (640, int(frame.shape[0] * 640 / frame.shape[1])))
+    if frame.shape[0] < 480:            # RealSense 848×480 은 줄이면 높이 362 → 아래 항목이 잘리지 않게 아래를 채움
+        frame = cv2.copyMakeBorder(frame, 0, 480 - frame.shape[0], 0, 0, cv2.BORDER_CONSTANT, value=(0, 0, 0))
     panel = np.full((frame.shape[0], 420, 3), 30, np.uint8)
     y = 10
     if last is None:
