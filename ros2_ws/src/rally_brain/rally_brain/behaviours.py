@@ -48,13 +48,14 @@ class WaitUntil(py_trees.behaviour.Behaviour):
 class SkillCall(py_trees.behaviour.Behaviour):
     def __init__(self, name: str, node: Node, client: ActionClient, make_goal: Callable[[], Any],
                  on_result: Callable[[Any], None], on_interrupt: Callable[[str], None] | None = None,
-                 server_timeout_s: float = 3.0):
+                 server_timeout_s: float = 3.0, can_send: Callable[[], bool] = lambda: True):
         super().__init__(name)
         self.node = node
         self.client = client
         self.make_goal = make_goal
         self.on_result = on_result
         self.on_interrupt = on_interrupt   # 인자: interrupted | aborted | canceled ...
+        self.can_send = can_send
         self.server_timeout_s = server_timeout_s
         self._reset()
 
@@ -90,6 +91,9 @@ class SkillCall(py_trees.behaviour.Behaviour):
                     self.node.get_logger().error(f"[{self.name}] {self.feedback_message}")
                     return Status.FAILURE
                 return Status.RUNNING
+            if not self.can_send():
+                self.feedback_message = "precondition_failed"
+                return Status.FAILURE
             self._send_future = self.client.send_goal_async(self.make_goal())
             self._send_future.add_done_callback(self._on_goal_response)
             return Status.RUNNING

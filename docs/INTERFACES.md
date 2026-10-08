@@ -129,3 +129,21 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 - `skills.yaml` — 관측 자세, 모드별 기본 파라미터와 허용 범위(LLM 클램핑 범위와 동일), `gripper.<class>` 열림 폭·힘, `pick.*`, `handover.*`(제시 자세·당김 임계)
 - `table.yaml` — `table.z_m` 테이블 면 높이: 집기 Z 는 비전 깊이가 아니라 이 평면 + 물체 반지름으로 계산
 - `llm.yaml` — 모델, 타임아웃(3 s), 프롬프트 템플릿 경로, 전송 필드 화이트리스트(익명화)
+
+## 모드 1 Brain 목표·속도 계약 (#81 · #84)
+
+- 입력: 최신 `SceneContext.hand`의 `HandState` (검출됨, `base_link`, 유한한 손바닥 좌표,
+  원본 stamp가 현재 ROS 시각 기준 0~1 s 이내). 미검출·zero/미래/오래된 stamp·좌표 오류는 제한 시간 대기 후 `no_hand`로 기록하고 스킬을 보내지 않는다.
+- 중앙선은 `table.yaml table.centerline_x_m` 한 곳. 레인별 입구·방향·실측 `recipe`는 `skills.yaml mode1.lanes`.
+  recipe에 `decel_mps2`, `d0_m`, `rmse_m`, `distance_range_m`, `speed_range_mps`를 사용한다.
+- 난이도는 개발용 `reach_m = (max(level, 0) + 1) × mode1.reach_rmse_multiplier × rmse_m`.
+  목표는 손을 레인 축에 투영한 위치에서 reach만큼 앞이며 중앙선+5 cm, 실측 거리·속도 범위와 운용 속도 제한의 교집합으로 제한한다.
+  단일 목표를 정한 뒤 `v = sqrt(2a(d-d0))`를 계산한다. 교집합이 없거나 레시피가 유효하지 않으면 goal 없이 실패 사유 기록.
+- `/rally/skill/push_ball`에 **target(base_link) + 양수 push_speed**를 함께 보낸다. Brain이 속도를 계산하고 로봇은 최종 클램프·안전 감시.
+  `push_speed=0`으로 로봇이 계산하는 경로는 단독 시험용이며 본 훈련 트리에서 사용하지 않는다.
+- `TrialResult.param_keys`는 기존 `lane`, `push_speed` 뒤에 `target_d_m`, `level`, `reach_requested_m`,
+  `reach_actual_m`, `target_x_m`, `target_y_m` 추가. push_speed는 실제 전달한 명령값이며 실측 공 속도가 아니다.
+  측정되지 않은 `error_mm` 및 `stop_x_m`/`stop_y_m`은 NaN. DB는 기존 유한값 정리 경로를 사용.
+- `TrialResult.success`는 현재 로봇 타격 성공. 환자 잡기 성공이 아니므로 모드 1의 자동 난이도 변경 이력에서 제외한다.
+  명시적 harder/easier는 시도 경계에서 반영하며 단계 0 아래로 낮추지 않는다. 환자 성공 판정·온라인 레시피 갱신은 후속 연결 사항.
+- 기존 ROS 메시지·토픽·서비스 이름과 STOP/reset 계약은 변경하지 않는다. 두 PC의 시계·레인·레시피 설정을 일치시켜야 한다.

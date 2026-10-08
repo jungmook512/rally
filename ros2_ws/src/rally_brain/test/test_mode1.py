@@ -1,147 +1,209 @@
-"""모드 1 시도 — 레인 순서·고정 속도·결과 기록 (못 잰 오차는 NaN). 가짜 스킬로 로봇 없이 확인한다."""
+"""모드 1 손 기준 목표·실측 범위·양수 속도·기록을 가짜 스킬로 검증한다."""
 import math
+from pathlib import Path
 import random
+import time
 from types import SimpleNamespace as NS
 
 import pytest
+import yaml
 from geometry_msgs.msg import Point
 
 from fakes import FakeClient, Status, make_session, metric, param, run
 from rally_brain import behaviours, metrics
-from rally_brain.trees import mode1_push
+from rally_brain.trees import mode1_push as m
 from rally_brain.trees.session_tree import Session, build_session_tree
 from rally_interfaces.action import PushBall
-from rally_interfaces.msg import TrialResult
+from rally_interfaces.msg import HandState, TrialResult
 
+CONFIG = Path(__file__).resolve().parents[2] / 'rally_bringup' / 'config'
 OK = (True, {"success": True, "contact_force_peak": 3.0})
 
 
-def arrange(outcomes, cfg=None):
+def cfg():
+    return yaml.safe_load((CONFIG / 'skills.yaml').read_text())
+
+
+def hand(x=.78, y=.0):
+    h = HandState(detected=True)
+    h.header.frame_id = 'base_link'
+    h.header.stamp.sec, h.header.stamp.nanosec = divmod(time.time_ns(), 1_000_000_000)
+    h.palm_pose.position = Point(x=x, y=y, z=.05)
+    return h
+
+
+def arrange(outcomes, config=None):
     client = FakeClient(PushBall, outcomes)
-    session, published, said, _ = make_session({PushBall: client}, cfg)
+    session, published, _, ctx = make_session({PushBall: client}, config if config is not None else cfg())
+    ctx.hand = hand()
+    session.table_cfg = {'centerline_x_m': .568}
+    session.node.get_clock = lambda: NS(now=lambda: NS(nanoseconds=time.time_ns(), to_msg=lambda: hand().header.stamp))
     return client, session, published
 
 
-def test_random_lanes_and_fixed_speed():
+def test_random_lanes_and_positive_recipe_speed():
     client, session, published = arrange([OK] * 4)
-    tree = mode1_push.build_trial(session, rng=random.Random(1))
+    tree = m.build_trial(session, rng=random.Random(1))
     for _ in range(4):
+        session.get_context().hand = hand()
         assert run(tree) == Status.SUCCESS
     rng = random.Random(1)
-    assert [g.lane for g in client.goals] == [rng.randrange(3) for _ in range(4)]   # 시드가 같으면 같은 순서
-    assert all(g.push_speed == pytest.approx(0.3) for g in client.goals)
-    assert all(g.target.point.x == 0.0 and g.target.point.y == 0.0 for g in client.goals)   # target 비움 → 속도 그대로
-    assert [param(t, "lane") for t in published] == [g.lane for g in client.goals]
-    assert all(t.success and t.mode == TrialResult.MODE_PUSH_BALL for t in published)
+    assert [g.lane for g in client.goals] == [rng.randrange(3) for _ in range(4)]
+    for g, t in zip(client.goals, published):
+        lane = session.skills_cfg['mode1']['lanes'][g.lane]
+        r = lane['recipe']
+        assert .2 <= g.push_speed <= .35
+        assert g.target.header.frame_id == 'base_link' and g.target.point.x >= .618 - 1e-7
+        assert param(t, 'push_speed') == pytest.approx(g.push_speed)
+        assert param(t, 'target_d_m') == pytest.approx(g.push_speed**2 / (2*r['decel_mps2']) + r['d0_m'])
+        assert math.isnan(t.error_mm) and math.isnan(metric(t, 'stop_x_m'))
+    assert session.trials_for_rules(1) == []  # 타격 4회 성공이어도 환자 성공으로 승급하지 않음
 
 
-def test_speed_clamped_to_range():
-    cfg = {"mode1": {"brain_push_speed_mps": 0.9, "push_speed_range": [0.1, 0.6]}}
-    assert mode1_push.next_push_speed(None, 0, mode1_push.mode1_config(cfg)) == pytest.approx(0.6)
+def test_goal_changes_with_hand_and_level_and_saturates():
+    c = m.mode1_config(cfg())
+    # 속도 .4는 실측 범위지만 운용 상한 .35는 그대로 유지. 각 경우 수식 일치.
+    for lane in range(3):
+        a = m.plan_push(hand(.74), lane, 0, c, {'centerline_x_m': .568})
+        b = m.plan_push(hand(.74), lane, 2, c, {'centerline_x_m': .568})
+        near = m.plan_push(hand(.69), lane, 0, c, {'centerline_x_m': .568})
+        assert b['target_d'] < a['target_d'] and b['speed'] < a['speed']
+        assert near['target_d'] < a['target_d']
+        assert a['reach_requested'] == pytest.approx(2*c['lanes'][lane]['recipe']['rmse_m'])
+        far = m.plan_push(hand(.9), lane, 0, c, {'centerline_x_m': .568})
+        assert far['speed'] <= .35 and far['reach_actual'] >= far['reach_requested']
 
 
-def test_lane_count_from_config():
-    cfg = {"mode1": {"lanes": [{"name": "a"}, {"name": "b"}]}}
-    client, session, _ = arrange([OK] * 3, cfg)
-    tree = mode1_push.build_trial(session, rng=random.Random(1))
-    for _ in range(3):
-        run(tree)
-    assert all(g.lane in (0, 1) for g in client.goals)
+@pytest.mark.parametrize('invalid', ['absent', 'frame', 'nan', 'stale', 'future', 'zero'])
+def test_invalid_hand_times_out_without_goal(invalid):
+    c = cfg(); c['mode1'].update(hand_wait_s=.001, hand_wait_tries=1)
+    client, session, published = arrange([], c)
+    h = session.get_context().hand
+    if invalid == 'absent': h.detected = False
+    if invalid == 'frame': h.header.frame_id = 'camera_link'
+    if invalid == 'nan': h.palm_pose.position.x = math.nan
+    if invalid == 'stale': h.header.stamp.sec -= 10
+    if invalid == 'future': h.header.stamp.sec += 10
+    if invalid == 'zero': h.header.stamp.sec = h.header.stamp.nanosec = 0
+    assert run(m.build_trial(session)) == Status.SUCCESS
+    assert client.sent == 0 and len(published) == 1 and published[0].notes == 'no_hand'
+    assert metric(published[0], 'attempts') == 0
 
 
-def test_random_lane_covers_all_lanes():
-    cfg = mode1_push.mode1_config({})
-    rng = random.Random(0)
-    lanes = [mode1_push.random_lane(cfg, rng) for _ in range(300)]
-    assert set(lanes) == {0, 1, 2}
+def test_hand_arrives_during_wait():
+    client, session, published = arrange([OK])
+    session.get_context().hand.detected = False
+    tree = m.build_trial(session)
+    tree.tick_once()
+    assert client.sent == 0 and tree.status == Status.RUNNING
+    session.get_context().hand = hand()
+    assert run(tree) == Status.SUCCESS and client.sent == 1 and len(published) == 1
 
 
-def test_unmeasured_error_is_nan():
-    # 로봇이 아직 정지 위치를 안 채움 → 0 mm("완벽")가 아니라 NaN, 지표에서도 빠짐
-    _, session, published = arrange([OK])
-    run(mode1_push.build_trial(session, rng=random.Random(1)))
-    assert math.isnan(published[0].error_mm)
-    assert metrics.key_value(published[0]) is None
+@pytest.mark.parametrize('bad', ['missing', 'nan', 'negative', 'range', 'speed_range', 'lane', 'table', 'unreachable'])
+def test_invalid_recipe_or_target_never_falls_back_to_fixed_speed(bad):
+    c = cfg()
+    for lane in c['mode1']['lanes']:
+        if bad == 'missing': lane.pop('recipe')
+        if bad == 'nan': lane['recipe']['decel_mps2'] = math.nan
+        if bad == 'negative': lane['recipe']['decel_mps2'] = -1
+        if bad == 'range': lane['recipe']['distance_range_m'] = [.45, .15]
+        if bad == 'speed_range': lane['recipe']['speed_range_mps'] = [.4, .5]
+        if bad == 'lane': lane['dir_deg'] = 180
+    client, session, published = arrange([], c)
+    if bad == 'table': session.table_cfg = {}
+    if bad == 'unreachable': session.table_cfg['centerline_x_m'] = 2.0
+    assert run(m.build_trial(session)) == Status.SUCCESS
+    assert client.sent == 0 and len(published) == 1 and not published[0].success
 
 
-def test_measured_error_kept():
-    _, session, published = arrange([(True, {"success": True, "error_mm": 42.0, "stop_position": Point(x=0.5, y=0.1)})])
-    run(mode1_push.build_trial(session, rng=random.Random(1)))
-    assert published[0].error_mm == pytest.approx(42.0)
-    assert metric(published[0], "stop_x_m") == pytest.approx(0.5)
+def test_table_is_only_centerline_source():
+    c = m.mode1_config(cfg())
+    c['centerline_x_m'] = 99  # skills에 있더라도 무시
+    p = m.plan_push(hand(.8), 0, 100, c, {'centerline_x_m': .60})
+    assert p['target'][0] >= .65 - 1e-9
+    assert p['target'][0] == pytest.approx(.65)
 
 
-def test_failure_reason_code_in_notes():
-    client, session, published = arrange([(False, {"failure_reason": "no_ball_detected (관측 자세에서 공이 안 보임)"})])
-    assert run(mode1_push.build_trial(session, rng=random.Random(1))) == Status.SUCCESS   # 시도는 끝남 → 다음 공
-    assert client.sent == 1                                         # 재시도 없음
-    assert [(t.success, t.notes) for t in published] == [(False, "no_ball_detected")]
+def test_reach_projection_and_boundary():
+    lane = {'start': [.43, .1], 'dir_deg': 30}
+    p = m.reach_target(hand(.8, .3), lane, .1, .568)
+    sx, sy, dx, dy = m.lane_geometry(lane)
+    assert (p[0]-sx)*dy == pytest.approx((p[1]-sy)*dx)
+    assert p[0] >= .618
+    assert m.reach_target(hand(.5), lane, .1, .568) is None
+
+
+def test_measured_error_and_failure_recorded():
+    result = (True, {'success': True, 'error_mm': 42.0, 'stop_position': Point(x=.7, y=.1)})
+    client, session, published = arrange([result, (False, {'failure_reason': 'no_ball_detected (설명)'})])
+    tree = m.build_trial(session)
+    assert run(tree) == Status.SUCCESS
+    assert published[0].error_mm == pytest.approx(42) and metric(published[0], 'stop_x_m') == pytest.approx(.7)
+    assert run(tree) == Status.SUCCESS
+    assert published[1].notes == 'no_ball_detected' and client.sent == 2
 
 
 def test_server_missing_fails_session(monkeypatch):
     clock = [0.0]
-
     def fast():
         clock[0] += 1.0
         return clock[0]
+    monkeypatch.setattr(behaviours, 'time', NS(monotonic=fast))
+    client, session, published = arrange([])
+    client.ready = False
+    assert run(m.build_trial(session)) == Status.FAILURE
+    assert client.sent == 0 and published == []
 
-    monkeypatch.setattr(behaviours, "time", NS(monotonic=fast))
-    client = FakeClient(PushBall, [], ready=False)
-    session, published, _, _ = make_session({PushBall: client})
-    assert run(mode1_push.build_trial(session, rng=random.Random(1))) == Status.FAILURE
-    assert published == []
+
+def test_target_expires_while_waiting_for_server():
+    client, session, published = arrange([])
+    client.ready = False
+    tree = m.build_trial(session)
+    tree.tick_once()  # 손 확인·목표 계산 후 서버 대기
+    session.node.get_clock = lambda: NS(now=lambda: NS(nanoseconds=time.time_ns()+2_000_000_000, to_msg=lambda: hand().header.stamp))
+    client.ready = True
+    assert run(tree) == Status.SUCCESS
+    assert client.sent == 0 and len(published) == 1 and published[0].notes == 'skill_precondition_failed'
 
 
 def test_stop_records_once():
     client, session, published = arrange([OK])
-    tree = mode1_push.build_trial(session, rng=random.Random(1))
+    tree = m.build_trial(session)
     tree.tick_once()
     tree.stop(Status.INVALID)
-    assert [(t.success) for t in published] == [True]   # 결과가 이미 와 있었음 → 실제 결과로
     tree.stop(Status.INVALID)
-    assert len(published) == 1
+    assert len(published) == 1 and published[0].success
 
 
 def test_session_uses_balls_per_cycle():
-    log = NS(info=lambda *_: None, warn=lambda *_: None, error=lambda *_: None)
-    s = Session(node=NS(get_logger=lambda: log), session_id="s", get_context=lambda: None, publish=lambda _: None,
-                action_client=lambda *_: None, skills_cfg={"mode1": {"balls_per_cycle": 4}})
-    tree = build_session_tree(s, [1], 10)
-    assert tree.children[0].children[1].name.endswith("× 4")
+    client, session, _ = arrange([OK] * 4)
+    tree = build_session_tree(session, [1], 10)
+    assert run(tree) == Status.SUCCESS and client.sent == 4
 
 
-LANES = [{"name": "a", "start": [0.43, 0.14, 0.0], "dir_deg": 0.0, "recipe": {"decel_mps2": 0.2, "d0_m": 0.05}},
-         {"name": "b", "start": [0.43, 0.0, 0.0], "dir_deg": 0.0, "recipe": {"decel_mps2": 0.2, "d0_m": 0.05}},
-         {"name": "c", "start": [0.43, -0.15, 0.0], "dir_deg": 0.0, "recipe": {"decel_mps2": 0.2, "d0_m": 0.05}}]
+def test_stop_before_goal_and_midflight_cancels():
+    from fakes import Done
+    client, session, published = arrange([])
+    # STOP 판정 상수 사용 (숫자에 기대지 않음)
+    from rally_interfaces.msg import SafetyStatus
+    session.get_context().safety.level = SafetyStatus.LEVEL_STOP
+    tree = m.build_trial(session)
+    tree.tick_once()
+    tree.stop(Status.INVALID)
+    assert client.sent == 0 and published == []
 
-
-def test_recipe_target_starts_near_patient():
-    # 레시피가 있으면 target(입구 + 40 cm) + push_speed 0 → 속도는 로봇 레시피. 기록엔 예상 속도·목표 거리·난이도
-    client, session, published = arrange([OK], {"mode1": {"lanes": LANES}})
-    run(mode1_push.build_trial(session, rng=random.Random(1)))
-    g = client.goals[0]
-    assert g.push_speed == 0.0 and g.target.header.frame_id == "base_link"
-    assert g.target.point.x == pytest.approx(0.43 + 0.40)
-    assert g.target.point.y == pytest.approx(LANES[g.lane]["start"][1])
-    assert param(published[0], "target_d_m") == pytest.approx(0.40)
-    assert param(published[0], "level") == 0.0
-    assert param(published[0], "push_speed") == pytest.approx(math.sqrt(2 * 0.2 * (0.40 - 0.05)))
-
-
-def test_harder_stops_farther_from_patient():
-    # 난이도 +1 마다 5 cm 로봇 쪽(환자에게서 멀리), 레시피 범위 [0.15, 0.45] 로 자름
-    cfg = mode1_push.mode1_config({"mode1": {"lanes": LANES}})
-    assert [mode1_push.target_distance(k, cfg) for k in (-2, -1, 0, 1, 2, 5, 9)] == \
-        pytest.approx([0.45, 0.45, 0.40, 0.35, 0.30, 0.15, 0.15])
-    client, session, _ = arrange([OK], {"mode1": {"lanes": LANES}})
-    session.difficulty[TrialResult.MODE_PUSH_BALL] = 2
-    run(mode1_push.build_trial(session, rng=random.Random(1)))
-    assert client.goals[0].target.point.x == pytest.approx(0.43 + 0.30)
-
-
-def test_no_recipe_falls_back_to_fixed_speed():
-    lanes = [{k: v for k, v in ln.items() if k != "recipe"} for ln in LANES]
-    client, session, published = arrange([OK], {"mode1": {"lanes": lanes}})
-    run(mode1_push.build_trial(session, rng=random.Random(1)))
-    assert client.goals[0].push_speed == pytest.approx(0.3) and client.goals[0].target.point.x == 0.0
-    assert math.isnan(param(published[0], "target_d_m"))
+    session.get_context().safety.level = SafetyStatus.LEVEL_NORMAL
+    canceled = []
+    pending = NS(done=lambda: False)
+    def send(goal):
+        client.goals.append(goal)
+        return Done(NS(accepted=True, get_result_async=lambda: pending,
+                       cancel_goal_async=lambda: canceled.append(True)))
+    client.send_goal_async = send
+    tree = m.build_trial(session)
+    tree.tick_once()
+    tree.stop(Status.INVALID)
+    tree.stop(Status.INVALID)
+    assert canceled == [True] and len(published) == 1
+    assert published[0].notes == 'interrupted'

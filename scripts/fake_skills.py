@@ -69,6 +69,10 @@ class FakeSkills(Node):
         ctx.safety.level = SafetyStatus.LEVEL_STOP if self.stop else SafetyStatus.LEVEL_NORMAL
         ctx.safety.reason = "fake_stop" if self.stop else ""
         ctx.hand.detected = self.hand
+        ctx.hand.header.stamp = ctx.header.stamp
+        ctx.hand.header.frame_id = "base_link"
+        ctx.hand.palm_pose.position.x = 0.78
+        ctx.hand.palm_pose.position.z = 0.05
         ctx.objects.header.frame_id = "base_link"
         rod = TrackedObject(class_name="rod", confidence=0.9)   # 모드 5 집기용 (거치 자리 x 0.30, y 0.20)
         rod.header.frame_id = "base_link"
@@ -87,7 +91,7 @@ class FakeSkills(Node):
         g = goal_handle.request
         detail = {"handover": lambda: f"dir={g.direction} tilt={g.tilt_deg:+.0f}°",
                   "pick_compliant": lambda: f"xy=({g.target.pose.position.x:.2f}, {g.target.pose.position.y:.2f})",
-                  "push_ball": lambda: f"lane={g.lane} speed={g.push_speed:.2f}",
+                  "push_ball": lambda: f"lane={g.lane} speed={g.push_speed:.3f} target=({g.target.point.x:.3f}, {g.target.point.y:.3f})",
                   "resist_push": lambda: f"target={g.target_force_n:.1f} N stiffness={g.stiffness:.0f}"}[name]()
         self.get_logger().info(f"{name} #{n} 시작 ({detail})")
         t0 = time.monotonic()

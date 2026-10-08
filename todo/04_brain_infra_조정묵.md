@@ -3,6 +3,19 @@
 패키지: `ros2_ws/src/rally_brain`, `rally_db`, `rally_bringup`, `rally_interfaces`, `docker/`, `dashboard/` · 책임: **세션 전체 흐름**
 참고: `docs/INTERFACES.md` 전체, `rally_db/schema.sql`
 
+## 10/8 모드 1 통합 — #81·#84
+
+- [x] #84의 fatigue_score float 수정과 목표 거리 초안을 이력 보존해 통합.
+- [x] 중앙선은 table.yaml, 실측 레인·a/d0/RMSE는 #57 cd92d1a 출처. 기존 운용 속도 상한은 유지.
+- [x] 손 기준 목표 → 거리/속도/중앙선 교집합 → brain 속도 계산 → target+양수 속도 전달.
+- [x] 사용자 결정: 손이 유효하지 않으면 시간 제한 대기 후 goal 없이 no_hand 기록. 초기 reach·단계 간격은 RMSE의 2배로 개발용 설정.
+- [x] 로봇 타격 성공만으로 자동 난이도를 올리지 않음. 명시적 harder/easier만 허용.
+- [x] 검증: 서버 4패키지 빌드, colcon 227 tests/0 failures/0 skipped, 격리 ROS 3세션(기본·harder·손 없음) 왕복 통과.
+- [x] 원시 위치 미측정은 NaN 유지, 파라미터에 목표·요청/실제 reach 기록. 문서와 재현 절차는 brain README.
+- [ ] 로봇·인식 PC에서 확인 필요: #42/#57 스킬 연동, 밀기 전 손 관측, 목표 거리별 실제 정지 오차와 환자 잡기 성공 신호.
+- [ ] 원시 레시피 CSV 기반 레인별 유효 범위 재검증·온라인 보정. 현재는 보고된 실측 계수와 보수적 공통 구간 사용.
+- 휴식·재개 및 #78 전체 문서 정리는 원 작업 디렉터리의 별도 변경으로 보존. 이 PR은 모드 1 통합에 한정.
+
 ## Day 0 (10/5)
 - [x] 레포 초기화·push, 브랜치 규칙 공지, `.github/workflows/build.yml` 첫 실행 확인 → CI 첫 통과 (#2), 브랜치 규칙은 CLAUDE.md·AGENTS.md 7절
 - [x] 인터페이스 합의 회의 주도 → `rally_interfaces` 수정·커밋 (이후 변경은 PR로) → 기존 정의 그대로 사용

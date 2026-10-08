@@ -27,3 +27,12 @@ def load_skills() -> dict[str, Any]:
         return {}
     with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
+
+
+def load_table() -> dict[str, Any]:
+    """중앙선은 table.yaml 한 곳에서 읽는다. 누락이면 호출자가 목표 생성을 거절한다."""
+    path = config_path("table.yaml")
+    if path is None:
+        return {}
+    with open(path, encoding="utf-8") as f:
+        return (yaml.safe_load(f) or {}).get("table", {})
