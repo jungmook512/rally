@@ -1,0 +1,260 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1960" height="1100" viewBox="0 0 1960 1100">
+<defs><marker id="d" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" fill="#1F5FAF"/></marker><marker id="r" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#E07B1A"/></marker></defs>
+<rect width="1960" height="1100" fill="#FFFFFF"/>
+<rect x="18.0" y="18.0" width="1924.0" height="1064.0" rx="0" fill="none" fill-opacity="1.0" stroke="#1D2328" stroke-width="2.2"/>
+<rect x="26.0" y="26.0" width="1908.0" height="1048.0" rx="0" fill="none" fill-opacity="1.0" stroke="#1D2328" stroke-width="0.8"/>
+<line x1="250.0" y1="140.0" x2="250.0" y2="980.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="250.0" y="1002.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="middle" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">-200</text>
+<line x1="330.0" y1="140.0" x2="330.0" y2="980.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="330.0" y="1002.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="middle" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">-100</text>
+<line x1="410.0" y1="140.0" x2="410.0" y2="980.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="410.0" y="1002.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="middle" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">0</text>
+<line x1="490.0" y1="140.0" x2="490.0" y2="980.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="490.0" y="1002.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="middle" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">100</text>
+<line x1="570.0" y1="140.0" x2="570.0" y2="980.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="570.0" y="1002.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="middle" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">200</text>
+<line x1="650.0" y1="140.0" x2="650.0" y2="980.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="650.0" y="1002.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="middle" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">300</text>
+<line x1="730.0" y1="140.0" x2="730.0" y2="980.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="730.0" y="1002.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="middle" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">400</text>
+<line x1="810.0" y1="140.0" x2="810.0" y2="980.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="810.0" y="1002.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="middle" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">500</text>
+<line x1="890.0" y1="140.0" x2="890.0" y2="980.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="890.0" y="1002.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="middle" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">600</text>
+<line x1="970.0" y1="140.0" x2="970.0" y2="980.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="970.0" y="1002.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="middle" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">700</text>
+<line x1="1050.0" y1="140.0" x2="1050.0" y2="980.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="1050.0" y="1002.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="middle" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">800</text>
+<line x1="1130.0" y1="140.0" x2="1130.0" y2="980.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="1130.0" y="1002.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="middle" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">900</text>
+<line x1="1210.0" y1="140.0" x2="1210.0" y2="980.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="1210.0" y="1002.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="middle" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">1000</text>
+<line x1="1290.0" y1="140.0" x2="1290.0" y2="980.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="1290.0" y="1002.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="middle" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">1100</text>
+<line x1="1370.0" y1="140.0" x2="1370.0" y2="980.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="1370.0" y="1002.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="middle" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">1200</text>
+<line x1="250.0" y1="980.0" x2="1370.0" y2="980.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="242.0" y="984.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="end" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">-550</text>
+<line x1="250.0" y1="900.0" x2="1370.0" y2="900.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="242.0" y="904.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="end" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">-450</text>
+<line x1="250.0" y1="820.0" x2="1370.0" y2="820.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="242.0" y="824.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="end" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">-350</text>
+<line x1="250.0" y1="740.0" x2="1370.0" y2="740.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="242.0" y="744.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="end" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">-250</text>
+<line x1="250.0" y1="660.0" x2="1370.0" y2="660.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="242.0" y="664.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="end" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">-150</text>
+<line x1="250.0" y1="580.0" x2="1370.0" y2="580.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="242.0" y="584.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="end" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">-50</text>
+<line x1="250.0" y1="500.0" x2="1370.0" y2="500.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="242.0" y="504.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="end" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">50</text>
+<line x1="250.0" y1="420.0" x2="1370.0" y2="420.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="242.0" y="424.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="end" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">150</text>
+<line x1="250.0" y1="340.0" x2="1370.0" y2="340.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="242.0" y="344.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="end" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">250</text>
+<line x1="250.0" y1="260.0" x2="1370.0" y2="260.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="242.0" y="264.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="end" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">350</text>
+<line x1="250.0" y1="180.0" x2="1370.0" y2="180.0" stroke="#E6EBEF" stroke-width="1"/>
+<text x="242.0" y="184.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="end" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">450</text>
+<text x="1370.0" y="1024.0" font-size="13" fill="#5A646B" font-weight="600" text-anchor="end" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">x [mm] → 환자 쪽</text>
+<text x="242.0" y="128.0" font-size="13" fill="#5A646B" font-weight="600" text-anchor="end" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">y [mm]</text>
+<rect x="250.0" y="164.0" width="1000.0" height="816.0" rx="40" fill="none" fill-opacity="1.0" stroke="#5A646B" stroke-width="1.6" stroke-dasharray="10 6"/>
+<line x1="826.0" y1="164.0" x2="826.0" y2="980.0" stroke="#8E44C8" stroke-width="2.4" stroke-dasharray="14 8"/>
+<rect x="730.0" y="367.9" width="448.0" height="24.0" rx="3" fill="#2FA36B" fill-opacity="0.18" stroke="#2FA36B" stroke-width="1.4"/>
+<rect x="730.0" y="461.5" width="448.0" height="24.0" rx="3" fill="#2FA36B" fill-opacity="0.18" stroke="#2FA36B" stroke-width="1.4"/>
+<line x1="730.0" y1="426.7" x2="1178.0" y2="426.7" stroke="#5A646B" stroke-width="0.9" stroke-dasharray="18 5 3 5"/>
+<circle cx="757.1" cy="426.7" r="25.2" fill="#E07B1A" fill-opacity="0.15" stroke="#E07B1A" stroke-width="1.6"/>
+<line x1="749.1" y1="426.7" x2="765.1" y2="426.7" stroke="#E07B1A" stroke-width="1.4"/>
+<line x1="757.1" y1="418.7" x2="757.1" y2="434.7" stroke="#E07B1A" stroke-width="1.4"/>
+<line x1="797.1" y1="426.7" x2="917.1" y2="426.7" stroke="#E07B1A" stroke-width="2" stroke-dasharray="8 5" marker-end="url(#r)"/>
+<text x="1170.0" y="418.7" font-size="15" fill="#1D2328" font-weight="700" text-anchor="end" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">레인 1</text>
+<rect x="730.0" y="485.8" width="448.0" height="24.0" rx="3" fill="#3E6FC4" fill-opacity="0.18" stroke="#3E6FC4" stroke-width="1.4"/>
+<rect x="730.0" y="579.4" width="448.0" height="24.0" rx="3" fill="#3E6FC4" fill-opacity="0.18" stroke="#3E6FC4" stroke-width="1.4"/>
+<line x1="730.0" y1="544.6" x2="1178.0" y2="544.6" stroke="#5A646B" stroke-width="0.9" stroke-dasharray="18 5 3 5"/>
+<circle cx="755.9" cy="544.6" r="25.2" fill="#E07B1A" fill-opacity="0.15" stroke="#E07B1A" stroke-width="1.6"/>
+<line x1="747.9" y1="544.6" x2="763.9" y2="544.6" stroke="#E07B1A" stroke-width="1.4"/>
+<line x1="755.9" y1="536.6" x2="755.9" y2="552.6" stroke="#E07B1A" stroke-width="1.4"/>
+<line x1="795.9" y1="544.6" x2="915.9" y2="544.6" stroke="#E07B1A" stroke-width="2" stroke-dasharray="8 5" marker-end="url(#r)"/>
+<text x="1170.0" y="536.6" font-size="15" fill="#1D2328" font-weight="700" text-anchor="end" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">레인 2</text>
+<rect x="730.0" y="606.2" width="448.0" height="24.0" rx="3" fill="#2FA36B" fill-opacity="0.18" stroke="#2FA36B" stroke-width="1.4"/>
+<rect x="730.0" y="699.8" width="448.0" height="24.0" rx="3" fill="#2FA36B" fill-opacity="0.18" stroke="#2FA36B" stroke-width="1.4"/>
+<line x1="730.0" y1="665.0" x2="1178.0" y2="665.0" stroke="#5A646B" stroke-width="0.9" stroke-dasharray="18 5 3 5"/>
+<circle cx="755.5" cy="665.0" r="25.2" fill="#E07B1A" fill-opacity="0.15" stroke="#E07B1A" stroke-width="1.6"/>
+<line x1="747.5" y1="665.0" x2="763.5" y2="665.0" stroke="#E07B1A" stroke-width="1.4"/>
+<line x1="755.5" y1="657.0" x2="755.5" y2="673.0" stroke="#E07B1A" stroke-width="1.4"/>
+<line x1="795.5" y1="665.0" x2="915.5" y2="665.0" stroke="#E07B1A" stroke-width="2" stroke-dasharray="8 5" marker-end="url(#r)"/>
+<text x="1170.0" y="657.0" font-size="15" fill="#1D2328" font-weight="700" text-anchor="end" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">레인 3</text>
+<rect x="564.0" y="192.0" width="230.0" height="64.0" rx="4" fill="#3E6FC4" fill-opacity="0.08" stroke="#3E6FC4" stroke-width="1.6" stroke-dasharray="8 5"/>
+<circle cx="602.0" cy="224.0" r="25.2" fill="#E07B1A" fill-opacity="0.15" stroke="#E07B1A" stroke-width="1.3"/>
+<circle cx="654.8" cy="224.0" r="25.2" fill="#E07B1A" fill-opacity="0.15" stroke="#E07B1A" stroke-width="1.3"/>
+<circle cx="707.6" cy="224.0" r="25.2" fill="#E07B1A" fill-opacity="0.15" stroke="#E07B1A" stroke-width="1.3"/>
+<circle cx="760.4" cy="224.0" r="25.2" fill="#E07B1A" fill-opacity="0.15" stroke="#E07B1A" stroke-width="1.3"/>
+<line x1="594.0" y1="224.0" x2="610.0" y2="224.0" stroke="#1D2328" stroke-width="1.4"/>
+<line x1="602.0" y1="216.0" x2="602.0" y2="232.0" stroke="#1D2328" stroke-width="1.4"/>
+<line x1="786.0" y1="180.0" x2="666.0" y2="180.0" stroke="#3E6FC4" stroke-width="1.4" marker-end="url(#d)"/>
+<rect x="642.0" y="676.0" width="27.2" height="200.0" rx="4" fill="#D23C43" fill-opacity="0.08" stroke="#D23C43" stroke-width="1.6" stroke-dasharray="8 5"/>
+<rect x="338.0" y="468.0" width="144.0" height="144.0" rx="10" fill="#F4F6F7" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.8"/>
+<circle cx="354.0" cy="484.0" r="5.0" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.3"/>
+<circle cx="466.0" cy="484.0" r="5.0" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.3"/>
+<circle cx="354.0" cy="596.0" r="5.0" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.3"/>
+<circle cx="466.0" cy="596.0" r="5.0" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.3"/>
+<g transform="translate(410.0,540.0) rotate(-45.00)"><rect x="0" y="-30.0" width="169.7" height="60.0" rx="30.0" fill="#FFFFFF" stroke="#1D2328" stroke-width="1.6"/></g>
+<g transform="translate(530.0,420.0) rotate(43.60)"><rect x="0" y="-24.0" width="116.0" height="48.0" rx="24.0" fill="#FFFFFF" stroke="#1D2328" stroke-width="1.6"/></g>
+<g transform="translate(614.0,500.0) rotate(51.22)"><rect x="0" y="-18.0" width="57.5" height="36.0" rx="18.0" fill="#FFFFFF" stroke="#1D2328" stroke-width="1.6"/></g>
+<circle cx="410.0" cy="540.0" r="60.0" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.8"/>
+<circle cx="410.0" cy="540.0" r="36.0" fill="none" fill-opacity="1.0" stroke="#5A646B" stroke-width="1.0"/>
+<line x1="404.0" y1="540.0" x2="416.0" y2="540.0" stroke="#5A646B" stroke-width="1.4"/>
+<line x1="410.0" y1="534.0" x2="410.0" y2="546.0" stroke="#5A646B" stroke-width="1.4"/>
+<circle cx="530.0" cy="420.0" r="44.0" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.8"/>
+<circle cx="530.0" cy="420.0" r="26.4" fill="none" fill-opacity="1.0" stroke="#5A646B" stroke-width="1.0"/>
+<line x1="524.0" y1="420.0" x2="536.0" y2="420.0" stroke="#5A646B" stroke-width="1.4"/>
+<line x1="530.0" y1="414.0" x2="530.0" y2="426.0" stroke="#5A646B" stroke-width="1.4"/>
+<circle cx="614.0" cy="500.0" r="33.6" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.8"/>
+<circle cx="614.0" cy="500.0" r="20.2" fill="none" fill-opacity="1.0" stroke="#5A646B" stroke-width="1.0"/>
+<line x1="608.0" y1="500.0" x2="620.0" y2="500.0" stroke="#5A646B" stroke-width="1.4"/>
+<line x1="614.0" y1="494.0" x2="614.0" y2="506.0" stroke="#5A646B" stroke-width="1.4"/>
+<rect x="640.4" y="508.8" width="60.0" height="72.0" rx="5" fill="#E9ECEE" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.6"/>
+<rect x="700.4" y="511.2" width="32.0" height="12.8" rx="2" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.4"/>
+<rect x="700.4" y="565.6" width="32.0" height="12.8" rx="2" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.4"/>
+<rect x="643.6" y="484.8" width="44.0" height="17.6" rx="3" fill="#D3D8DB" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.4"/>
+<line x1="410.0" y1="540.0" x2="498.0" y2="540.0" stroke="#1D2328" stroke-width="1.6" marker-end="url(#d)"/>
+<line x1="410.0" y1="540.0" x2="410.0" y2="452.0" stroke="#1D2328" stroke-width="1.6" marker-end="url(#d)"/>
+<text x="502.0" y="545.0" font-size="14" fill="#1D2328" font-weight="700" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">x</text>
+<text x="416.0" y="448.0" font-size="14" fill="#1D2328" font-weight="700" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">y</text>
+<text x="402.0" y="562.0" font-size="15" fill="#1D2328" font-weight="800" text-anchor="end" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">O</text>
+<line x1="682.1" y1="563.4" x2="702.1" y2="563.4" stroke="#8E44C8" stroke-width="1.4"/>
+<line x1="692.1" y1="553.4" x2="692.1" y2="573.4" stroke="#8E44C8" stroke-width="1.4"/>
+<circle cx="692.1" cy="563.4" r="6.0" fill="none" fill-opacity="1.0" stroke="#8E44C8" stroke-width="1.4"/>
+<rect x="1314.0" y="300.0" width="96.0" height="480.0" rx="30" fill="none" fill-opacity="1.0" stroke="#5A646B" stroke-width="1.4" stroke-dasharray="6 5"/>
+<circle cx="1362.0" cy="540.0" r="60.0" fill="none" fill-opacity="1.0" stroke="#5A646B" stroke-width="1.4" stroke-dasharray="6 5"/>
+<text x="1362.0" y="268.0" font-size="15" fill="#5A646B" font-weight="700" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">환자 (착석)</text>
+<line x1="410.0" y1="612.0" x2="410.0" y2="938.0" stroke="#1F5FAF" stroke-width="0.9"/>
+<line x1="755.9" y1="544.6" x2="755.9" y2="938.0" stroke="#1F5FAF" stroke-width="0.9"/>
+<line x1="410.0" y1="932.0" x2="755.9" y2="932.0" stroke="#1F5FAF" stroke-width="1.2" marker-start="url(#d)" marker-end="url(#d)"/>
+<text x="583.0" y="925.0" font-size="15" fill="#1F5FAF" font-weight="600" text-anchor="middle" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">432</text>
+<line x1="755.9" y1="932.0" x2="826.0" y2="932.0" stroke="#1F5FAF" stroke-width="1.2" marker-start="url(#d)" marker-end="url(#d)"/>
+<text x="791.0" y="925.0" font-size="15" fill="#1F5FAF" font-weight="600" text-anchor="middle" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">≈88</text>
+<line x1="1178.0" y1="426.7" x2="1264.0" y2="426.7" stroke="#1F5FAF" stroke-width="0.9"/>
+<line x1="1178.0" y1="544.6" x2="1264.0" y2="544.6" stroke="#1F5FAF" stroke-width="0.9"/>
+<line x1="1258.0" y1="426.7" x2="1258.0" y2="544.6" stroke="#1F5FAF" stroke-width="1.2" marker-start="url(#d)" marker-end="url(#d)"/>
+<text x="1267.0" y="490.7" font-size="15" fill="#1F5FAF" font-weight="600" text-anchor="start" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">147.4</text>
+<line x1="1178.0" y1="665.0" x2="1264.0" y2="665.0" stroke="#1F5FAF" stroke-width="0.9"/>
+<line x1="1258.0" y1="544.6" x2="1258.0" y2="665.0" stroke="#1F5FAF" stroke-width="1.2" marker-start="url(#d)" marker-end="url(#d)"/>
+<text x="1267.0" y="609.8" font-size="15" fill="#1F5FAF" font-weight="600" text-anchor="start" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">150.4</text>
+<text x="715.5" y="670.0" font-size="14" fill="#E07B1A" font-weight="700" text-anchor="end" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">Ø63</text>
+<line x1="362.0" y1="492.0" x2="282.0" y2="364.0" stroke="#5A646B" stroke-width="1.1"/>
+<circle cx="362.0" cy="492.0" r="2.6" fill="#5A646B"/>
+<circle cx="282.0" cy="364.0" r="15.0" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.6"/>
+<text x="282.0" y="370.0" font-size="16" fill="#1D2328" font-weight="700" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">1</text>
+<line x1="692.1" y1="563.4" x2="674.0" y2="668.0" stroke="#5A646B" stroke-width="1.1"/>
+<circle cx="692.1" cy="563.4" r="2.6" fill="#5A646B"/>
+<circle cx="674.0" cy="668.0" r="15.0" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.6"/>
+<text x="674.0" y="674.0" font-size="16" fill="#1D2328" font-weight="700" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">2</text>
+<line x1="757.1" y1="426.7" x2="730.0" y2="300.0" stroke="#5A646B" stroke-width="1.1"/>
+<circle cx="757.1" cy="426.7" r="2.6" fill="#5A646B"/>
+<circle cx="730.0" cy="300.0" r="15.0" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.6"/>
+<text x="730.0" y="306.0" font-size="16" fill="#1D2328" font-weight="700" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">3</text>
+<line x1="755.9" y1="544.6" x2="802.0" y2="484.0" stroke="#5A646B" stroke-width="1.1"/>
+<circle cx="755.9" cy="544.6" r="2.6" fill="#5A646B"/>
+<circle cx="802.0" cy="484.0" r="15.0" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.6"/>
+<text x="802.0" y="490.0" font-size="16" fill="#1D2328" font-weight="700" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">4</text>
+<line x1="755.5" y1="665.0" x2="786.0" y2="804.0" stroke="#5A646B" stroke-width="1.1"/>
+<circle cx="755.5" cy="665.0" r="2.6" fill="#5A646B"/>
+<circle cx="786.0" cy="804.0" r="15.0" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.6"/>
+<text x="786.0" y="810.0" font-size="16" fill="#1D2328" font-weight="700" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">5</text>
+<line x1="602.0" y1="224.0" x2="490.0" y2="196.0" stroke="#5A646B" stroke-width="1.1"/>
+<circle cx="602.0" cy="224.0" r="2.6" fill="#5A646B"/>
+<circle cx="490.0" cy="196.0" r="15.0" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.6"/>
+<text x="490.0" y="202.0" font-size="16" fill="#1D2328" font-weight="700" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">6</text>
+<line x1="642.0" y1="780.0" x2="546.0" y2="756.0" stroke="#5A646B" stroke-width="1.1"/>
+<circle cx="642.0" cy="780.0" r="2.6" fill="#5A646B"/>
+<circle cx="546.0" cy="756.0" r="15.0" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.6"/>
+<text x="546.0" y="762.0" font-size="16" fill="#1D2328" font-weight="700" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">7</text>
+<line x1="826.0" y1="236.0" x2="906.0" y2="196.0" stroke="#5A646B" stroke-width="1.1"/>
+<circle cx="826.0" cy="236.0" r="2.6" fill="#5A646B"/>
+<circle cx="906.0" cy="196.0" r="15.0" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.6"/>
+<text x="906.0" y="202.0" font-size="16" fill="#1D2328" font-weight="700" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">8</text>
+<rect x="1460.0" y="60.0" width="460.0" height="640.0" rx="0" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.6"/>
+<text x="1476.0" y="94.0" font-size="17" fill="#1D2328" font-weight="800" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">번호 · 항목 · 좌표 (로봇 베이스 기준, mm)</text>
+<line x1="1460.0" y1="110.0" x2="1920.0" y2="110.0" stroke="#1D2328" stroke-width="1.2"/>
+<circle cx="1488.0" cy="136.0" r="13.0" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.4"/>
+<text x="1488.0" y="141.0" font-size="14" fill="#1D2328" font-weight="700" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">1</text>
+<text x="1512.0" y="142.0" font-size="15" fill="#1D2328" font-weight="700" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">로봇 베이스 · 좌표 원점 O</text>
+<text x="1512.0" y="164.0" font-size="14" fill="#1F5FAF" font-weight="600" text-anchor="start" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">(0, 0)</text>
+<text x="1690.0" y="164.0" font-size="13" fill="#5A646B" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">M0609 + RG2 + RealSense</text>
+<line x1="1470.0" y1="180.0" x2="1910.0" y2="180.0" stroke="#E6EBEF" stroke-width="1"/>
+<circle cx="1488.0" cy="204.0" r="13.0" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.4"/>
+<text x="1488.0" y="209.0" font-size="14" fill="#1D2328" font-weight="700" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">2</text>
+<text x="1512.0" y="210.0" font-size="15" fill="#1D2328" font-weight="700" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">관측 자세 TCP</text>
+<text x="1512.0" y="232.0" font-size="14" fill="#1F5FAF" font-weight="600" text-anchor="start" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">(352.6, −29.3)</text>
+<text x="1690.0" y="232.0" font-size="13" fill="#5A646B" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">z 481.6</text>
+<line x1="1470.0" y1="248.0" x2="1910.0" y2="248.0" stroke="#E6EBEF" stroke-width="1"/>
+<circle cx="1488.0" cy="272.0" r="13.0" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.4"/>
+<text x="1488.0" y="277.0" font-size="14" fill="#1D2328" font-weight="700" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">3</text>
+<text x="1512.0" y="278.0" font-size="15" fill="#1D2328" font-weight="700" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">레인 1 입구 (공 놓는 자리)</text>
+<text x="1512.0" y="300.0" font-size="14" fill="#1F5FAF" font-weight="600" text-anchor="start" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">(433.9, 141.6)</text>
+<text x="1690.0" y="300.0" font-size="13" fill="#5A646B" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">방향 −0.9°</text>
+<line x1="1470.0" y1="316.0" x2="1910.0" y2="316.0" stroke="#E6EBEF" stroke-width="1"/>
+<circle cx="1488.0" cy="340.0" r="13.0" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.4"/>
+<text x="1488.0" y="345.0" font-size="14" fill="#1D2328" font-weight="700" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">4</text>
+<text x="1512.0" y="346.0" font-size="15" fill="#1D2328" font-weight="700" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">레인 2 입구 (공 놓는 자리)</text>
+<text x="1512.0" y="368.0" font-size="14" fill="#1F5FAF" font-weight="600" text-anchor="start" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">(432.4, −5.8)</text>
+<text x="1690.0" y="368.0" font-size="13" fill="#5A646B" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">방향 +0.3°</text>
+<line x1="1470.0" y1="384.0" x2="1910.0" y2="384.0" stroke="#E6EBEF" stroke-width="1"/>
+<circle cx="1488.0" cy="408.0" r="13.0" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.4"/>
+<text x="1488.0" y="413.0" font-size="14" fill="#1D2328" font-weight="700" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">5</text>
+<text x="1512.0" y="414.0" font-size="15" fill="#1D2328" font-weight="700" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">레인 3 입구 (공 놓는 자리)</text>
+<text x="1512.0" y="436.0" font-size="14" fill="#1F5FAF" font-weight="600" text-anchor="start" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">(431.9, −156.2)</text>
+<text x="1690.0" y="436.0" font-size="13" fill="#5A646B" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">방향 −0.7°</text>
+<line x1="1470.0" y1="452.0" x2="1910.0" y2="452.0" stroke="#E6EBEF" stroke-width="1"/>
+<circle cx="1488.0" cy="476.0" r="13.0" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.4"/>
+<text x="1488.0" y="481.0" font-size="14" fill="#1D2328" font-weight="700" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">6</text>
+<text x="1512.0" y="482.0" font-size="15" fill="#1D2328" font-weight="700" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">공 거치대 · 집는 자리</text>
+<text x="1512.0" y="504.0" font-size="14" fill="#5A646B" font-weight="600" text-anchor="start" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">실측 예정</text>
+<text x="1690.0" y="504.0" font-size="13" fill="#5A646B" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">기울어진 레일, 공 4개 (모드 1)</text>
+<line x1="1470.0" y1="520.0" x2="1910.0" y2="520.0" stroke="#E6EBEF" stroke-width="1"/>
+<circle cx="1488.0" cy="544.0" r="13.0" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.4"/>
+<text x="1488.0" y="549.0" font-size="14" fill="#1D2328" font-weight="700" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">7</text>
+<text x="1512.0" y="550.0" font-size="15" fill="#1D2328" font-weight="700" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">패드 거치대</text>
+<text x="1512.0" y="572.0" font-size="14" fill="#5A646B" font-weight="600" text-anchor="start" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">실측 예정</text>
+<text x="1690.0" y="572.0" font-size="13" fill="#5A646B" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">모드 3 (3D 프린팅 예정)</text>
+<line x1="1470.0" y1="588.0" x2="1910.0" y2="588.0" stroke="#E6EBEF" stroke-width="1"/>
+<circle cx="1488.0" cy="612.0" r="13.0" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.4"/>
+<text x="1488.0" y="617.0" font-size="14" fill="#1D2328" font-weight="700" text-anchor="middle" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">8</text>
+<text x="1512.0" y="618.0" font-size="15" fill="#1D2328" font-weight="700" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">로봇 이동 한계선</text>
+<text x="1512.0" y="640.0" font-size="14" fill="#5A646B" font-weight="600" text-anchor="start" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">x ≈ 520 (실측 예정)</text>
+<text x="1690.0" y="640.0" font-size="13" fill="#5A646B" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">로봇은 넘지 않음</text>
+<line x1="1470.0" y1="656.0" x2="1910.0" y2="656.0" stroke="#E6EBEF" stroke-width="1"/>
+<rect x="1460.0" y="726.0" width="460.0" height="170.0" rx="0" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="1.6"/>
+<text x="1476.0" y="756.0" font-size="16" fill="#1D2328" font-weight="800" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">표기</text>
+<line x1="1480.0" y1="782.0" x2="1530.0" y2="782.0" stroke="#1D2328" stroke-width="1.6"/>
+<text x="1544.0" y="787.0" font-size="14" fill="#1D2328" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">실측 위치</text>
+<line x1="1690.0" y1="782.0" x2="1740.0" y2="782.0" stroke="#1D2328" stroke-width="1.6" stroke-dasharray="8 5"/>
+<text x="1754.0" y="787.0" font-size="14" fill="#1D2328" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">개략 위치 (실측 예정)</text>
+<line x1="1497.0" y1="818.0" x2="1513.0" y2="818.0" stroke="#E07B1A" stroke-width="1.4"/>
+<line x1="1505.0" y1="810.0" x2="1505.0" y2="826.0" stroke="#E07B1A" stroke-width="1.4"/>
+<circle cx="1505.0" cy="818.0" r="12.0" fill="none" fill-opacity="1.0" stroke="#E07B1A" stroke-width="1.4"/>
+<text x="1544.0" y="823.0" font-size="14" fill="#1D2328" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">공 놓는 자리 (공 Ø63)</text>
+<line x1="1690.0" y1="818.0" x2="1740.0" y2="818.0" stroke="#E07B1A" stroke-width="2" stroke-dasharray="8 5" marker-end="url(#r)"/>
+<text x="1754.0" y="823.0" font-size="14" fill="#1D2328" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">공 진행 방향</text>
+<line x1="1480.0" y1="854.0" x2="1530.0" y2="854.0" stroke="#8E44C8" stroke-width="2.4" stroke-dasharray="14 8"/>
+<text x="1544.0" y="859.0" font-size="14" fill="#1D2328" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">이동 한계선</text>
+<line x1="1690.0" y1="854.0" x2="1740.0" y2="854.0" stroke="#1F5FAF" stroke-width="1.2" marker-start="url(#d)" marker-end="url(#d)"/>
+<text x="1754.0" y="859.0" font-size="14" fill="#1D2328" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">치수 [mm]</text>
+<text x="1476.0" y="886.0" font-size="13" fill="#5A646B" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">테이블 상판 z = 14.4 mm · 격자 100 mm</text>
+<rect x="1460.0" y="896.0" width="460.0" height="168.0" rx="0" fill="#FFFFFF" fill-opacity="1.0" stroke="#1D2328" stroke-width="2"/>
+<line x1="1460.0" y1="952.0" x2="1920.0" y2="952.0" stroke="#1D2328" stroke-width="1.2"/>
+<line x1="1460.0" y1="1008.0" x2="1920.0" y2="1008.0" stroke="#1D2328" stroke-width="1.2"/>
+<line x1="1690.0" y1="952.0" x2="1690.0" y2="1064.0" stroke="#1D2328" stroke-width="1.2"/>
+<text x="1476.0" y="934.0" font-size="24" fill="#1D2328" font-weight="800" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">RALLY 작업대 평면도</text>
+<text x="1904.0" y="934.0" font-size="20" fill="#1D2328" font-weight="800" text-anchor="end" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">v3</text>
+<text x="1476.0" y="976.0" font-size="14" fill="#5A646B" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">상지 재활 파트너 로봇</text>
+<text x="1476.0" y="996.0" font-size="14" fill="#5A646B" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">두산 M0609 · RG2 · RealSense</text>
+<text x="1706.0" y="976.0" font-size="14" fill="#5A646B" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">축척  격자 1칸 = 100 mm</text>
+<text x="1706.0" y="996.0" font-size="14" fill="#5A646B" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">단위  mm · 기준 로봇 베이스</text>
+<text x="1476.0" y="1036.0" font-size="14" fill="#5A646B" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">실측  2026-10-07</text>
+<text x="1476.0" y="1054.0" font-size="12" fill="#5A646B" font-weight="400" text-anchor="start" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">scripts/print_pose.py</text>
+<text x="1706.0" y="1036.0" font-size="14" fill="#5A646B" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">작성  RALLY 팀 (로봇 제어)</text>
+<text x="1706.0" y="1054.0" font-size="11" fill="#5A646B" font-weight="400" text-anchor="start" font-family="Noto Sans Mono CJK KR, DejaVu Sans Mono, monospace">docs/images/src/table_layout_v3.py</text>
+<text x="60.0" y="66.0" font-size="30" fill="#1D2328" font-weight="800" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">RALLY 작업대 배치 — 평면도</text>
+<text x="60.0" y="98.0" font-size="16" fill="#5A646B" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Noto Sans KR, sans-serif">위에서 본 모습 · 로봇 베이스 원점 · x = 환자 쪽</text>
+</svg>

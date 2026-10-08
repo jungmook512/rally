@@ -58,3 +58,72 @@ def test_check_joint_limits():
     bad = check_joint_limits([(0, ok), (1, over), (2, None), (3, neg)], j5_max=133.0)
     assert [i for i, _ in bad] == [1, 2, 3]
     assert check_joint_limits([(0, over)], j5_max=145.0) == []
+
+
+def test_push_ball_plan():
+    """공 뒤에서 내려가 +x 로 밀고, 끝점은 공 뒤면 + stroke, 높이는 테이블 + 반지름."""
+    pytest.importorskip("rally_interfaces")
+    from types import SimpleNamespace
+    from rally_robot.skills.push_ball import DEFAULTS, _plan
+    lanes = [{"name": "center", "start": [0.40, 0.0, 0.0], "dir_deg": 0}]
+    goal = SimpleNamespace(lane=0, push_dir_deg=0.0)
+    pts, info = _plan(goal, dict(DEFAULTS, push_mode="push", ball_radius_m=0.03), lanes, {"z_m": 0.0144})
+    assert pts["behind"][0] == pytest.approx(400 - 80)          # 공 중심 − (반지름 30 + back_off 50)
+    assert pts["end"][0] == pytest.approx(400 - 30 + 60)        # 공 뒤면 + stroke 60
+    assert pts["behind"][2] == pytest.approx(14.4 + 30)
+    assert pts["above"][2] == pytest.approx(14.4 + 100)
+    assert pts["end"][1] == pytest.approx(0.0)
+    goal90 = SimpleNamespace(lane=0, push_dir_deg=90.0)          # +y 로 밀기
+    pts90, _ = _plan(goal90, dict(DEFAULTS, push_mode="push", ball_radius_m=0.03), lanes, {"z_m": 0.0})
+    assert pts90["end"][1] > pts90["behind"][1] and pts90["end"][0] == pytest.approx(400)
+
+
+def test_push_ball_strike_arc():
+    """치기 원호: 타격점은 툴 수직·손가락 끝이 테이블 바로 위·앞면이 공 뒤 표면, 백스윙은 뒤쪽·위, 팔로스루는 앞쪽. 모든 점이 같은 원(반지름 L) 위."""
+    pytest.importorskip("rally_interfaces")
+    from rally_robot.skills.push_ball import DEFAULTS, _strike_points
+    cfg = dict(DEFAULTS, ball_radius_m=0.0315)
+    sp, tips = _strike_points(cfg, (0.4324, -0.0058), (1.0, 0.0), 0.0144, 0.0)
+    r, L = 0.0315, cfg["strike_radius_m"]
+    assert tips["mid"][2] == pytest.approx(0.0144 + cfg["strike_tip_height_m"])
+    assert tips["mid"][0] == pytest.approx(0.4324 - r - cfg["strike_face_offset_m"])
+    assert tips["start"][0] < tips["mid"][0] < tips["end"][0]                 # 뒤 → 타격 → 앞
+    assert tips["start"][2] > tips["mid"][2] and tips["end"][2] > tips["mid"][2]   # 타격점이 원호의 최저점
+    z_mid = Rotation.from_euler("ZYZ", sp["mid"][3:6], degrees=True).apply([0, 0, 1])
+    assert z_mid[2] < -0.99                                                    # 타격 순간 툴 거의 수직 (실측 tool_down 이 3° 틀어짐)
+    pivot = np.array(tips["mid"]) - L * z_mid
+    for k in ("start", "end"):
+        assert float(np.linalg.norm(np.array(tips[k]) - pivot)) == pytest.approx(L, abs=1e-6)
+
+
+def test_push_ball_speed_for_target():
+    """레시피 d = v²/(2a) + d0 의 역: 목표까지 레인 방향 거리 d → v = sqrt(2a(d - d0)). 레시피 없음·너무 가까움은 거부."""
+    pytest.importorskip("rally_interfaces")
+    from types import SimpleNamespace
+    from rally_robot.dsr_helpers import SkillAbort
+    from rally_robot.skills.push_ball import speed_for_target
+    lane = {"start": [0.43, 0.0, 0.0]}
+    goal = SimpleNamespace(target=SimpleNamespace(point=SimpleNamespace(x=0.43 + 0.40, y=0.0)))
+    v, d = speed_for_target(goal, lane, {"decel_mps2": 0.5, "d0_m": 0.10}, 0.0)
+    assert d == pytest.approx(0.40) and v == pytest.approx(math.sqrt(2 * 0.5 * 0.30))
+    with pytest.raises(SkillAbort):
+        speed_for_target(goal, lane, None, 0.0)
+    near = SimpleNamespace(target=SimpleNamespace(point=SimpleNamespace(x=0.43 + 0.05, y=0.0)))
+    with pytest.raises(SkillAbort):
+        speed_for_target(near, lane, {"decel_mps2": 0.5, "d0_m": 0.10}, 0.0)
+
+
+def test_push_ball_choose_ball_smallest_x():
+    """비전 공 고르기: ball·신뢰도·정지·x 범위를 통과한 것 중 x 최소. base_link 가 아니면 None."""
+    pytest.importorskip("rally_interfaces")
+    from types import SimpleNamespace as NS
+    from rally_robot.skills.push_ball import DEFAULTS, choose_ball
+    def obj(cls, x, y=0.0, conf=0.9, moving=False):
+        return NS(class_name=cls, confidence=conf, is_moving=moving, position=NS(x=x, y=y, z=0.05))
+    arr = NS(header=NS(frame_id="base_link"), objects=[
+        obj("ball", 0.45, 0.1), obj("ball", 0.31, 0.38), obj("ball", 0.28, 0.38, conf=0.3),   # 신뢰도 낮음 → 제외
+        obj("ball", 0.25, 0.0, moving=True), obj("cup", 0.20), obj("ball", 0.05),             # 움직임·컵·범위 밖 제외
+        NS(class_name="ball", confidence=0.99, is_moving=False, position=NS(x=0.20, y=0.0, z=0.51))])   # 그리퍼에 쥔 공(높이) 제외
+    x, y, z, n = choose_ball(arr, dict(DEFAULTS))
+    assert (x, y, n) == (0.31, 0.38, 2)
+    assert choose_ball(NS(header=NS(frame_id="camera_color_optical_frame"), objects=arr.objects), dict(DEFAULTS)) is None

@@ -3,5 +3,5 @@
 table:
   z_m: 0.0144                     # 10/6 실측: 그리퍼 닫고 상판 접촉, (x 231, z 13.5) · (x 682, z 15.3) mm → 평균 14.4 mm, 기울기 1.8 mm/450 mm (수평). 펠트 깔면 +2~3 mm 재측정
   centerline_y_m: 0.0             # TODO 실측. 중앙선 테이프 위 한 점의 base y (환자 구역은 x 가 큰 쪽)
-  centerline_x_m: 0.60            # TODO 실측. 로봇이 넘지 않는 x (safety.yaml workspace_x_max_m 과 맞춘다)
+  centerline_x_m: 0.568           # 10/7 실측: 테이블 보라색 로봇 이동 한계선 (손끝을 표시 위에 대고 print_pose, y 0.242 지점). 로봇이 넘지 않는 x — 밀기 끝점(−3 cm)·모드 5 제시 위치(−6 cm) 기준
   origin_xyz_m: [0.30, 0.0, null] # table_link 원점 (로봇 쪽 모서리 가운데)

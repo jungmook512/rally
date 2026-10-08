@@ -172,8 +172,13 @@ def pose_error(cur6, target6):
     return dpos, float(np.degrees(np.linalg.norm(d.as_rotvec())))
 
 
-def move_checked(node, pose6, vel, acc, timeout_s=None, poll_s=0.02, on_poll=None):
-    """amovel + 폴링. node 는 stop_requested()/speed_scale()/safety_reason()/dsr/get_logger() 를 제공해야 한다.
+def move_checked(node, pose6, vel, acc, timeout_s=None, poll_s=0.02, on_poll=None, via=None, stall_ok=False, path=None):
+    """amovel(via 가 있으면 amovec: 현재 → via → pose6 원호) + 폴링.
+    path=[posx, ...]: 경유점을 지나 pose6 까지 멈추지 않고 이어 가는 스플라인(amovesx) — 그리퍼를 쓰지 않는 구간을 부드럽게.
+      도중 감속 배율이 바뀌면 원호처럼 정지 확인 후 SkillAbort('speed_changed_during_arc').
+    stall_ok=True: 목표 전에 멈춰 선 것을 실패가 아니라 'stalled' 로 돌려준다 — 순응 하강에서 물체·테이블에 닿으면
+      스프링처럼 버티며 멈추고(강성 400 N/m × 6 mm ≈ 2.5 N), 힘 임계에 못 미칠 수 있다 (10/7 실로봇).
+    원호 도중 감속 배율이 바뀌면 중간부터 같은 원호를 다시 그릴 수 없으므로 정지 확인 후 SkillAbort('speed_changed_during_arc'). node 는 stop_requested()/speed_scale()/safety_reason()/dsr/get_logger() 를 제공해야 한다.
     - 출발 판정: check_motion != 0 **또는** 자세가 1 mm·0.5° 이상 변함 (실로봇은 check_motion 이 늦게 BUSY 로 바뀐다). 3 s 안에 출발 없으면
       정지 명령 후 SkillAbort('not_started')
     - 종료 판정: check_motion == 0 이고 자세가 0.4 s 동안 안정. 그 뒤 목표와 3 mm·2° 안이어야 'done', 아니면 정지 명령 후 SkillAbort('not_arrived')
@@ -181,6 +186,10 @@ def move_checked(node, pose6, vel, acc, timeout_s=None, poll_s=0.02, on_poll=Non
     - on_poll() 이 True 를 돌려주면(예: 접촉 감지) 정지하고 'interrupted'
     - timeout_s 가 None 이면 현재 자세 → 목표 거리와 속도로 계산(motion_timeout_s)"""
     from DSR_ROBOT2 import amovel, check_motion, get_current_posx, posx
+    if via is not None:
+        from DSR_ROBOT2 import amovec
+    if path:
+        from DSR_ROBOT2 import amovesx
     logger = node.get_logger()
     while True:
         if node.stop_requested():
@@ -191,13 +200,28 @@ def move_checked(node, pose6, vel, acc, timeout_s=None, poll_s=0.02, on_poll=Non
         d0, a0 = pose_error(start_pose, pose6)
         if d0 <= ARRIVE_TOL_MM and a0 <= ARRIVE_TOL_DEG:
             return "done"                                                 # 이미 목표 자세 — 컨트롤러가 움직이지 않으므로 '출발 없음' 오판 방지
+        # vel·acc 는 숫자(직선 mm/s) 또는 [직선 mm/s, 회전 deg/s] — 자세가 크게 도는 이동(스윙)은 회전 속도를 같이 줘야 빠르다
+        sc = (lambda v: [float(x) * scale for x in v]) if isinstance(vel, (list, tuple)) else (lambda v: float(v) * scale)
+        v_cmd, a_cmd = sc(vel), (sc(acc) if isinstance(acc, (list, tuple)) else float(acc) * scale)
+        v_lin = v_cmd[0] if isinstance(v_cmd, list) else v_cmd
         if timeout_s is None:
-            timeout_s = motion_timeout_s(start_pose, pose6, vel * scale)
-        ret = amovel(posx(*pose6), vel=vel * scale, acc=acc * scale)
+            if path:
+                pts = [start_pose, *path, pose6]
+                timeout_s = sum(motion_timeout_s(a, b, v_lin, floor_s=2.0) for a, b in zip(pts, pts[1:])) + 5.0
+            elif via is not None:
+                timeout_s = motion_timeout_s(start_pose, via, v_lin) + motion_timeout_s(via, pose6, v_lin)
+            else:
+                timeout_s = motion_timeout_s(start_pose, pose6, v_lin)
+        if path:
+            ret = amovesx([posx(*p) for p in path] + [posx(*pose6)], vel=v_cmd, acc=a_cmd)
+        elif via is not None:
+            ret = amovec(posx(*via), posx(*pose6), vel=v_cmd, acc=a_cmd)
+        else:
+            ret = amovel(posx(*pose6), vel=v_cmd, acc=a_cmd)
         if ret not in (None, 0):
             raise SkillAbort(f"amovel_rejected_{ret}", stopped=True)      # 컨트롤러가 명령 거부 (도달 불가·모드 등)
         t0 = time.monotonic()
-        started, stable_since, last = False, None, start_pose
+        started, stable_since, last = False, None, None
         while True:
             time.sleep(poll_s)
             now = time.monotonic()
@@ -210,6 +234,8 @@ def move_checked(node, pose6, vel, acc, timeout_s=None, poll_s=0.02, on_poll=Non
             if (node.speed_scale() < 1.0) != slowed:
                 if not stop_robot(node.dsr, logger, "감속 배율 변경"):
                     raise SkillAbort("stop_failed_on_slow", stopped=False)
+                if via is not None or path:
+                    raise SkillAbort("speed_changed_during_arc", stopped=True)
                 logger.info(f"안전 레벨 변경(speed_override={node.speed_scale():.2f}) — 같은 자세로 재이동")
                 break                                                     # 바깥 while 이 STOP 재확인 후 재명령
             busy = check_motion() != 0
@@ -226,20 +252,112 @@ def move_checked(node, pose6, vel, acc, timeout_s=None, poll_s=0.02, on_poll=Non
             if now - t0 > timeout_s:
                 stopped = stop_robot(node.dsr, logger, "이동 타임아웃")
                 raise SkillAbort(f"motion_timeout_{timeout_s:.0f}s", stopped=stopped)
-            moving = pose_error(cur, last)[0] > 0.2 or pose_error(cur, last)[1] > 0.1
-            last = cur
-            if busy or moving:
-                stable_since = None
+            # 정지 판정: 기준 자세에서 0.4 s 동안 0.3 mm·0.2° 안에 머물러야 정지. (예전엔 한 주기 0.2 mm 기준이라
+            # 10 mm/s 미만의 느린 하강을 정지로 착각했다 — 10/7 실로봇 공 놓기)
+            if busy or last is None or pose_error(cur, last)[0] > 0.3 or pose_error(cur, last)[1] > 0.2:
+                last, stable_since = cur, now
                 continue
-            stable_since = stable_since or now
             if now - stable_since < SETTLE_STABLE_S:
                 continue
             dpos, dang = pose_error(cur, pose6)                           # 멈춤 → 도착 검증
+            if (dpos > ARRIVE_TOL_MM or dang > ARRIVE_TOL_DEG) and stall_ok:
+                if not stop_robot(node.dsr, logger, "접촉으로 멈춤"):          # 남은 명령 취소
+                    raise SkillAbort("stop_failed_on_stall", stopped=False)
+                logger.info(f"목표 {dpos:.1f} mm 앞에서 멈춤 — 접촉으로 판단")
+                return "stalled"
             if dpos > ARRIVE_TOL_MM or dang > ARRIVE_TOL_DEG:
                 stopped = stop_robot(node.dsr, logger, "목표 미도달")
                 logger.error(f"목표 미도달: 위치 {dpos:.1f} mm · 자세 {dang:.1f}° 차이 — 명령이 거부되었거나 중단됨")
                 raise SkillAbort("not_arrived", stopped=stopped)
             return "done"
+
+
+def move_chain(node, vias, final_pose, final_vel, final_acc, on_poll=None, stall_ok=False, final_compliance=None,
+               on_via=None, tag="chain", lead_mm=10.0, final_lead_mm=30.0):
+    """멈추지 않고 이어 가는 직선 이동 체인 (두산 블렌딩) → 마지막 구간만 느리게(접촉 감지).
+    vias = [(pose6, vel, acc, radius_mm), ...] 경유점. 각 경유점에 amovel(radius) 을 보내고, 그 반경에 들어오면 다음 명령을 보낸다
+    (10/7 에뮬레이터: 반경 20 mm 면 150 → 40 mm/s 로 정지 없이 이어짐. 스플라인 amovesx 뒤에는 블렌딩이 안 돼 직선 체인을 쓴다).
+    마지막 구간(final_pose, final_vel, final_acc)은 move_checked 로 — 접촉(on_poll)·STOP·도착·stall_ok 검사.
+    final_compliance 가 있으면 마지막 구간 직전에 **이동 중에** 순응을 켠다(기다리지 않음). 정상 반환 시 순응은 켜진 채이고
+    해제는 호출한 쪽 책임 (그리퍼를 순응 상태에서 여닫기 위해). 예외면 여기서 해제한다.
+    실로봇에서 순응 직후 명령이 무시된 적이 있다 → 마지막 구간이 출발 못 하고 마지막 경유점에서 서 버리면 접촉으로 보지 않고 한 번 다시 보낸다.
+    on_via(i): 경유점 i 반경에 들어왔을 때 호출 (예: 공에서 충분히 떨어진 곳에서 그리퍼 닫기 시작).
+    lead_mm / final_lead_mm: 반경보다 이만큼 먼저 다음 명령을 보낸다. 마지막 구간 전환은 순응 켜기·검사로 시간이 더 걸려
+      (에뮬레이터 10 mm 일 때 0.2 s 머뭇거림) 더 일찍 보낸다."""
+    from DSR_ROBOT2 import amovel, get_current_posx, posx
+    logger = node.get_logger()
+    comp_on = False
+    try:
+        for i, (pose, vel, acc, radius) in enumerate(vias):
+            if node.stop_requested():
+                raise SkillAbort(node.safety_reason(), stopped=stop_robot(node.dsr, logger, "safety STOP"))
+            scale = node.speed_scale()
+            sc = (lambda v: [float(x) * scale for x in v]) if isinstance(vel, (list, tuple)) else (lambda v: float(v) * scale)
+            ret = amovel(posx(*pose), vel=sc(vel), acc=sc(acc), radius=float(radius))
+            if ret not in (None, 0):
+                raise SkillAbort(f"amovel_rejected_{ret}", stopped=stop_robot(node.dsr, logger, "체인 명령 거부"))
+            v_lin = sc(vel)[0] if isinstance(vel, (list, tuple)) else sc(vel)
+            deadline = time.monotonic() + motion_timeout_s(get_current_posx()[0], pose, v_lin)
+            lead = final_lead_mm if i == len(vias) - 1 else lead_mm
+            while pose_error(get_current_posx()[0], pose)[0] > float(radius) + lead:   # 이 경유점 반경(+미리) 안으로
+                time.sleep(0.01)
+                if node.stop_requested():
+                    raise SkillAbort(node.safety_reason(), stopped=stop_robot(node.dsr, logger, "safety STOP"))
+                if time.monotonic() > deadline:
+                    raise SkillAbort("chain_timeout", stopped=stop_robot(node.dsr, logger, "체인 이동 시간 초과"))
+            if on_via:
+                on_via(i)
+        if final_compliance is not None:
+            from DSR_ROBOT2 import task_compliance_ctrl
+            task_compliance_ctrl(list(final_compliance))
+            comp_on = True
+        how = move_checked(node, final_pose, final_vel, final_acc, on_poll=on_poll, stall_ok=stall_ok)
+        if how == "stalled" and vias and pose_error(get_current_posx()[0], vias[-1][0])[0] < 8.0:
+            logger.warning(f"[{tag}] 마지막 구간이 출발 못 하고 경유점에서 멈춤 — 접촉 아님, 다시 보냄")
+            time.sleep(0.2)
+            how = move_checked(node, final_pose, final_vel, final_acc, on_poll=on_poll, stall_ok=stall_ok)
+        return how
+    except BaseException:
+        if comp_on:
+            try:
+                from DSR_ROBOT2 import release_compliance_ctrl
+                release_compliance_ctrl()
+            except Exception as e:  # noqa: BLE001
+                logger.error(f"release_compliance_ctrl 실패: {e}")
+        raise
+
+
+def movej_checked(node, posj6, vel, acc, timeout_s=30.0, poll_s=0.02):
+    """amovej + 폴링 (관절 이동판 move_checked). 관측 자세 복귀처럼 팔 형태를 바꿔야 하는 이동에 쓴다.
+    STOP → stop_robot → SkillAbort. 출발 못 하면(이미 그 자세가 아닌데 3 s 동안 check_motion 0) 'not_started'.
+    반환 "done". posj6: deg."""
+    from DSR_ROBOT2 import amovej, check_motion, get_current_posj
+    logger = node.get_logger()
+    target = [float(v) for v in posj6]
+    if max(abs(a - b) for a, b in zip([float(v) for v in get_current_posj()], target)) < 0.5:
+        return "done"
+    if node.stop_requested():
+        raise SkillAbort(node.safety_reason(), stopped=True)
+    scale = node.speed_scale()
+    ret = amovej(target, vel=vel * scale, acc=acc * scale)
+    if ret is not None and ret < 0:
+        raise SkillAbort(f"amovej_failed({ret})", stopped=True)
+    t0 = time.monotonic()
+    started = False
+    while True:
+        time.sleep(poll_s)
+        if node.stop_requested():
+            raise SkillAbort(node.safety_reason(), stopped=stop_robot(node.dsr, logger, "safety STOP"))
+        moving = check_motion() != 0
+        started = started or moving
+        if not started and time.monotonic() - t0 > START_GRACE_S:
+            if max(abs(a - b) for a, b in zip([float(v) for v in get_current_posj()], target)) < 0.5:
+                return "done"
+            raise SkillAbort("not_started", stopped=stop_robot(node.dsr, logger, "출발 없음"))
+        if started and not moving:
+            return "done"
+        if time.monotonic() - t0 > timeout_s:
+            raise SkillAbort("timeout", stopped=stop_robot(node.dsr, logger, "관절 이동 시간 초과"))
 
 
 def controller_alive(node, timeout_s=2.0):
@@ -261,11 +379,17 @@ def controller_alive(node, timeout_s=2.0):
         node.destroy_client(client)
 
 
+COMPLIANCE_SETTLE_S = 0.3   # 10/7 실로봇: task_compliance_ctrl 직후 곧바로 amovel 을 보내면 알람 없이 무시된다 (0.1 s 만 기다려도 받음)
+
+
 @contextmanager
-def compliance(stx, logger=None):
-    """task_compliance_ctrl(stx) 를 켜고, 블록을 어떻게 빠져나가든(예외·취소 포함) 반드시 해제한다."""
+def compliance(stx, logger=None, settle_s=None):
+    """task_compliance_ctrl(stx) 를 켜고, 블록을 어떻게 빠져나가든(예외·취소 포함) 반드시 해제한다.
+    켠 뒤 settle_s(기본 COMPLIANCE_SETTLE_S) 기다린다 — 정지 상태에서 바로 이동 명령을 보내면 컨트롤러가 버린다. 힘 영점도 이 뒤에 읽을 것.
+    이동 중(블렌딩 체인 마지막 구간 직전)에 켤 때는 settle_s=0 — 기다리면 앞 이동이 끝나 멈춰 버린다."""
     from DSR_ROBOT2 import task_compliance_ctrl, release_compliance_ctrl
     task_compliance_ctrl(list(stx))
+    time.sleep(COMPLIANCE_SETTLE_S if settle_s is None else settle_s)
     try:
         yield
     finally:

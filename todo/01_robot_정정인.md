@@ -49,7 +49,7 @@
 - [ ] 떼어낸 공 → `Handover GIVE`로 환자에게
 
 ## Day 5 — 모드 1 스킬
-- [ ] `push_ball.py`: `lane` 으로 가이드 길 선택(skills.yaml) → 공을 길 입구에 놓고 뒤로 접근 → `push_speed` 속도 프로파일 movel → 접촉 힘 감지 → 정해진 거리 밀고 정지 → 관측 자세 복귀
+- [x] `push_ball.py`: `lane` 으로 가이드 길 선택(skills.yaml) → 공을 길 입구에 놓고 뒤로 접근 → `push_speed` 속도 프로파일 movel → 접촉 힘 감지 → 정해진 거리 밀고 정지 → 관측 자세 복귀 — 10/7 코드 완료(집기 후 레인 입구에 놓기 → 닫은 손가락으로 위치 기반 밀기, 툴 힘 0 이라 접촉 감지 없음). 가짜 모드·두산 에뮬레이터(scripts/sim_robot.sh) 통과, 실로봇 미확인. 레인 입구·방향·공 지름 실측 필요
 - [ ] 가이드 길 3개 위치 실측 → `skills.yaml mode1.lanes` 기입, 그리퍼가 길 벽에 안 걸리는지 확인
 - [ ] 밀기 파라미터 ↔ 정지 거리 사전 실험 20회 (박성현 정지 위치 측정) → 초기 룩업 테이블
 - [ ] 돌아온 공 `PickCompliant`로 집기 (테이블 접촉 감지)
@@ -77,7 +77,7 @@
 - [x] 10/7 소개 일러스트 v5 — 모드 1·3·5·7 설명, 작업대를 향한 손목 RealSense, 우측에 앉은 환자 추가 (`docs/images/rally_intro_topview_v5.png`, 생성 프롬프트: `docs/images/src/rally_intro_topview_v5.prompt.txt`).
 - [x] 10/7 프로젝트 소개용 배치 일러스트 제작 — PR #42·현장 사진 반영. 공 4개 자동 공급, 3개 레인의 목표 4곳, 보라색 이동 한계선, 모드 3 패드 거치 예정 위치 표시 (`docs/images/rally_intro_topview_v4.png`, 생성 프롬프트: `docs/images/src/rally_intro_topview_v4.prompt.txt`).
 - 10/7 (정동휘): `hand_pose` 노드 동작. ① `HandState.gesture` 는 5 프레임(약 0.17 s) 연속일 때만 FIST 로 내보냄 (safety_monitor 가 한 프레임 FIST 에도 STOP 하므로). 모드 5 에서 물체 쥔 손이 주먹으로 보이면 `fist_estop_enabled:=false` 로 끌 수 있음 — 같이 정하기. ② 손은 보이는데 위치를 못 구하면(깊이·tf 없음) `distance_to_centerline = NaN` = "거리 모름" (INTERFACES 2.2). #44 리뷰대로 safety_monitor 에서 `detected && NaN` 이면 SLOW (정정인)
-- [!] 10/7 `get_tool_force` 가 전부 0 (관절 외력 토크는 정상). 재부팅·툴 재적용으로 안 풀림. 우회: `scripts/ejt_wrench.py`(관절 외력 토크 → 자코비안). 선생님·다른 조 로봇과 비교 필요. 접촉 검출·당김 해제·nudge 는 이 문제가 풀리거나 우회 경로를 force_publisher 에 넣어야 실로봇 가능
+- [!] 10/7 `get_tool_force` 전부 0 → **원인: 특이점 근처(베이스 위로 접힌) 자세**. 두산 에뮬레이터에서 접힌 자세(자코비안 조건수 ~300)에서만 정확히 0, 관측 자세면 정상으로 재현. 10/7 오후 실로봇 홈 근처(조건수 11)에서 정상값 확인 — 해결. 로봇을 접힌 자세로 세워 두지 말 것
 - 소프트 비상정지는 `scripts/estop.sh` (QoS TransientLocal 맞춤), 해제는 `scripts/estop.sh reset`
 - 10/7 (정동휘): `catch_ball` 관련 실측 → 이슈 #38. 가속 1000 mm/s² 면 0.5 s 에 6~12 cm 라 `catch_radius_m: 0.35` 불가, M0609 `servol_stream` 연속 추종 중 알람 → 제어함 전원 차단 보고(doosan-robot2 #393). 패드 거치대는 정동휘가 3D 출력(Day 4) — 거치 위치·높이 같이 정하기
 - 10/6: 로봇 없이 스킬 흐름 테스트: `RALLY_FAKE=1 ros2 run rally_robot skill_server --fake` (가짜 DSR, 테이블 Z 250 mm). 모드 7 nudge 오탐 대비로 접촉 예정 플래그 도입.
