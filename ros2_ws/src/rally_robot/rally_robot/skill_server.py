@@ -6,6 +6,7 @@
   여기서는 main()에서 init_dsr() 한 번 호출하고, 스킬 콜백은 ReentrantCallbackGroup 에서 돌려
   safety_monitor 구독(별도 그룹)이 막히지 않게 한다. Executor 는 MultiThreadedExecutor.
 - 모든 스킬은 실행 중 SafetyStatus.level == STOP 이면 즉시 abort 하고 순응 해제 → 후퇴 (dsr_helpers.move_checked / compliance).
+  안전 상태를 한 번도 못 받았거나 status_timeout_s 넘게 끊겨도 STOP 으로 본다 (#14) — safety_monitor 없이 띄우면 goal 거부.
 - DRL 함수(movel, task_compliance_ctrl, ...)는 init_dsr() 이후 import.
 - 접촉이 예정된 구간(집기 하강·핸드오버 당김 대기·저항 밀기)에서는 /rally/safety/contact_expected 를 True 로 올린다(5 Hz 하트비트).
   safety_monitor 는 이 동안 nudge(힘 급변) 판정만 끄고 절대 힘 한계는 그대로 둔다. skill_server 가 죽으면 0.5 s 뒤 자동으로 꺼진다.
@@ -68,6 +69,8 @@ class SkillServer(Node):
         self.cb_state = MutuallyExclusiveCallbackGroup()
         self.cb_skill = ReentrantCallbackGroup()
         self.safety = SafetyStatus()
+        self.safety_rx = None                # 마지막 /rally/safety/status 수신 monotonic. None = 한 번도 못 받음 → STOP 취급 (#14)
+        self.declare_parameter("status_timeout_s", 0.5)   # safety.yaml rally_skill_server. 이보다 오래 못 받으면 STOP 취급
         self.last_hand = None
         self._contact = False
         self._cm_client = None
@@ -109,6 +112,11 @@ class SkillServer(Node):
     # ----- 안전 -----
     def _on_safety(self, msg):
         self.safety = msg
+        self.safety_rx = time.monotonic()
+
+    def safety_stale(self) -> bool:
+        """안전 상태를 한 번도 못 받았거나 status_timeout_s 넘게 끊김 (#14) — safety_monitor 가 없거나 죽음."""
+        return self.safety_rx is None or time.monotonic() - self.safety_rx > float(self.get_parameter("status_timeout_s").value)
 
     def _on_objects(self, msg):
         self.objects = (time.monotonic(), msg)
@@ -138,9 +146,12 @@ class SkillServer(Node):
         self.last_hand = msg
 
     def stop_requested(self):
-        return self.safety.level == SafetyStatus.LEVEL_STOP
+        """STOP 이거나 안전 상태가 끊겼으면 참 → 새 goal 거부, 실행 중 스킬은 check_stop 에서 abort (#14)."""
+        return self.safety_stale() or self.safety.level == SafetyStatus.LEVEL_STOP
 
     def safety_reason(self):
+        if self.safety_stale():
+            return "safety_status_stale"
         return self.safety.reason or "safety_stop"
 
     def speed_scale(self):

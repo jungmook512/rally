@@ -50,6 +50,8 @@ webcam_link          측면 웹캠 (table_link 기준 static)
 
 **HandState 거리 NaN** (#44): `detected=true` 인데 손 위치를 못 구하면(정렬 깊이 없음·컬러와 시각이 맞는 깊이 없음·`base_link` tf 없음) `distance_to_centerline = NaN` = "손은 보이는데 거리 모름". 가짜 거리를 만들지 않는다. safety_monitor 는 `detected && NaN` 이면 SLOW. tf 가 없을 때는 `header.frame_id` 가 카메라 프레임.
 
+**safety_monitor 손 거리·입력 끊김** (#59, #14): 손 없음 → NORMAL / NaN → SLOW(`hand_distance_unknown`) / `slow_distance_m` 안 → SLOW / `stop_distance_m` 안 → STOP(`hand_near_centerline`). 단 `contact_expected` 이고 로봇이 거의 정지(`contact_slow_*`)이거나 −x(환자에게서 멀어짐)로만 움직이면 SLOW(`hand_near_contact`) — 건네기 당김 대기·저항 밀기에서 손이 물체·손잡이를 잡는 순간. 손이 `hand_deep_stop_m` 보다 깊이 들어오면 항상 STOP. 손·wrench·tcp_pose 를 받다가 `*_timeout_s` 넘게 끊기면 SLOW(`hand_stale`·`wrench_stale`·`tcp_stale`), 한 번도 못 받은 입력은 경고 로그만. `SafetyStatus.min_hand_distance` 는 손 없음 9.9, 거리 모름 NaN. 값은 모두 `safety.yaml`.
+
 **TTS 발화 중 마이크** (#45): `/rally/voice/speaking` 은 `Speak.block_mic=true` 발화가 시작되면 `true`, 끝나고 잔향 여유(약 0.3 s) 뒤 `false`. intent_node 는 `true` 동안 **일반 명령만 무시**하고 비상 키워드("그만/멈춰" → `is_emergency`)는 계속 듣는다 — 로봇이 말하는 동안에도 음성 정지가 살아 있어야 한다. 그래서 TTS 문구에는 "그만"·"멈춰"를 쓰지 않는다 (에코로 정지 오인식 방지).
 
 **음성으로 훈련 고르기** (`VoiceIntent` 슬롯 약속, 메시지 변경 없음): "공 굴리기 하자"처럼 훈련 이름을 말하면 `intent: next_mode` + `slot_keys: [mode]`, `slot_values: ["1"]` (1 공 굴리기 · 3 캐치볼 · 5 건네고 받기 · 7 팔씨름). 세션 시작과 같이 말하면 `start_session` 에 같은 슬롯. 슬롯이 없으면 순서상 다음 모드. 모드 3 이 꺼져 있으면(`mode3_challenge.enabled: false`) brain 이 거절하고 로그·`SetMode` 응답 message 로 알린다 (TTS 안내는 Speak 연결 뒤). 같은 발화(`header.stamp` 같음)는 한 번만 처리한다.
@@ -82,7 +84,7 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 
 ## 4. 액션 (스킬)
 
-모든 스킬은 `rally_robot/skill_server`가 제공하고 `rally_brain/bt_runner`가 호출한다. 진행률 피드백과 취소를 지원하며, `SafetyStatus.level == STOP`이면 서버가 즉시 abort 한다.
+모든 스킬은 `rally_robot/skill_server`가 제공하고 `rally_brain/bt_runner`가 호출한다. 진행률 피드백과 취소를 지원하며, `SafetyStatus.level == STOP`이면 서버가 즉시 abort 한다. 안전 상태를 한 번도 못 받았거나 `status_timeout_s`(0.5 s, `safety.yaml rally_skill_server`) 넘게 끊겨도 STOP 으로 보고 goal 거부·실행 중 abort(`safety_status_stale`, #14) — safety_monitor 없이 `skill_server --fake` 만 띄우면 goal 이 거부된다.
 
 | 액션 | 타입 | 모드 | 핵심 로봇 기능 |
 |---|---|---|---|
