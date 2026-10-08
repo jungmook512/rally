@@ -139,12 +139,12 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 - 중앙선은 `table.yaml table.centerline_x_m` 한 곳. 레인별 입구·방향·실측 `recipe`는 `skills.yaml mode1.lanes`.
   recipe에 `decel_mps2`, `d0_m`, `rmse_m`, `distance_range_m`, `speed_range_mps`를 사용한다.
 - 난이도는 개발용 `reach_m = (max(level, 0) + 1) × mode1.reach_rmse_multiplier × rmse_m`.
-  목표는 손을 레인 축에 투영한 위치에서 reach만큼 앞이며 중앙선 + max(mode1.patient_margin_m, safety.stop_distance_m + 0.05), 실측 거리·속도 범위와 로봇·Brain 속도 제한의 교집합으로 제한한다.
-  단일 목표를 정한 뒤 `v = sqrt(2a(d-d0))`를 계산한다. 교집합이 없거나 레시피가 유효하지 않으면 goal 없이 실패 사유 기록.
+  목표는 레인별 target_d_m(개발용 0.35 m)으로 고정하며 중앙선 + max(mode1.patient_margin_m, safety.stop_distance_m + 0.05), 실측 거리·속도 범위와 로봇·Brain 속도 제한의 교집합으로 제한한다.
+  Brain 속도 상한은 0.37 m/s. 단일 목표를 정한 뒤 `v = sqrt(2a(d-d0))`를 계산한다. 교집합이 없거나 레시피가 유효하지 않으면 goal 없이 실패 사유 기록.
 - `/rally/skill/push_ball`에 **target(base_link) + 양수 push_speed**를 함께 보낸다. Brain이 속도를 계산하고 로봇은 최종 클램프·안전 감시.
   `push_speed=0`으로 로봇이 계산하는 경로는 단독 시험용이며 본 훈련 트리에서 사용하지 않는다.
 - `TrialResult.param_keys`는 기존 `lane`, `push_speed` 뒤에 `target_d_m`, `level`, `reach_requested_m`,
-  `reach_actual_m`, `target_x_m`, `target_y_m` 추가. push_speed는 실제 전달한 명령값이며 실측 공 속도가 아니다.
+  `reach_actual_m`, `target_x_m`, `target_y_m`, `hand_start_d_m` 추가. push_speed는 실제 전달한 명령값이며 실측 공 속도가 아니다.
   측정되지 않은 `error_mm` 및 `stop_x_m`/`stop_y_m`은 NaN. DB는 기존 유한값 정리 경로를 사용.
 - `TrialResult.success`는 타격 후 새 손 표본의 펼침→쥠 유지→펼침을 관측한 받기 후보 판정. 실제 공 접촉 증거는 아니며 실물 검증 전 자동 난이도 변경에서 제외한다.
   `catch_gesture_detected`, `ball_returned`, `lane_by_hand`를 metric에 추가한다. 명시적 harder/easier는 시도 경계에서 반영하며 단계 0 아래로 낮추지 않는다. 온라인 레시피 갱신은 후속 연결 사항.
@@ -152,3 +152,10 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
   `hand_clear_wait_s` 이후 안내하고 계속 대기한다. 미검출·시간 초과만으로 회수하거나 세션을 종료하지 않는다.
   뒤늦게 이탈이 확인되면 ReturnBall을 보낸다. 대기 중 취소·STOP은 기존대로 중단하며 자동 재개하지 않는다.
 - 기존 ROS 메시지·토픽·서비스 이름과 STOP/reset 계약은 변경하지 않는다. 두 PC의 시계·레인·레시피 설정을 일치시켜야 한다.
+
+### 모드 1 손 시작 위치 대기 (PR #87 PM 정정·사용자 합의)
+
+공 목표는 레인별 고정값을 실측·안전·속도 구간으로 제한한다. 손 위치나 난이도로 목표를 이동시키지 않는다.
+난이도별 reach는 기존 RMSE×2 간격이며 손의 레인 축 투영 거리 ≥ 목표 거리 + reach일 때만 타격한다.
+부족하거나 유효 손/NORMAL이 없으면 안내하며 대기한다. 대기 중에는 손 표본을 갱신하고 전송 직전에 조건을 재검증한다.
+STOP·취소는 기존 세션 중단 처리. 타격 action 실패 시에도 다음 타격을 시작하지 않고 기록 후 종료하여 운영자가 공·그리퍼 상태를 확인한다.
