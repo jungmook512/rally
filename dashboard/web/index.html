@@ -105,6 +105,13 @@
     <p id="control-message" role="status" aria-live="polite"></p>
     <small>휴식 후 같은 난이도로 이어갑니다. 안전 정지 해제는 운영자의 별도 절차가 필요합니다.</small>
   </section>
+  <section id="proposal-panel" class="panel" hidden aria-label="휴식 제안">
+    <div class="panel-top"><h2>휴식 제안 <small>테스트</small></h2><span id="proposal-time" class="badge"></span></div>
+    <p id="proposal-prompt"></p><p id="proposal-status" role="status"></p>
+    <button id="proposal-accept" type="button">네, 쉬겠습니다</button>
+    <button id="proposal-reject" type="button">아니요, 계속할게요</button>
+    <p id="proposal-message" role="status" aria-live="polite"></p>
+  </section>
   <section id="mode-view" hidden>
     <div class="visual-column"><div class="panel diagram-panel"><div class="panel-top"><h2 id="diagram-title">훈련 공간</h2><span class="badge">동작 설명 그림 · 실측 위치 아님</span></div><div id="mode-diagram"></div><p id="diagram-caption" class="caption"></p></div>
     <div class="panel steps-panel"><h2>이번 시도 진행</h2><ol id="steps"></ol><p class="caption">현재 강조는 수신된 실행 단계입니다. 이전 단계의 성공을 뜻하지 않습니다.</p></div></div>
@@ -150,13 +157,19 @@ const pct = (x) => x == null ? "—" : `${Math.round(x * 100)}%`;
 const seenTrials = new Set();
 let selectedMode = null;
 let control = null, controlReceived = 0, resuming = false, stateTime = 0;
+let lastProposalId = null;
 const PHASES = {idle: "대기", running: "진행 중", pause_pending: "현재 시도 완료 후 휴식 예정",
                 paused: "휴식 중", ended: "세션 종료"};
 
 function renderControl(s) {
+  if (s?.proposal?.proposal_id && s.proposal.proposal_id !== lastProposalId) {
+    lastProposalId = s.proposal.proposal_id;
+    $("proposal-message").textContent = "";
+  }
   control = s;
   renderModePage();
   controlReceived = performance.now();
+  renderProposal();
   $("phase").textContent = s ? `${PHASES[s.phase] ?? s.phase} · ${modeName(s.mode)} · 난이도 ${s.difficulty ?? "—"}`
     + (s.phase === "paused" && s.blocked_reason ? ` · ${s.blocked_reason}` : "") : "세션 상태 연결 끊김";
   $("resume").disabled = resuming || !s?.can_resume || s.phase !== "paused";
@@ -183,6 +196,7 @@ $("resume").onclick = async () => {
 
 setInterval(() => {
   if (performance.now() - controlReceived > 2000) renderControl(null);
+  renderProposal();
   if (!stateTime || Date.now() - stateTime > 2000) {
     $("safety").className = "unknown";
     $("safety").textContent = "안전 상태 모름 — 최신 상황판 수신 대기";
@@ -263,6 +277,45 @@ function connect() {
     }
   };
 }
+
+let respondingProposal = false;
+function renderProposal() {
+  const p=control?.proposal;
+  $('proposal-panel').hidden=!p&&!$('proposal-message').textContent;
+  if(!p) {
+    $('proposal-time').textContent='';
+    $('proposal-status').textContent='응답 불가 · 최신 상태 확인 중';
+    $('proposal-accept').disabled=$('proposal-reject').disabled=true;
+    return;
+  }
+  const age=Math.max(0,(performance.now()-controlReceived)/1000);
+  const remaining=Math.max(0, Number(p.remaining_s||0)-age);
+  const fresh=Number.isFinite(control.updated_at)&&Date.now()/1000-control.updated_at>=0&&Date.now()/1000-control.updated_at<2;
+  const pending=p.status==='pending'&&remaining>0&&fresh&&control.phase==='running';
+  $('proposal-prompt').textContent=p.prompt;
+  $('proposal-time').textContent=pending?`${Math.ceil(remaining)}초 남음`:'';
+  const statuses={accepted:'수락됨 · 휴식 예약 처리 결과를 확인해 주세요',rejected:'거절됨 · 훈련 계속',expired:'시간 만료 · 훈련 계속',invalidated:'훈련 상태 변경으로 제안 종료'};
+  $('proposal-status').textContent=pending?'응답을 기다리는 동안 훈련은 계속됩니다.':statuses[p.status]||'응답 불가 · 최신 상태 확인 중';
+  $('proposal-accept').disabled=$('proposal-reject').disabled=!pending||respondingProposal;
+}
+async function respondProposal(decision) {
+  if(respondingProposal||$('proposal-'+decision).disabled)return;
+  const p=control?.proposal;
+  if(!p)return;
+  const body={session_id:control.session_id,proposal_id:p.proposal_id,decision};
+  respondingProposal=true;renderProposal();
+  $('proposal-message').textContent='Brain 승인 확인 중…';
+  try {
+    const r=await fetch('/api/session/proposal/respond',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(5000)});
+    const reply=await r.json();
+    if (lastProposalId===body.proposal_id) $('proposal-message').textContent=r.ok?reply.message:reply.detail;
+  } catch(e){
+    if (lastProposalId===body.proposal_id) $('proposal-message').textContent='응답 결과 미확인 · 자동 재시도하지 않고 상태를 확인해 주세요';
+  }
+  finally {respondingProposal=false;renderControl(null);}
+}
+$('proposal-accept').onclick=()=>respondProposal('accept');
+$('proposal-reject').onclick=()=>respondProposal('reject');
 
 const PAGES = {
   1: {title:'공 굴리기', subtitle:'공 목표와 손 시작 위치를 확인하고, 받기부터 회수까지 따라갑니다.',

@@ -73,3 +73,16 @@ def test_real_redis_round_trip():
         bridge.close()
         client.delete(STATE_KEY, REPLY_PREFIX + command["request_id"])
         client.close()
+
+
+@pytest.mark.parametrize('decision', ['accept','reject'])
+def test_proposal_commands_dispatch_and_reject_expired(decision):
+    calls = []
+    node = NS(_respond_proposal=lambda *args: (calls.append(args) is None, '처리됨'))
+    command = {'command':'proposal_'+decision,'request_id':str(uuid.uuid4()),
+               'session_id':str(uuid.uuid4()),'proposal_id':str(uuid.uuid4()),'expires_at':time.time()+2}
+    assert handle_command(node,json.dumps(command))[1]['success']
+    assert calls == [(command['session_id'],command['proposal_id'],decision)]
+    command['expires_at'] = time.time()-1
+    assert not handle_command(node,json.dumps(command))[1]['success']
+    assert len(calls) == 1

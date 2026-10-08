@@ -199,3 +199,33 @@ PushBall 실패 시 공/그리퍼 상태가 불명확하므로 자동 회수나 
 현재 단계는 `rally:session_control.bt_node`를 이용하며, 2초 이상 지난 상태나 휴식·종료 상태에서는 실행 단계를 강조하지 않는다. 모드 3은 챌린지 설정을 표시하되 세부 단계·궤적은 연결 대기, 모드 7의 실시간 힘도 연결 대기로 표시한다. 안전 배너와 기존 휴식 재개 기능은 모든 페이지에서 확인할 수 있다.
 
 로봇 없이 확인: `node dashboard/test/test_mode_pages.cjs`. 대시보드 실행 후 `/#mode1`, `/#mode3`, `/#mode5`, `/#mode7`을 열어 그림·단계·기록 필터를 확인한다. Brain의 새 필드를 받으려면 수정된 Brain을 재시작해야 한다.
+
+### 휴식 제안 확인 테스트 (LLM·음성 응답 연결 전)
+
+작업본: `/tmp/rally-dashboard-pr`. 기존 격리 가짜 스킬 실행 절차를 사용하되 **모든 터미널을 이 작업본에서** 시작하고 `PYTHONPATH=/tmp/rally-dashboard-pr/ros2_ws/src/rally_brain:$PYTHONPATH`로 수정된 Brain 소스를 선택한다. 실제 로봇 launch와 context_builder는 실행하지 않는다.
+
+Brain 시작에 `-p test_rest_proposals:=true`를 추가한다(기본 false). 가짜 모드 5 세션이 running일 때 다음 명령으로 휴식 제안 한 개를 만든다.
+
+```bash
+ros2 service call /rally/brain/test/propose_rest std_srvs/srv/Trigger '{}'
+```
+
+화면에 “혹시 피곤하진 않으세요? 조금 쉬었다 할까요?”와 20초 카운트다운이 나타난다. 가짜 Speak 서버는 발화를 로그로만 표시한다.
+
+1. 아무 버튼도 누르지 않으면 훈련이 계속되고 20초 뒤 만료된다.
+2. 새 제안에서 “아니요, 계속할게요”를 누르면 즉시 거절되고 훈련은 계속된다.
+3. 새 제안에서 “네, 쉬겠습니다”를 누르면 현재 시도의 집기·GIVE·RECEIVE가 끝난 뒤 휴식한다. 마지막 시도라면 세션이 종료된다. 기존 훈련 재개 버튼으로 이어간다.
+4. 제안 중 가짜 STOP을 켜면 세션이 종료되고 제안을 수락해 되살릴 수 없다.
+
+이 단계는 rest만 구현했다. 실제 LLM 호출, 음성 수락/거절 및 tired 분류 변경, 난이도 제안은 후속 작업이다. 제안에 `source: test`를 표시하며 실제 피로 판단으로 기록하지 않는다.
+
+#### 휴식 제안 안정화 검증 (10/8)
+
+- Brain 249개(격리 Redis 왕복 1개 포함) + 대시보드 API 17개, 합계 266개 통과. Node 화면 검사는 클릭·중복 클릭·504·네트워크 오류·상태 갱신·재접속·새 제안·늦은 응답을 확인한다.
+- 수락 후 원래 20초가 지나도 휴식 예약을 유지한다. 모드 1 회수·기록과 모드 5 RECEIVE·기록 전에는 쉬지 않는 회귀 검사를 추가했다. 마지막 시도는 휴식 대신 정상 종료한다.
+- localhost 전용 ROS domain 222 + 별도 임시 Redis에서 거절·중복 거절·20초 만료 중 훈련 지속·수락 후 경계 휴식·STOP·취소·마지막 시도 종료 왕복을 확인했다. 실제 로봇·DB에는 연결하지 않았다.
+- 브라우저에서 모드 1·3·5·7 탭 표시, 휴식 제안 카운트다운, 거절 결과 안내 보존, 수락·재개 버튼, 연결 종료 표시를 확인했다. 오류 응답 안내는 같은 제안의 갱신·재접속 뒤에도 남으며, 최신 상태 없이는 응답할 수 없다.
+
+위 가짜 환경에서 `http://127.0.0.1:18000/#mode5`를 열어 확인한다(이번 격리 검증은 별도 포트 18092 사용 후 종료).
+Brain 소스는 반드시 이 작업본의 `PYTHONPATH`를 우선한다. 다른 가짜 세션과도 ROS 도메인·Redis 포트를 분리하고 `ROS_DISCOVERY_SERVER`, `FASTRTPS_DEFAULT_PROFILES_FILE`, `FASTDDS_DEFAULT_PROFILES_FILE`, `ROS_STATIC_PEERS`를 해제한 뒤 `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST`로 제한한다.
+실제 LLM·음성 수락/거절·2 PC 통신·실제 로봇은 미검증이며 **로봇·인식 PC에서 확인 필요**. #98 STOP 예외는 이번 변경에 포함하지 않는다.
