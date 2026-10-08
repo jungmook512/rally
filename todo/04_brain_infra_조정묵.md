@@ -3,6 +3,15 @@
 패키지: `ros2_ws/src/rally_brain`, `rally_db`, `rally_bringup`, `rally_interfaces`, `docker/`, `dashboard/` · 책임: **세션 전체 흐름**
 참고: `docs/INTERFACES.md` 전체, `rally_db/schema.sql`
 
+## #59 주먹 정지 제거 — Brain·문서 담당 (10/8)
+
+- [x] PM 동의 댓글 확인: 손 노드·safety_monitor의 주먹 정지 두 경로 제거는 정동휘 PR, 정정인 리뷰 범위.
+- [x] 온톨로지 `safe_fist` → STOP 관계 제거, TTL·OWL 재생성. 제스처 관측·모드 1 쥐었다 폄 판정은 유지.
+- [x] 아키텍처 v4에 주먹 정지 문구·손 노드 estop 배선 제거. v1~v3은 과거 기록으로 보존, 기획서 현재 그림 교체 및 배포 대기 명시.
+- [x] 온톨로지 13개 테스트·사본 동등성 검사 통과.
+- [ ] 손 노드·safety_monitor 제거 PR 머지·배포 후 지식 계층과 실제 상태 일치 확인. 준비·재개 제스처 추가는 보류(기존 음성·대시보드 재개 유지).
+
+
 ## Day 0 (10/5)
 - [x] 레포 초기화·push, 브랜치 규칙 공지, `.github/workflows/build.yml` 첫 실행 확인 → CI 첫 통과 (#2), 브랜치 규칙은 CLAUDE.md·AGENTS.md 7절
 - [x] 인터페이스 합의 회의 주도 → `rally_interfaces` 수정·커밋 (이후 변경은 PR로) → 기존 정의 그대로 사용

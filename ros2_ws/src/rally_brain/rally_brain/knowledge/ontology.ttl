@@ -128,12 +128,6 @@ rally:observed a owl:ObjectProperty ;
     rdfs:range rally:Compensation ;
     rally:source "기획서 4.10" .
 
-rally:safe_fist a rally:SafetyTrigger ;
-    rdfs:label "주먹 제스처"@ko ;
-    rally:key "fist_gesture" ;
-    rally:source "기획서 3.6" ;
-    rally:triggersLevel rally:level_stop .
-
 rally:safe_force_limit a rally:SafetyTrigger ;
     rdfs:label "힘 한계(25 N)"@ko ;
     rally:key "force_limit" ;
