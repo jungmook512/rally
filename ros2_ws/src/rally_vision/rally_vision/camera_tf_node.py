@@ -8,26 +8,33 @@ camera_color_optical_frame 을 스스로 발행한다. 그래서 이 노드는 R
 읽어 TCP ← camera_link 를 만든 뒤 발행한다 (optical 프레임에 부모가 둘이 되지 않게).
 
 mode (파라미터):
-  tcp_pose (기본) — `/rally/robot/tcp_pose`(force_publisher, 10 Hz) 를 받아 `base_link → camera_link` 를 매번 발행.
-                    두산 URDF tf 가 없어도 되고, segmenter 의 tcp_npy 경로와 같은 값이라 서로 일치한다.
-  static   — `parent_frame`(기본 link_6, 플랜지) → camera_link 를 static 으로 한 번 발행.
-             플랜지 → TCP 는 hand_eye.yaml 의 tcp_offset_from_flange_m. 두산 robot_state_publisher 가 떠 있을 때.
+  static (기본) — `parent_frame`(기본 link_6, 플랜지) → camera_link. 플랜지 → TCP 는 hand_eye.yaml 의 tcp_offset_from_flange_m.
+             두산 robot_state_publisher 의 base_link→link_6(10/8 실로봇 약 56 Hz, /dsr01/joint_states 102 Hz) 위에 얹혀
+             영상 시각으로 보간되는 tf 가 된다 (10/8 정동휘 실로봇 확인, PR #77).
+             값은 고정이지만 /tf 에 republish_hz 로 계속 발행하고, `joint_states_topic` 이 `joint_stale_s` 넘게 끊기거나
+             팔 6축이 전부 0(ros2_control 이 죽어 joint_state_publisher 가 0 으로 채운 상태)이면 경고하고 발행을 멈춘다 —
+             그래야 손 노드·segmenter 의 tf 조회가 실패해 "그럴듯하지만 틀린 좌표"(손 z 1.4 m) 대신 NaN/폴백이 된다.
+  tcp_pose — `/rally/robot/tcp_pose`(force_publisher, 10 Hz) 를 받아 `base_link → camera_link` 를 발행.
+             두산 tf 가 없는 환경(노트북·에뮬레이터)용. segmenter 의 tcp_npy 경로와 같은 값.
 
 RealSense 가 tf 를 안 내는 환경(publish_tf:=false)에서만 `optical_fallback:=true` — 기본은 RealSense tf 를 기다린다.
 폴백으로 optical 을 직접 발행하면 그걸 먼저 받은 노드는 RealSense 가 나중에 켜져도 base→optical 조회가 계속 실패한다 (PR #77 리뷰).
 
-    ros2 run rally_vision camera_tf
-    ros2 run rally_vision camera_tf --ros-args -p mode:=static -p parent_frame:=link_6
+    ros2 run rally_vision camera_tf                                   # static, link_6
+    ros2 run rally_vision camera_tf --ros-args -p mode:=tcp_pose      # 두산 tf 없을 때
 """
 from __future__ import annotations
+
+import time
 
 import numpy as np
 import rclpy
 from geometry_msgs.msg import PoseStamped, TransformStamped
+from sensor_msgs.msg import JointState
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from tf2_msgs.msg import TFMessage
-from tf2_ros import StaticTransformBroadcaster, TransformBroadcaster
+from tf2_ros import TransformBroadcaster
 
 from rally_vision import projection as pj
 
@@ -77,7 +84,9 @@ class CameraTfNode(Node):
     def __init__(self):
         super().__init__("rally_camera_tf")
         d = self.declare_parameter
-        d("mode", "tcp_pose")                     # tcp_pose | static
+        d("mode", "static")                       # static | tcp_pose
+        d("joint_states_topic", "/dsr01/joint_states")   # static 모드 건강 확인 — 두산 컨트롤러가 직접 내는 토픽 (joint_state_publisher 가 0 으로 채운 /joint_states 가 아님)
+        d("joint_stale_s", 1.0)                   # 이 시간 넘게 관절값이 없으면 tf 발행 중단 + 경고
         d("hand_eye_path", pj.default_hand_eye_path())
         d("base_frame", "base_link")
         d("parent_frame", "link_6")               # static 모드의 부모 (두산 플랜지 프레임 이름 — view_frames 로 확인)
@@ -111,15 +120,20 @@ class CameraTfNode(Node):
         self._fallback_on = False
         self._t0 = self.get_clock().now()
         self._last_T: np.ndarray | None = None               # tcp_pose 모드: 마지막 base←child
-        self.static_bc = StaticTransformBroadcaster(self)
         self.dyn_bc = TransformBroadcaster(self)
         self._static_done = False
         self._warned = False
+        self.joint_stale = float(g("joint_stale_s"))
+        self._joint_t: float | None = None                     # 마지막 관절값 수신(monotonic)
+        self._joint_zero = False
+        self._joint_bad_logged = False
+        hz = float(g("republish_hz"))
         if self.mode == "tcp_pose":
             self.create_subscription(PoseStamped, str(g("tcp_pose_topic")), self._on_tcp, qos_profile_sensor_data)
-            hz = float(g("republish_hz"))
-            if hz > 0:
-                self.create_timer(1.0 / hz, self._republish)
+        else:
+            self.create_subscription(JointState, str(g("joint_states_topic")), self._on_joints, qos_profile_sensor_data)
+        if hz > 0:
+            self.create_timer(1.0 / hz, self._republish)
         self.create_timer(1.0, self._tick)
 
     # RealSense 가 발행하는 camera_link → optical 을 읽어 TCP ← camera_link 로 바꾼다.
@@ -182,10 +196,31 @@ class CameraTfNode(Node):
             return
         T_fl_tcp = np.eye(4)
         T_fl_tcp[:3, 3] = self.tcp_offset
-        T = T_fl_tcp @ self.T_tcp_cam
-        self.static_bc.sendTransform(matrix_to_tf(T, self.parent_frame, self.child_frame, self.get_clock().now().to_msg()))
+        self._last_T = T_fl_tcp @ self.T_tcp_cam
         self._static_done = True
-        self.get_logger().info(f"static tf {self.parent_frame}→{self.child_frame} 발행 (플랜지→TCP {self.tcp_offset} m 포함)")
+        self.get_logger().info(f"{self.parent_frame}→{self.child_frame} 확정 (플랜지→TCP {self.tcp_offset} m 포함) — "
+                               f"{self.joint_stale:.0f} s 안에 관절값이 오는 동안만 발행")
+
+    def _on_joints(self, msg: JointState):
+        self._joint_t = time.monotonic()
+        pos = list(msg.position[:6])
+        self._joint_zero = len(pos) >= 6 and all(abs(v) < 1e-6 for v in pos)
+
+    def _joints_ok(self) -> bool:
+        """static 모드 건강 조건: 관절값이 최근에 왔고, 팔 6축이 전부 0 이 아님."""
+        if self._joint_t is None or time.monotonic() - self._joint_t > self.joint_stale:
+            why = "관절값 없음" if self._joint_t is None else f"관절값 {self.joint_stale:.0f} s 넘게 끊김"
+        elif self._joint_zero:
+            why = "팔 6축이 전부 0 (ros2_control 죽음?)"
+        else:
+            if self._joint_bad_logged:
+                self.get_logger().info("관절값 복구 → tf 발행 재개")
+                self._joint_bad_logged = False
+            return True
+        if not self._joint_bad_logged:
+            self.get_logger().error(f"{why} → {self.parent_frame}→{self.child_frame} tf 발행 중단 (틀린 좌표 방지). 두산 bringup 확인")
+            self._joint_bad_logged = True
+        return False
 
     def _on_tcp(self, msg: PoseStamped):
         if not self._resolve():
@@ -206,7 +241,13 @@ class CameraTfNode(Node):
         이동 중엔 그만큼 뒤처진다. 근본 해결은 static 모드(robot_state_publisher, 관절 토픽 속도)."""
         if self._last_T is None:
             return
-        self.dyn_bc.sendTransform(matrix_to_tf(self._last_T, self.base_frame, self.child_frame, self.get_clock().now().to_msg()))
+        if self.mode == "static":
+            if not self._joints_ok():
+                return
+            parent = self.parent_frame
+        else:
+            parent = self.base_frame
+        self.dyn_bc.sendTransform(matrix_to_tf(self._last_T, parent, self.child_frame, self.get_clock().now().to_msg()))
 
 
 def main(args=None):
