@@ -4,7 +4,7 @@
   모드 1 시도 (Guard — 도중에 멈추면 interrupted 기록)
    └─ Selector
        ├─ 밀기 (Sequence)
-       │   ├─ 시작          레인 고르기(0 → 1 → 2 → 0 …), 속도 정하기
+       │   ├─ 시작          레인 무작위로 고르기 (환자가 다음 레인을 미리 알 수 없게, #75 리뷰), 속도 정하기
        │   └─ PushBall      로봇이 거치대 공을 비전으로 집고(x 가장 작은 공) 레인 입구에 놓고 친다
        │                    끝나면 기록: 성공 = 스킬 success, notes = 실패 이유 앞 낱말
        └─ 끝                 밀기가 실패로 기록됐으면 시도는 끝 (서버 없음이면 세션 실패)
@@ -20,6 +20,7 @@ TODO(Day 5): next_push_speed 를 llm_advisor(SuggestParams) 로 — 오차가 �
 from __future__ import annotations
 
 import math
+import random
 from typing import TYPE_CHECKING, Any
 
 import py_trees
@@ -74,17 +75,20 @@ def trial_from_result(lane: int, speed: float, result: PushBall.Result | None, n
     return trial
 
 
-def build_trial(session: Session) -> py_trees.behaviour.Behaviour:
+def random_lane(cfg: dict[str, Any], rng: random.Random) -> int:
+    return rng.randrange(cfg["lane_count"])
+
+
+def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.behaviour.Behaviour:
     cfg = mode1_config(session.skills_cfg)
     state = TrialState(session)
     client = session.action_client(PushBall, ACTION)
     log = session.node.get_logger()
-    counter = {"n": 0}   # 이 모드 블록에서 몇 번째 공인지 → 레인
+    rng = rng or random.Random()
 
     def start() -> None:
         state.start()
-        lane = counter["n"] % cfg["lane_count"]
-        counter["n"] += 1
+        lane = random_lane(cfg, rng)
         speed = next_push_speed(session, lane, cfg)
         state.data.update(lane=lane, speed=speed)
         log.info(f"[모드 1] 레인 {lane} · 속도 {speed:.2f} m/s")
