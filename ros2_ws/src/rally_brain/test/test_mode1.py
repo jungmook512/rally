@@ -108,3 +108,40 @@ def test_session_uses_balls_per_cycle():
                 action_client=lambda *_: None, skills_cfg={"mode1": {"balls_per_cycle": 4}})
     tree = build_session_tree(s, [1], 10)
     assert tree.children[0].children[1].name.endswith("× 4")
+
+
+LANES = [{"name": "a", "start": [0.43, 0.14, 0.0], "dir_deg": 0.0, "recipe": {"decel_mps2": 0.2, "d0_m": 0.05}},
+         {"name": "b", "start": [0.43, 0.0, 0.0], "dir_deg": 0.0, "recipe": {"decel_mps2": 0.2, "d0_m": 0.05}},
+         {"name": "c", "start": [0.43, -0.15, 0.0], "dir_deg": 0.0, "recipe": {"decel_mps2": 0.2, "d0_m": 0.05}}]
+
+
+def test_recipe_target_starts_near_patient():
+    # 레시피가 있으면 target(입구 + 40 cm) + push_speed 0 → 속도는 로봇 레시피. 기록엔 예상 속도·목표 거리·난이도
+    client, session, published = arrange([OK], {"mode1": {"lanes": LANES}})
+    run(mode1_push.build_trial(session, rng=random.Random(1)))
+    g = client.goals[0]
+    assert g.push_speed == 0.0 and g.target.header.frame_id == "base_link"
+    assert g.target.point.x == pytest.approx(0.43 + 0.40)
+    assert g.target.point.y == pytest.approx(LANES[g.lane]["start"][1])
+    assert param(published[0], "target_d_m") == pytest.approx(0.40)
+    assert param(published[0], "level") == 0.0
+    assert param(published[0], "push_speed") == pytest.approx(math.sqrt(2 * 0.2 * (0.40 - 0.05)))
+
+
+def test_harder_stops_farther_from_patient():
+    # 난이도 +1 마다 5 cm 로봇 쪽(환자에게서 멀리), 레시피 범위 [0.15, 0.45] 로 자름
+    cfg = mode1_push.mode1_config({"mode1": {"lanes": LANES}})
+    assert [mode1_push.target_distance(k, cfg) for k in (-2, -1, 0, 1, 2, 5, 9)] == \
+        pytest.approx([0.45, 0.45, 0.40, 0.35, 0.30, 0.15, 0.15])
+    client, session, _ = arrange([OK], {"mode1": {"lanes": LANES}})
+    session.difficulty[TrialResult.MODE_PUSH_BALL] = 2
+    run(mode1_push.build_trial(session, rng=random.Random(1)))
+    assert client.goals[0].target.point.x == pytest.approx(0.43 + 0.30)
+
+
+def test_no_recipe_falls_back_to_fixed_speed():
+    lanes = [{k: v for k, v in ln.items() if k != "recipe"} for ln in LANES]
+    client, session, published = arrange([OK], {"mode1": {"lanes": lanes}})
+    run(mode1_push.build_trial(session, rng=random.Random(1)))
+    assert client.goals[0].push_speed == pytest.approx(0.3) and client.goals[0].target.point.x == 0.0
+    assert math.isnan(param(published[0], "target_d_m"))
