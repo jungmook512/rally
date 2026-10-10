@@ -30,8 +30,8 @@
 - [x] ball + cup·stick **두 모델 동시 실행** (10/8): 통합 학습 대신 segmenter 가 `yolov8n-seg_ball.pt` + `yolov8n-seg_cupstick.pt` 를 매 프레임 같이 돌려 합침, 겹치면 ball 우선. cup·stick 모델이 공을 cup 으로 잡는 오검출(공 사진 20~30 %) → 병합 후 0. 모델마다 학습 imgsz(640/864). 통합 학습을 안 한 이유: cup·stick 사진 배경의 공이 라벨이 없어 합치면 '공 = 배경'으로 배움
 - [ ] GPU PC 에서 두 모델 fps 확인 (목표 30 fps, 모델당 약 5.5 ms 예상)
 - [ ] cup·stick 재학습 때 공 사진 50~100장을 배경(빈 라벨)으로 추가 → 단독으로도 공을 cup 으로 안 잡게 (지금은 병합 규칙이 막음)
-- [x] 카메라 tf 로봇 PC 확인 (10/8 정동휘·정정인): `camera_tf` static(link_6) 으로 손 좌표 base_link 확인, `/dsr01/joint_states` 100 Hz·tf 56 Hz. **bringup URDF 가 카메라 체인을 설계값으로 발행 → camera_tf 는 충돌 감지 시 발행 거부(PR #77).** URDF 에서 카메라 체인 빼기는 정정인
-- [ ] URDF 카메라 체인 제거 뒤: segmenter `transform_source` 기본 `tcp_npy` → `auto` (한 줄 PR). 그 전까지 tcp_npy(정지 중에만 정확)
+- [x] 카메라 tf 로봇 PC 확인 (10/8 정동휘·정정인): `camera_tf` static(link_6) 으로 손 좌표 base_link 확인, `/dsr01/joint_states` 100 Hz·tf 56 Hz. **bringup URDF 가 카메라 체인을 설계값으로 발행 → camera_tf 는 충돌 감지 시 발행 거부(PR #77).** URDF 에서 카메라 체인 빼기는 정정인 (#106)
+- [ ] URDF 카메라 체인 제거(#106) 뒤: segmenter `transform_source` 기본 `tcp_npy` → `auto` (한 줄 PR). 그 전까지 tcp_npy(정지 중에만 정확)
 - [ ] (정동휘 3·4번) 상자 위(20~30 cm) 마커 1개 + 30·70 cm 자세로 높이별 오차·깊이 모델(배율/배율+차이) 확인 — 로봇 5~10분
 - [ ] 공 측정 잡음 `meas_std_m` 실측(공 정지, 레인 3곳) + `is_moving` 판정 확인 — 카메라만
 - [ ] `tracker_node.py`: ByteTrack ID 유지, 클래스별 트랙
