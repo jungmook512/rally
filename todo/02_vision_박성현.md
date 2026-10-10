@@ -27,16 +27,17 @@
 - [x] 디버그 영상 `/rally/perception/objects/debug_image` (10 Hz, 비압축 — 구독자 있을 때만)
 
 ## Day 3 — 추적·최적화
-- [ ] **ball + cup + stick 통합 모델** `yolov8n-seg_rally.pt`: Roboflow 두 프로젝트 내보내기 합쳐 yolo_exp 로 학습(imgsz 864). segmenter 는 모델 하나만 읽으므로 통합이 필요. velcro_ball 은 라벨링 뒤 추가
-- [ ] segmenter `imgsz` 기본 640 → 864 (cup·stick 비교에서 864 가 stick mask +3 %p), GPU PC 에서 fps 확인
+- [x] ball + cup·stick **두 모델 동시 실행** (10/8): 통합 학습 대신 segmenter 가 `yolov8n-seg_ball.pt` + `yolov8n-seg_cupstick.pt` 를 매 프레임 같이 돌려 합침, 겹치면 ball 우선. cup·stick 모델이 공을 cup 으로 잡는 오검출(공 사진 20~30 %) → 병합 후 0. 모델마다 학습 imgsz(640/864). 통합 학습을 안 한 이유: cup·stick 사진 배경의 공이 라벨이 없어 합치면 '공 = 배경'으로 배움
+- [ ] GPU PC 에서 두 모델 fps 확인 (목표 30 fps, 모델당 약 5.5 ms 예상)
+- [ ] cup·stick 재학습 때 공 사진 50~100장을 배경(빈 라벨)으로 추가 → 단독으로도 공을 cup 으로 안 잡게 (지금은 병합 규칙이 막음)
 - [x] 카메라 tf 로봇 PC 확인 (10/8 정동휘·정정인): `camera_tf` static(link_6) 으로 손 좌표 base_link 확인, `/dsr01/joint_states` 100 Hz·tf 56 Hz. **bringup URDF 가 카메라 체인을 설계값으로 발행 → camera_tf 는 충돌 감지 시 발행 거부(PR #77).** URDF 에서 카메라 체인 빼기는 정정인
 - [ ] URDF 카메라 체인 제거 뒤: segmenter `transform_source` 기본 `tcp_npy` → `auto` (한 줄 PR). 그 전까지 tcp_npy(정지 중에만 정확)
 - [ ] (정동휘 3·4번) 상자 위(20~30 cm) 마커 1개 + 30·70 cm 자세로 높이별 오차·깊이 모델(배율/배율+차이) 확인 — 로봇 5~10분
 - [ ] 공 측정 잡음 `meas_std_m` 실측(공 정지, 레인 3곳) + `is_moving` 판정 확인 — 카메라만
 - [ ] `tracker_node.py`: ByteTrack ID 유지, 클래스별 트랙
 - [ ] TensorRT 변환(FP16), FPS·지연 비교표 — GPU PC 에서 PyTorch fps 먼저 재고 30 fps 안 나올 때만
-- [ ] 막대·컵 주축으로 파지 각도 → 정정인 `PickCompliant.yaw`로 전달 테스트 (cup·stick 모델 있음 → 통합 모델 뒤 로봇 10분)
-- [ ] 손 마스크·물체 마스크 접촉/분리 판정 함수 (릴리스 검출 기초) — 손에 쥔 물체 사진 30~50장을 통합 모델 라벨링에 추가해야 가려진 물체가 잡힘
+- [ ] 막대·컵 주축으로 파지 각도 → 정정인 `PickCompliant.yaw`로 전달 테스트 (cup·stick 모델 있음 → 로봇 10분)
+- [ ] 손 마스크·물체 마스크 접촉/분리 판정 함수 (릴리스 검출 기초) — 그리퍼에 쥔 cup·stick 사진(cup_grip 31·stick_grip 40)은 이미 학습됨. 사람 손에 쥔 사진은 아직 — 필요하면 추가
 
 ## Day 4 — 모드 3 착수 (챌린지, Day 6 까지)
 - [ ] `flight_predictor.py`: 손목 RealSense 60 fps 주 센서(YOLO + ROI 추적) + 웹캠(C270 약 20 fps) 보조 → 릴리스 검출 → 항력 있는 칼만 필터 → `predicted_landing`·시각·confidence(불확실도), `/rally/perception/landing` 발행. (10/7 이슈 #38: 웹캠 60 fps 불가, 색 검출 오검출 → 계획 수정. INTERFACES 4.1 수정 필요)
