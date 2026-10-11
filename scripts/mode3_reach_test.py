@@ -175,13 +175,14 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--run", action="store_true", help="실제로 로봇을 움직임 (없으면 계획만)")
     ap.add_argument("--dist", type=float, nargs="+", default=[5, 10, 20, 30], help="cm")
-    ap.add_argument("--dirs", nargs="+", default=["+y", "-y", "+u", "-u"], choices=["+y", "-y", "+u", "-u"])
+    ap.add_argument("--dirs", nargs="+", type=str.strip, default=["+y", "-y", "+u", "-u"], choices=["+y", "-y", "+u", "-u"])
     ap.add_argument("--acc", type=float, nargs="+", default=[1000.0], help="mm/s²")
     ap.add_argument("--vel", type=float, default=500.0, help="mm/s (안전 speed_override 를 곱함)")
     ap.add_argument("--reps", type=int, default=3)
     ap.add_argument("--return-vel", type=float, default=100.0, help="대기 자세로 돌아가는 속도 mm/s")
     ap.add_argument("--settle", type=float, default=1.0, help="이동 사이 정지 시간 s")
-    opt = ap.parse_args()
+    # argparse 는 "-y"·"-u" 를 옵션 이름으로 읽는다 → 공백을 붙여 값으로 넘기고 type=str.strip 으로 되돌림
+    opt = ap.parse_args([a + " " if a in ("-y", "-u") else a for a in sys.argv[1:]])
 
     rclpy.init()
     kin = Kin()
