@@ -194,6 +194,14 @@ brain:
   success_drop_rate: 0.4            # 최근 시도 성공률이 이 이하면 '성공률 하락' 신호 (최소 3회)
   slowing_ratio: 1.5                # 마지막 시도 시간이 앞선 시도 평균의 이 배 이상이면 '시도 시간 증가' 신호
   difficulty_range: [-3, 3]
+  # 모드 1 손 근접 STOP 대기 (#98 4번, INTERFACES 9절 1단계, rally_brain/hand_stop.py)
+  #   로봇이 서 있을 때 걸린 아래 사유의 STOP(safety_monitor 비래치)은 세션을 끝내지 않고 기다렸다가, NORMAL 이 resume_hold_s
+  #   이어지면 같은 시도를 이어 간다 (SLOW 는 재진행 아님, 10/11 결정). 로봇이 움직이는 중이거나 그 밖의 STOP 은 기존대로 세션 종료
+  hand_stop_wait_reasons: [hand_near_robot, hand_near_centerline, hand_lost_near]
+  hand_stop_wait_modes: [1]
+  hand_stop_resume_hold_s: 1.0
+  hand_stop_prompt: "손을 조금 떼어 주세요. 손이 빠지면 이어서 할게요"
+  hand_stop_prompt_s: 10.0          # 기다리는 동안 안내 간격
 
 mode3_challenge:
   enabled: true                     # CP13 결정에 따라 false 로 시연에서 제외

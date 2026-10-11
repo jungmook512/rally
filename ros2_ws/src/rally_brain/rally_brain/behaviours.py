@@ -36,6 +36,10 @@ class WaitUntil(py_trees.behaviour.Behaviour):
     def initialise(self) -> None:
         self._t0 = time.monotonic()
 
+    def shift_time(self, dt: float) -> None:
+        """기다린 시간 dt 를 timeout 계산에서 뺀다 (손 근접 STOP 대기 뒤, hand_stop.shift_timers)."""
+        self._t0 += dt
+
     def update(self) -> Status:
         if self.condition():
             return Status.SUCCESS
@@ -73,6 +77,9 @@ class SkillCall(py_trees.behaviour.Behaviour):
 
     def initialise(self) -> None:
         self._reset()
+
+    def shift_time(self, dt: float) -> None:
+        self._t0 += dt
 
     @property
     def goal_sent(self) -> bool:
@@ -173,6 +180,14 @@ class ServiceCall(py_trees.behaviour.Behaviour):
 
     def initialise(self) -> None:
         self._future, self._t0, self.response = None, time.monotonic(), None
+
+    def shift_time(self, dt: float) -> None:
+        self._t0 += dt
+
+    @property
+    def request_sent(self) -> bool:
+        """요청을 보냈음 — 응답 전이면 로봇이 움직이는 중일 수 있다 (예: 손 보기 자세로 이동)."""
+        return self._future is not None
 
     def update(self) -> Status:
         waited = time.monotonic() - self._t0
