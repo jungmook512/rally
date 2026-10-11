@@ -459,22 +459,15 @@
     <rdfs:label xml:lang="ko">어깨 들기</rdfs:label>
     <rally:indicatesFatigue rdf:resource="https://rally.local/ontology#fatigue"/>
     <rally:key>shoulder_hike</rally:key>
-    <rally:source>BodyPose.msg</rally:source>
+    <rally:source>BodyPose.msg, FR-05(임계 20°, 10/8 선 자세 실측 #83·#102)</rally:source>
+    <rally:threshold rdf:datatype="http://www.w3.org/2001/XMLSchema#decimal">20.0</rally:threshold>
+    <rally:unit>deg</rally:unit>
   </rdf:Description>
   <rdf:Description rdf:about="https://rally.local/ontology#Cue">
     <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
     <rdfs:comment xml:lang="ko">규칙 레이어가 행동을 고르는 근거가 되는 관찰</rdfs:comment>
     <rdfs:label xml:lang="ko">판단 계기</rdfs:label>
     <rally:source>기획서 4.7</rally:source>
-  </rdf:Description>
-  <rdf:Description rdf:about="https://rally.local/ontology#trunk_lean">
-    <rdf:type rdf:resource="https://rally.local/ontology#Compensation"/>
-    <rdfs:label xml:lang="ko">몸통 기울이기</rdfs:label>
-    <rally:indicatesFatigue rdf:resource="https://rally.local/ontology#fatigue"/>
-    <rally:key>trunk_lean</rally:key>
-    <rally:source>BodyPose.msg, FR-05(임계 15°)</rally:source>
-    <rally:threshold rdf:datatype="http://www.w3.org/2001/XMLSchema#decimal">15.0</rally:threshold>
-    <rally:unit>deg</rally:unit>
   </rdf:Description>
   <rdf:Description rdf:about="https://rally.local/ontology#handover">
     <rdf:type rdf:resource="https://rally.local/ontology#Skill"/>
@@ -513,6 +506,15 @@
     <rally:key>error_mm</rally:key>
     <rally:source>기획서 3.2 판정</rally:source>
     <rally:unit>mm</rally:unit>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://rally.local/ontology#trunk_lean">
+    <rdf:type rdf:resource="https://rally.local/ontology#Compensation"/>
+    <rdfs:label xml:lang="ko">몸통 기울이기</rdfs:label>
+    <rally:indicatesFatigue rdf:resource="https://rally.local/ontology#fatigue"/>
+    <rally:key>trunk_lean</rally:key>
+    <rally:source>BodyPose.msg, FR-05(임계 20°, 10/8 선 자세 실측 #83·#102)</rally:source>
+    <rally:threshold rdf:datatype="http://www.w3.org/2001/XMLSchema#decimal">20.0</rally:threshold>
+    <rally:unit>deg</rally:unit>
   </rdf:Description>
   <rdf:Description rdf:about="https://rally.local/ontology#inMode">
     <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>

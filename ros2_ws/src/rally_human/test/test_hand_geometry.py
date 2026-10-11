@@ -158,3 +158,42 @@ def test_short_miss_keeps_stable_gesture():
         f.update(True, hg.GESTURE_FIST)
     assert f.update(False, hg.GESTURE_NONE) == hg.GESTURE_FIST          # 잠깐 놓쳐도 유지
     assert f.update(True, hg.GESTURE_FIST) == hg.GESTURE_FIST
+
+
+
+# ----- 손목 각도 안정화 (wrist_filter) -----
+from rally_human.wrist_filter import WristFilter  # noqa: E402
+
+DT = 1 / 30
+
+
+def test_wrist_filter_median_drops_outliers():
+    f = WristFilter(window_s=0.5)
+    angles = [90, 92, 88, 160, 91, 89, 20, 90]               # 튀는 값 160·20 섞임
+    out = [f.update(i * DT, True, a, False) for i, a in enumerate(angles)]
+    assert out[-1] == pytest.approx(90, abs=1.5)
+
+
+def test_wrist_filter_holds_value_while_hand_too_close():
+    """잡는 순간처럼 손이 카메라에 너무 가까워도 다가올 때의 값을 계속 낸다 — 수 초 동안."""
+    f = WristFilter(window_s=0.5, lost_s=1.0)
+    t = 0.0
+    for _ in range(30):                                       # 1 s 다가오며 60°
+        f.update(t, True, 60.0, False)
+        t += DT
+    for k in range(120):                                      # 4 s 너무 가까움, 각도 흔들림
+        v = f.update(t, True, 60.0 + (40 if k % 2 else -40), True)
+        t += DT
+    assert v == pytest.approx(60.0)
+
+
+def test_wrist_filter_nan_after_hand_lost():
+    f = WristFilter(lost_s=1.0)
+    f.update(0.0, True, 90.0, False)
+    assert f.update(0.5, False, float("nan"), False) == pytest.approx(90.0)   # 잠깐 놓침 → 유지
+    assert math.isnan(f.update(1.6, False, float("nan"), False))              # 1 s 넘게 안 보임 → NaN (0 아님)
+
+
+def test_wrist_filter_nan_when_never_good():
+    f = WristFilter()
+    assert math.isnan(f.update(0.0, True, 90.0, True))        # 처음부터 너무 가까움 → 모름

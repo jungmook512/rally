@@ -17,6 +17,7 @@
   <depend>python3-yaml</depend>
   <depend>rally_bringup</depend>
   <!-- DSR_ROBOT2, DR_init: 두산 dsr_common2 (ROS 2 Jazzy) / pymodbus: pip -->
+  <exec_depend>dsr_msgs2</exec_depend>  <!-- force_publisher 가 GetToolForce·GetCurrentPosx 를 직접 부름 (두산 doosan-robot2) -->
   <test_depend>ament_copyright</test_depend>
   <test_depend>pytest</test_depend>
   <export><build_type>ament_python</build_type></export>

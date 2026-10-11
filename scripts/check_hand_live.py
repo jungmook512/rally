@@ -133,16 +133,23 @@ def render(node: Checker) -> np.ndarray:
     if last is None:
         put(panel, "HandState 없음 — hand_pose 노드 켰는지", (10, y), RED)
     elif not last.detected:
-        put(panel, "손 없음", (10, y), GRAY)
+        # 손이 없어도 손목 값은 보여 줌 — 1 s 동안 직전 값 유지, 그 뒤 nan 이어야 함 (wrist_filter)
+        put(panel, f"손 없음  손목 {last.wrist_angle_deg:.0f}°", (10, y), GRAY)
     else:
         z = last.palm_pose.position.z
-        if last.header.frame_id == "base_link":
-            depth = "base_link 좌표"                     # tf 가 있으면 카메라 거리가 아님
+        frame_id = last.header.frame_id
+        # hand_pose 의 "너무 가까움" 판단을 같은 규칙으로 따라 표시 (가까우면 손목 값은 직전 값에 고정돼야 함)
+        if frame_id == "base_link":
+            depth, near = "base_link 좌표", None         # tf 가 있으면 카메라 거리가 아님
         elif np.isfinite(z) and z > 0:
-            depth = f"카메라 {z * 100:.0f} cm"
+            depth, near = f"카메라 {z * 100:.0f} cm", z < 0.30
+        elif frame_id.startswith("camera"):
+            depth, near = "깊이 없음", True              # RealSense 인데 손바닥 깊이가 빔 → 너무 가까워 끊긴 것으로 봄
         else:
-            depth = "깊이 없음"                          # 깊이 못 구한 프레임 (손목 각도는 손 모양으로 계산)
-        put(panel, f"{GESTURE_NAME.get(last.gesture, '?')}  손목 {last.wrist_angle_deg:.0f}°  {depth}", (10, y), WHITE)
+            depth, near = "깊이 없음(웹캠)", None        # 웹캠은 화면 속 손 크기로 판단 — 여기선 알 수 없음
+        tag = "  [가까움→손목 고정]" if near else ""
+        put(panel, f"{GESTURE_NAME.get(last.gesture, '?')}  손목 {last.wrist_angle_deg:.0f}°  {depth}{tag}", (10, y),
+            RED if near else WHITE)
         y += 28
         bar = int(380 * max(0.0, min(1.0, last.grip_closure)))
         cv2.rectangle(panel, (10, y), (390, y + 16), (70, 70, 70), -1)

@@ -23,7 +23,7 @@ def test_pause_waits_for_whole_mode1_then_resumes(request_at, monkeypatch):
     session.allow_trial = lambda: control.at_boundary(10)
     ret = session.action_client(ReturnBall, '/rally/skill/return_ball')
     session.get_context().hand = hand(1.0)
-    session.get_context().hand.distance_to_centerline = .20
+    session.get_context().hand.distance_to_centerline = .15
     tree = build_session_tree(session, [1], 2)
     tree.tick_once()  # 타격 goal
     if request_at == 'push': control.pause('test')

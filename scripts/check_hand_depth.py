@@ -4,7 +4,9 @@
 HandState.palm_pose(카메라 좌표, tf 없을 때)를 카메라 내부값으로 픽셀에 다시 찍고, 그 픽셀 주변(7×7)의
 정렬 깊이 중간값과 비교한다. 같은 시각의 깊이 프레임을 쓴다. 손을 30~80 cm 사이에서 천천히 움직이면 된다.
     python3 scripts/check_hand_depth.py
-통과: 100 프레임 이상에서 |노드 z − 원본 깊이| 중간값 ≤ 5 mm
+    python3 scripts/check_hand_depth.py --depth-scale 0.971   # 손 노드가 hand_eye.yaml depth_scale 로 보정할 때 (#77)
+통과: 100 프레임 이상에서 |노드 z − 원본 깊이 × depth_scale| 중간값 ≤ 5 mm
+  — 원본 깊이(센서)는 보정 전 값이라, 보정이 들어가면 노드 z 는 원본보다 depth_scale 만큼 짧아야 맞다
 키: q 종료(터미널에 요약) · r 다시
 """
 import threading
@@ -29,9 +31,10 @@ INFO = "/camera/camera/color/camera_info"
 
 
 class Depth(Node):
-    def __init__(self) -> None:
+    def __init__(self, depth_scale: float = 1.0) -> None:
         super().__init__("rally_check_hand_depth")
         self.bridge, self.lock = CvBridge(), threading.Lock()
+        self.depth_scale = depth_scale
         self.color, self.K, self.hand = None, None, None
         self.depths: deque = deque(maxlen=15)
         self.diffs: list[float] = []
@@ -83,7 +86,7 @@ class Depth(Node):
         raw = float(np.median(win)) * 1e-3
         with self.lock:
             self.hand = (u, v, p.z, raw)
-            self.diffs.append((p.z - raw) * 1000)
+            self.diffs.append((p.z - raw * self.depth_scale) * 1000)
             self.zs.append(raw)
 
     def summary(self) -> tuple[bool, str]:
@@ -97,8 +100,12 @@ class Depth(Node):
 
 
 def main() -> None:
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--depth-scale", type=float, default=1.0, help="손 노드가 깊이에 곱하는 배율 (hand_eye.yaml depth_scale)")
+    a = ap.parse_args()
     rclpy.init()
-    node = Depth()
+    node = Depth(a.depth_scale)
     ex = SingleThreadedExecutor()
     ex.add_node(node)
     spin = threading.Thread(target=ex.spin, daemon=True)
@@ -115,7 +122,8 @@ def main() -> None:
         if hand:
             u, v, z, raw = hand
             cv2.circle(img, (u, v), 8, (0, 255, 255), 2)
-            cv2.putText(img, f"node {z * 100:.1f} cm  raw {raw * 100:.1f} cm  diff {(z - raw) * 1000:+.0f} mm",
+            exp = raw * node.depth_scale
+            cv2.putText(img, f"node {z * 100:.1f} cm  raw x{node.depth_scale:g} {exp * 100:.1f} cm  diff {(z - exp) * 1000:+.0f} mm",
                         (u + 12, v), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
         cv2.putText(img, ("PASS  " if ok else "....  ") + text.encode("ascii", "ignore").decode(), (10, 25),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.55, (80, 200, 80) if ok else (255, 255, 255), 2)
@@ -129,7 +137,7 @@ def main() -> None:
                 node.zs.clear()
     with node.lock:
         ok, text = node.summary()
-    node.get_logger().info(f"3번 손 거리: {'통과' if ok else '미완'} — {text}  (기준: 100 프레임 이상, 중간값 ≤ 5 mm)"
+    node.get_logger().info(f"3번 손 거리: {'통과' if ok else '미완'} — {text}  (기준: 100 프레임 이상, |노드 − 원본×{node.depth_scale:g}| 중간값 ≤ 5 mm)"
                            + ("" if node.diffs else f"  [{node.note}]"))
     cv2.destroyAllWindows()
     ex.shutdown()
