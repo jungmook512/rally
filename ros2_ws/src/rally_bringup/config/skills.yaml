@@ -27,6 +27,16 @@ mode3:
   catch_radius_m: 0.35
   lead_time_s: 0.12
   max_ball_speed_mps: 3.0
+  # catch_ball 스킬 (10/11, 근거 docs/mode3/MODE3_OVERVIEW.md). 없으면 catch_ball.DEFAULTS
+  ready_posj: [89.8, 30.0, -121.7, 90.2, -80.2, 88.3]   # 대기 자세 (정정인 결정, 패드 면 45°)
+  pad_offset_tool_m: [-0.053, -0.048, 0.001]          # TCP → 패드 중심, 공구 좌표 (줄자)
+  pad_normal: [0.7071, 0.0, 0.7071]                   # 패드 면 법선 (base, 투구자 쪽 45° 위)
+  decide_after_s: 0.16                                # 공 놓은 뒤 이 시각의 예측으로 출발 (오차 중앙 약 3 cm)
+  right_max_m: 0.15                                   # 오른쪽(−y)만. 왼쪽은 안 감 (환자 투구 실패로 셈)
+  updown_max_m: 0.15
+  catch_vel_mm_s: 450.0                               # 위아래 730 은 관절 속도 121 % 로 불가
+  catch_acc_mm_s2: 1000.0
+  impact_force_n: 4.0                                 # 명중 판정 힘 증가 (맞을 때 4.9~15.3 N, 정지 0.9 N)
 
 # mode1 (공 굴려주기) — 가이드 길 3개 (폭 10~12 cm, 높이 ≤ 공 반지름)
 #   start: 공을 놓는 자리 (base, m). 공 위에 TCP 를 대고 scripts/print_pose.py 로 읽는다. z 는 안 쓴다(table.yaml 사용)
@@ -241,6 +251,7 @@ mode3_challenge:
 gripper:
   ball:        {open_mm: 90,  force_n: 12}
   velcro_ball: {open_mm: 110, force_n: 12}
+  pad:         {open_mm: 60,  force_n: 38}     # 모드 3 패드 브래킷 (10/11: 38 N 으로 쥐면 폭 31.2 mm, grip 감지 1)
   rod:         {open_mm: 110, force_n: 20}
   cup:         {open_mm: 110, force_n: 20}
   handle:      {open_mm: 110, force_n: 38}   # 모드 7
