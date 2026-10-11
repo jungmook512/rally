@@ -3,19 +3,24 @@
 패키지: `ros2_ws/src/rally_brain`, `rally_db`, `rally_bringup`, `rally_interfaces`, `docker/`, `dashboard/` · 책임: **세션 전체 흐름**
 참고: `docs/INTERFACES.md` 전체, `rally_db/schema.sql`
 
-## 10/11 — 손 STOP 대기·회수 기준·자세 기준·세션 리포트
+## 10/11 — 손 STOP 대기·회수 기준·자세 기준·세션 리포트·지식 그래프
 
 - [x] #110 보상 동작 임계 15° → 20°(몸통·어깨, 온톨로지) + 세션 시작 때 `/rally/perception/body/reset_baseline` (머지). 훈련 팔 변경 시 재호출은 운영자(확인 창 b).
 - [x] #113 모드 1 회수 손 이탈 기준을 `skills.yaml mode1.hand_clear_m` 0.20 m 로 분리(#104 의 slow_distance_m 0.10 을 따라가던 것) + 회수 대기 이유 로그 (머지).
 - [x] #103 실제 LLM 휴식 제안 머지 (main 과 합친 상태로 Brain 302·대시보드 26·화면 검사 통과 뒤).
-- [x] #115 모드 1 손 근접 STOP 대기(#98 4번): 손 STOP(`hand_near_robot`·`hand_near_centerline`·`hand_lost_near`)이면 세션 유지 → NORMAL 1 s 뒤 같은 시도. 로봇 동작 중이면 받은 phase 로 재전송/종료. 재진행 조건은 NORMAL 1 s (eye-in-hand 라 '손 보여야 재진행'은 재작동 불가 — 정정인·정동휘 리뷰에 답, 변경 요청 해제). **머지 대기**.
-- [x] #121 세션 리포트: 수치 요약 + LLM 해석(집계 숫자만, 15 s, 실패 시 수치만) → `/rally/brain/session_report`(새 토픽) → `sessions.report_md`·`ended_at` → 대시보드 패널. 서버 PC 실물(가짜 리포트 → DB → 화면) 확인. **머지 대기**.
-- [x] #111 에이전트 지침(AGENTS·CLAUDE) + INTERFACES 8·9절 (10/8 작업본에서 옮김). **머지 대기**.
+- [x] #115 모드 1 손 근접 STOP 대기(#98 4번): 손 STOP(`hand_near_robot`·`hand_near_centerline`·`hand_lost_near`)이면 세션 유지 → NORMAL 1 s 뒤 같은 시도. 로봇 동작 중이면 받은 phase 로 재전송/종료. 재진행 조건은 NORMAL 1 s (eye-in-hand 라 '손 보여야 재진행'은 재작동 불가 — 정정인·정동휘 리뷰에 답, 변경 요청 해제). 머지. 대상은 모드 1 만 (5·7 은 단계별 재전송 규칙이 없어 기존대로 세션 종료).
+- [x] #121 세션 리포트: 수치 요약 + LLM 해석(집계 숫자만, 15 s, 실패 시 수치만) → `/rally/brain/session_report`(새 토픽) → `sessions.report_md`·`ended_at` → 대시보드 패널. 서버 PC 실물(가짜 리포트 → DB → 화면) 확인. #115 와 충돌 정리 뒤 머지.
+- [x] #111 에이전트 지침(AGENTS·CLAUDE) + INTERFACES 8·9절 (10/8 작업본에서 옮김). 정정인 리뷰 반영: 9절을 #115 구현대로(재진행 = NORMAL 1 s), 사유별 처리 표(`wrench_lost`·`hand_deep_intrusion`), 7절 중복 정리. **재확인·머지 대기**.
+- [x] #125 **지식 그래프 + Graph RAG (리포트)**: `schema_004_graph.sql`(kg_node·kg_edge), recorder 가 시도와 같은 트랜잭션으로 세션→시도→모드·시도→보상 동작, `graph_rag.py` 비슷한 과거 시도(pgvector) → 보상 동작 → 피로 신호 집계 → 리포트 '지식 그래프 근거' 표 + LLM 입력(집계 숫자만). 임시 PostgreSQL 로 확인, 머지. **운영 DB 에 schema_004 적용, brain·dashboard 재빌드 완료.**
+- [x] #126 Graph RAG (휴식 판단): 시도 끝에 백그라운드로 집계를 갈아 두고 휴식 판단은 그 값만 읽음(DB 대기 없음). 모드 1 은 성공률 비율 제외, 표본 3 미만 제외. **Draft — 실기 확인 후 머지**.
+- [x] #124 음성 피드백(#119): 모드 5 단계별·모드 7 시작·모드 시작/끝·난이도 변경 안내, 보상 동작 연속 2회 교정(`posture_coach.py`, TTS 말하는 중이면 건너뜀). #115 와 충돌 정리. **재확인·머지 대기**.
+- [x] #118 개발용 손 STOP 스위치: 정정인 결정 1~4 반영 — 개발 기간 기본 off(노드 자체 기본은 stop), off YAML bool 기동 버그(launch `ParameterValue(str)`·false→off), 읽기 전용, reason 에 `hand_stop_dev_off|slow`, robot.sh ★★ 경고 + 5 s. 시연 기본은 **slow 제안**(정정인 동의, 리허설에서 확정). 힘 한계 개발 스위치는 정정인 별도 PR. **재확인·머지 대기**.
+- [x] **CP13: 모드 3 포함 결정** (아래 Day 6).
 - [x] 리뷰: #104(tf·tcp_pose 끊김 지적 → 반영돼 머지), #109·#112 승인, #116 승인(정지 위치·손 머묾 레인), #108·#117 이슈 등록(빠진 커밋·로봇 스킬 옵션).
-- [ ] #118 개발용 손 STOP 스위치 — 정정인 수정 대기(기본 off, off YAML bool 버그, 읽기 전용, 모드 표시). 시연 전 `stop`.
+- [ ] 리허설 값(slow/stop) 정해지면 #118 되돌림 PR + 시연 체크리스트(`robot.sh` ★ 경고, `hand_stop_mode=…` 로그).
+- [ ] 시연 기동 체크리스트 (서버 PC·로봇 PC 순서, 모드 1 → 3 → 5 → 7, 문제 시 복구).
 - [ ] #117 로봇 옵션(입구 공 바로 치기·쥔 공 거치대로) 들어오면 손 STOP 뒤 이어 가기 구간 확장.
-- [ ] 실기: #115 손 넣었다 빼면 1 s 뒤 이어짐, #113 회수 대기 로그로 원인, #121 실제 세션 끝 리포트 생성(컨테이너 pydantic v2).
-- [ ] #119 음성 피드백 문구 붙이기 (정동휘 제안).
+- [ ] 실기 (로봇 PC 비면, brain 은 main 으로 재빌드돼 있음): #115 손 넣었다 빼면 1 s 뒤 이어짐(`HAND_STOP=stop`), #113 회수 대기 로그로 원인, #121·#125 실제 세션 끝 리포트(두 번째 세션부터 '비슷한 과거 시도' 숫자), #126 휴식 판단 때 멈춤 없음·`[휴식 그래프] 조회 실패` 없음, #124 안내 TTS 타이밍.
 - [ ] OpenAI 키 한도 갱신 뒤 LLM 해석·휴식 제안 실제 응답 확인 (10/11 RateLimitError).
 
 ## 휴식 제안 상태·대시보드 응답 구현 (10/8)
