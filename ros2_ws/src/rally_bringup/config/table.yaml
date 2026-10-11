@@ -5,3 +5,10 @@ table:
   centerline_y_m: 0.0             # TODO 실측. 중앙선 테이프 위 한 점의 base y (환자 구역은 x 가 큰 쪽)
   centerline_x_m: 0.568           # 10/7 실측: 테이블 보라색 로봇 이동 한계선 (손끝을 표시 위에 대고 print_pose, y 0.242 지점). 로봇이 넘지 않는 x — 밀기 끝점(−3 cm)·모드 5 제시 위치(−6 cm) 기준
   origin_xyz_m: [0.30, 0.0, null] # table_link 원점 (로봇 쪽 모서리 가운데)
+  # 10/8 ArUco 마커 중심 TCP 터치 (base mm, 그리퍼 닫고 손가락 끝, 툴 오프셋 228 mm). 핸드아이 재검증(scripts/verify_calibration.py --touch)
+  # 과 table_link 원점 후보. 마커는 p1 원점, p2 = +x 40 cm, p3 = +y 50 cm 직사각형 (config/table_markers.yaml, id 5~8). 마커를 옮기면 다시 찍는다.
+  aruco_touch_mm:
+    p1: [237.44, 239.05, 14.92]
+    p2: [640.01, 235.42, 16.04]
+    p3: [247.64, -259.76, 14.90]
+    p4: [645.36, -262.80, 15.59]

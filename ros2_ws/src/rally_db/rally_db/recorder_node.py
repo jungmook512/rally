@@ -3,6 +3,7 @@
 
 구독                               기록
   /rally/brain/trial_result        → trials (다음 flush 에서, 최대 0.5 s 뒤, feature_vec 포함 — embeddings.py)
+                                     + kg_edge 세션→시도→모드, 시도→보상 동작 (같은 트랜잭션, schema_004 가 있을 때)
                                      + Redis rally:events kind=trial (대시보드 알림)
   /rally/robot/wrench   100 Hz     → ts_wrench (0.5 s 마다 묶어서)
   /rally/perception/hand 30 Hz     → ts_hand   (손이 잡힌 프레임만, 0.5 s 마다 묶어서)
@@ -10,6 +11,9 @@
   /rally/voice/intent              → events kind=voice_intent + Redis rally:events
   /rally/voice/transcript          → Redis rally:dialog (최근 대화, TTL 5분)
   /rally/brain/context  5 Hz       → Redis rally:state (flush 마다 최신 것만), 모드가 바뀌면 events kind=mode_change
+                                     body.compensation_type 이 보이면 다음 시도의 '관찰된 보상 동작'으로 모아 둔다
+  /rally/brain/session_report      → sessions.report_md·ended_at (JSON session_id·report_md·source, 세션 끝에 한 번)
+                                     + Redis rally:events kind=session_report (대시보드가 리포트를 다시 읽음)
 서비스
   /rally/db/start_session (Trigger) → 새 세션 줄, message 에 session_id(UUID)
 
@@ -21,6 +25,7 @@ DB 쓰기는 flush 타이머(별도 콜백 그룹)에서만 한다 — 구독 �
 """
 from __future__ import annotations
 
+import json
 import threading
 from collections import deque
 from datetime import datetime, timezone
@@ -35,7 +40,7 @@ from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
 from rally_db import convert, embeddings
-from rally_db.repository import Repository, StorageUnavailable
+from rally_db.repository import COMPENSATION_KEYS, Repository, StorageUnavailable
 from rally_interfaces.msg import HandState, SafetyStatus, SceneContext, TrialResult, VoiceIntent
 
 FLUSH_PERIOD_S = 0.5
@@ -51,11 +56,13 @@ class Recorder(Node):
         self._lock = threading.Lock()
         self._session_id: str | None = None
         self._sessions_to_create: deque[str] = deque()
-        self._trials: deque[TrialResult] = deque(maxlen=MAX_PENDING)
+        self._trials: deque[tuple[TrialResult, tuple[str, ...]]] = deque(maxlen=MAX_PENDING)   # (시도, 관찰된 보상 동작)
+        self._seen_comp: set[str] = set()     # 지난 시도 뒤로 상황판에 보인 보상 동작 (BodyPose 는 팔을 뻗는 동안만 냄, #83)
         self._events: deque[tuple[datetime, str | None, str, dict]] = deque(maxlen=MAX_PENDING)
         self._dialog: deque[tuple[str, str]] = deque(maxlen=MAX_PENDING)
         self._wrench: deque[tuple] = deque(maxlen=MAX_TS_ROWS)
         self._hand: deque[tuple] = deque(maxlen=MAX_TS_ROWS)
+        self._reports: deque[tuple[str, str]] = deque(maxlen=MAX_PENDING)   # (session_id, report_md)
         self._state: dict | None = None
         self._last_safety: tuple | None = None
         self._last_mode: int | None = None
@@ -75,6 +82,7 @@ class Recorder(Node):
         self.create_subscription(VoiceIntent, "/rally/voice/intent", self._on_intent, reliable)
         self.create_subscription(String, "/rally/voice/transcript", self._on_transcript, reliable)
         self.create_subscription(SceneContext, "/rally/brain/context", self._on_context, qos_profile_sensor_data)
+        self.create_subscription(String, "/rally/brain/session_report", self._on_report, reliable)
 
         io_group = MutuallyExclusiveCallbackGroup()   # DB·Redis 블로킹 호출은 여기서만
         self.create_timer(FLUSH_PERIOD_S, self._flush, callback_group=io_group)
@@ -86,7 +94,22 @@ class Recorder(Node):
     def _on_trial(self, msg: TrialResult) -> None:
         with self._lock:
             self._use_session(msg.session_id)
-            self._trials.append(msg)
+            self._trials.append((msg, tuple(sorted(self._seen_comp))))
+            self._seen_comp.clear()
+
+    def _on_report(self, msg: String) -> None:
+        try:
+            data = json.loads(msg.data)
+            sid = convert.session_uuid(str(data["session_id"]))
+            md = str(data["report_md"])
+        except (ValueError, KeyError, TypeError) as e:
+            self.get_logger().error(f"세션 리포트 형식 오류 — 버림: {e!r}")
+            return
+        if sid is None:
+            self.get_logger().error("세션 리포트의 session_id 가 비어 있음 — 버림")
+            return
+        with self._lock:
+            self._reports.append((sid, md))
 
     def _on_wrench(self, msg: WrenchStamped) -> None:
         with self._lock:
@@ -118,6 +141,8 @@ class Recorder(Node):
         with self._lock:
             self._use_session(msg.session_id)
             self._state = convert.context_to_state(msg)
+            if msg.body.compensation_detected and msg.body.compensation_type in COMPENSATION_KEYS:
+                self._seen_comp.add(msg.body.compensation_type)
         if self._last_mode is not None and msg.mode != self._last_mode:
             self._add_event(msg.header.stamp, "mode_change", {"from": self._last_mode, "to": int(msg.mode)})
         self._last_mode = int(msg.mode)
@@ -132,6 +157,7 @@ class Recorder(Node):
         if sid and sid != self._session_id:
             self._session_id = sid
             self._sessions_to_create.append(sid)
+            self._seen_comp.clear()   # 지난 세션에서 본 보상 동작을 새 세션 첫 시도에 붙이지 않게
 
     # ---------- flush: DB·Redis 쓰기 ----------
     def _flush(self) -> None:
@@ -141,6 +167,8 @@ class Recorder(Node):
             events = list(self._events)
             dialog = list(self._dialog)
             wrench, hand = list(self._wrench), list(self._hand)
+            reports = list(self._reports)
+            self._reports.clear()
             counts = {"시도": len(trials), "사건": len(events), "힘": len(wrench), "손": len(hand), "대화": len(dialog)}
             state, self._state = self._state, None
             self._trials.clear()
@@ -153,13 +181,20 @@ class Recorder(Node):
                 self.repo.ensure_session(sessions[0])
                 sessions.pop(0)
             while trials:
-                msg = trials[0]
+                msg, observed = trials[0]
                 row = convert.trial_to_row(msg, convert.session_uuid(msg.session_id) or self._session_id)
                 if self._embed_spec is not None:
                     row["feature_vec"] = embeddings.trial_vector(row, self._embed_spec)
-                trial_id = self.repo.add_trial(row)
+                trial_id = self.repo.add_trial(row, observed)
                 trials.pop(0)
                 self._notify("trial", convert.trial_to_event(row, trial_id))
+            while reports:                       # 시도를 먼저 쓴 뒤 (같은 flush 의 마지막 시도까지 들어간 세션)
+                sid, md = reports[0]
+                self.repo.ensure_session(sid)
+                self.repo.end_session(sid, md)
+                reports.pop(0)
+                self.get_logger().info(f"세션 리포트 저장 — {sid[:8]} ({len(md)}자)")
+                self._notify("session_report", {"session_id": sid})
             while events:
                 self.repo.add_event(*events[0])
                 events.pop(0)
@@ -180,7 +215,7 @@ class Recorder(Node):
                 self._written[k] += v
         except StorageUnavailable as e:
             self._set_storage_ok(False, str(e))
-            self._requeue(sessions, trials, events, dialog, wrench, hand, state)
+            self._requeue(sessions, trials, events, dialog, wrench, hand, state, reports)
         except Exception as e:   # 메시지 하나가 잘못돼도 노드는 산다 — 그 항목은 버린다
             self.get_logger().error(f"기록 실패, 해당 묶음 버림: {e!r}")
 
@@ -199,7 +234,7 @@ class Recorder(Node):
         self.get_logger().info(f"최근 {SUMMARY_PERIOD_S:.0f} s 기록 — {parts} (세션 {session})")
         self._written = dict.fromkeys(self._written, 0)
 
-    def _requeue(self, sessions, trials, events, dialog, wrench, hand, state) -> None:
+    def _requeue(self, sessions, trials, events, dialog, wrench, hand, state, reports=()) -> None:
         """못 쓴 것을 버퍼 앞쪽으로 되돌린다 (그 사이 새로 들어온 것보다 먼저 쓰이도록)."""
         with self._lock:
             self._sessions_to_create.extendleft(reversed(sessions))
@@ -208,6 +243,7 @@ class Recorder(Node):
             self._dialog.extendleft(reversed(dialog))
             self._wrench.extendleft(reversed(wrench))
             self._hand.extendleft(reversed(hand))
+            self._reports.extendleft(reversed(list(reports)))
             if self._state is None:
                 self._state = state
 

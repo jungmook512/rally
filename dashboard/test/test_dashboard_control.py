@@ -130,3 +130,28 @@ def test_training_illustrations_are_served_without_control_requests(monkeypatch)
             assert (await client.get("/images/%2e%2e/index.html")).status_code == 404
     asyncio.run(call())
     assert store.command is None
+
+
+def test_latest_report(monkeypatch):
+    from datetime import datetime, timezone
+    seen = []
+
+    async def fake_query(sql, params=()):
+        seen.append(sql)
+        return [{"session_id": "11111111-2222-3333-4444-555555555555", "report_md": "## 세션 요약\n| 1 |",
+                 "started_at": datetime(2026, 10, 11, 1, 0, tzinfo=timezone.utc),
+                 "ended_at": datetime(2026, 10, 11, 1, 12, tzinfo=timezone.utc)}]
+
+    async def empty(sql, params=()):
+        return []
+
+    async def call():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url="http://test") as client:
+            return await client.get("/api/report/latest")
+
+    monkeypatch.setattr(web, "_query", fake_query)
+    r = asyncio.run(call())
+    assert r.status_code == 200 and r.json()["report_md"].startswith("## 세션 요약")
+    assert r.json()["ended_at"].startswith("2026-10-11T01:12") and "report_md IS NOT NULL" in seen[0]
+    monkeypatch.setattr(web, "_query", empty)
+    assert asyncio.run(call()).json() is None

@@ -189,10 +189,15 @@ def test_return_ball_lane_candidates():
         o.position.x, o.position.y, o.position.z = x, y, 0.046
         return o
     arr.objects = [ball(0.50, 0.01), ball(0.70, -0.14), ball(0.334, 0.282), ball(0.52, 0.15, moving=True)]
-    near, far = lane_ball_candidates(arr, cfg, lanes, -1, 0.0144)
+    lane_cfg = {**cfg, "return_zone_enabled": False}
+    near, far = lane_ball_candidates(arr, lane_cfg, lanes, -1, 0.0144)
     assert near == [(0.50, 0.01, 0.046)] and far == [(0.70, -0.14, 0.046)]       # 거치대 공·움직이는 공 제외
-    near, far = lane_ball_candidates(arr, cfg, lanes, 2, 0.0144)
+    near, far = lane_ball_candidates(arr, lane_cfg, lanes, 2, 0.0144)
     assert near == [] and far == [(0.70, -0.14, 0.046)]                           # 레인 2 만
+    # 회수 구역 (기본, 10/8): 레인 밖·레인 입구 뒤로 굴러온 공도 집음. 거치대·너무 가까운 공은 무시
+    arr.objects = [ball(0.38, 0.08), ball(0.30, -0.25), ball(0.25, 0.0), ball(0.334, 0.282), ball(0.70, -0.14)]
+    near, far = lane_ball_candidates(arr, cfg, lanes, 2, 0.0144)
+    assert near == [(0.30, -0.25, 0.046), (0.38, 0.08, 0.046)] and far == [(0.70, -0.14, 0.046)]
 
 
 def test_hand_view_pose_is_lane_center():
@@ -204,3 +209,48 @@ def test_hand_view_pose_is_lane_center():
     pose = hand_view_pose(cfg, lanes, {"z_m": 0.0144})
     assert pose[0] == pytest.approx(330.0) and pose[1] == pytest.approx(0.0, abs=1e-6)
     assert hand_view_pose(cfg, [], {}) is None
+
+
+def test_push_ball_stop_measure_helpers():
+    """정지 위치: 레인 통로 안·입구에서 5 cm 이상 간 공만, 가장 멀리 간 공 먼저. StopWatch 는 0.8 s 동안 1 cm 안이면 멈춤."""
+    pytest.importorskip("rally_interfaces")
+    from rally_interfaces.msg import TrackedObject, TrackedObjectArray
+    from rally_robot.skills.push_ball import DEFAULTS, StopWatch, balls_in_lane
+    cfg = dict(DEFAULTS, vision_offset_m=[0.0, 0.0, 0.0])
+    lane = {"start": [0.43, 0.0, 0.0]}
+    arr = TrackedObjectArray()
+    arr.header.frame_id = "base_link"
+
+    def ball(x, y):
+        o = TrackedObject(class_name="ball", confidence=0.9)
+        o.position.x, o.position.y, o.position.z = x, y, 0.046
+        return o
+    arr.objects = [ball(0.45, 0.0), ball(0.80, 0.02), ball(0.70, 0.15), ball(0.334, 0.282)]
+    got = balls_in_lane(arr, cfg, lane, 0.0, 0.0144)
+    assert [round(b[0], 3) for b in got] == [0.37]          # 입구 2 cm(무시)·옆 레인·거치대 제외
+    w = StopWatch(0.8, 0.01)
+    assert w.add(0.0, (0.70, 0.0)) is None
+    assert w.add(0.3, (0.75, 0.0)) is None                  # 아직 구름 → 기준 다시
+    assert w.add(0.9, (0.752, 0.0)) is None                 # 0.6 s
+    assert w.add(1.2, (0.751, 0.0)) == (0.75, 0.0)          # 0.9 s 그대로 → 멈춤
+    assert w.add(1.3, None) is None                         # 안 보이면 처음부터
+
+
+def test_grasp_wrist_nan_when_unknown():
+    import math
+    from rally_interfaces.msg import HandState
+    from rally_robot.skills.handover import grasp_wrist_deg
+    h = HandState(detected=False, wrist_angle_deg=35.0)
+    h.header.stamp.sec = 100
+    now = 100 * 1_000_000_000 + 200_000_000
+    assert grasp_wrist_deg(h, now) == 35.0                    # 가까워서 detected=false 여도 필터가 유지한 값
+    assert math.isnan(grasp_wrist_deg(None, now))
+    assert math.isnan(grasp_wrist_deg(h, now + 2_000_000_000))  # 오래된 메시지
+
+
+def test_rack_drop_approach_is_up_and_back():
+    # 10/11: 놓는 자리 바로 위가 아니라 위 6 cm · −x 6 cm 에서 대각선으로 (자세는 그대로)
+    from rally_robot.skills.return_ball import rack_drop_approach
+    drop = [462.5, 289.8, 76.3, -171.6, -157.3, -92.0]
+    assert rack_drop_approach(drop, 0.06, 0.06) == pytest.approx([402.5, 289.8, 136.3, -171.6, -157.3, -92.0])
+    assert rack_drop_approach(drop, 0.06, 0.0) == pytest.approx([462.5, 289.8, 136.3, -171.6, -157.3, -92.0])   # 예전 (수직)
