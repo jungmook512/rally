@@ -17,6 +17,6 @@ setup(
     license='MIT',
     entry_points={'console_scripts': [
         'hand_pose = rally_human.hand_pose_node:main',
-        # 'body_pose = rally_human.body_pose_node:main',   # Day 4 구현 후 등록 (main 없이 등록하면 launch 가 띄우자마자 죽음)
+        'body_pose = rally_human.body_pose_node:main',
     ]},
 )
