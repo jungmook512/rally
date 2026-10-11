@@ -8,11 +8,13 @@ rally_safety_monitor:
     #   지연 여유: 손 116 ms + tcp_pose 10 Hz(≤ 100 ms) → 로봇 0.3 m/s 에서 5~7 cm. 0.20 m 는 그만큼 포함.
     #   거리는 선분 '중심축'까지다. 그리퍼·카메라 표면은 축에서 약 6~8 cm(RG2 손가락 최대 벌림 11 cm 의 반, 카메라 마운트 —
     #   실측 TODO(정정인)) 바깥이라, 0.20 m 일 때 표면까지 실제 여유는 약 12~14 cm. 실측 후 표면 기준으로 올릴지 정정인 결정 (리뷰 #104)
-    # 개발용 손 STOP 스위치 (10/11 조정묵 요청 — 실기 동작 확인 중 손 근접 STOP 이 잦아 번거로움). 기본 stop = 지금 그대로.
-    #   slow: 손 근접 STOP → SLOW, off: 손 판정 안 함. 둘 다 보이는 손만 보고 놓침·끊김 유지(#95)를 안 함. 힘·작업 공간·estop 은 그대로.
-    #   바꾸려면 이 파일이 아니라 실행 때: ros2 launch rally_bringup pc1_robot.launch.py hand_stop:=slow (또는 HAND_STOP=slow scripts/robot.sh nodes)
-    #   ★ 시연·환자 앞에서는 반드시 stop
-    hand_stop_mode: stop
+    # 개발용 손 STOP 스위치: stop | slow | off (#118, 조정묵 요청 · 정정인 결정 10/11)
+    #   ★ 개발 기간 한정 기본 off — 10/11~ 실기 동작 확인 중 손 근접 STOP 이 잦아서. 리허설(10/12)·시연 전에 slow 또는 stop 으로 되돌림
+    #   off: 손 판정 통째로 꺼짐 (근접 STOP·SLOW, 손 놓침 STOP, 손 NaN·끊김 SLOW 모두). 남는 STOP: 힘 한계·nudge·작업 공간·estop·음성·필수 입력
+    #   slow: 손 근접 STOP → SLOW. 둘 다 보이는 손만 보고 놓침·끊김 유지(#95)를 안 함
+    #   실행 때 바꾸기: ros2 launch rally_bringup pc1_robot.launch.py hand_stop:=stop (또는 HAND_STOP=stop scripts/robot.sh nodes)
+    #   따옴표 필수 — 따옴표 없는 off 는 YAML 에서 false 가 된다 (노드는 false 도 off 로 받지만 헷갈리지 않게)
+    hand_stop_mode: "off"
     hand_stop_robot_m: 0.20    # 손 ↔ 로봇 이 안이면 STOP (hand_near_robot). 환자 접촉(patient_contact) 중엔 SLOW
     hand_slow_robot_m: 0.35    # 이 안이면 SLOW
     robot_segment_m: 0.228     # TCP(RG2 손가락 끝) → 플랜지. 펜던트 툴 오프셋 228 mm. 그리퍼 몸통·카메라가 이 선분 근처

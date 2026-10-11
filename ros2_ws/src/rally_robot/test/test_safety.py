@@ -207,15 +207,31 @@ def test_hand_mode_level():
     assert hand_mode_level((S.LEVEL_STOP, "hand_near_centerline"), "off") == (S.LEVEL_NORMAL, "")
 
 
-@pytest.fixture
-def monitor():
+def make_monitor(*extra):
+    """extra = 추가 --ros-args 인자 (예: "-p", "hand_stop_mode:=off" — 따옴표 없는 off 는 YAML 에서 false)."""
     import rclpy
-    rclpy.init(args=["--ros-args", "-p", "robot_tf_enabled:=false", "-p", "required_inputs:=['']"])
+    rclpy.init(args=["--ros-args", "-p", "robot_tf_enabled:=false", "-p", "required_inputs:=['']", *extra])
     from rally_robot.safety_monitor import SafetyMonitor
-    node = SafetyMonitor()
-    yield node
-    node.destroy_node()
+    return SafetyMonitor()
+
+
+@pytest.fixture
+def monitor_with():
+    import rclpy
+    nodes = []
+
+    def make(*extra):
+        nodes.append(make_monitor(*extra))
+        return nodes[-1]
+    yield make
+    for n in nodes:
+        n.destroy_node()
     rclpy.shutdown()
+
+
+@pytest.fixture
+def monitor(monitor_with):
+    return monitor_with()
 
 
 def hand_msg(detected, dist):
@@ -225,18 +241,13 @@ def hand_msg(detected, dist):
     return m
 
 
-def set_mode(node, mode):
-    from rclpy.parameter import Parameter
-    node.set_parameters([Parameter("hand_stop_mode", Parameter.Type.STRING, mode)])
-
-
 @pytest.mark.parametrize("mode, near, lost", [
     ("stop", SafetyStatus.LEVEL_STOP, SafetyStatus.LEVEL_STOP),     # 기본: 근접 STOP, 놓쳐도 1 s STOP 유지(#95)
     ("slow", SafetyStatus.LEVEL_SLOW, SafetyStatus.LEVEL_NORMAL),   # 근접 SLOW, 놓치면 바로 NORMAL (보이는 손만)
     ("off", SafetyStatus.LEVEL_NORMAL, SafetyStatus.LEVEL_NORMAL),
 ])
-def test_hand_stop_mode_in_node(monitor, mode, near, lost):
-    set_mode(monitor, mode)
+def test_hand_stop_mode_in_node(monitor_with, mode, near, lost):
+    monitor = monitor_with("-p", f"hand_stop_mode:={mode}")
     monitor.on_hand(hand_msg(True, 0.05))           # 로봇 위치 모름 → 선 기준 0.15 안 = STOP
     monitor.tick()
     assert monitor.level == near
@@ -245,9 +256,9 @@ def test_hand_stop_mode_in_node(monitor, mode, near, lost):
     assert monitor.level == lost
 
 
-def test_hand_stop_mode_ignores_stale_hand_and_keeps_other_stops(monitor):
+def test_hand_stop_mode_ignores_stale_hand_and_keeps_other_stops(monitor_with):
     import time as _t
-    set_mode(monitor, "slow")
+    monitor = monitor_with("-p", "hand_stop_mode:=slow")
     monitor.on_hand(hand_msg(True, 0.05))
     monitor.last_rx["hand"] = _t.monotonic() - 10   # 손 메시지 끊김 — 마지막 거리(가까움)를 들고 있지 않는다
     monitor.tick()
@@ -257,8 +268,60 @@ def test_hand_stop_mode_ignores_stale_hand_and_keeps_other_stops(monitor):
     assert monitor.level == SafetyStatus.LEVEL_STOP and monitor.reason == "force_limit"
 
 
-def test_unknown_mode_falls_back_to_stop(monitor):
-    set_mode(monitor, "nothing")
+def test_unknown_mode_falls_back_to_stop(monitor_with):
+    monitor = monitor_with("-p", "hand_stop_mode:=nothing")
     monitor.on_hand(hand_msg(True, 0.05))
     monitor.tick()
     assert monitor.level == SafetyStatus.LEVEL_STOP
+
+
+def test_hand_mode_from_param():
+    from rally_robot.safety_monitor import hand_mode_from_param
+    assert hand_mode_from_param(False) == ("off", None)          # YAML 의 따옴표 없는 off
+    assert hand_mode_from_param("off") == ("off", None)
+    assert hand_mode_from_param(" SLOW ") == ("slow", None)
+    assert hand_mode_from_param(True)[0] == "stop"               # on/yes → 모름 → 안전 쪽
+    assert hand_mode_from_param("nothing")[0] == "stop" and hand_mode_from_param("nothing")[1]
+
+
+@pytest.mark.parametrize("args, mode", [
+    (("-p", "hand_stop_mode:=off"), "off"),           # 명령줄 따옴표 없음 → false 로 와도 기동
+    (("-p", "hand_stop_mode:='off'"), "off"),
+    (("-p", "hand_stop_mode:=slow"), "slow"),
+    ((), "stop"),                                      # 설정 파일 없이 = 노드 기본 stop
+])
+def test_hand_stop_mode_starts(monitor_with, args, mode):
+    assert monitor_with(*args).hand_mode() == mode
+
+
+def test_safety_yaml_default_off_and_starts(monitor_with):
+    """safety.yaml(개발 기간 기본 "off")을 그대로 읽어 기동되는지 (launch 인자 없이 = robot.sh 기본)."""
+    from pathlib import Path
+    path = Path(__file__).resolve().parents[2] / "rally_bringup/config/safety.yaml"
+    assert monitor_with("--params-file", str(path)).hand_mode() == "off"
+
+
+def test_hand_stop_mode_read_only(monitor_with):
+    from rclpy.parameter import Parameter
+    node = monitor_with("-p", "hand_stop_mode:=off")
+    res = node.set_parameters([Parameter("hand_stop_mode", Parameter.Type.STRING, "stop")])
+    assert not res[0].successful and node.hand_mode() == "off"
+
+
+def published(node):
+    out = []
+    node.pub.publish = out.append
+    node.tick()
+    return out[-1]
+
+
+@pytest.mark.parametrize("mode, normal", [("off", "hand_stop_dev_off"), ("slow", "hand_stop_dev_slow"), ("stop", "")])
+def test_reason_marks_dev_mode(monitor_with, mode, normal):
+    node = monitor_with("-p", f"hand_stop_mode:={mode}")
+    msg = published(node)
+    assert msg.level == SafetyStatus.LEVEL_NORMAL and msg.reason == normal
+    node._stop("force_limit")                                    # 래치 STOP 에도 표시
+    msg = published(node)
+    assert msg.level == SafetyStatus.LEVEL_STOP
+    assert msg.reason == ("force_limit" if mode == "stop" else f"force_limit,hand_stop_dev_{mode}")
+    assert node.reason == "force_limit"                          # 내부 사유는 그대로

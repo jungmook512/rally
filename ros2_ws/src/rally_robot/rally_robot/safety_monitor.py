@@ -35,10 +35,13 @@
 - 로봇 위치 tf (base_link → link_6): tf 의 header.stamp 가 tcp_timeout_s 넘게 오래됐으면(joint_states 멈춤 → tf 얼어붙음) 안 쓴다.
   tcp_pose 가 robot_tf_tcp_cover_s 안에 있었을 때만 쓰고(교차 검사 기준), 그동안 tcp_pose 끊김은 tcp_stale 이 아니다.
   tf 로 구한 TCP 로도 작업 공간을 검사한다 (tcp_pose 만 멈춰도 작업 공간 STOP 이 빠지지 않게 — 리뷰 #104).
-- 개발용 손 STOP 스위치 (hand_stop_mode, 기본 stop = 위 그대로, 10/11 조정묵 요청): 실기 동작 확인 중 손 근접 STOP 이 잦아서.
+- 개발용 손 STOP 스위치 (hand_stop_mode: stop | slow | off, 10/11 조정묵 요청 · 정정인 결정): 실기 동작 확인 중 손 근접 STOP 이 잦아서.
   slow = 손 근접 STOP 을 SLOW 로 낮춤 · off = 손 판정 안 함. 둘 다 **지금 보이는 손만** 본다 — 손 놓침 STOP·SLOW 유지(#95),
   끊긴 손의 마지막 거리 사용, 손 입력 끊김 SLOW 를 하지 않는다. 힘 한계·nudge·작업 공간·estop·음성·필수 입력은 그대로.
-  stop 이 아니면 5 s 마다 경고 로그. 시연(환자) 전에는 반드시 stop.
+  개발 기간(10/11~) 기본은 safety.yaml·launch 의 off, 노드 자체 기본(설정 파일 없이 띄울 때)은 stop. 리허설(10/12)·시연 전 slow 또는 stop 으로 되돌림.
+  기동할 때 한 번 정하고 실행 중에는 못 바꾼다(read_only). stop 이 아니면 5 s 마다 경고 로그,
+  reason 에 hand_stop_dev_off · hand_stop_dev_slow 를 붙인다 (NORMAL 이면 그것만, 다른 사유가 있으면 "사유,hand_stop_dev_…").
+  YAML 은 따옴표 없는 off 를 거짓(false)으로 읽으므로 false 도 off 로 받는다 (-p hand_stop_mode:=off 그대로 기동되게).
 손 거리·끊김에 의한 SLOW/STOP 은 매 주기 다시 판정한다 (래치 아님). 그 밖의 STOP 은 /rally/robot/reset_safety (Trigger) 로만 해제.
 """
 import math
@@ -47,6 +50,7 @@ import time
 
 import rclpy
 from geometry_msgs.msg import PoseStamped, WrenchStamped
+from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.node import Node
 from rclpy.time import Time
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
@@ -167,6 +171,24 @@ def hand_unknown_level(unknown_for_s, level_before, patient_contact, cfg):
 HAND_STOP_MODES = ("stop", "slow", "off")
 
 
+def hand_mode_from_param(value):
+    """파라미터 값 → (모드, 문제). YAML 1.1 은 따옴표 없는 off 를 false 로 읽는다 → off. 모르는 값은 stop (안전 쪽)."""
+    if value is False:
+        return "off", None
+    mode = str(value).strip().lower()
+    if mode in HAND_STOP_MODES:
+        return mode, None
+    return "stop", f"hand_stop_mode={value!r} 모름 → stop 으로 ({'|'.join(HAND_STOP_MODES)})"
+
+
+def hand_mode_reason(reason, mode):
+    """stop 이 아니면 reason 에 개발용 표시 (대시보드·DB 에 남게). 사유 문자열 자체는 앞에 그대로."""
+    if mode == "stop":
+        return reason
+    tag = f"hand_stop_dev_{mode}"
+    return f"{reason},{tag}" if reason else tag
+
+
 def hand_mode_level(level_reason, mode):
     """개발용 hand_stop_mode 적용 (순수 함수). stop = 그대로, slow = STOP → SLOW (사유 유지), off = NORMAL."""
     level, reason = level_reason
@@ -226,7 +248,9 @@ class SafetyMonitor(Node):
         self.declare_parameter("nudge_joint_speed_max_dps", 1.0)   # 관절 하나라도 이보다 빠르면 움직이는 중 (/dsr01/joint_states 100 Hz)
         self.declare_parameter("joint_states_topic", "/dsr01/joint_states")
         self.declare_parameter("contact_timeout_s", 0.5)     # contact_expected 하트비트 유효 시간
-        self.declare_parameter("hand_stop_mode", "stop")     # 개발용: stop(기본) | slow | off — 모듈 docstring. 시연 전 반드시 stop
+        self.declare_parameter("hand_stop_mode", "stop", ParameterDescriptor(   # 개발용: stop | slow | off — 모듈 docstring
+            read_only=True, dynamic_typing=True,                                # off 가 YAML 에서 false 로 와도 기동 (hand_mode_from_param)
+            description="개발용 손 근접 STOP: stop | slow | off. 실행 중 변경 불가. 시연·환자 앞에서는 slow 또는 stop"))
         # 손 거리 완화 (#59) — 값은 safety.yaml
         self.declare_parameter("hand_deep_stop_m", -0.15)            # 이보다 로봇 구역 깊이 들어오면 환자 접촉 중이어도 STOP
         self.declare_parameter("patient_contact_timeout_s", 0.5)     # /rally/safety/patient_contact 하트비트 유효 시간
@@ -290,6 +314,15 @@ class SafetyMonitor(Node):
         self.last_rx = {"hand": None, "wrench": None, "tcp": None}   # 마지막 수신 monotonic (None = 한 번도 못 받음)
         self.t_start = time.monotonic()
         self._mode_warn_t = -math.inf
+        self._hand_mode, problem = hand_mode_from_param(self.p("hand_stop_mode"))
+        if problem:
+            self.get_logger().error(problem)
+        if self._hand_mode == "stop":
+            self.get_logger().info("hand_stop_mode=stop (손 근접 STOP 켜짐)")
+        else:
+            self.get_logger().warning(f"★ hand_stop_mode={self._hand_mode} — 개발용. 손 근접 STOP 꺼짐"
+                                      + (", 손 판정 전체 꺼짐" if self._hand_mode == "off" else ", 손 근접은 SLOW 만")
+                                      + ". 남는 STOP: 힘 한계·nudge·작업 공간·estop·음성·필수 입력. 시연·환자 앞에서는 slow 또는 stop")
         # 시뮬(RALLY_SIM=1)은 에뮬레이터 툴 힘이 0 이라 force_publisher 가 발행을 건너뛸 수 있다 → 필수·끊김 STOP 검사 안 함 (경고 로그만)
         sim = os.environ.get("RALLY_SIM") == "1"
         self.required = [] if sim else list(self.p("required_inputs"))
@@ -474,13 +507,7 @@ class SafetyMonitor(Node):
         return level
 
     def hand_mode(self):
-        mode = str(self.p("hand_stop_mode"))
-        if mode not in HAND_STOP_MODES:
-            if not getattr(self, "_bad_mode_logged", False):
-                self.get_logger().error(f"hand_stop_mode={mode!r} 모름 → stop 으로 ({'|'.join(HAND_STOP_MODES)})")
-                self._bad_mode_logged = True
-            return "stop"
-        return mode
+        return self._hand_mode          # 기동 때 한 번 정함 (read_only)
 
     def hand_judge_visible(self, now, relax, cfg, mode):
         """개발용 slow/off: 지금 보이는(신선한) 손만 판정. 놓침·끊김은 손 없음과 같다 (직전 값을 들고 있지 않는다)."""
@@ -542,7 +569,8 @@ class SafetyMonitor(Node):
         msg = SafetyStatus()
         msg.header.stamp = self.get_clock().now().to_msg()
         hand = 9.9 if self.hand_dist is None else self.hand_dist      # NaN = 보이는데 거리 모름 (그대로 싣는다)
-        msg.level, msg.reason, msg.speed_override, msg.min_hand_distance = self.level, self.reason, self.override, float(hand)
+        msg.level, msg.reason, msg.speed_override, msg.min_hand_distance = (
+            self.level, hand_mode_reason(self.reason, self._hand_mode), self.override, float(hand))   # 래치 STOP 에도 개발용 표시
         self.pub.publish(msg)
 
 def main(args=None):

@@ -2,7 +2,7 @@
 # 실로봇 실행 — 터미널 3개로 나눈다. 1·2 는 앞에 띄워 두고 끌 때 그 터미널에서 Ctrl+C. (시뮬은 scripts/sim_robot.sh)
 #   터미널 1:  scripts/robot.sh bringup            # 두산 bringup (real). 이미 떠 있으면 거부
 #   터미널 2:  scripts/robot.sh nodes              # 비전 컨테이너 + 안전감시·힘·그리퍼·스킬서버. Ctrl+C 면 비전까지 끔
-#              HAND_STOP=slow scripts/robot.sh nodes   # 개발용: 손 근접 STOP → SLOW (off = 손 판정 안 함). 시연 전엔 빼기
+#              (개발 기간 기본 HAND_STOP=off — 손 판정 꺼짐) HAND_STOP=slow|stop scripts/robot.sh nodes  # 리허설·시연은 slow 또는 stop
 #              scripts/robot.sh nodes novision     #   비전 없이
 #   터미널 4:  scripts/robot.sh brain              # (세션으로 돌릴 때만) brain: context_builder + bt_runner (준비 확인 끔). DB·LLM·음성 없이
 #   터미널 3:  source scripts/robot.sh env         # 명령 터미널 (그 뒤 ros2 action send_goal ... / python3 scripts/...)
@@ -70,8 +70,17 @@ case "$1" in
       fi
     fi
     echo "[robot] safety_monitor → force_publisher · gripper_node · skill_server — 끌 때 Ctrl+C. 'skill_server ready' 가 나오면 터미널 3 에서 명령"
-    [ "${HAND_STOP:-stop}" != stop ] && echo "[robot] ★ 손 근접 STOP = ${HAND_STOP} (개발용). 시연·환자 앞에서는 HAND_STOP 없이"
-    ros2 launch rally_bringup pc1_robot.launch.py hand_stop:=${HAND_STOP:-stop}
+    HAND_STOP="${HAND_STOP:-off}"
+    if [ "$HAND_STOP" != stop ]; then
+      echo "[robot] ★★ 손 근접 STOP = ${HAND_STOP} (개발용, 10/11~ 기본 off)"
+      case "$HAND_STOP" in
+        off)  echo "[robot] ★★ 손 판정 통째로 꺼짐 — 근접 STOP·SLOW, 손 놓침 STOP, 손 끊김 SLOW 없음" ;;
+        slow) echo "[robot] ★★ 손이 가까우면 감속만 (멈추지 않음)" ;;
+      esac
+      echo "[robot] ★★ 남는 STOP: 힘 한계·nudge·작업 공간·estop·음성·필수 입력. 리허설·시연·환자 앞에서는 HAND_STOP=slow 또는 stop"
+      sleep 5
+    fi
+    ros2 launch rally_bringup pc1_robot.launch.py hand_stop:=${HAND_STOP}
     ;;
 
   brain)
