@@ -91,6 +91,8 @@ def build_trial(session: Session) -> py_trees.behaviour.Behaviour:
         level = session.difficulty.get(TrialResult.MODE_RESIST, 0)
         state.data["goal"] = resist_goal(target_force(level, cfg), cfg)
         log.info(f"[모드 7] 난이도 {level} → 목표 {state.data['goal'].target_force_n:.1f} N")
+        if cfg.get("push_prompt"):
+            session.say(cfg["push_prompt"])   # 시작 안내 (#119). 결과 문구는 PROMPTS
 
     def record(result: ResistPush.Result | None, reason: str) -> None:
         state.finish(trial_from_result(state.data["goal"], result, reason_code(reason)))

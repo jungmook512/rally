@@ -188,14 +188,28 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
         state.data["give_attempts"] = k
         session.say(cfg["retry_prompt"])
 
+    give_said: set[str] = set()   # 이번 GIVE 회차에 한 안내 (feedback phase 는 여러 번 온다)
+
+    def give_feedback(fb: Any) -> None:
+        # executor 스레드 — 말하기만 (비동기). 내민 뒤 당김 대기 → 잡기 안내, 당김 감지로 놓기 → 칭찬 (#119)
+        for phase, key in (("wait", "present_prompt"), ("release", "grasp_ok_prompt")):
+            if fb.phase == phase and phase not in give_said:
+                give_said.add(phase)
+                say(key)
+
+    def say(key: str) -> None:
+        if cfg.get(key):
+            session.say(cfg[key])
+
     give = skill_step(state, "건네기 GIVE", hand_client,
-                      lambda: handover_goal(Handover.Goal.DIR_GIVE, cfg["object_class"], state.data["tilt"]),
+                      lambda: give_said.clear() or handover_goal(Handover.Goal.DIR_GIVE, cfg["object_class"], state.data["tilt"]),
                       tries=tries, on_success=gave, on_fail=give_failed, on_interrupt=record_interrupt,
-                      can_retry=lambda r: r in cfg["retry_reasons"], on_retry=give_retry)
+                      can_retry=lambda r: r in cfg["retry_reasons"], on_retry=give_retry, on_feedback=give_feedback)
 
     # ── 받기 ──
     def received(_result: Handover.Result, _k: int) -> None:
         record("", received=1.0)
+        say("receive_ok_prompt")
 
     def receive_failed(_result: Any, reason: str, _k: int) -> None:
         state.data["abort_session"] = True
@@ -220,7 +234,7 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
         no_hand(session, cfg, TrialResult.MODE_HANDOVER),
         py_trees.composites.Selector("진행", memory=True, children=[
             py_trees.composites.Sequence("집기 → 건네기 → 받기", memory=True, children=[
-                Do("시작", start), pick_branch, give, receive]),
+                Do("시작", start), pick_branch, give, Do("돌려주기 안내", lambda: say("give_back_prompt")), receive]),
             Do("끝", end),
         ]),
     ]), on_stop)

@@ -162,6 +162,11 @@ def body_baseline(session: Session) -> py_trees.behaviour.Behaviour:
     ])
 
 
+def mode_prompt(session: Session, mode: int, key: str) -> str:
+    """skills.yaml mode<N>.<key> 음성 안내 (#119). 없거나 비면 ""."""
+    return str((session.skills_cfg.get(f"mode{mode}") or {}).get(key) or "")
+
+
 def build_session_tree(session: Session, modes: list[int], trials_per_mode: int) -> py_trees.behaviour.Behaviour:
     session.modes = list(modes)
     root = py_trees.composites.Sequence("세션", memory=True)
@@ -174,6 +179,9 @@ def build_session_tree(session: Session, modes: list[int], trials_per_mode: int)
             if session.current_mode != m:
                 session.current_mode = m
                 session.node.get_logger().info(f"{n} 시작")
+                intro = mode_prompt(session, m, "intro_prompt")
+                if intro:
+                    session.say(intro)
 
         builder = TRIAL_BUILDERS.get(mode)
         if builder is None:
@@ -186,4 +194,6 @@ def build_session_tree(session: Session, modes: list[int], trials_per_mode: int)
             Do(f"{name} 시작", enter), builder(session),
         ])
         root.add_child(py_trees.decorators.Repeat(f"{name} × {count}", trial, count))
+        if mode_prompt(session, mode, "done_prompt"):
+            root.add_child(Do(f"{name} 끝 안내", lambda m=mode: session.say(mode_prompt(session, m, "done_prompt"))))
     return root
