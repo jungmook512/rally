@@ -22,7 +22,7 @@ OK = (True, {"success": True, "contact_force_peak": 3.0})
 
 def cfg():
     c = yaml.safe_load((CONFIG / 'skills.yaml').read_text())
-    c['mode1'].update(catch_timeout_s=.01, hand_clear_wait_s=.02)
+    c['mode1'].update(catch_timeout_s=.01, hand_clear_wait_s=.02, hand_hold_s=0.0)   # 손 머묾은 test_lane_waits_for_hand_to_stay 에서
     return c
 
 
@@ -101,6 +101,31 @@ def test_hand_arrives_during_wait():
     assert client.sent == 0 and tree.status == Status.RUNNING
     session.get_context().hand = hand()
     assert run(tree) == Status.SUCCESS and client.sent == 1 and len(published) == 1
+
+
+def test_lane_waits_for_hand_to_stay(monkeypatch):
+    # 10/11 실로봇: 지나가는 손 한 프레임으로 레인 0 → 치기. 손바닥이 hand_hold_tol_m 안에 hand_hold_s 머문 뒤 그 레인으로
+    clock = [0.]
+    monkeypatch.setattr(m, 'time', NS(monotonic=lambda: clock[0]))
+    c = cfg()
+    c['mode1'].update(hand_hold_s=1.5, hand_hold_tol_m=.04)
+    client, session, _ = arrange([OK], c)
+    lanes = c['mode1']['lanes']
+    y0, y1 = float(lanes[0]['start'][1]), float(lanes[1]['start'][1])
+    session.get_context().hand = hand(y=y0)            # 레인 0 위를 지나가는 손
+    tree = m.build_trial(session)
+    tree.tick_once()
+    clock[0] = .5
+    session.get_context().hand = hand(y=y1)            # 레인 1 로 옮겨 감 → 다시 셈
+    tree.tick_once()
+    clock[0] = 1.9
+    session.get_context().hand = hand(y=y1)
+    tree.tick_once()
+    assert client.sent == 0                             # 레인 1 에 1.4 s — 아직
+    clock[0] = 2.1
+    session.get_context().hand = hand(y=y1)
+    tree.tick_once()
+    assert client.sent == 1 and client.goals[-1].lane == 1
 
 
 @pytest.mark.parametrize('bad', ['missing', 'nan', 'negative', 'range', 'speed_range', 'lane', 'table', 'unreachable'])
@@ -220,7 +245,7 @@ def test_stop_before_goal_and_midflight_cancels():
     session.get_context().safety.level = SafetyStatus.LEVEL_NORMAL
     canceled = []
     pending = NS(done=lambda: False)
-    def send(goal):
+    def send(goal, feedback_callback=None):
         client.goals.append(goal)
         return Done(NS(accepted=True, get_result_async=lambda: pending,
                        cancel_goal_async=lambda: canceled.append(True)))
@@ -281,7 +306,7 @@ def test_cancel_during_clear_wait_records_once_and_never_returns(monkeypatch):
     assert published[0].notes == 'interrupted'
 
 
-def test_catch_needs_fresh_open_grab_hold_release():
+def test_catch_needs_fresh_grab_hold_release():
     c = m.mode1_config(cfg())
     w = m.CatchWatch(c, 1_000_000_000)
     def sample(t, grip, **kwargs):
@@ -291,8 +316,8 @@ def test_catch_needs_fresh_open_grab_hold_release():
         for k, v in kwargs.items(): setattr(h, k, v)
         return h
     assert not w.update(sample(.9, 0), 1_100_000_000)  # 타격 전
-    assert not w.update(sample(1.1, .8), 1_100_000_000)  # 펼침부터 필요
-    assert not w.update(sample(1.2, 0), 1_200_000_000)
+    assert not w.update(sample(1.1, .8), 1_100_000_000)
+    assert not w.update(sample(1.2, 0), 1_200_000_000)  # 쥠 0.1 s — 유지 부족
     assert not w.update(sample(1.3, .8), 1_300_000_000)
     assert not w.update(sample(1.3, .8), 1_800_000_000)  # 반복 표본으로 유지 판정 금지
     assert not w.grabbed
@@ -304,6 +329,11 @@ def test_catch_needs_fresh_open_grab_hold_release():
         assert not w.update(sample(t, g), int(t*1e9))
     assert not w.update(sample(1.7, 0, detected=False), 1_700_000_000)
     assert not w.update(sample(1.8, 0), 1_800_000_000)  # 미검출 이후 이전 파지로 성공 금지
+    # 10/8 실로봇: 쥔 채로 화면에 들어옴(펼침 못 봄) → 0.3 s 넘게 쥐었다 펴면 받기
+    w = m.CatchWatch(c, 1_000_000_000)
+    for t in (1.1, 1.2, 1.3, 1.45):
+        assert not w.update(sample(t, .8), int(t*1e9))
+    assert w.grabbed and w.update(sample(1.5, .1), 1_500_000_000)
 
 
 def test_hand_view_failure_does_not_push():
@@ -399,3 +429,44 @@ def test_clear_wait_logs_reason_on_change_and_period(monkeypatch):
     session.get_context().hand = hand()
     assert run(tree) == Status.SUCCESS
     assert '[모드 1] 손 이탈 확인 — 회수 진행' in logged
+
+
+def test_stop_measured_during_catch_watch():
+    # 받기 관측 중 레인 공이 멈춰 있으면 정지 위치 → error_mm·stop_d_m (vision_offset_m 보정 뒤)
+    from rally_interfaces.msg import TrackedObject
+    config = cfg()
+    config['mode1']['stop_still_s'] = 0.0
+    client, session, published = arrange([OK], config)
+    c = m.mode1_config(config)
+    plan = m.plan_push(hand(), 1, 0, c, session.table_cfg)
+    sx, sy, dx, dy = m.lane_geometry(c['lanes'][1])
+    ox, oy, _ = c['vision_offset_m']
+    ball = TrackedObject(class_name='ball', confidence=.9)
+    ball.position.x = plan['target'][0] + .02 * dx - ox
+    ball.position.y = plan['target'][1] + .02 * dy - oy
+    ball.position.z = .046
+    session.get_context().objects.objects = [ball]
+    assert run(m.build_trial(session)) == Status.SUCCESS
+    t = published[0]
+    assert t.error_mm == pytest.approx(20.0, abs=.5)
+    assert metric(t, 'stop_d_m') == pytest.approx(plan['target_d'] + .02, abs=1e-3)
+
+
+def test_lane_ball_and_stopwatch():
+    from rally_interfaces.msg import TrackedObject, TrackedObjectArray
+    c = m.mode1_config(cfg())
+    c['vision_offset_m'] = [0., 0., 0.]
+    sx, sy, dx, dy = m.lane_geometry(c['lanes'][1])
+    arr = TrackedObjectArray()
+    arr.header.frame_id = 'base_link'
+
+    def ball(along, lat=0., z=.046):
+        o = TrackedObject(class_name='ball', confidence=.9)
+        o.position.x, o.position.y, o.position.z = sx + along * dx - lat * dy, sy + along * dy + lat * dx, z
+        return o
+    # 입구 2 cm(너무 가까움)·옆 레인·들린 공은 빼고 레인 안에서 가장 멀리 간 공
+    arr.objects = [ball(.02), ball(.30), ball(.25, lat=.15), ball(.40, z=.20)]
+    assert m.lane_ball(c, arr, 1)[0] == pytest.approx(.30)
+    w = m.StopWatch(.5, .01)
+    assert w.add(0., (.7, 0.)) is None and w.add(.6, (.705, 0.)) == (.7, 0.)
+    assert w.add(.7, None) is None and w.add(.8, (.7, 0.)) is None

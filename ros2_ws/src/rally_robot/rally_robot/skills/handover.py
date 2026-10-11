@@ -44,6 +44,15 @@ DEFAULTS = dict(present_pose=None, present_margin_m=0.06, present_y_m=0.0, prese
 AXES = {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0)}
 
 
+def grasp_wrist_deg(hand, now_ns, max_age_s=1.0):
+    """잡는 순간 손목 각도. 손 노드가 가까운 프레임을 걸러 직전 값을 유지하므로 detected 와 관계없이 그 값을 쓴다 (#92).
+    손 메시지가 없거나 max_age_s 보다 오래됐으면 NaN (못 잼 — 0° 는 정상 값이라 쓰지 않는다, #69)."""
+    if hand is None:
+        return math.nan
+    age_s = (now_ns - (hand.header.stamp.sec * 1_000_000_000 + hand.header.stamp.nanosec)) / 1e9
+    return float(hand.wrist_angle_deg) if 0.0 <= age_s <= max_age_s else math.nan
+
+
 def _retreat_pose(pose6, retreat_m):
     """제시 위치에서 베이스 원점 방향(수평)으로 retreat_m 물러난 posx."""
     x, y = pose6[0], pose6[1]
@@ -177,8 +186,7 @@ def execute(node):
                     res.failure_reason = "timeout"
                     log.warning(f"[handover] {timeout_s:.0f} s 동안 힘 감지 없음 — 실패")
                 else:
-                    wrist = node.last_hand.wrist_angle_deg if node.last_hand is not None and node.last_hand.detected else 0.0
-                    res.wrist_angle_at_grasp_deg = float(wrist)
+                    res.wrist_angle_at_grasp_deg = grasp_wrist_deg(node.last_hand, node.get_clock().now().nanoseconds)
                     if give:
                         phase("release")
                         ok, _, _ = node.gripper(open_mm, grip_force)

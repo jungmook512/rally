@@ -281,7 +281,8 @@ class Advisor:
 def openai_llm(model: str, temperature: float, timeout_s: float, *,
                tool_name: str = TOOL_NAME, description: str = "다음 시도 파라미터 제안",
                base_url: str | None = None) -> LlmCall | None:
-    """OpenAI 함수 호출. 키(OPENAI_API_KEY, docker/.env)가 없으면 None → 항상 대체값."""
+    """OpenAI 함수 호출. 키(OPENAI_API_KEY, docker/.env)가 없으면 None → 항상 대체값.
+    tool_name·description: 휴식 판단·세션 리포트(session_report.py)도 같은 경로를 쓴다."""
     key = os.environ.get("OPENAI_API_KEY")
     if not key:
         return None
@@ -301,7 +302,7 @@ def openai_llm(model: str, temperature: float, timeout_s: float, *,
         if not calls:
             raise ValueError("함수 호출 없이 글로 답함")
         if tool_name != TOOL_NAME and (len(calls) != 1 or calls[0].function.name != tool_name):
-            raise ValueError("휴식 판단 함수 이름 또는 호출 개수 불일치")
+            raise ValueError(f"{tool_name} 함수 이름 또는 호출 개수 불일치")
         return json.loads(calls[0].function.arguments)
 
     return call

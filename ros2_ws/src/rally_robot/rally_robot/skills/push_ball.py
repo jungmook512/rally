@@ -100,7 +100,18 @@ DEFAULTS = dict(
     hand_view_back_m=0.10,         # 레인 입구(공 놓는 자리)에서 로봇 쪽으로 이만큼 뒤 (TCP)
     hand_view_height_m=0.30,       # 테이블 위 TCP 높이
     hand_view_hold_s=2.0,          # (end_at_hand_view 가 아닐 때) 이 자세에서 기다렸다 관측 자세로
-    end_at_hand_view=True,         # 친 뒤 손 보기 자세에서 끝낸다 — brain 이 환자가 공을 받는지(쥐었다 폄) 본다 (10/8 회의)
+    hand_view_joint_vel_deg_s=30.0,   # 손 보기 자세 관절 이동 상한 (motion: 의 절반). 10/8 실로봇: 손목 45° 기울이는 이 이동에서
+    hand_view_joint_acc_deg_s2=60.0,  #   관절 토크 추정 툴 힘이 19 N(도착 감속)·25 N 초과(force_limit STOP) — 접촉 없음
+    end_at_hand_view=True,
+    # 친 뒤 정지 위치 재기 → result.stop_position·error_mm. 레인 통로 안 공이 still_s 동안 tol_m 안에서 그대로면 멈춤
+    #   기본 끔: 세션에선 brain 이 받기 확인과 동시에 잰다 (로봇이 여기서 기다리면 그동안 환자가 공을 잡는 걸 brain 이 못 봄).
+    #   PushBall 을 brain 없이 단독으로 쓸 때(수동 시험) true
+    stop_measure=False,
+    stop_wait_s=6.0,               # 손 보기(또는 관측) 자세에 도착한 뒤 이만큼까지 기다림. 못 재면 stop_position 0 (brain 은 NaN 으로 기록)
+    stop_still_s=0.8,
+    stop_tol_m=0.01,
+    stop_lane_halfwidth_m=0.07,    # 레인 통로 반폭
+    stop_min_along_m=0.05,         # 레인 입구에서 이만큼은 굴러간 공만 (놓은 자리에 남은 공 무시)         # 친 뒤 손 보기 자세에서 끝낸다 — brain 이 환자가 공을 받는지(쥐었다 폄) 본다 (10/8 회의)
 )
 
 
@@ -201,6 +212,60 @@ def _plan(goal, cfg, lanes, table):
     return pts, dict(ball=(bx, by), dir_deg=dir_deg, src=src, end_xy=end_xy, z_push=z_push)
 
 
+def balls_in_lane(objects, cfg, lane_cfg, dir_deg, table_z):
+    """TrackedObjectArray → 레인 통로 안 공 [(입구에서 레인 방향 거리, x, y)] (비전 보정 뒤, base m). 순수 함수 — 테스트용."""
+    if objects is None or objects.header.frame_id not in ("base_link", ""):
+        return []
+    ox, oy, _ = cfg["vision_offset_m"]
+    sx, sy = float(lane_cfg["start"][0]), float(lane_cfg["start"][1])
+    c, s_ = math.cos(math.radians(dir_deg)), math.sin(math.radians(dir_deg))
+    out = []
+    for o in objects.objects:
+        if o.class_name != cfg["pickup_class"] or o.confidence < cfg["pickup_min_conf"]:
+            continue
+        if o.position.z > table_z + cfg["pickup_z_max_above_table_m"]:
+            continue
+        x, y = o.position.x + ox, o.position.y + oy
+        along, lat = (x - sx) * c + (y - sy) * s_, -(x - sx) * s_ + (y - sy) * c
+        if along >= cfg["stop_min_along_m"] and abs(lat) <= cfg["stop_lane_halfwidth_m"]:
+            out.append((along, x, y))
+    return sorted(out, reverse=True)
+
+
+class StopWatch:
+    """프레임마다 add(t, (x, y)) — still_s 동안 tol_m 안에서 그대로면 그 위치. 트래커 is_moving 은 아직 믿지 않는다."""
+
+    def __init__(self, still_s, tol_m):
+        self.still_s, self.tol_m = still_s, tol_m
+        self.ref, self.since = None, None
+
+    def add(self, t, p):
+        if p is None:
+            self.ref, self.since = None, None
+            return None
+        if self.ref is None or math.dist(p, self.ref) > self.tol_m:
+            self.ref, self.since = p, t
+            return None
+        return self.ref if t - self.since >= self.still_s else None
+
+
+def measure_stop(node, cfg, lane_cfg, dir_deg, table_z, check_stop, log):
+    """레인 안 공이 멈출 때까지 (stop_wait_s) → (x, y) 또는 None. 가장 멀리 간 공을 본다."""
+    watch, t0, last = StopWatch(cfg["stop_still_s"], cfg["stop_tol_m"]), time.monotonic(), None
+    while time.monotonic() - t0 < cfg["stop_wait_s"]:
+        check_stop()
+        obj = getattr(node, "objects", None)
+        if obj is not None and obj[0] != last and obj[0] - t0 >= cfg["pickup_settle_s"]:
+            last = obj[0]
+            balls = balls_in_lane(obj[1], cfg, lane_cfg, dir_deg, table_z)
+            got = watch.add(obj[0], (balls[0][1], balls[0][2]) if balls else None)
+            if got:
+                return got
+        time.sleep(0.02)
+    log.warning(f"[push_ball] {cfg['stop_wait_s']:.0f} s 안에 레인 안 공이 멈춘 걸 못 봄 — 정지 위치 비움 (환자가 먼저 잡았거나 화면 밖)")
+    return None
+
+
 def speed_for_target(goal, lane_cfg, recipe, dir_deg):
     """goal.target(목표 정지 위치, base m) → 스윙 속도 [m/s]. 레시피 d = v²/(2a) + d0 (scripts/push_recipe.py 로 맞춘 레인별 a, d0).
     d = 레인 입구에서 목표까지 레인 방향 거리. 반환 (속도, 거리). 레시피가 없거나 목표가 레시피 범위 밖이면 SkillAbort."""
@@ -226,6 +291,12 @@ def _speeds(node):
 def _joint(node):
     """관절 이동 (속도 deg/s, 가속 deg/s²) — skills.yaml motion:."""
     return motion_speeds(node)[4:]
+
+
+def hand_view_joint(node, cfg):
+    """손 보기 자세 관절 이동 (속도, 가속) — motion: 값과 mode1.hand_view_joint_* 중 작은 쪽."""
+    jv, ja = _joint(node)
+    return min(jv, cfg["hand_view_joint_vel_deg_s"]), min(ja, cfg["hand_view_joint_acc_deg_s2"])
 
 
 def _release_compliance(log):
@@ -489,7 +560,7 @@ def execute(node):
 
             if cfg["hand_view"] and pts["hand_view"]:  # 친 뒤 환자 손 보기 (공을 받는 모습)
                 phase("hand_view", 0.7)
-                movej_to_pose(node, pts["hand_view"], *_joint(node))
+                movej_to_pose(node, pts["hand_view"], *hand_view_joint(node, cfg))
                 if not cfg["end_at_hand_view"]:
                     t_hv = time.monotonic()
                     while time.monotonic() - t_hv < cfg["hand_view_hold_s"]:
@@ -500,7 +571,22 @@ def execute(node):
                 phase("observe", 0.8)
                 if posj:
                     movej_checked(node, posj, *_joint(node))
-            # TODO(박성현·정정인): /rally/perception/objects 에서 공 is_moving=false 대기 → stop_position, error_mm
+            if cfg["stop_measure"] and int(goal.lane) < len(lanes):
+                phase("measure", 0.9)
+                tz = float(table.get("z_m") or 0.0)
+                stop = measure_stop(node, cfg, lanes[int(goal.lane)], info["dir_deg"], tz, lambda: node.check_stop(goal_handle), log)
+                if stop:
+                    res.stop_position.x, res.stop_position.y, res.stop_position.z = stop[0], stop[1], tz + cfg["ball_radius_m"]
+                    sx, sy = info["ball"]
+                    d_stop = math.dist(stop, (sx, sy))
+                    if abs(goal.target.point.x) + abs(goal.target.point.y) > 1e-6:
+                        res.error_mm = float(math.dist(stop, (goal.target.point.x, goal.target.point.y)) * 1000.0)
+                        d_tgt = math.dist((goal.target.point.x, goal.target.point.y), (sx, sy))
+                        log.info(f"[push_ball] 정지 ({stop[0]:.3f}, {stop[1]:.3f}) — 입구에서 {d_stop * 100:.1f} cm "
+                                 f"(목표 {d_tgt * 100:.1f} cm, 오차 {res.error_mm:.0f} mm)")
+                    else:
+                        res.error_mm = float("nan")            # 목표가 없으면 오차 없음
+                        log.info(f"[push_ball] 정지 ({stop[0]:.3f}, {stop[1]:.3f}) — 입구에서 {d_stop * 100:.1f} cm")
             res.success = True
             res.contact_force_peak = 0.0
             res.failure_reason = ""

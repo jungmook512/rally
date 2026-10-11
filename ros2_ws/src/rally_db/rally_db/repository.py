@@ -4,6 +4,7 @@
 ROS 를 모르는 순수 파이썬. recorder_node 가 메시지를 dict·튜플로 바꿔서 여기 함수를 부른다 (로봇 없이 pytest 가능).
 
 DB  : sessions · trials(즉시) · ts_wrench · ts_hand(묶어서) · events
+      kg_node · kg_edge (지식 그래프, schema_004 — 테이블이 없는 옛 DB 면 그래프만 건너뛰고 시도는 그대로 쓴다)
 Redis: rally:state  (현재 상태 JSON, 덮어쓰기)
        rally:events (pub/sub 채널, 대시보드가 구독)
        rally:dialog (최근 대화 목록, TTL 5분)
@@ -35,6 +36,10 @@ DIALOG_MAX_LEN = 50
 DEFAULT_DATABASE_URL = "postgresql://rally:rally@127.0.0.1:5432/rally"
 DEFAULT_REDIS_URL = "redis://127.0.0.1:6379/0"
 
+# 기록 쪽 그래프 (schema_004). 개념 노드('rally:…')는 rally_brain/graph_rag.py 가 온톨로지에서 채운다.
+COMPENSATION_KEYS = frozenset(("trunk_lean", "shoulder_hike"))   # BodyPose.compensation_type, 온톨로지 key = 이름
+EXCLUDED_NOTES = ("no_hand", "interrupted")                     # metrics.yaml exclude_notes 와 같게
+
 
 
 class StorageUnavailable(RuntimeError):
@@ -48,6 +53,7 @@ class Repository:
         self.redis_url = redis_url or os.environ.get("REDIS_URL", DEFAULT_REDIS_URL)
         self.connect_timeout_s = connect_timeout_s
         self._db: psycopg.Connection | None = None
+        self._graph_ready = False
         self._redis = redis.Redis.from_url(self.redis_url, socket_timeout=connect_timeout_s,
                                            socket_connect_timeout=connect_timeout_s, decode_responses=True)
 
@@ -101,24 +107,91 @@ class Repository:
         self._execute("UPDATE sessions SET ended_at = now(), report_md = COALESCE(%s, report_md) WHERE id = %s",
                       (report_md, session_id))
 
-    def add_trial(self, trial: dict[str, Any]) -> int:
+    def add_trial(self, trial: dict[str, Any], observed: Sequence[str] = ()) -> int:
         """trials 한 줄. trial 키: session_id, mode, trial_index, started_at, duration_s, success, error_mm,
-        params, metrics (dict), decision (dict|None), feature_vec (list[float]|None). 새 trial id 를 돌려준다."""
+        params, metrics (dict), decision (dict|None), feature_vec (list[float]|None). 새 trial id 를 돌려준다.
+        observed = 이 시도 동안 보인 보상 동작 key. 그래프 테이블이 있으면 세션 —hasTrial→ 시도 —inMode→ 모드,
+        시도 —observed→ 보상 동작 관계도 같은 트랜잭션으로 쓴다 (둘 중 하나만 들어가 재시도 때 시도가 겹치지 않게)."""
         vec = trial.get("feature_vec")
-        cur = self._execute(
-            """INSERT INTO trials (session_id, mode, trial_index, started_at, duration_s, success, error_mm,
-                                   params, metrics, decision, feature_vec)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::vector) RETURNING id""",
-            (trial["session_id"], trial["mode"], trial["trial_index"], trial["started_at"],
-             trial.get("duration_s"), trial.get("success"), trial.get("error_mm"),
-             Jsonb(trial.get("params") or {}), Jsonb(trial.get("metrics") or {}),
-             Jsonb(trial["decision"]) if trial.get("decision") is not None else None,
-             _vector_literal(vec) if vec is not None else None))
-        # 세션에서 해 본 모드 목록 갱신 (중복 없이)
-        self._execute("""UPDATE sessions SET modes = array_append(COALESCE(modes, '{}'), %s::smallint)
-                         WHERE id = %s AND NOT (%s::smallint = ANY(COALESCE(modes, '{}')))""",
-                      (trial["mode"], trial["session_id"], trial["mode"]))
-        return cur.fetchone()[0]
+        graph = self.graph_ready()
+        conn = self._conn()
+        try:
+            with conn.transaction():
+                trial_id = conn.execute(
+                    """INSERT INTO trials (session_id, mode, trial_index, started_at, duration_s, success, error_mm,
+                                           params, metrics, decision, feature_vec)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::vector) RETURNING id""",
+                    (trial["session_id"], trial["mode"], trial["trial_index"], trial["started_at"],
+                     trial.get("duration_s"), trial.get("success"), trial.get("error_mm"),
+                     Jsonb(trial.get("params") or {}), Jsonb(trial.get("metrics") or {}),
+                     Jsonb(trial["decision"]) if trial.get("decision") is not None else None,
+                     _vector_literal(vec) if vec is not None else None)).fetchone()[0]
+                # 세션에서 해 본 모드 목록 갱신 (중복 없이)
+                conn.execute("""UPDATE sessions SET modes = array_append(COALESCE(modes, '{}'), %s::smallint)
+                                WHERE id = %s AND NOT (%s::smallint = ANY(COALESCE(modes, '{}')))""",
+                             (trial["mode"], trial["session_id"], trial["mode"]))
+                if graph:
+                    nodes, edges = trial_graph(trial, trial_id, observed)
+                    _insert_graph(conn, nodes, edges)
+        except psycopg.OperationalError as e:
+            conn.close()   # 다음 호출에서 새로 연결. 트랜잭션은 통째로 취소됐으니 다시 써도 겹치지 않는다
+            raise StorageUnavailable(f"DB 쓰기 실패: {e}") from e
+        return trial_id
+
+    # ---------- 지식 그래프 (schema_004) ----------
+    def graph_ready(self) -> bool:
+        """kg_edge 테이블이 있는가. 있으면 기억하고, 없으면 매번 다시 본다 (나중에 schema_004 를 적용해도 재시작 없이)."""
+        if not self._graph_ready:
+            self._graph_ready = self._execute("SELECT to_regclass('kg_edge') IS NOT NULL").fetchone()[0]
+        return self._graph_ready
+
+    def upsert_graph(self, nodes: Sequence[tuple], edges: Sequence[tuple]) -> None:
+        """nodes (id, kind, label, props|None) · edges (src, rel, dst, session_id|None). 이미 있으면 이름표만 갱신."""
+        conn = self._conn()
+        try:
+            with conn.transaction():
+                _insert_graph(conn, nodes, edges)
+        except psycopg.OperationalError as e:
+            conn.close()
+            raise StorageUnavailable(f"DB 쓰기 실패: {e}") from e
+
+    def graph_trials(self, session_id: str, k: int = 5) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Graph RAG 재료. (이번 세션 시도, 비슷한 과거 시도) — 각 줄: trial_id, mode, success, notes,
+        observed(보상 동작 노드 id 목록), signals(그 보상 동작 —indicatesFatigue→ 노드 id 목록).
+        비슷한 과거 시도 = 이번 세션 시도마다 같은 모드·다른 세션에서 feature_vec 가 가장 가까운 k 개 (겹치면 한 번).
+        환자 부재·중단 시도는 비슷한 시도에서 뺀다."""
+        hops = """
+            SELECT s.trial_id, s.mode, s.success, s.notes,
+                   COALESCE(array_agg(DISTINCT o.dst) FILTER (WHERE o.dst IS NOT NULL), '{}') AS observed,
+                   COALESCE(array_agg(DISTINCT f.dst) FILTER (WHERE f.dst IS NOT NULL), '{}') AS signals
+            FROM picked s
+            LEFT JOIN kg_edge o ON o.src = 'trial:' || s.trial_id AND o.rel = 'observed'
+            LEFT JOIN kg_edge f ON f.src = o.dst AND f.rel = 'indicatesFatigue'
+            GROUP BY s.trial_id, s.mode, s.success, s.notes
+            ORDER BY s.trial_id"""
+        current = self._rows(
+            """WITH picked AS (
+                 SELECT t.id AS trial_id, t.mode, t.success, COALESCE(t.decision->>'notes', '') AS notes
+                 FROM kg_edge h JOIN trials t ON h.dst = 'trial:' || t.id
+                 WHERE h.src = 'session:' || %s AND h.rel = 'hasTrial')""" + hops, (session_id,))
+        similar = self._rows(
+            """WITH cur AS (
+                 SELECT mode, feature_vec FROM trials WHERE session_id = %s::uuid AND feature_vec IS NOT NULL
+               ), picked AS (
+                 SELECT DISTINCT n.trial_id, n.mode, n.success, n.notes
+                 FROM cur CROSS JOIN LATERAL (
+                   SELECT t.id AS trial_id, t.mode, t.success, COALESCE(t.decision->>'notes', '') AS notes
+                   FROM trials t
+                   WHERE t.mode = cur.mode AND t.session_id <> %s::uuid AND t.feature_vec IS NOT NULL
+                     AND COALESCE(t.decision->>'notes', '') <> ALL(%s)
+                   ORDER BY t.feature_vec <-> cur.feature_vec, t.id LIMIT %s) n
+               )""" + hops, (session_id, session_id, list(EXCLUDED_NOTES), k))
+        return current, similar
+
+    def _rows(self, sql: str, params: Sequence[Any]) -> list[dict[str, Any]]:
+        cur = self._execute(sql, params)
+        names = [d.name for d in cur.description]
+        return [dict(zip(names, r)) for r in cur.fetchall()]
 
     def find_similar_trials(self, vec: Sequence[float], mode: int, k: int = 3,
                             exclude_session_id: str | None = None) -> list[dict[str, Any]]:
@@ -193,6 +266,34 @@ class Repository:
 
     def get_dialog(self) -> list[dict[str, str]]:
         return [json.loads(x) for x in self._redis_call(self._redis.lrange, DIALOG_KEY, 0, -1)]
+
+
+def trial_graph(trial: dict[str, Any], trial_id: int, observed: Sequence[str] = ()) -> tuple[list[tuple], list[tuple]]:
+    """시도 한 줄 → 그래프 노드·관계. 개념 노드(모드·보상 동작)는 이름표 없이 자리만 만든다 (온톨로지가 채움).
+    모르는 보상 동작 key 는 버린다."""
+    sid, trial_node = str(trial["session_id"]), f"trial:{trial_id}"
+    mode_node = f"rally:mode{int(trial['mode'])}"
+    comps = sorted({c for c in observed if c in COMPENSATION_KEYS})
+    nodes = [(f"session:{sid}", "Session", None, None), (trial_node, "Trial", None, None),
+             (mode_node, "Mode", None, None)] + [(f"rally:{c}", "Compensation", None, None) for c in comps]
+    edges = [(f"session:{sid}", "hasTrial", trial_node, sid), (trial_node, "inMode", mode_node, sid)]
+    edges += [(trial_node, "observed", f"rally:{c}", sid) for c in comps]
+    return nodes, edges
+
+
+def _insert_graph(conn: psycopg.Connection, nodes: Sequence[tuple], edges: Sequence[tuple]) -> None:
+    """트랜잭션 안에서. 노드는 이름표가 있을 때만 덮어쓰고(기록 쪽 빈 자리가 온톨로지 이름표를 지우지 않게), 관계는 한 번만."""
+    with conn.cursor() as cur:
+        if nodes:
+            cur.executemany(
+                """INSERT INTO kg_node (id, kind, label, props) VALUES (%s, %s, %s, %s)
+                   ON CONFLICT (id) DO UPDATE SET kind = EXCLUDED.kind,
+                       label = COALESCE(EXCLUDED.label, kg_node.label), props = COALESCE(EXCLUDED.props, kg_node.props)""",
+                [(i, kind, label, Jsonb(props) if props is not None else None) for i, kind, label, props in nodes])
+        if edges:
+            cur.executemany(
+                """INSERT INTO kg_edge (src, rel, dst, session_id) VALUES (%s, %s, %s, %s)
+                   ON CONFLICT (src, rel, dst) DO NOTHING""", list(edges))
 
 
 def _vector_literal(vec: Sequence[float]) -> str:

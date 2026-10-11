@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 import py_trees
 
 from std_srvs.srv import Trigger
+from rally_brain import hand_stop
 from rally_brain.config import load_safety
 from rally_brain.behaviours import Do, Guard, ServiceCall, WaitUntil
 from rally_brain.trees.steps import HAND_DEFAULTS, TrialState, no_hand, reason_code, skill_step
@@ -28,7 +29,14 @@ RETURN_ACTION = "/rally/skill/return_ball"
 HAND_VIEW_SERVICE = "/rally/robot/go_hand_view"
 DEFAULTS: dict[str, Any] = {**HAND_DEFAULTS, "balls_per_cycle": 4, "push_speed_range": [0.05, 0.35],
                            "hand_max_age_s": 1.0, "patient_margin_m": 0.05,
-                           "hand_clear_m": 0.20, "hand_clear_log_s": 2.0}
+                           "hand_clear_m": 0.20, "hand_clear_log_s": 2.0,
+                           # 레인 결정: 손바닥이 hand_hold_tol_m 안에서 hand_hold_s 머물러야 (10/11 실로봇: 지나가는 손 한 프레임으로 레인 0 → 치기)
+                           "hand_hold_s": 1.5, "hand_hold_tol_m": 0.04,
+                           # 정지 위치: 받기 관측 중 손 보기 자세 카메라(SceneContext.objects)로, 손이 쥐기 전까지만 잰다
+                           # still_s 짧게: 공은 로봇이 손 보기 자세에 오기 전에 이미 멈춰 있다 (10/8 시뮬: 치고 ≈ 4.6 s 뒤 도착)
+                           "stop_still_s": 0.3, "stop_tol_m": 0.01, "stop_lane_halfwidth_m": 0.07,
+                           "stop_min_along_m": 0.05, "stop_z_max_m": 0.10,
+                           "pickup_class": "ball", "pickup_min_conf": 0.6, "vision_offset_m": [0.0, 0.0, 0.0]}
 
 
 def mode1_config(skills_cfg: dict) -> dict[str, Any]:
@@ -119,6 +127,7 @@ def measured_error_mm(result: PushBall.Result) -> float:
 
 
 def trial_from_result(plan: dict, result: PushBall.Result | None, notes: str, success: bool = False) -> TrialResult:
+    """plan["stop"] = brain 이 잰 정지 위치 (base m) 가 있으면 그것으로 error_mm·stop_x/y, 없으면 로봇 결과로 (0 이면 못 잼 → NaN, #69)."""
     keys = ["lane", "push_speed", "target_d_m", "level", "reach_requested_m", "reach_actual_m", "target_x_m", "target_y_m", "hand_start_d_m"]
     target = plan.get("target", (math.nan, math.nan))
     values = [plan.get("lane", -1), plan.get("speed", math.nan), plan.get("target_d", math.nan),
@@ -126,13 +135,58 @@ def trial_from_result(plan: dict, result: PushBall.Result | None, notes: str, su
     trial = TrialResult(mode=TrialResult.MODE_PUSH_BALL, success=success, notes=notes,
                         error_mm=measured_error_mm(result) if result is not None else math.nan,
                         param_keys=keys, param_values=[float(v) for v in values])
+    stop = plan.get("stop")
+    if stop is not None:
+        trial.error_mm = math.dist(stop, target) * 1000.0 if all(map(math.isfinite, target)) else math.nan
     if result is not None:
         p = result.stop_position
         measured = all(math.isfinite(v) for v in (p.x, p.y, p.z)) and (p.x, p.y, p.z) != (0, 0, 0)
-        trial.metric_keys = ["contact_force_peak", "stop_x_m", "stop_y_m"]
-        trial.metric_values = [float(result.contact_force_peak), float(p.x) if measured else math.nan,
-                               float(p.y) if measured else math.nan]
+        if stop is None and measured:
+            stop = (p.x, p.y)
+        trial.metric_keys = ["contact_force_peak"]
+        trial.metric_values = [float(result.contact_force_peak)]
+    stop = stop if stop is not None else (math.nan, math.nan)
+    trial.metric_keys = list(trial.metric_keys) + ["stop_x_m", "stop_y_m", "stop_d_m"]
+    trial.metric_values = [*trial.metric_values, float(stop[0]), float(stop[1]), float(plan.get("stop_d", math.nan))]
     return trial
+
+
+def lane_ball(cfg: dict[str, Any], objects: Any, lane: int) -> tuple[float, float, float] | None:
+    """SceneContext.objects → 그 레인 통로 안에서 가장 멀리 간 공 (입구에서 거리, x, y) — 비전 보정(vision_offset_m) 뒤."""
+    lanes = cfg.get("lanes") or []
+    if objects is None or not 0 <= lane < len(lanes) or objects.header.frame_id not in ("base_link", ""):
+        return None
+    try:
+        sx, sy, dx, dy = lane_geometry(lanes[lane])
+    except ValueError:
+        return None
+    ox, oy, _ = (float(v) for v in cfg["vision_offset_m"])
+    best = None
+    for o in objects.objects:
+        if o.class_name != cfg["pickup_class"] or o.confidence < cfg["pickup_min_conf"] or o.position.z > cfg["stop_z_max_m"]:
+            continue
+        x, y = o.position.x + ox, o.position.y + oy
+        along = (x - sx) * dx + (y - sy) * dy
+        lat = -(x - sx) * dy + (y - sy) * dx
+        if along >= cfg["stop_min_along_m"] and abs(lat) <= cfg["stop_lane_halfwidth_m"] and (best is None or along > best[0]):
+            best = (along, x, y)
+    return best
+
+
+class StopWatch:
+    """add(t, p) — still_s 동안 tol_m 안에서 그대로면 그 위치 (트래커 is_moving 은 아직 안 믿음)."""
+
+    def __init__(self, still_s: float, tol_m: float):
+        self.still_s, self.tol_m, self.ref, self.since = still_s, tol_m, None, 0.0
+
+    def add(self, t: float, p: tuple[float, float] | None) -> tuple[float, float] | None:
+        if p is None:
+            self.ref = None
+            return None
+        if self.ref is None or math.dist(p, self.ref) > self.tol_m:
+            self.ref, self.since = p, t
+            return None
+        return self.ref if t - self.since >= self.still_s else None
 
 
 def lane_for_hand(cfg: dict[str, Any], hand: Any) -> int | None:
@@ -147,35 +201,35 @@ def lane_for_hand(cfg: dict[str, Any], hand: Any) -> int | None:
 
 
 class CatchWatch:
-    """새 센서 표본으로 펼침→쥠 유지→펼침 확인. 공 접촉 증거가 아닌 후보 신호."""
+    """새 센서 표본으로 쥠 유지(catch_grab_hold_s)→펼침 확인. 공 접촉 증거가 아닌 후보 신호.
+    처음 펼침은 요구하지 않는다 — 10/8 실로봇: 손이 공을 위에서 움켜쥔 채 화면에 들어와 '펼침 먼저'를 못 봐서 받기를 놓침."""
     def __init__(self, cfg: dict[str, Any], after_ns: int):
         self.cfg, self.last_stamp = cfg, after_ns
-        self.open_seen = self.grabbed = self.caught = False
+        self.grabbed = self.caught = False
         self.grab_since = None
 
     def update(self, hand: Any, now_ns: int) -> bool:
         if hand is None or not valid_hand(hand, now_ns, self.cfg["hand_max_age_s"]):
-            self.open_seen = self.grabbed = False
+            self.grabbed = False
             self.grab_since = None
             return False
         stamp = hand.header.stamp.sec * 1_000_000_000 + hand.header.stamp.nanosec
         if stamp <= self.last_stamp:
             return self.caught
         if stamp - self.last_stamp > self.cfg["hand_max_age_s"] * 1e9:
-            self.open_seen = self.grabbed = False
+            self.grabbed = False
             self.grab_since = None
         self.last_stamp = stamp
         g = float(hand.grip_closure)
         if not math.isfinite(g) or not 0 <= g <= 1:
-            self.open_seen = self.grabbed = False
+            self.grabbed = False
             self.grab_since = None
             return False
         if g <= self.cfg["catch_release_closure"]:
             if self.grabbed:
                 self.caught = True
-            self.open_seen = True
             self.grab_since = None
-        elif self.open_seen and g >= self.cfg["catch_grab_closure"]:
+        elif g >= self.cfg["catch_grab_closure"]:
             if self.grab_since is None:
                 self.grab_since = stamp
             if stamp - self.grab_since >= self.cfg["catch_grab_hold_s"] * 1e9:
@@ -183,6 +237,31 @@ class CatchWatch:
         elif not self.grabbed:
             self.grab_since = None
         return self.caught
+
+
+# 손 근접 STOP 으로 멈춘 스킬을 이어 가도 되는 단계 (#98). 받은 feedback.phase 로 판단 — skills/push_ball.py·return_ball.py 단계 이름.
+#   PushBall: 놓기(place) 전이면 다시 보냄 (공을 쥐고 있으면 스킬이 집기를 건너뜀). 놓기 뒤 ~ 치기·복귀는 공 위치가 애매해 세션 종료
+#   ReturnBall: 공 찾기·닿는 곳 대기면 다시 보냄, 손 보기(hand_view) 단계면 공은 이미 거치대 → 끝난 것으로. 집기~놓기는 세션 종료
+PUSH_AFTER_PLACE = {"place", "contact", "push", "observe"}
+RETURN_RESEND = {"find", "out_of_reach"}
+
+
+def push_hand_resume(reasons: list[str]):
+    def decide(reason: str, phases: list[str]) -> str | None:
+        if reason_code(reason) not in reasons or PUSH_AFTER_PLACE & set(phases):
+            return None
+        return "resend"
+    return decide
+
+
+def return_hand_resume(reasons: list[str]):
+    def decide(reason: str, phases: list[str]) -> str | None:
+        if reason_code(reason) not in reasons:
+            return None
+        if "hand_view" in phases:
+            return "done"
+        return "resend" if set(phases) <= RETURN_RESEND else None
+    return decide
 
 
 def hand_clear_block(session: Session, cfg: dict[str, Any]) -> str | None:
@@ -227,7 +306,8 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
 
     def start() -> bool:
         state.start()
-        state.data.update(caught=None, returned=False, notes="", push=None)
+        state.data.update(caught=None, returned=False, notes="", push=None, stop=None, stop_d=math.nan,
+                          hand_hold=StopWatch(cfg["hand_hold_s"], cfg["hand_hold_tol_m"]), logged_lane=None)
         if not session.safe() or not hand_ready():
             state.data["notes"] = "no_hand"
             record()
@@ -242,7 +322,7 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
             record()
             return False
         state.data.update(plan)
-        log.info(f"[모드 1] 고정 목표 레인 {lane} · 목표 {plan['target_d']:.3f} m · 속도 {plan['speed']:.3f} m/s")
+        log.info(f"[모드 1] 손 확인 (지금 레인 {lane}) — 손이 {cfg['hand_hold_s']:.1f} s 머물면 그 레인으로")
         return True
 
     def record() -> None:
@@ -268,13 +348,20 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
         ctx = session.get_context()
         ready = False
         prompt = cfg["start_wait_prompt"]
-        if hand_ready() and ctx.safety.level == SafetyStatus.LEVEL_NORMAL:
+        p = ctx.hand.palm_pose.position if hand_ready() else None
+        pos = None if p is None else (p.x, p.y)
+        held = pos if cfg["hand_hold_s"] <= 0 else state.data["hand_hold"].add(time.monotonic(), pos)
+        if held is not None and ctx.safety.level == SafetyStatus.LEVEL_NORMAL:
             try:
                 lane = lane_for_hand(cfg, ctx.hand)
                 plan = plan_push(ctx.hand, lane, session.difficulty.get(1, 0), cfg, session.table_cfg)
                 state.data.update(plan)
                 ready = plan["reach_actual"] >= plan["reach_requested"]
-                if not ready:
+                if ready and state.data.get("logged_lane") != lane:   # ready_to_push 는 대기·전송 확인에서 두 번 불린다
+                    state.data["logged_lane"] = lane
+                    log.info(f"[모드 1] 손이 {cfg['hand_hold_s']:.1f} s 머묾 → 레인 {lane} · 목표 {plan['target_d']:.3f} m · "
+                             f"속도 {plan['speed']:.3f} m/s")
+                else:
                     prompt = cfg["hand_start_prompt"]
             except ValueError:
                 # 최초 설정 오류는 start에서 기록. 대기 중 잘못된 입력은 명령으로 쓰지 않는다.
@@ -284,15 +371,24 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
             state.data["next_start_prompt"] = time.monotonic() + cfg["hand_clear_wait_s"]
         return ready
 
+    hand_reasons = list(hand_stop.config(session.skills_cfg)["hand_stop_wait_reasons"])
     push = skill_step(state, "밀기", client, lambda: push_goal(state.data["lane"], state.data["speed"], state.data["target"]),
                       on_success=lambda r, _k: state.data.update(push=r),
                       can_send=ready_to_push, wait_for_precondition=True,
-                      on_fail=on_push_fail, on_interrupt=on_interrupt)
+                      on_fail=on_push_fail, on_interrupt=on_interrupt,
+                      hand_resume=push_hand_resume(hand_reasons))
 
     # ── 받기 확인 ──
     def catch_tick() -> bool:
-        ctx = session.get_context()
-        return state.data["watch"].update(ctx.hand if ctx is not None else None, session.node.get_clock().now().nanoseconds)
+        ctx, d = session.get_context(), state.data
+        if d.get("stop") is None and not d["watch"].grabbed and ctx is not None:   # 손이 쥐기 전까지만 정지 위치를 잰다
+            b = lane_ball(cfg, ctx.objects, d["lane"])
+            got = d["stop_watch"].add(time.monotonic(), (b[1], b[2]) if b else None)
+            if got:
+                d["stop"], d["stop_d"] = got, b[0]
+                log.info(f"[모드 1] 공 정지 — 입구에서 {b[0] * 100:.1f} cm, 목표 {d['target_d'] * 100:.0f} cm · "
+                         f"오차 {math.dist(got, d['target']) * 1000:.0f} mm")
+        return d["watch"].update(ctx.hand if ctx is not None else None, session.node.get_clock().now().nanoseconds)
 
     def caught() -> None:
         state.data["caught"] = True
@@ -358,7 +454,7 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
                      on_success=returned, on_fail=return_failed, on_interrupt=on_interrupt,
                      can_retry=lambda r: reason_code(r) in ("ball_out_of_reach", "no_ball_in_lane"),
                      on_retry=lambda _r, _k: session.say(cfg["out_of_reach_prompt"]),
-                     on_feedback=on_return_feedback)
+                     on_feedback=on_return_feedback, hand_resume=return_hand_resume(hand_reasons))
 
     def run_return() -> bool:
         prompted["t"] = None
@@ -382,12 +478,14 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
             state.fatal = True
             return False
         view_steps = [Do("자세 이동 시작", state.start), py_trees.composites.Selector("손 보기 자세", memory=True, children=[
-            ServiceCall("손 보기 자세로", session.service_client(Trigger, HAND_VIEW_SERVICE), Trigger.Request, timeout_s=30.0),
+            ServiceCall("손 보기 자세로", session.service_client(Trigger, HAND_VIEW_SERVICE), Trigger.Request, timeout_s=30.0,
+                        resend_reasons=tuple(hand_reasons), resume_ok=session.robot_resume_ok),
             Do("손 보기 실패", view_failed),
         ]), Do("손 대기 준비", view_ready)]
 
     def begin_watch() -> None:
-        state.data["watch"] = CatchWatch(cfg, session.node.get_clock().now().nanoseconds)
+        state.data.update(watch=CatchWatch(cfg, session.node.get_clock().now().nanoseconds),
+                          stop=None, stop_d=math.nan, stop_watch=StopWatch(cfg["stop_still_s"], cfg["stop_tol_m"]))
 
     recover = py_trees.composites.Sequence("손 이탈 후 회수", memory=True, children=[
         clear, Do("회수 준비", run_return),
