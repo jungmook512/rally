@@ -23,6 +23,17 @@ cd ~/rally && scripts/robot.sh nodes novision    # 비전 없이 (모드 5 수�
 ```
 `skill_server ready` 가 나오면 터미널 3 에서 명령. 이 터미널에 로봇 노드 로그가 그대로 나온다.
 
+## 2-1. 손 인식 (모드 1·5, 손 거리 안전 감시)
+
+```bash
+cd ~/rally && scripts/hand_local.sh          # 손만 (기본). 비전(RealSense)이 떠 있어야 함 — 터미널 2 의 robot.sh nodes
+cd ~/rally && scripts/hand_local.sh body     # 손 + 몸 자세(보상 동작) + 측면 C270 — 통합 시연 때
+cd ~/rally && scripts/hand_local.sh stop     # 끄기
+```
+- 컨테이너라 터미널을 잡지 않는다. 확인: `ros2 topic echo /rally/perception/hand --once` (손을 RealSense 에 보이기)
+- 이미지가 없거나 #112 전 빌드면: `docker build -f docker/hand_pose/Dockerfile -t rally/hand_pose:local .` → 로그(`scripts/hand_local.sh logs`)에 `중앙선 x=0.568 m, 깊이 배율 0.971`
+- `body`: C270 을 이름으로 찾음. 없으면 몸 자세만 건너뜀. 몸 자세 기준은 **바르게 선 뒤** `ros2 service call /rally/perception/body/reset_baseline std_srvs/srv/Trigger`
+
 ## 3-1. 터미널 4 — brain (모드를 "세션"으로 돌릴 때만)
 
 ```bash
