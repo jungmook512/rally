@@ -13,7 +13,8 @@
 세션 중단: 안전 STOP (상황판 기준) 또는 상황판이 context_timeout_s(기본 1 s) 넘게 안 옴 → abort / 취소 요청 → canceled.
   모두 진행 중인 스킬 goal 도 취소한다. (실제 정지는 로봇 쪽 safety_monitor 가 따로 한다)
   예외 — 모드 1 손 근접 STOP 대기 (#98, hand_stop.py): 로봇이 서 있을 때 걸린 손 근접 STOP(비래치)은 세션을 끝내지 않고
-  트리를 멈춘 채 기다리다가, NORMAL 이 hand_stop_resume_hold_s 이어지면 같은 시도를 이어 간다. 로봇이 움직이는 중이면 기존대로 종료.
+  트리를 멈춘 채 기다리다가, NORMAL 이 hand_stop_resume_hold_s 이어지면 같은 시도를 이어 간다. 로봇이 움직이는 중이면
+  그 스킬이 받은 진행 단계로 보아 다시 보내도 되는 경우만 기다렸다가 같은 goal 을 다시 보낸다(trees/mode1_push.py). 아니면 종료.
 트리는 execute 콜백 안에서 tick_hz(기본 10 Hz)로 돈다. 스킬 action 은 비동기라 tick 이 막히지 않는다.
 시도가 기록될 때마다 rule_layer 가 다음 행동을 고른다 (/rally/voice/intent 의 tired·harder·easier 도 여기서 소비).
   harder/easier → 구현된 모드 레시피의 난이도 단계만 바꾼다. suggest_rest → 현재 시도 후 휴식.
@@ -112,6 +113,7 @@ class BtRunner(Node):
         self._hand_cfg = hand_stop.config(self._skills_cfg)
         self._hand_stop_seen: str | None = None                      # 기다릴 수 있는 손 STOP 을 받음 (tick 이 소비)
         self._hand_wait: hand_stop.HandStopWait | None = None        # 손 근접 STOP 대기 중 (tick 스레드만)
+        self._normal_since: float | None = None                      # 안전 NORMAL 이 이어진 시작 (tick 스레드만)
         self._last_intent_stamp: tuple[int, int] = (0, 0)             # 마지막으로 처리한 발화
 
         reliable = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, depth=10)
@@ -466,13 +468,14 @@ class BtRunner(Node):
         session = Session(node=self, session_id=str(uuid.uuid4()), get_context=lambda: self._context,
                           publish=self._trial_pub.publish, action_client=self._action_client,
                           skills_cfg=self._skills_cfg, say=self._say, after_trial=self._after_trial,
-                          service_client=self._service_client, allow_trial=self._allow_trial)
+                          service_client=self._service_client, allow_trial=self._allow_trial,
+                          robot_resume_ok=self._robot_resume_ok)
         tree = py_trees.trees.BehaviourTree(build_session_tree(session, modes, n))
         with self._switch_lock:
             self._session, self._pending_switch = session, None
             self._pending_intent = None
             self._safety_abort = False
-            self._hand_stop_seen = self._hand_wait = None
+            self._hand_stop_seen = self._hand_wait = self._normal_since = None
             self._proposal_cancelled = False
             self.proposals = ProposalControl()
             self.control.start(session.session_id)
@@ -542,16 +545,21 @@ class BtRunner(Node):
                 return False
             seen, self._hand_stop_seen = self._hand_stop_seen, None
         stop = ctx is not None and ctx.safety.level == SafetyStatus.LEVEL_STOP
+        now = time.monotonic()
+        if ctx is not None and ctx.safety.level == SafetyStatus.LEVEL_NORMAL and seen is None:
+            self._normal_since = self._normal_since or now
+        else:
+            self._normal_since = None
         if stop and seen is None:
             # 세션 전에 이미 STOP 이었거나 _on_context 가 아직 못 본 상황판 — 같은 기준으로 분류
             if not hand_stop.waitable(ctx.safety.reason, session.current_mode, self._hand_cfg):
                 return False
             seen = ctx.safety.reason
-        now = time.monotonic()
         if seen is not None:
             if self._hand_wait is None:
-                if hand_stop.robot_busy(tree.root.iterate()):
-                    self.get_logger().warn(f"[손 근접 정지] 로봇 동작 중 {seen} — 공·그리퍼 상태를 몰라 이어 가지 않음")
+                if (hand_stop.robot_busy(tree.root.iterate())
+                        and not hand_stop.busy_resumable(tree.root.iterate(), seen)):
+                    self.get_logger().warn(f"[손 근접 정지] 로봇 동작 중 {seen} — 이 단계는 공·그리퍼 상태를 몰라 이어 가지 않음")
                     return False
                 self._hand_wait = hand_stop.HandStopWait(seen, now, self._hand_cfg)
                 with self._switch_lock:
@@ -573,6 +581,12 @@ class BtRunner(Node):
         elif self._hand_wait.prompt_due(now):
             self._say(self._hand_cfg["hand_stop_prompt"])
         return True
+
+    def _robot_resume_ok(self) -> bool:
+        """손 근접 STOP 으로 멈춘 명령을 다시 보내도 되는가: 대기 중이 아니고 NORMAL 이 resume_hold_s 이어짐 (tick 스레드)."""
+        hold = float(self._hand_cfg["hand_stop_resume_hold_s"])
+        return (self._hand_wait is None and self._normal_since is not None
+                and time.monotonic() - self._normal_since >= hold)
 
     def destroy_node(self):
         if self._dashboard_bridge is not None:

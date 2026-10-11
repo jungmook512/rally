@@ -4,7 +4,9 @@
 손 근접 STOP(비래치, safety_monitor 가 손이 빠지면 스스로 푼다)이 로봇이 서 있는 단계에서 걸리면 세션을 끝내지 않고 기다린다.
   - 대상 사유: skills.yaml brain.hand_stop_wait_reasons (정확한 문자열 목록, 접두사 허용 없음). 그 밖의 STOP 은 기존대로 세션 종료
   - 대상 모드: 모드 1 만
-  - 로봇이 움직이는 중(스킬 goal 을 보냄·자세 이동 서비스 호출 중)이면 기다리지 않고 세션 종료 — 공·그리퍼 상태를 몰라 자동 재진행 금지
+  - 로봇이 움직이는 중(스킬 goal 을 보냄·자세 이동 서비스 호출 중)이면, 그 블록이 받은 진행 단계로 보아 다시 보내도 되는
+    경우(hand_decision → resend/done)만 기다린다. 아니면 세션 종료 — 공·그리퍼 상태를 몰라 자동 재진행 금지
+    (모드 1: 손 보기 이동·PushBall 놓기 전·ReturnBall 공 찾기는 다시 보냄, ReturnBall 손 보기 단계는 끝난 것으로. trees/mode1_push.py)
   - 기다리는 동안 트리를 tick 하지 않는다 (새 동작 없음). NORMAL 이 hand_stop_resume_hold_s 동안 이어지면 같은 시도를 이어 간다
     (SLOW 는 재진행 조건이 아님). 이어 갈 때 대기 블록의 시간 기준을 기다린 만큼 뒤로 민다 — 멈춘 시간 때문에 바로 timeout 나지 않게
   - Brain 은 STOP 을 낮추거나 reset 하지 않는다. 대기 중 다른 STOP·취소·상황판 끊김은 bt_runner 가 기존대로 끝낸다
@@ -48,6 +50,17 @@ def robot_busy(behaviours: Iterable[py_trees.behaviour.Behaviour]) -> bool:
         if isinstance(b, ServiceCall) and b.request_sent:
             return True
     return False
+
+
+def busy_resumable(behaviours: Iterable[py_trees.behaviour.Behaviour], reason: str) -> bool:
+    """로봇에 명령이 나가 있는 블록이 모두 이 손 STOP 뒤 이어 갈 수 있는가 (다시 보냄 또는 끝난 것으로)."""
+    for b in behaviours:
+        if b.status != py_trees.common.Status.RUNNING:
+            continue
+        sent = (isinstance(b, SkillCall) and b.goal_sent) or (isinstance(b, ServiceCall) and b.request_sent)
+        if sent and b.hand_decision(reason) not in ("resend", "done"):
+            return False
+    return True
 
 
 def shift_timers(behaviours: Iterable[py_trees.behaviour.Behaviour], dt: float) -> None:

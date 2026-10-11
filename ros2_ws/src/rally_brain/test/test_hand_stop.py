@@ -256,3 +256,132 @@ def test_slow_keeps_waiting_and_blocks_switch_keeps_rest_until_cancel(node, monk
         feed.close()
     assert checks == {"waiting": "hand_near_robot", "switch": False, "rest": True, "phase": "pause_pending"}
     assert out == ["cancel"]
+
+
+# ---------- 로봇 동작 중 손 STOP → 단계 보고 다시 보냄 / 끝난 것으로 / 종료 ----------
+from action_msgs.msg import GoalStatus   # noqa: E402
+from fakes import FakeClient   # noqa: E402
+from rally_brain.trees import mode1_push   # noqa: E402
+from rally_interfaces.action import ReturnBall   # noqa: E402
+
+REASONS = CFG["hand_stop_wait_reasons"]
+
+
+def test_mode1_phase_decisions():
+    push = mode1_push.push_hand_resume(REASONS)
+    assert push("hand_near_robot", []) == "resend"
+    assert push("hand_near_robot", ["approach", "pickup"]) == "resend"          # 쥐었어도 스킬이 집기를 건너뜀
+    for after in (["approach", "pickup", "place"], ["place", "approach", "contact"], ["push"], ["observe"]):
+        assert push("hand_near_robot", after) is None                            # 놓은 뒤 ~ 치기·복귀: 공 위치 애매
+    assert push("force_limit", ["pickup"]) is None and push("pickup_failed", []) is None
+    ret = mode1_push.return_hand_resume(REASONS)
+    assert ret("hand_lost_near", ["find"]) == "resend" and ret("hand_near_robot", ["find", "out_of_reach"]) == "resend"
+    assert ret("hand_near_robot", ["find", "pickup"]) is None and ret("hand_near_robot", ["pickup", "to_rack"]) is None
+    assert ret("hand_near_robot", ["find", "pickup", "to_rack", "drop", "hand_view"]) == "done"
+    assert ret("estop", ["find"]) is None
+
+
+def skill(client, decide, gate):
+    results = []
+    b = SkillCall("밀기", fake_node(), client, PushBall.Goal, on_result=results.append,
+                  hand_resume=decide, resume_ok=lambda: gate["ok"])
+    return b, results
+
+
+def test_skillcall_resends_same_goal_only_after_resume_ok():
+    client = FakeClient(PushBall, [(False, {"failure_reason": "hand_near_robot"}), (True, {"success": True})],
+                        feedbacks=[[{"phase": "approach"}, {"phase": "pickup"}]])
+    gate = {"ok": False}
+    b, results = skill(client, mode1_push.push_hand_resume(REASONS), gate)
+    b.tick_once(); b.tick_once()                    # goal 1 → abort(손 STOP) → 다시 보낼 준비
+    assert b.status == Status.RUNNING and client.sent == 1
+    for _ in range(3):
+        b.tick_once()
+    assert client.sent == 1                         # 손이 빠지기 전엔 안 보냄
+    gate["ok"] = True
+    b.tick_once(); b.tick_once()
+    assert client.sent == 2 and b.status == Status.SUCCESS and results[0].success
+
+
+def test_skillcall_after_place_fails_and_return_hand_view_is_done():
+    client = FakeClient(PushBall, [(False, {"failure_reason": "hand_near_robot"})], feedbacks=[[{"phase": "place"}]])
+    b, results = skill(client, mode1_push.push_hand_resume(REASONS), {"ok": True})
+    b.tick_once(); b.tick_once()
+    assert b.status == Status.FAILURE and client.sent == 1 and results == []
+    client = FakeClient(ReturnBall, [(False, {"failure_reason": "hand_near_robot"})],
+                        feedbacks=[[{"phase": "find"}, {"phase": "pickup"}, {"phase": "drop"}, {"phase": "hand_view"}]])
+    results = []
+    b = SkillCall("공 회수", fake_node(), client, ReturnBall.Goal, on_result=results.append,
+                  hand_resume=mode1_push.return_hand_resume(REASONS))
+    b.tick_once(); b.tick_once()
+    assert b.status == Status.SUCCESS and client.sent == 1 and results[0].success
+
+
+def test_skillcall_resend_limit():
+    client = FakeClient(PushBall, [(False, {"failure_reason": "hand_near_robot"})] * 3)
+    b = SkillCall("밀기", fake_node(), client, PushBall.Goal, on_result=lambda _: None,
+                  hand_resume=mode1_push.push_hand_resume(REASONS), max_resends=2)
+    for _ in range(6):
+        b.tick_once()
+        if b.status != Status.RUNNING:
+            break
+    assert client.sent == 3 and b.status == Status.FAILURE
+
+
+def test_servicecall_resends_on_hand_stop_only():
+    responses = [NS(success=False, message="hand_near_robot"), NS(success=True, message="ok")]
+    calls = []
+    client = NS(service_is_ready=lambda: True, call_async=lambda r: calls.append(r) or Done(responses[len(calls) - 1]))
+    gate = {"ok": False}
+    srv = ServiceCall("손 보기 자세로", client, object, resend_reasons=tuple(REASONS), resume_ok=lambda: gate["ok"])
+    srv.tick_once(); srv.tick_once()
+    assert srv.status == Status.RUNNING and len(calls) == 1
+    gate["ok"] = True
+    srv.tick_once(); srv.tick_once()
+    assert srv.status == Status.SUCCESS and len(calls) == 2
+    other = ServiceCall("손 보기 자세로", NS(service_is_ready=lambda: True,
+                        call_async=lambda r: Done(NS(success=False, message="ik_failed"))), object,
+                        resend_reasons=tuple(REASONS))
+    other.tick_once(); other.tick_once()
+    assert other.status == Status.FAILURE
+
+
+class StopAbortClient:
+    """첫 goal 은 feedback(pickup) 뒤 결과를 붙잡고 있다가, 테스트가 release() 하면 손 STOP abort 로 끝남. 다음 goal 은 성공."""
+    def __init__(self):
+        self.sent, self.released = 0, threading.Event()
+
+    def server_is_ready(self):
+        return True
+
+    def release(self):
+        self.released.set()
+
+    def send_goal_async(self, goal, feedback_callback=None):
+        self.sent += 1
+        if self.sent == 1:
+            feedback_callback(NS(feedback=PushBall.Feedback(phase="pickup")))
+            fut = NS(done=lambda: self.released.is_set(),
+                     result=lambda: NS(status=GoalStatus.STATUS_ABORTED, result=PushBall.Result(failure_reason="hand_near_robot")))
+        else:
+            fut = Done(NS(status=GoalStatus.STATUS_SUCCEEDED, result=PushBall.Result(success=True)))
+        return Done(NS(accepted=True, get_result_async=lambda: fut, cancel_goal_async=lambda: None))
+
+
+def test_moving_hand_stop_waits_and_resends_in_session_loop(node, monkeypatch):
+    feed = Feed(node)
+    client = StopAbortClient()
+    results = []
+
+    def children(session):
+        # 0.1 s: 손 STOP → 스킬이 abort(결과는 STOP 뒤 도착) → 0.4 s: NORMAL → hold 뒤 같은 goal 재전송 → 성공
+        script(feed, [(0.1, STOP, "hand_near_robot"), (0.3, NORMAL, "")])
+        threading.Timer(0.2, client.release).start()
+        return [SkillCall("밀기", node, client, PushBall.Goal, on_result=results.append,
+                          hand_resume=mode1_push.push_hand_resume(REASONS), resume_ok=session.robot_resume_ok)]
+
+    try:
+        out = run_session(node, monkeypatch, children)
+    finally:
+        feed.close()
+    assert out == ["success"] and client.sent == 2 and results[0].success

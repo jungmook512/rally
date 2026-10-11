@@ -6,6 +6,8 @@
              결과 메시지는 on_result 로 넘긴다 (스킬의 success=false 도 SUCCESS: 시도는 끝났고 판정은 기록 쪽에서).
              서버 없음·goal 거절·abort·취소는 FAILURE. abort 여도 결과 메시지(failure_reason 등)는 .result 에 남는다. 트리가 중단되면(terminate) goal 을 보낸 시도는 반드시 기록하고
              (이미 끝났으면 그 결과, 아니면 on_interrupt), 아직 돌고 있거나 수락 전이면 취소한다.
+             hand_resume 을 주면 손 근접 STOP 으로 abort 된 결과를 실패로 보지 않고, 받은 진행 단계(feedback.phase)를 보고
+             "resend"(resume_ok 가 참이 될 때까지 기다렸다 같은 goal 을 다시 보냄) 또는 "done"(끝난 것으로 처리)으로 바꿀 수 있다 (#98).
   Do         함수 한 번 실행 후 SUCCESS (TrialResult 발행 등). 함수가 False 를 돌려주면 FAILURE
   Guard      시도 서브트리를 감싸, 트리가 도중에 멈추면(INVALID) on_stop 을 부른다. 자식이 먼저 멈춰
              SkillCall.on_interrupt 가 실제 이유로 기록할 기회를 먼저 갖는다 — on_stop 은 그래도 기록이 안 된 경우
@@ -53,8 +55,14 @@ class SkillCall(py_trees.behaviour.Behaviour):
     def __init__(self, name: str, node: Node, client: ActionClient, make_goal: Callable[[], Any],
                  on_result: Callable[[Any], None], on_interrupt: Callable[[str], None] | None = None,
                  server_timeout_s: float = 3.0, on_feedback: Callable[[Any], None] | None = None,
-                 can_send: Callable[[], bool] = lambda: True, wait_for_precondition: bool = False):
+                 can_send: Callable[[], bool] = lambda: True, wait_for_precondition: bool = False,
+                 hand_resume: Callable[[str, list[str]], str | None] | None = None,
+                 resume_ok: Callable[[], bool] = lambda: True, max_resends: int = 5):
         super().__init__(name)
+        self.hand_resume = hand_resume     # (failure_reason, 받은 phase 목록) → "resend" | "done" | None
+        self.resume_ok = resume_ok         # 다시 보내도 되는가 (손이 빠지고 NORMAL 유지)
+        self.max_resends = max_resends
+        self._resends = 0
         self.on_feedback = on_feedback     # 스킬 feedback 메시지 (executor 스레드에서 불림 — 가볍게)
         self.node = node
         self.client = client
@@ -74,9 +82,25 @@ class SkillCall(py_trees.behaviour.Behaviour):
         self.result = None             # 마지막 결과 메시지 (abort 포함) — 재시도 판단용
         self._cancel_on_accept = False  # 수락 전에 중단됨 → 수락되자마자 취소
         self._t0 = time.monotonic()
+        self.phases: list[str] = []    # 이번 goal 에서 받은 feedback.phase (순서대로)
+        self._resend_wait = False      # 손 STOP 뒤 다시 보낼 때까지 대기
 
     def initialise(self) -> None:
         self._reset()
+        self._resends = 0
+
+    def _feedback(self, msg: Any) -> None:
+        phase = getattr(msg.feedback, "phase", "")
+        if phase and (not self.phases or self.phases[-1] != phase):
+            self.phases.append(phase)
+        if self.on_feedback is not None:
+            self.on_feedback(msg.feedback)
+
+    def hand_decision(self, reason: str) -> str | None:
+        """지금 이 reason 으로 abort 되면 어떻게 할지 (bt_runner 가 로봇 동작 중 손 STOP 을 기다려도 되는지 볼 때도 씀)."""
+        if self.hand_resume is None:
+            return None
+        return self.hand_resume(reason, list(self.phases))
 
     def shift_time(self, dt: float) -> None:
         self._t0 += dt
@@ -94,6 +118,11 @@ class SkillCall(py_trees.behaviour.Behaviour):
             goal_handle.cancel_goal_async()
 
     def update(self) -> Status:
+        if self._resend_wait:
+            if not self.resume_ok():
+                self.feedback_message = "손 근접 STOP 뒤 재전송 대기"
+                return Status.RUNNING
+            self._resend_wait = False
         if self._send_future is None:
             if not self.client.server_is_ready():
                 if time.monotonic() - self._t0 > self.server_timeout_s:
@@ -104,9 +133,8 @@ class SkillCall(py_trees.behaviour.Behaviour):
             if not self.can_send():
                 self.feedback_message = "precondition_failed"
                 return Status.RUNNING if self.wait_for_precondition else Status.FAILURE
-            if self.on_feedback is not None:
-                self._send_future = self.client.send_goal_async(self.make_goal(),
-                    feedback_callback=lambda m: self.on_feedback(m.feedback))
+            if self.on_feedback is not None or self.hand_resume is not None:   # 진행 단계가 필요할 때만 (feedback 구독)
+                self._send_future = self.client.send_goal_async(self.make_goal(), feedback_callback=self._feedback)
             else:
                 self._send_future = self.client.send_goal_async(self.make_goal())
             self._send_future.add_done_callback(self._on_goal_response)
@@ -127,6 +155,20 @@ class SkillCall(py_trees.behaviour.Behaviour):
         response = self._result_future.result()
         self.result = response.result
         if response.status != GoalStatus.STATUS_SUCCEEDED:
+            reason = str(getattr(response.result, "failure_reason", "") or "")
+            decision = self.hand_decision(reason)
+            if decision == "done":
+                self.node.get_logger().info(f"[{self.name}] 손 근접 STOP({reason}) — 단계 {self.phases} 로 보아 끝난 것으로 처리")
+                response.result.success = True
+                self.on_result(response.result)
+                return Status.SUCCESS
+            if decision == "resend" and self._resends < self.max_resends:
+                self._resends += 1
+                self.node.get_logger().info(
+                    f"[{self.name}] 손 근접 STOP({reason}) — 단계 {self.phases}, 손이 빠지면 같은 goal 다시 보냄 ({self._resends}회)")
+                self._reset()
+                self._resend_wait = True
+                return Status.RUNNING
             self.feedback_message = GOAL_STATUS_NAMES.get(response.status, f"status_{response.status}")
             self.node.get_logger().warn(f"[{self.name}] 스킬 {self.feedback_message}")
             return Status.FAILURE
@@ -172,14 +214,22 @@ class ServiceCall(py_trees.behaviour.Behaviour):
     (예: /rally/robot/go_hand_view — 손 보기 자세로)"""
 
     def __init__(self, name: str, client: Any, make_request: Callable[[], Any], timeout_s: float = 30.0,
-                 ok: Callable[[Any], bool] = lambda r: bool(getattr(r, "success", True)), server_timeout_s: float = 3.0):
+                 ok: Callable[[Any], bool] = lambda r: bool(getattr(r, "success", True)), server_timeout_s: float = 3.0,
+                 resend_reasons: tuple[str, ...] = (), resume_ok: Callable[[], bool] = lambda: True, max_resends: int = 5):
         super().__init__(name)
         self.client, self.make_request, self.ok = client, make_request, ok
         self.timeout_s, self.server_timeout_s = timeout_s, server_timeout_s
+        self.resend_reasons = tuple(resend_reasons)   # 응답 message 의 첫 낱말이 이 중 하나면 resume_ok 뒤 다시 요청 (#98 손 근접 STOP)
+        self.resume_ok, self.max_resends = resume_ok, max_resends
         self._future, self._t0, self.response = None, 0.0, None
+        self._resends, self._resend_wait = 0, False
 
     def initialise(self) -> None:
         self._future, self._t0, self.response = None, time.monotonic(), None
+        self._resends, self._resend_wait = 0, False
+
+    def hand_decision(self, reason: str) -> str | None:
+        return "resend" if reason in self.resend_reasons else None
 
     def shift_time(self, dt: float) -> None:
         self._t0 += dt
@@ -190,6 +240,10 @@ class ServiceCall(py_trees.behaviour.Behaviour):
         return self._future is not None
 
     def update(self) -> Status:
+        if self._resend_wait:
+            if not self.resume_ok():
+                return Status.RUNNING
+            self._resend_wait, self._t0 = False, time.monotonic()
         waited = time.monotonic() - self._t0
         if self._future is None:
             if not self.client.service_is_ready():
@@ -211,6 +265,11 @@ class ServiceCall(py_trees.behaviour.Behaviour):
             return Status.FAILURE
         if self.response is not None and self.ok(self.response):
             return Status.SUCCESS
+        reason = (str(getattr(self.response, "message", "") or "").split() or [""])[0]
+        if reason in self.resend_reasons and self._resends < self.max_resends:
+            self._resends += 1
+            self._future, self.response, self._resend_wait = None, None, True
+            return Status.RUNNING
         self.feedback_message = getattr(self.response, "message", "") or "실패"
         return Status.FAILURE
 

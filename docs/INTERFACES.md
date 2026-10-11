@@ -185,11 +185,14 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 
 ### 모드 1 손 근접 STOP 대기 (#98 4번, 1단계 — 2026-10-11)
 
-- 대상: 모드 1에서 **로봇이 서 있을 때**(스킬 goal 전·받기 관측·손 이탈 대기·시도 사이) 걸린 STOP 중 사유가 `skills.yaml brain.hand_stop_wait_reasons`(`hand_near_robot`·`hand_near_centerline`·`hand_lost_near`, 정확한 문자열)인 것. safety_monitor 에서 비래치(손이 빠지면 스스로 풀림)인 사유다.
+- 대상: 모드 1에서 걸린 STOP 중 사유가 `skills.yaml brain.hand_stop_wait_reasons`(`hand_near_robot`·`hand_near_centerline`·`hand_lost_near`, 정확한 문자열)인 것. safety_monitor 에서 비래치(손이 빠지면 스스로 풀림)인 사유다.
 - 동작: 세션을 끝내지 않고 BT tick 을 멈춘 채 기다린다(새 명령 없음). 안내 TTS `hand_stop_prompt`(10 s 간격). 안전 레벨이 **NORMAL** 로 `hand_stop_resume_hold_s`(1 s) 이어지면 같은 시도를 이어 간다. SLOW 는 재진행 조건이 아니다. 기다린 시간은 대기 블록의 timeout 계산에서 뺀다. Brain 은 STOP 을 낮추거나 reset 하지 않는다.
-- 그대로 세션 종료: 로봇이 움직이는 중(스킬 goal 을 보냄·`go_hand_view` 응답 대기)의 STOP, 그 밖의 모든 STOP 사유(래치·`*_missing`·`wrench_lost`·모르는 사유), 모드 1 이 아닌 모드, 대기 중 다른 STOP·context 끊김·세션 취소.
+- 로봇이 서 있을 때(스킬 goal 전·받기 관측·손 이탈 대기·시도 사이)는 그대로 기다린다. **로봇이 움직이는 중**이면 그 명령이 받은 진행 단계(`feedback.phase`)로 판단한다:
+  `go_hand_view` → 손이 빠지면 다시 요청 / PushBall `place` 전(관측 자세·집기) → 같은 goal 다시 보냄(쥐고 있으면 스킬이 집기를 건너뜀) / ReturnBall `find`·`out_of_reach` → 다시 보냄, `hand_view` → 회수 끝난 것으로.
+  PushBall `place` 이후(놓기~치기~복귀)·ReturnBall `pickup`~`drop` 은 공·그리퍼 상태가 애매해 세션 종료(2단계: 로봇 스킬에 '입구 공 바로 치기'·'쥔 공 거치대로' 옵션 필요). 재전송은 NORMAL 1 s 유지 뒤, 명령당 최대 5회.
+- 그대로 세션 종료: 위 표에서 이어 갈 수 없는 단계의 STOP, 그 밖의 모든 STOP 사유(래치·`*_missing`·`wrench_lost`·모르는 사유), 모드 1 이 아닌 모드, 대기 중 다른 STOP·context 끊김·세션 취소.
 - 대기 중 모드 전환·난이도 변경은 거절, LLM 제안은 무효화, 휴식 요청은 보존한다. TrialResult 는 만들지 않는다(로그만).
-- 운영자 확인 뒤 이어 가기(스킬 실행 중 STOP), 깊은 침입과 선 기준 근접의 구분은 2단계(로봇 쪽 복구·사유 계약 필요).
+- 깊은 침입과 선 기준 근접의 구분, 위 세션 종료 단계의 이어 가기는 2단계(로봇 쪽 계약 필요).
 
 ### 모드 1 손 시작 위치 대기 (PR #87 PM 정정·사용자 합의)
 

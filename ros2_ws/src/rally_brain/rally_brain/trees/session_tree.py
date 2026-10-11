@@ -58,6 +58,7 @@ class Session:
     current_mode: int | None = None                                 # 지금 진행 중인 모드
     trial_active: bool = False                                      # 로봇이 시도 중 (begin_trial ~ record). 모드 전환은 이때 안 함
     allow_trial: Callable[[], bool] = lambda: True                   # 시도 전체(손 대기 포함) 시작 전 휴식 관문
+    robot_resume_ok: Callable[[], bool] = lambda: True               # 손 근접 STOP 으로 멈춘 명령을 다시 보내도 되는가 (#98, bt_runner)
 
     table_cfg: dict = field(default_factory=load_table)             # 중앙선 원본: table.yaml
 
