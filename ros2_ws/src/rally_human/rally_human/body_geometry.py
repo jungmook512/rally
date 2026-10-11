@@ -107,7 +107,7 @@ class CompensationFilter:
     """보상 동작 판정 — 같은 종류가 frames 프레임 연속일 때만 확정 (한두 프레임 튐으로 안내가 나가지 않게).
     우선순위: 몸통 기울임 > 어깨 들림."""
 
-    def __init__(self, lean_deg: float = 15.0, hike_deg: float = 10.0, frames: int = 5) -> None:
+    def __init__(self, lean_deg: float = 20.0, hike_deg: float = 20.0, frames: int = 5) -> None:
         self.lean_deg, self.hike_deg, self.frames = lean_deg, hike_deg, frames
         self.candidate, self.count, self.stable = "none", 0, "none"
 
@@ -164,6 +164,7 @@ class ReachMeter:
                  baseline_frames: int = 30, window_s: float = 0.5) -> None:
         self.arm, self.vis_thr, self.good_vis = arm, vis_thr, good_vis
         self.extended_deg, self.baseline_frames, self.window_s = extended_deg, baseline_frames, window_s
+        self.min_gap_frames = max(1, baseline_frames // 2)     # 팔별 어깨 기준에 필요한 표본 수
         self.reset_baseline()
 
     def reset_baseline(self) -> None:
@@ -204,7 +205,8 @@ class ReachMeter:
             m = np.mean(self._torso_samples, axis=0)
             self.base_torso = m / np.linalg.norm(m)
             for k, vs in self._gap_samples.items():
-                if vs:
+                # 표본이 충분한 팔만 어깨 기준을 확정 — auto 에서 한두 프레임만 잡힌 팔의 기준이 튀면 그 팔 으쓱을 놓치거나 오탐 (#83 리뷰)
+                if len(vs) >= self.min_gap_frames:
                     self.base_gap[k] = float(np.median([v @ self.base_torso for v in vs]))
             self.base_half = float(np.median(self._half_samples))
 

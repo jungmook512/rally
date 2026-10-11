@@ -184,6 +184,23 @@ def test_reach_meter_arm_switch_does_not_mix():
     assert math.isnan(st.hike_deg)                                     # 오른팔 어깨 기준이 없음 → NaN (왼팔 값 아님)
 
 
+def test_reach_meter_side_baseline_needs_enough_samples():
+    """auto 에서 기준 잡는 동안 한 프레임만 잡힌 팔은 어깨 기준을 만들지 않음 — 그 한 프레임이 으쓱한 자세면
+    이후 그 팔의 으쓱을 놓친다 (#83 리뷰). 표본이 절반 이상인 팔만 기준."""
+    m = bg.ReachMeter(arm="auto", baseline_frames=10, window_s=0.5)
+    left = ALL.copy()
+    left[[bg.R_SH, bg.R_EL, bg.R_WR]] = 0.75                           # 왼팔이 더 잘 보임 (오른 어깨도 good_vis 이상)
+    right = ALL.copy()
+    right[[bg.L_SH, bg.L_EL, bg.L_WR]] = 0.75
+    for i in range(9):
+        m.update(i / 15, upright(), left)
+    st = m.update(9 / 15, upright(hike_m=0.06), right)                 # 오른팔 1 프레임, 어깨 들린 채 → 여기서 기준 확정
+    assert st.baseline_ready
+    assert "left" in m.base_gap and "right" not in m.base_gap
+    st = _feed(m, upright(), n=5, t0=1.0, vis=right)
+    assert st.side == "right" and math.isnan(st.hike_deg)              # 틀린 기준으로 −값을 내지 않음
+
+
 def test_reset_clears_compensation_immediately():
     """기준 다시 잡기 직후 이전 보상 판정이 남지 않음 — 노드는 reset 때 CompensationFilter 에 미검출을 한 번 넣는다 (#83 리뷰 1)."""
     f = bg.CompensationFilter(lean_deg=20, hike_deg=20, frames=3)
