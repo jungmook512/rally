@@ -58,14 +58,22 @@ MODEL_SEARCH = (("yolov8n-seg_rally.pt",), ("yolov8n-seg_ball.pt", "yolov8n-seg_
 MODEL_DIRS = ("/models", os.path.expanduser("~/rally/models"), "models")  # 컨테이너 볼륨(compose ../models:/models) → 네이티브
 
 
-def default_model_paths() -> list[str]:
-    """학습 모델 경로 목록. 아무것도 없으면 ["yolov8n-seg.pt"](COCO 임시, 인터넷 필요)."""
+MODEL_ROLE = {"yolov8n-seg_ball.pt": "모드 1 공(ball)", "yolov8n-seg_cupstick.pt": "모드 5 컵·막대(cup·rod)"}
+
+
+def find_default_models() -> tuple[list[str], list[str]]:
+    """(찾은 경로, 같은 묶음인데 없는 파일 이름). 아무것도 없으면 (["yolov8n-seg.pt"](COCO 임시), [])."""
     for d in MODEL_DIRS:
         for group in MODEL_SEARCH:
             found = [os.path.join(d, n) for n in group if os.path.isfile(os.path.join(d, n))]
             if found:
-                return found
-    return ["yolov8n-seg.pt"]
+                return found, [n for n in group if not os.path.isfile(os.path.join(d, n))]
+    return ["yolov8n-seg.pt"], []
+
+
+def default_model_paths() -> list[str]:
+    """학습 모델 경로 목록. 아무것도 없으면 ["yolov8n-seg.pt"](COCO 임시, 인터넷 필요)."""
+    return find_default_models()[0]
 
 
 def default_model_path() -> str:
@@ -269,7 +277,11 @@ class SegmenterNode(Node):
                 self.get_logger().warn(f"npy 로드 실패 {g('gripper2cam_path')}: {e}")
 
         from ultralytics import YOLO  # 무거운 import 는 여기서
-        paths = [p.strip() for p in str(g("model_path")).split(",") if p.strip()] or default_model_paths()
+        paths = [p.strip() for p in str(g("model_path")).split(",") if p.strip()]
+        if not paths:
+            paths, missing = find_default_models()
+            for n in missing:                              # 묶음 중 하나만 있으면 다른 모드가 조용히 '물체 없음'으로 실패하므로 원인을 남김 (PR #105 정동휘 리뷰)
+                self.get_logger().warn(f"{n} 없음 → {MODEL_ROLE.get(n, n)} 인식 안 됨. {os.path.dirname(paths[0])} 에 넣을 것")
         self.models = []                                  # (YOLO, names, imgsz)
         for path in paths:
             mdl = YOLO(path)

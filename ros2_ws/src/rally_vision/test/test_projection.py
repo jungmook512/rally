@@ -155,8 +155,11 @@ def test_default_model_paths(tmp_path, monkeypatch):
     from rally_vision import segmenter_node as sn
     monkeypatch.setattr(sn, "MODEL_DIRS", (str(tmp_path),))
     assert sn.default_model_paths() == ["yolov8n-seg.pt"]
-    for n in ("yolov8n-seg_ball.pt", "yolov8n-seg_cupstick.pt"):
-        (tmp_path / n).write_bytes(b"")
+    (tmp_path / "yolov8n-seg_ball.pt").write_bytes(b"")
+    found, missing = sn.find_default_models()
+    assert [p.split("/")[-1] for p in found] == ["yolov8n-seg_ball.pt"] and missing == ["yolov8n-seg_cupstick.pt"]
+    (tmp_path / "yolov8n-seg_cupstick.pt").write_bytes(b"")
+    assert sn.find_default_models()[1] == []
     assert [p.split("/")[-1] for p in sn.default_model_paths()] == ["yolov8n-seg_ball.pt", "yolov8n-seg_cupstick.pt"]
     (tmp_path / "yolov8n-seg_rally.pt").write_bytes(b"")
     assert [p.split("/")[-1] for p in sn.default_model_paths()] == ["yolov8n-seg_rally.pt"]
