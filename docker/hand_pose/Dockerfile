@@ -12,7 +12,8 @@ RUN . /opt/ros/jazzy/setup.sh && colcon build --merge-install --packages-up-to r
 
 FROM ros:jazzy-ros-base AS runtime
 # libgl1·libglib2.0-0: opencv-contrib-python(GUI 판, mediapipe 의존성)이 import 할 때 필요
-RUN apt-get update && apt-get install -y --no-install-recommends python3-pip ros-jazzy-cv-bridge ros-jazzy-usb-cam ros-jazzy-tf2-ros libgl1 libglib2.0-0 && rm -rf /var/lib/apt/lists/*
+# libgles2·libegl1: mediapipe 1.1.0 이 libGLESv2·libEGL 을 연다 — 없으면 노드가 시작하자마자 죽는다 (10/8 로봇·인식 PC, 정정인)
+RUN apt-get update && apt-get install -y --no-install-recommends python3-pip ros-jazzy-cv-bridge ros-jazzy-usb-cam ros-jazzy-tf2-ros libgl1 libglib2.0-0 libgles2 libegl1 && rm -rf /var/lib/apt/lists/*
 COPY --from=build /ros2_ws/install /ros2_ws/install
 COPY docker/hand_pose/requirements.txt /tmp/requirements.txt
 RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
