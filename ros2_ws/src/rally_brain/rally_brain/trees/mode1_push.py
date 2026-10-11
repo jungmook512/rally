@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 import py_trees
 
 from std_srvs.srv import Trigger
+from rally_brain import hand_stop
 from rally_brain.config import load_safety
 from rally_brain.behaviours import Do, Guard, ServiceCall, WaitUntil
 from rally_brain.trees.steps import HAND_DEFAULTS, TrialState, no_hand, reason_code, skill_step
@@ -238,6 +239,31 @@ class CatchWatch:
         return self.caught
 
 
+# 손 근접 STOP 으로 멈춘 스킬을 이어 가도 되는 단계 (#98). 받은 feedback.phase 로 판단 — skills/push_ball.py·return_ball.py 단계 이름.
+#   PushBall: 놓기(place) 전이면 다시 보냄 (공을 쥐고 있으면 스킬이 집기를 건너뜀). 놓기 뒤 ~ 치기·복귀는 공 위치가 애매해 세션 종료
+#   ReturnBall: 공 찾기·닿는 곳 대기면 다시 보냄, 손 보기(hand_view) 단계면 공은 이미 거치대 → 끝난 것으로. 집기~놓기는 세션 종료
+PUSH_AFTER_PLACE = {"place", "contact", "push", "observe"}
+RETURN_RESEND = {"find", "out_of_reach"}
+
+
+def push_hand_resume(reasons: list[str]):
+    def decide(reason: str, phases: list[str]) -> str | None:
+        if reason_code(reason) not in reasons or PUSH_AFTER_PLACE & set(phases):
+            return None
+        return "resend"
+    return decide
+
+
+def return_hand_resume(reasons: list[str]):
+    def decide(reason: str, phases: list[str]) -> str | None:
+        if reason_code(reason) not in reasons:
+            return None
+        if "hand_view" in phases:
+            return "done"
+        return "resend" if set(phases) <= RETURN_RESEND else None
+    return decide
+
+
 def hand_clear_block(session: Session, cfg: dict[str, Any]) -> str | None:
     """회수를 막는 이유 (None = 회수 가능). 신선한 base_link 손의 거리로만 허용 — 미검출/NaN은 이탈 확인이 아니다.
     기준 hand_clear_m 은 skills.yaml mode1 (safety.yaml slow_distance_m 과 별개, #104 에서 SLOW 거리가 바뀌어도 그대로)."""
@@ -345,10 +371,12 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
             state.data["next_start_prompt"] = time.monotonic() + cfg["hand_clear_wait_s"]
         return ready
 
+    hand_reasons = list(hand_stop.config(session.skills_cfg)["hand_stop_wait_reasons"])
     push = skill_step(state, "밀기", client, lambda: push_goal(state.data["lane"], state.data["speed"], state.data["target"]),
                       on_success=lambda r, _k: state.data.update(push=r),
                       can_send=ready_to_push, wait_for_precondition=True,
-                      on_fail=on_push_fail, on_interrupt=on_interrupt)
+                      on_fail=on_push_fail, on_interrupt=on_interrupt,
+                      hand_resume=push_hand_resume(hand_reasons))
 
     # ── 받기 확인 ──
     def catch_tick() -> bool:
@@ -426,7 +454,7 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
                      on_success=returned, on_fail=return_failed, on_interrupt=on_interrupt,
                      can_retry=lambda r: reason_code(r) in ("ball_out_of_reach", "no_ball_in_lane"),
                      on_retry=lambda _r, _k: session.say(cfg["out_of_reach_prompt"]),
-                     on_feedback=on_return_feedback)
+                     on_feedback=on_return_feedback, hand_resume=return_hand_resume(hand_reasons))
 
     def run_return() -> bool:
         prompted["t"] = None
@@ -450,7 +478,8 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
             state.fatal = True
             return False
         view_steps = [Do("자세 이동 시작", state.start), py_trees.composites.Selector("손 보기 자세", memory=True, children=[
-            ServiceCall("손 보기 자세로", session.service_client(Trigger, HAND_VIEW_SERVICE), Trigger.Request, timeout_s=30.0),
+            ServiceCall("손 보기 자세로", session.service_client(Trigger, HAND_VIEW_SERVICE), Trigger.Request, timeout_s=30.0,
+                        resend_reasons=tuple(hand_reasons), resume_ok=session.robot_resume_ok),
             Do("손 보기 실패", view_failed),
         ]), Do("손 대기 준비", view_ready)]
 

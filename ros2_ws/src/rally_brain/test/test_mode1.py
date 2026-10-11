@@ -245,7 +245,7 @@ def test_stop_before_goal_and_midflight_cancels():
     session.get_context().safety.level = SafetyStatus.LEVEL_NORMAL
     canceled = []
     pending = NS(done=lambda: False)
-    def send(goal):
+    def send(goal, feedback_callback=None):
         client.goals.append(goal)
         return Done(NS(accepted=True, get_result_async=lambda: pending,
                        cancel_goal_async=lambda: canceled.append(True)))

@@ -215,7 +215,8 @@ function renderControl(s) {
   controlReceived = performance.now();
   renderProposal();
   $("phase").textContent = s ? `${PHASES[s.phase] ?? s.phase} · ${modeName(s.mode)} · 난이도 ${s.difficulty ?? "—"}`
-    + (s.phase === "paused" && s.blocked_reason ? ` · ${s.blocked_reason}` : "") : "세션 상태 연결 끊김";
+    + (s.phase === "paused" && s.blocked_reason ? ` · ${s.blocked_reason}` : "")
+    + (s.hand_wait ? ` · 손 근접 정지 대기(${s.hand_wait}) — 손이 빠지면 이어감` : "") : "세션 상태 연결 끊김";
   $("resume").disabled = resuming || !s?.can_resume || s.phase !== "paused";
 }
 
@@ -442,6 +443,7 @@ function renderModePage(){
   else if(index>=0){title=page.steps[index];description=page.help[index];}
   else if(running){title='세부 단계 확인 중';description='수신한 상태에 대응하는 단계가 아직 연결되지 않았습니다.';}
   if(active&&control.phase==='pause_pending')description+=' 현재 시도와 회수 완료 후 휴식합니다.';
+  if(active&&control.hand_wait){title='손 근접 정지 대기';description=`안전 감시 ${control.hand_wait} — 로봇은 멈춰 있고, 손이 빠져 정상 상태가 1초 이어지면 같은 시도를 이어갑니다.`;}
   $('step-title').textContent=title;$('step-description').textContent=description;$('raw-stage').textContent=node?`수신 상태 · ${node}`:'';
   $('steps').innerHTML=page.steps.map((step,i)=>`<li class="${i===index?'active':''}" ${i===index?'aria-current="step"':''}><span>${i+1}</span><strong>${esc(step)}</strong></li>`).join('');
 }
