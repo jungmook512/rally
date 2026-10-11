@@ -7,6 +7,7 @@
   /rally/brain/context      구독 — 트리의 조건(안전·손)은 모두 이 상황판을 본다 (context_builder 가 발행)
   /rally/brain/trial_result 발행 — 시도마다 (Reliable)
   /rally/brain/state        발행 — 지금 실행 중인 트리 블록 이름, 2 Hz (대시보드용)
+  /rally/brain/session_report 발행 — 세션이 끝나면 별도 스레드에서 리포트(JSON session_id·report_md·source) 한 번 (session_report.py)
 
 세션 시작 조건: readiness.yaml 의 session 그룹(안전·로봇·인식·음성)이 준비돼야 goal 을 받는다 (NFR-08).
   가짜 스킬 서버로 흐름만 볼 때는 check_readiness:=false.
@@ -25,8 +26,10 @@ TODO: 준비가 도중에 깨지면 중단 + 관측 자세 대기, 음성 start_
 """
 from __future__ import annotations
 
+import json
 import threading
 import time
+from datetime import datetime, timezone
 from typing import Any
 import uuid
 import os
@@ -40,8 +43,8 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from std_msgs.msg import String
 
-from rally_brain import rule_layer
-from rally_brain.config import load_skills
+from rally_brain import rule_layer, session_report
+from rally_brain.config import config_path, load_skills
 from rally_brain.behaviours import SkillCall
 from rally_brain.knowledge import ontology
 from rally_brain.speech import phrase_problem
@@ -113,6 +116,7 @@ class BtRunner(Node):
         self.create_subscription(SceneContext, "/rally/brain/context", self._on_context, qos_profile_sensor_data)
         self.create_subscription(VoiceIntent, "/rally/voice/intent", self._on_intent, reliable)
         self._trial_pub = self.create_publisher(TrialResult, "/rally/brain/trial_result", reliable)
+        self._report_pub = self.create_publisher(String, "/rally/brain/session_report", reliable)
         self._state_pub = self.create_publisher(String, "/rally/brain/state", reliable)
         self.create_service(SetMode, "/rally/brain/set_mode", self._on_set_mode,
                             callback_group=MutuallyExclusiveCallbackGroup())
@@ -462,6 +466,7 @@ class BtRunner(Node):
             self.proposals = ProposalControl()
             self.control.start(session.session_id)
         started = time.monotonic()
+        started_at = datetime.now(timezone.utc)
         self.get_logger().info(f"세션 시작 {session.session_id[:8]} — 모드 {modes}, 모드마다 {n}회")
 
         outcome = "aborted"
@@ -504,6 +509,9 @@ class BtRunner(Node):
                 self._session = self._pending_switch = None
                 self._pending_intent = None
 
+        threading.Thread(target=self._publish_report, daemon=True, name="session_report",
+                         args=(session.session_id, list(session.trials), dict(session.difficulty), started_at,
+                               datetime.now(timezone.utc), outcome)).start()
         getattr(goal_handle, {"succeeded": "succeed", "canceled": "canceled", "aborted": "abort"}[outcome])()
         result = RunSession.Result(session_id=session.session_id, total_trials=len(session.trials),
                                    overall_success_rate=session.success_rate())
@@ -511,6 +519,36 @@ class BtRunner(Node):
             f"세션 종료 {session.session_id[:8]} ({outcome}) — 시도 {result.total_trials}회, "
             f"성공률 {result.overall_success_rate:.0%}")
         return result
+
+    # ---------- 세션 리포트 ----------
+    def _publish_report(self, session_id: str, trials: list, difficulty: dict, started_at: datetime,
+                        ended_at: datetime, outcome: str) -> None:
+        """세션이 끝난 뒤 별도 스레드. 수치 요약 + (가능하면) LLM 해석 → /rally/brain/session_report. 실패해도 세션과 무관."""
+        try:
+            cfg = self._llm_cfg()
+            from rally_brain.llm_advisor import load_prompt, openai_llm
+            llm = openai_llm(cfg.get("model", "gpt-4o"), float(cfg.get("temperature", 0.2)),
+                             float(cfg.get("report_timeout_s", 15.0)), tool_name=session_report.REPORT_TOOL,
+                             description="세션 기록 해석 작성")
+            prompt = load_prompt(cfg.get("prompt_session_report", "prompts/session_report.md"))
+            md, source = session_report.build_report(trials, difficulty, started_at, ended_at, outcome, llm, prompt,
+                                                     float(cfg.get("report_timeout_s", 15.0)))
+        except Exception as e:  # noqa: BLE001 — 리포트 실패가 노드를 죽이지 않게. 수치만이라도
+            self.get_logger().error(f"[리포트] 생성 실패 ({type(e).__name__}: {e}) — 수치 요약만")
+            rows = session_report.summarize(trials, difficulty)
+            md, source = session_report.numeric_markdown(rows, started_at, ended_at, outcome), f"numeric:{type(e).__name__}"
+        self._report_pub.publish(String(data=json.dumps(
+            {"session_id": session_id, "report_md": md, "source": source}, ensure_ascii=False)))
+        self.get_logger().info(f"[리포트] 세션 {session_id[:8]} 발행 ({source}, {len(md)}자)")
+
+    @staticmethod
+    def _llm_cfg() -> dict:
+        import yaml
+        path = config_path("llm.yaml")
+        if path is None:
+            return {}
+        with open(path, encoding="utf-8") as f:
+            return (yaml.safe_load(f) or {}).get("rally_llm_advisor", {}).get("ros__parameters", {})
 
     def destroy_node(self):
         if self._dashboard_bridge is not None:
