@@ -25,6 +25,17 @@ PARTS = {
     "voice": [("rally_voice", "intent_node"), ("rally_voice", "tts_node")],
 }
 
+# 노드별 파라미터 (launch 인자에서). hand_pose 기본 토픽은 RealSense 를 직접 띄울 때의 /camera/camera/... 라서,
+# 이 launch 의 RealSense(camera_namespace "", INTERFACES 2.1 의 /camera/color/...) 에 맞춰 넘긴다.
+def _params(context, executable: str) -> list[dict]:
+    if executable == "hand_pose":
+        return [{"color_topic": "/camera/color/image_raw",
+                 "depth_topic": "/camera/aligned_depth_to_color/image_raw",
+                 "info_topic": "/camera/color/camera_info"}]
+    if executable == "body_pose":
+        return [{"arm": LaunchConfiguration("body_arm").perform(context)}]   # 시연은 왼팔 (10/8 결정, 웹캠이 환자 왼쪽)
+    return []
+
 
 def _has_executable(package: str, executable: str) -> bool:
     try:
@@ -41,11 +52,11 @@ def _has_package(package: str) -> bool:
         return False
 
 
-def _nodes(package: str, executables: list[str]):
+def _nodes(context, package: str, executables: list[str]):
     actions = []
     for exe in executables:
         if _has_executable(package, exe):
-            actions.append(Node(package=package, executable=exe, output="screen"))
+            actions.append(Node(package=package, executable=exe, output="screen", parameters=_params(context, exe)))
         else:
             actions.append(LogInfo(msg=f"[pc2] {package}/{exe} 실행 등록 없음 → 건너뜀 (setup.py console_scripts 확인)"))
     return actions
@@ -89,7 +100,7 @@ def _launch_part(context):
         if p == "human":
             actions += _webcam(context)
         for package in {pkg for pkg, _ in PARTS[p]}:
-            actions += _nodes(package, [exe for pkg, exe in PARTS[p] if pkg == package])
+            actions += _nodes(context, package, [exe for pkg, exe in PARTS[p] if pkg == package])
     return actions
 
 
@@ -97,5 +108,6 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("part", default_value="all", description="vision | human | voice | all"),
         DeclareLaunchArgument("webcam_device", default_value="/dev/video0", description="측면 웹캠 장치"),
+        DeclareLaunchArgument("body_arm", default_value="left", description="body_pose 뻗는 팔: left | right | auto (시연은 왼팔)"),
         OpaqueFunction(function=_launch_part),
     ])
