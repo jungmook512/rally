@@ -195,3 +195,70 @@ def test_in_workspace():
     assert in_workspace((0.40, 0.0, 0.30), lim)
     assert not in_workspace((0.65, -0.15, 0.45), lim)
     assert not in_workspace((0.0, 0.0, 1.1), lim)       # 관절값 0 으로 채운 '똑바로 선 자세'
+
+
+# ---------- 개발용 hand_stop_mode (10/11) ----------
+def test_hand_mode_level():
+    from rally_robot.safety_monitor import hand_mode_level
+    S = SafetyStatus
+    assert hand_mode_level((S.LEVEL_STOP, "hand_near_robot"), "stop") == (S.LEVEL_STOP, "hand_near_robot")
+    assert hand_mode_level((S.LEVEL_STOP, "hand_near_robot"), "slow") == (S.LEVEL_SLOW, "hand_near_robot")
+    assert hand_mode_level((S.LEVEL_SLOW, "hand_near_centerline"), "slow") == (S.LEVEL_SLOW, "hand_near_centerline")
+    assert hand_mode_level((S.LEVEL_STOP, "hand_near_centerline"), "off") == (S.LEVEL_NORMAL, "")
+
+
+@pytest.fixture
+def monitor():
+    import rclpy
+    rclpy.init(args=["--ros-args", "-p", "robot_tf_enabled:=false", "-p", "required_inputs:=['']"])
+    from rally_robot.safety_monitor import SafetyMonitor
+    node = SafetyMonitor()
+    yield node
+    node.destroy_node()
+    rclpy.shutdown()
+
+
+def hand_msg(detected, dist):
+    from rally_interfaces.msg import HandState
+    m = HandState(detected=detected)
+    m.distance_to_centerline = dist
+    return m
+
+
+def set_mode(node, mode):
+    from rclpy.parameter import Parameter
+    node.set_parameters([Parameter("hand_stop_mode", Parameter.Type.STRING, mode)])
+
+
+@pytest.mark.parametrize("mode, near, lost", [
+    ("stop", SafetyStatus.LEVEL_STOP, SafetyStatus.LEVEL_STOP),     # 기본: 근접 STOP, 놓쳐도 1 s STOP 유지(#95)
+    ("slow", SafetyStatus.LEVEL_SLOW, SafetyStatus.LEVEL_NORMAL),   # 근접 SLOW, 놓치면 바로 NORMAL (보이는 손만)
+    ("off", SafetyStatus.LEVEL_NORMAL, SafetyStatus.LEVEL_NORMAL),
+])
+def test_hand_stop_mode_in_node(monitor, mode, near, lost):
+    set_mode(monitor, mode)
+    monitor.on_hand(hand_msg(True, 0.05))           # 로봇 위치 모름 → 선 기준 0.15 안 = STOP
+    monitor.tick()
+    assert monitor.level == near
+    monitor.on_hand(hand_msg(False, 0.0))           # 놓침
+    monitor.tick()
+    assert monitor.level == lost
+
+
+def test_hand_stop_mode_ignores_stale_hand_and_keeps_other_stops(monitor):
+    import time as _t
+    set_mode(monitor, "slow")
+    monitor.on_hand(hand_msg(True, 0.05))
+    monitor.last_rx["hand"] = _t.monotonic() - 10   # 손 메시지 끊김 — 마지막 거리(가까움)를 들고 있지 않는다
+    monitor.tick()
+    assert monitor.level == SafetyStatus.LEVEL_NORMAL
+    monitor._stop("force_limit")                    # 다른 STOP 은 그대로
+    monitor.tick()
+    assert monitor.level == SafetyStatus.LEVEL_STOP and monitor.reason == "force_limit"
+
+
+def test_unknown_mode_falls_back_to_stop(monitor):
+    set_mode(monitor, "nothing")
+    monitor.on_hand(hand_msg(True, 0.05))
+    monitor.tick()
+    assert monitor.level == SafetyStatus.LEVEL_STOP

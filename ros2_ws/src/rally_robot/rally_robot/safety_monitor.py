@@ -35,6 +35,10 @@
 - 로봇 위치 tf (base_link → link_6): tf 의 header.stamp 가 tcp_timeout_s 넘게 오래됐으면(joint_states 멈춤 → tf 얼어붙음) 안 쓴다.
   tcp_pose 가 robot_tf_tcp_cover_s 안에 있었을 때만 쓰고(교차 검사 기준), 그동안 tcp_pose 끊김은 tcp_stale 이 아니다.
   tf 로 구한 TCP 로도 작업 공간을 검사한다 (tcp_pose 만 멈춰도 작업 공간 STOP 이 빠지지 않게 — 리뷰 #104).
+- 개발용 손 STOP 스위치 (hand_stop_mode, 기본 stop = 위 그대로, 10/11 조정묵 요청): 실기 동작 확인 중 손 근접 STOP 이 잦아서.
+  slow = 손 근접 STOP 을 SLOW 로 낮춤 · off = 손 판정 안 함. 둘 다 **지금 보이는 손만** 본다 — 손 놓침 STOP·SLOW 유지(#95),
+  끊긴 손의 마지막 거리 사용, 손 입력 끊김 SLOW 를 하지 않는다. 힘 한계·nudge·작업 공간·estop·음성·필수 입력은 그대로.
+  stop 이 아니면 5 s 마다 경고 로그. 시연(환자) 전에는 반드시 stop.
 손 거리·끊김에 의한 SLOW/STOP 은 매 주기 다시 판정한다 (래치 아님). 그 밖의 STOP 은 /rally/robot/reset_safety (Trigger) 로만 해제.
 """
 import math
@@ -160,6 +164,19 @@ def hand_unknown_level(unknown_for_s, level_before, patient_contact, cfg):
     return lv if lv[0] == SafetyStatus.LEVEL_STOP else (SafetyStatus.LEVEL_SLOW, "hand_distance_unknown")
 
 
+HAND_STOP_MODES = ("stop", "slow", "off")
+
+
+def hand_mode_level(level_reason, mode):
+    """개발용 hand_stop_mode 적용 (순수 함수). stop = 그대로, slow = STOP → SLOW (사유 유지), off = NORMAL."""
+    level, reason = level_reason
+    if mode == "off":
+        return SafetyStatus.LEVEL_NORMAL, ""
+    if mode == "slow" and level == SafetyStatus.LEVEL_STOP:
+        return SafetyStatus.LEVEL_SLOW, reason
+    return level, reason
+
+
 def in_workspace(xyz, lim):
     """lim: {"x": (min, max), "y": ..., "z": ...} [m]."""
     return all(lim[a][0] <= v <= lim[a][1] for a, v in zip("xyz", xyz))
@@ -209,6 +226,7 @@ class SafetyMonitor(Node):
         self.declare_parameter("nudge_joint_speed_max_dps", 1.0)   # 관절 하나라도 이보다 빠르면 움직이는 중 (/dsr01/joint_states 100 Hz)
         self.declare_parameter("joint_states_topic", "/dsr01/joint_states")
         self.declare_parameter("contact_timeout_s", 0.5)     # contact_expected 하트비트 유효 시간
+        self.declare_parameter("hand_stop_mode", "stop")     # 개발용: stop(기본) | slow | off — 모듈 docstring. 시연 전 반드시 stop
         # 손 거리 완화 (#59) — 값은 safety.yaml
         self.declare_parameter("hand_deep_stop_m", -0.15)            # 이보다 로봇 구역 깊이 들어오면 환자 접촉 중이어도 STOP
         self.declare_parameter("patient_contact_timeout_s", 0.5)     # /rally/safety/patient_contact 하트비트 유효 시간
@@ -271,6 +289,7 @@ class SafetyMonitor(Node):
         self.hand_unknown_t = None    # 손은 보이는데 거리 NaN 이 시작된 monotonic (아니면 None)
         self.last_rx = {"hand": None, "wrench": None, "tcp": None}   # 마지막 수신 monotonic (None = 한 번도 못 받음)
         self.t_start = time.monotonic()
+        self._mode_warn_t = -math.inf
         # 시뮬(RALLY_SIM=1)은 에뮬레이터 툴 힘이 0 이라 force_publisher 가 발행을 건너뛸 수 있다 → 필수·끊김 STOP 검사 안 함 (경고 로그만)
         sim = os.environ.get("RALLY_SIM") == "1"
         self.required = [] if sim else list(self.p("required_inputs"))
@@ -454,6 +473,22 @@ class SafetyMonitor(Node):
             self.hand_level_before = level[0]
         return level
 
+    def hand_mode(self):
+        mode = str(self.p("hand_stop_mode"))
+        if mode not in HAND_STOP_MODES:
+            if not getattr(self, "_bad_mode_logged", False):
+                self.get_logger().error(f"hand_stop_mode={mode!r} 모름 → stop 으로 ({'|'.join(HAND_STOP_MODES)})")
+                self._bad_mode_logged = True
+            return "stop"
+        return mode
+
+    def hand_judge_visible(self, now, relax, cfg, mode):
+        """개발용 slow/off: 지금 보이는(신선한) 손만 판정. 놓침·끊김은 손 없음과 같다 (직전 값을 들고 있지 않는다)."""
+        if self.hand_dist is None or not self.hand_fresh(now):
+            return SafetyStatus.LEVEL_NORMAL, ""
+        on_table = hand_on_table(self.hand_points, self.p("table_y_min_m"), self.p("table_y_max_m"))
+        return hand_mode_level(hand_level(self.hand_dist, relax, cfg, self.robot_dist(now), on_table), mode)
+
     def hand_fresh(self, now):
         t = self.last_rx["hand"]
         return t is not None and now - t <= self.p("hand_timeout_s")
@@ -488,7 +523,16 @@ class SafetyMonitor(Node):
             # 로봇 위치는 tf 로 알고 있음 → tcp_pose 짧은 끊김(robot_tf_tcp_cover_s 안)은 SLOW 아님. tf 는 cover 안에서만 갱신된다
             if self.tf_fresh(now) and rx["tcp"] is not None and now - rx["tcp"] <= self.p("robot_tf_tcp_cover_s"):
                 rx["tcp"] = max(rx["tcp"], self.tf_rx)
-            level, reason = worst(self.hand_judge(now, relax, self.cfg()),
+            mode = self.hand_mode()
+            if mode == "stop":
+                hand = self.hand_judge(now, relax, self.cfg())
+            else:
+                hand = self.hand_judge_visible(now, relax, self.cfg(), mode)
+                rx.pop("hand", None)                                    # 손 끊김 SLOW 도 안 함 (보이는 손만)
+                if now - self._mode_warn_t >= 5.0:
+                    self.get_logger().warning(f"손 근접 STOP 꺼짐 (hand_stop_mode={mode}) — 개발용. 시연·환자 전에는 stop 으로")
+                    self._mode_warn_t = now
+            level, reason = worst(hand,
                                   input_level(rx, now, timeouts, self.required, now - self.t_start, self.p("required_grace_s"),
                                               self.stale_stop, self.p("stale_stop_s")))
             override = {SafetyStatus.LEVEL_NORMAL: 1.0, SafetyStatus.LEVEL_SLOW: self.p("slow_override")}.get(level, 0.0)

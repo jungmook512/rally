@@ -2,6 +2,7 @@
 # 실로봇 실행 — 터미널 3개로 나눈다. 1·2 는 앞에 띄워 두고 끌 때 그 터미널에서 Ctrl+C. (시뮬은 scripts/sim_robot.sh)
 #   터미널 1:  scripts/robot.sh bringup            # 두산 bringup (real). 이미 떠 있으면 거부
 #   터미널 2:  scripts/robot.sh nodes              # 비전 컨테이너 + 안전감시·힘·그리퍼·스킬서버. Ctrl+C 면 비전까지 끔
+#              HAND_STOP=slow scripts/robot.sh nodes   # 개발용: 손 근접 STOP → SLOW (off = 손 판정 안 함). 시연 전엔 빼기
 #              scripts/robot.sh nodes novision     #   비전 없이
 #   터미널 4:  scripts/robot.sh brain              # (세션으로 돌릴 때만) brain: context_builder + bt_runner (준비 확인 끔). DB·LLM·음성 없이
 #   터미널 3:  source scripts/robot.sh env         # 명령 터미널 (그 뒤 ros2 action send_goal ... / python3 scripts/...)
@@ -63,7 +64,8 @@ case "$1" in
       trap '"$ROOT/scripts/vision_local.sh" stop' EXIT
     fi
     echo "[robot] safety_monitor → force_publisher · gripper_node · skill_server — 끌 때 Ctrl+C. 'skill_server ready' 가 나오면 터미널 3 에서 명령"
-    ros2 launch rally_bringup pc1_robot.launch.py
+    [ "${HAND_STOP:-stop}" != stop ] && echo "[robot] ★ 손 근접 STOP = ${HAND_STOP} (개발용). 시연·환자 앞에서는 HAND_STOP 없이"
+    ros2 launch rally_bringup pc1_robot.launch.py hand_stop:=${HAND_STOP:-stop}
     ;;
 
   brain)
