@@ -194,6 +194,11 @@ brain:
   success_drop_rate: 0.4            # 최근 시도 성공률이 이 이하면 '성공률 하락' 신호 (최소 3회)
   slowing_ratio: 1.5                # 마지막 시도 시간이 앞선 시도 평균의 이 배 이상이면 '시도 시간 증가' 신호
   difficulty_range: [-3, 3]
+  # 세션 시작 때 몸 자세 기준(평소 자세) 잡기 — /rally/perception/body/reset_baseline (#83, INTERFACES 3절)
+  #   안내 → 말이 끝날 즈음 호출 → body_pose 가 약 2 s 바른 자세를 기준으로. body_pose 가 없으면 경고만 남기고 세션은 계속
+  body_baseline_prompt: "기준 자세를 잡을게요. 바르게 서 주세요."
+  body_baseline_prompt_wait_s: 2.5  # 안내를 듣고 자세를 잡을 시간
+  body_baseline_hold_s: 2.5         # 호출 뒤 기준을 잡는 동안 (body_pose 약 2 s + 여유)
 
 mode3_challenge:
   enabled: true                     # CP13 결정에 따라 false 로 시연에서 제외
