@@ -86,13 +86,14 @@ def tail_streak(trials: Sequence[TrialResult], success: bool) -> int:
 SIGNAL_LABELS = {"compensation": "보상 동작", "success_drop": "성공률 하락", "slowing": "시도 시간 증가"}
 
 
-def fatigue_signals(ctx: SceneContext | None, trials: Sequence[TrialResult], cfg: dict[str, Any]) -> list[str]:
+def fatigue_signals(ctx: SceneContext | None, trials: Sequence[TrialResult], cfg: dict[str, Any],
+                    performance: bool = True) -> list[str]:
     """애매한 신호들 (SIGNAL_LABELS 키). 음성 tired 는 여기 없음 — 그건 확실한 계기라 규칙 2."""
     signals = []
     if ctx is not None and ctx.body.compensation_detected:
         signals.append("compensation")   # 1차: 지금 보이면. TODO: 최근 시도 중 반복 횟수로
     if len(trials) >= MIN_TRIALS_FOR_TREND:
-        if metrics.success_rate(trials) <= cfg["success_drop_rate"]:   # 성공률 정의는 metrics.yaml 한 곳
+        if performance and metrics.success_rate(trials) <= cfg["success_drop_rate"]:   # 성공률 정의는 metrics.yaml 한 곳
             signals.append("success_drop")
         earlier = [t.duration_s for t in trials[:-1] if t.duration_s > 0]
         if earlier and trials[-1].duration_s >= cfg["slowing_ratio"] * (sum(earlier) / len(earlier)):
@@ -101,7 +102,8 @@ def fatigue_signals(ctx: SceneContext | None, trials: Sequence[TrialResult], cfg
 
 
 def decide(ctx: SceneContext | None, trials: Sequence[TrialResult], intent: str | None,
-           cfg: dict[str, Any], graph=None) -> Decision:
+           cfg: dict[str, Any], graph=None, *, performance: bool = True,
+           fatigue_history: Sequence[TrialResult] | None = None) -> Decision:
     """trials: 이번 세션에서 이 모드의 난이도가 마지막으로 바뀐 뒤의 시도. intent: 아직 처리 안 한 음성 intent."""
     graph = graph or ontology.load()
 
@@ -120,12 +122,13 @@ def decide(ctx: SceneContext | None, trials: Sequence[TrialResult], intent: str 
         return make("wait", f"안전 정지({ctx.safety.reason or '사유 없음'}) → {ontology.label('wait', graph)}")
     if intent in ("tired", "harder", "easier"):
         return from_cue(intent, f"{ontology.label(intent, graph)}", ["voice_tired"] if intent == "tired" else [])
-    if (n := tail_streak(trials, True)) >= cfg["success_streak"]:
+    if performance and (n := tail_streak(trials, True)) >= cfg["success_streak"]:
         return from_cue("success_streak", f"{n}연속 성공")
-    if (n := tail_streak(trials, False)) >= cfg["failure_streak"]:
+    if performance and (n := tail_streak(trials, False)) >= cfg["failure_streak"]:
         return from_cue("failure_streak", f"{n}연속 실패")
 
-    signals = fatigue_signals(ctx, trials, cfg)
+    signals = fatigue_signals(ctx, trials if fatigue_history is None else fatigue_history, cfg,
+                              performance=performance)
     if len(signals) >= cfg["llm_signal_count"]:
         names = ", ".join(SIGNAL_LABELS[s] for s in signals)
         return make("ask_llm", f"애매한 신호 {len(signals)}개({names}) → LLM 판단", signals)

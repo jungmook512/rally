@@ -144,7 +144,7 @@
     <small>휴식 후 같은 난이도로 이어갑니다. 안전 정지 해제는 운영자의 별도 절차가 필요합니다.</small>
   </section>
   <section id="proposal-panel" class="panel" hidden aria-label="휴식 제안">
-    <div class="panel-top"><h2><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5V19M16 5V19"/></svg>휴식 제안 <small class="section-tag">테스트</small></h2><span id="proposal-time" class="badge"></span></div>
+    <div class="panel-top"><h2><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5V19M16 5V19"/></svg>휴식 제안 <small id="proposal-source" class="section-tag"></small></h2><span id="proposal-time" class="badge"></span></div>
     <p id="proposal-prompt"></p><p id="proposal-status" role="status"></p>
     <button id="proposal-accept" type="button">네, 쉬겠습니다</button>
     <button id="proposal-reject" type="button">아니요, 계속할게요</button>
@@ -338,6 +338,7 @@ function renderProposal() {
   const remaining=Math.max(0, Number(p.remaining_s||0)-age);
   const fresh=Number.isFinite(control.updated_at)&&Date.now()/1000-control.updated_at>=0&&Date.now()/1000-control.updated_at<2;
   const pending=p.status==='pending'&&remaining>0&&fresh&&control.phase==='running';
+  $('proposal-source').textContent=({test:'테스트',llm:'AI 제안'})[p.source]||'출처 미확인';
   $('proposal-prompt').textContent=p.prompt;
   $('proposal-time').textContent=pending?`${Math.ceil(remaining)}초 남음`:'';
   const statuses={accepted:'수락됨 · 휴식 예약 처리 결과를 확인해 주세요',rejected:'거절됨 · 훈련 계속',expired:'시간 만료 · 훈련 계속',invalidated:'훈련 상태 변경으로 제안 종료'};
