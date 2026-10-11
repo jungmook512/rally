@@ -12,11 +12,13 @@
   (10/8 실로봇: 손끝은 거의 제자리에서 손목만 45° 도는 관절 이동 중 툴 힘이 출렁여 nudge STOP — 직선 속도만 봐서 '정지'로 오판)
 - 접촉 예정 플래그는 contact_timeout_s(0.5 s) 안에 갱신되지 않으면 꺼진 것으로 본다 (skill_server 가 죽어도 감시 복귀).
 - 손 거리 (hand_level, #59 · #98):
-  손 없음 → NORMAL / 손은 보이는데 거리 NaN(깊이·tf 없음) → SLOW (hand_distance_unknown) /
+  손 없음 → NORMAL / 손은 보이는데 거리 NaN(깊이·tf 없음) → SLOW (hand_distance_unknown). 단 직전이 STOP 이었으면 놓침과 같이
+  hand_lost_stop_s STOP 유지 (깊이는 카메라 30 cm 안에서 빠지므로 손이 로봇에 가까울수록 NaN — 리뷰 #104) /
   손이 중앙선 너머 hand_deep_stop_m 보다 깊이 → STOP (hand_near_centerline, 접촉 중이어도) /
   손 관절 21점 ↔ 로봇 끝 선분(TCP → 플랜지, robot_segment_m) 최소 거리가 hand_stop_robot_m 안 → STOP (hand_near_robot),
   hand_slow_robot_m 안 → SLOW / 중앙선에서 slow_distance_m 안 → SLOW.
-  tcp_pose 가 끊겼거나 손 관절이 base_link 가 아니면 로봇 거리를 모르므로 예전 선 기준(stop_distance_m 안 → STOP).
+  로봇 위치(tf·tcp_pose 둘 다)를 모르거나 손 관절이 base_link 가 아니면 예전 선 기준(stop_distance_m 안 → STOP).
+  로봇 거리는 선분 '중심축'까지라 그리퍼·카메라 반경만큼 실제 여유가 작다 (safety.yaml hand_stop_robot_m 주석).
   10/8 왜 바꿨나: 테이블이 선 너머 35 cm 뿐이라 모드 1 에서 환자 손끝이 레인 끝에만 있어도 선 15 cm 안 → 로봇이 30 cm 넘게
   떨어져 있어도 STOP 으로 세션이 끝났다 (#98, 실로봇 3회). 위험은 손과 로봇이 가까운 것이므로 로봇 기준으로 본다.
   단 skill_server 가 /rally/safety/patient_contact(환자가 물체·손잡이를 잡는 구간: 건네기 당김
@@ -29,6 +31,10 @@
 - 입력 끊김 (input_level, #14·#59): 손·힘·tcp_pose 를 받다가 *_timeout_s 넘게 끊기면 SLOW (hand_stale · wrench_stale ·
   tcp_stale). 손은 한 번도 받은 적이 없으면 경고 로그만 (손 노드 없이 로봇만 시험할 때 속도가 바뀌지 않게).
   힘·tcp_pose(required_inputs)는 시작 후 required_grace_s 넘게 한 번도 못 받으면 STOP (wrench_missing · tcp_missing, 받으면 풀림).
+  힘(stale_stop_inputs)은 받다가 stale_stop_s 넘게 끊겨도 STOP (wrench_lost, 받으면 풀림) — 힘 한계 없이 반속으로 돌지 않게.
+- 로봇 위치 tf (base_link → link_6): tf 의 header.stamp 가 tcp_timeout_s 넘게 오래됐으면(joint_states 멈춤 → tf 얼어붙음) 안 쓴다.
+  tcp_pose 가 robot_tf_tcp_cover_s 안에 있었을 때만 쓰고(교차 검사 기준), 그동안 tcp_pose 끊김은 tcp_stale 이 아니다.
+  tf 로 구한 TCP 로도 작업 공간을 검사한다 (tcp_pose 만 멈춰도 작업 공간 STOP 이 빠지지 않게 — 리뷰 #104).
 손 거리·끊김에 의한 SLOW/STOP 은 매 주기 다시 판정한다 (래치 아님). 그 밖의 STOP 은 /rally/robot/reset_safety (Trigger) 로만 해제.
 """
 import math
@@ -146,15 +152,34 @@ def hand_lost_level(lost_for_s, level_before, patient_contact, cfg):
     return SafetyStatus.LEVEL_SLOW, "hand_lost_near"
 
 
-def input_level(last_rx, now, timeouts, required=(), since_start=0.0, grace_s=math.inf):
+def hand_unknown_level(unknown_for_s, level_before, patient_contact, cfg):
+    """손은 보이는데 거리 NaN → (레벨, 이유). 직전 판정이 STOP 이었으면 놓침과 같이 hand_lost_stop_s STOP (hand_lost_near),
+    아니면 SLOW (hand_distance_unknown). 깊이는 카메라 30 cm 안에서 빠지므로(10/8 실측) 손이 로봇 STOP 구역에 들어오면
+    NaN 이 되기 쉽다 — 그때 STOP 이 바로 SLOW 로 풀리면 안 된다 (리뷰 #104)."""
+    lv = hand_lost_level(unknown_for_s, level_before, patient_contact, cfg)
+    return lv if lv[0] == SafetyStatus.LEVEL_STOP else (SafetyStatus.LEVEL_SLOW, "hand_distance_unknown")
+
+
+def in_workspace(xyz, lim):
+    """lim: {"x": (min, max), "y": ..., "z": ...} [m]."""
+    return all(lim[a][0] <= v <= lim[a][1] for a, v in zip("xyz", xyz))
+
+
+def input_level(last_rx, now, timeouts, required=(), since_start=0.0, grace_s=math.inf, stale_stop=(), stale_stop_s=math.inf):
     """입력 끊김 → (레벨, 이유). last_rx: {이름: 마지막 수신 monotonic 또는 None(한 번도 못 받음)}.
     required 입력(wrench·tcp)을 시작 후 grace_s 넘게 한 번도 못 받았으면 STOP (<이름>_missing, 래치 아님 — 받으면 풀림).
     10/8 실로봇: force_publisher 가 두산 서비스에서 멈춘 채 떠 있어 힘 한계·nudge·작업 공간 판정 없이 세션이 돌았다.
+    stale_stop 입력(wrench)은 받다가 stale_stop_s 넘게 끊겨도 STOP (<이름>_lost, 래치 아님) — 세션 중 force_publisher 가 멈추면
+    힘 한계 없이 반속으로 계속 돌던 것 (리뷰 #104).
     그 밖에 한 번도 못 받은 입력(손)은 여기서 판정하지 않는다 (경고 로그는 노드가). 받다가 끊긴 것은 SLOW."""
     if since_start > grace_s:
         for name in required:
             if last_rx.get(name) is None:
                 return SafetyStatus.LEVEL_STOP, f"{name}_missing"
+    for name in stale_stop:
+        t = last_rx.get(name)
+        if t is not None and now - t > stale_stop_s:
+            return SafetyStatus.LEVEL_STOP, f"{name}_lost"
     for name, t in last_rx.items():
         if t is not None and now - t > timeouts[name]:
             return SafetyStatus.LEVEL_SLOW, f"{name}_stale"
@@ -199,6 +224,7 @@ class SafetyMonitor(Node):
         self.declare_parameter("robot_tf_enabled", True)
         self.declare_parameter("robot_tf_frame", "link_6")
         self.declare_parameter("robot_tf_max_diff_m", 0.20)       # tf TCP 와 tcp_pose 가 이보다 다르면 tf 를 안 씀
+        self.declare_parameter("robot_tf_tcp_cover_s", 2.0)       # tcp_pose 가 이 시간 안에 있었을 때만 tf 를 씀 (그 사이 끊김은 tcp_stale 아님)
         # 입력 끊김 (#14·#59)
         self.declare_parameter("hand_timeout_s", 0.5)
         self.declare_parameter("wrench_timeout_s", 0.5)
@@ -206,6 +232,8 @@ class SafetyMonitor(Node):
         self.declare_parameter("never_received_warn_s", 5.0)        # 시작 후 이 시간 동안 한 번도 못 받은 입력은 경고 로그
         self.declare_parameter("required_inputs", ["wrench", "tcp"])   # 이 시간 넘게 한 번도 못 받으면 STOP (<이름>_missing)
         self.declare_parameter("required_grace_s", 5.0)
+        self.declare_parameter("stale_stop_inputs", ["wrench"])     # 받다가 stale_stop_s 넘게 끊기면 STOP (<이름>_lost)
+        self.declare_parameter("stale_stop_s", 2.0)
         for k, v in dict(x_min=0.25, x_max=0.80, y_min=-0.45, y_max=0.45, z_min=0.0, z_max=0.60).items():
             self.declare_parameter(f"workspace_{k}_m", v)
         self.declare_parameter("workspace_enabled", True)
@@ -230,8 +258,9 @@ class SafetyMonitor(Node):
         self.hand_points = []         # 손 관절 base_link (x, y, z). base_link 가 아니면 비움 (→ 로봇 거리 모름)
         self.robot_seg = None         # (TCP, 플랜지) base_link — tcp_pose 로
         self.robot_seg_tf = None      # 같은 것 — tf 로 (이동 중에도 안 끊김)
-        self.tf_rx = None             # tf 로 로봇 위치를 마지막으로 구한 monotonic
+        self.tf_rx = None             # 마지막으로 쓴 tf 값의 시각 (monotonic 으로 환산한 stamp)
         self._tf_bad_logged = False
+        self._tf_old_logged = False
         if self.p("robot_tf_enabled"):
             import tf2_ros
             self.tf_buf = tf2_ros.Buffer()
@@ -239,10 +268,13 @@ class SafetyMonitor(Node):
             self.create_timer(0.02, self.on_tf_timer)
         self.hand_level_before = SafetyStatus.LEVEL_NORMAL   # 손이 보일 때 마지막 손 판정 레벨 (놓침 판정용)
         self.hand_lost_t = None       # 손을 놓친 monotonic (보이면 None)
+        self.hand_unknown_t = None    # 손은 보이는데 거리 NaN 이 시작된 monotonic (아니면 None)
         self.last_rx = {"hand": None, "wrench": None, "tcp": None}   # 마지막 수신 monotonic (None = 한 번도 못 받음)
         self.t_start = time.monotonic()
-        # 시뮬(RALLY_SIM=1)은 에뮬레이터 툴 힘이 0 이라 force_publisher 가 발행을 건너뛸 수 있다 → 필수 입력 검사 안 함 (경고 로그만)
-        self.required = [] if os.environ.get("RALLY_SIM") == "1" else list(self.p("required_inputs"))
+        # 시뮬(RALLY_SIM=1)은 에뮬레이터 툴 힘이 0 이라 force_publisher 가 발행을 건너뛸 수 있다 → 필수·끊김 STOP 검사 안 함 (경고 로그만)
+        sim = os.environ.get("RALLY_SIM") == "1"
+        self.required = [] if sim else list(self.p("required_inputs"))
+        self.stale_stop = [] if sim else list(self.p("stale_stop_inputs"))
         self._warned_never = set()
         self._last_logged = (SafetyStatus.LEVEL_NORMAL, "")
         self._last_log_t = 0.0
@@ -271,9 +303,11 @@ class SafetyMonitor(Node):
         now = time.monotonic()
         self.last_rx["hand"] = now
         if not m.detected and self.hand_dist is not None:
-            self.hand_lost_t = now                          # 보이다가 놓침
+            self.hand_lost_t = self.hand_unknown_t or now   # 보이다가 놓침. NaN 이던 때부터 셈 (STOP 유지를 늘리지 않게)
         elif m.detected:
             self.hand_lost_t = None
+        unknown = m.detected and math.isnan(m.distance_to_centerline)
+        self.hand_unknown_t = (self.hand_unknown_t or now) if unknown else None
         self.hand_dist = float(m.distance_to_centerline) if m.detected else None
         self.hand_points = ([(p.x, p.y, p.z) for p in m.landmarks]
                             if m.detected and m.header.frame_id == "base_link" else [])
@@ -312,21 +346,39 @@ class SafetyMonitor(Node):
                 self.tcp_ang_speed = quat_angle_deg(self.prev_tcp[4:], q) / dt
         self.prev_tcp = (now, x, y, z, *q)
         self.robot_seg = robot_segment((x, y, z), q, self.p("robot_segment_m"))
-        if self.p("workspace_enabled"):
-            for axis, v in (("x", x), ("y", y), ("z", z)):
-                if not self.p(f"workspace_{axis}_min_m") <= v <= self.p(f"workspace_{axis}_max_m"):
-                    self._stop("workspace_limit")
-                    break
+        self.check_workspace((x, y, z))
+
+    def check_workspace(self, xyz):
+        if not self.p("workspace_enabled"):
+            return
+        lim = {a: (self.p(f"workspace_{a}_min_m"), self.p(f"workspace_{a}_max_m")) for a in "xyz"}
+        if not in_workspace(xyz, lim):
+            self._stop("workspace_limit")
+
+    def tcp_fresh(self, now):
+        t = self.last_rx["tcp"]
+        return t is not None and now - t <= self.p("tcp_timeout_s")
 
     def on_tf_timer(self):
         try:
             tr = self.tf_buf.lookup_transform("base_link", self.p("robot_tf_frame"), Time())
         except Exception:
             return
+        # lookup_transform(Time()) 은 버퍼의 마지막 값을 계속 준다 → joint_states 가 멈추면 tf 가 얼어붙어도 조회는 성공한다.
+        # 신선도는 조회 시각이 아니라 tf stamp 로 (10/10 실로봇 bag: link_6 stamp ↔ 수신 0.3 ms, 최대 4 ms)
+        age = (self.get_clock().now() - Time.from_msg(tr.header.stamp)).nanoseconds * 1e-9
+        if age > self.p("tcp_timeout_s"):
+            if not self._tf_old_logged:
+                self.get_logger().error(f"tf {self.p('robot_tf_frame')} 가 {age:.1f} s 전 값 (joint_states 끊김?) — tf 를 안 씀")
+            self._tf_old_logged = True
+            return
+        self._tf_old_logged = False
         now = time.monotonic()
+        # 교차 검사 기준 tcp_pose 가 없으면 tf 를 안 쓴다 (관절값 0 으로 채운 tf 를 걸러낼 수 없음)
+        if self.prev_tcp is None or now - self.prev_tcp[0] > self.p("robot_tf_tcp_cover_s"):
+            return
         t, r = tr.transform.translation, tr.transform.rotation
-        ref = self.prev_tcp[1:4] if self.prev_tcp is not None and now - self.prev_tcp[0] <= 1.0 else None
-        seg = tf_robot_segment((t.x, t.y, t.z), (r.x, r.y, r.z, r.w), self.p("robot_segment_m"), ref,
+        seg = tf_robot_segment((t.x, t.y, t.z), (r.x, r.y, r.z, r.w), self.p("robot_segment_m"), self.prev_tcp[1:4],
                                self.p("robot_tf_max_diff_m"))
         if seg is None:
             if not self._tf_bad_logged:
@@ -334,7 +386,8 @@ class SafetyMonitor(Node):
             self._tf_bad_logged = True
             return
         self._tf_bad_logged = False
-        self.robot_seg_tf, self.tf_rx = seg, now
+        self.robot_seg_tf, self.tf_rx = seg, now - age     # tf 값의 시각 (조회 시각이 아니라) — 얼어붙으면 tcp_timeout_s 안에 끊김
+        self.check_workspace(seg[0])             # tcp_pose 만 멈춰도 작업 공간 STOP 이 빠지지 않게 (리뷰 #104)
 
     def tf_fresh(self, now):
         return self.tf_rx is not None and now - self.tf_rx <= self.p("tcp_timeout_s")
@@ -361,8 +414,10 @@ class SafetyMonitor(Node):
         출발 순간도 같은 문제(10 Hz tcp_pose 로는 아직 '정지' → 가속 관성 힘 1.3 → 6.8 N 에 nudge STOP) → 관절 속도(100 Hz)로도 본다."""
         now = time.monotonic()
         joint_moving = self.joint_moving_t is not None and now - self.joint_moving_t < 0.05   # 100 Hz 두세 샘플
-        if (joint_moving or self.tcp_speed >= self.p("nudge_speed_max_mps")
-                or self.tcp_ang_speed >= self.p("nudge_ang_speed_max_dps")):
+        # tcp_pose 가 끊기면 마지막 속도가 남아 '움직이는 중'으로 굳는다 → nudge 가 표시 없이 꺼짐 (리뷰 #104). 끊긴 동안은 관절 속도로만
+        tcp_moving = self.tcp_fresh(now) and (self.tcp_speed >= self.p("nudge_speed_max_mps")
+                                              or self.tcp_ang_speed >= self.p("nudge_ang_speed_max_dps"))
+        if joint_moving or tcp_moving:
             self.last_moving_t = now
             return True
         return self.last_moving_t is not None and now - self.last_moving_t < self.p("nudge_settle_s")
@@ -384,14 +439,15 @@ class SafetyMonitor(Node):
         """손 관절 ↔ 로봇 끝 선분. tf(우선)·tcp_pose 둘 다 끊겼거나 손 관절이 base_link 가 아니면 None (선 기준으로)."""
         if self.tf_fresh(now):
             return hand_robot_dist(self.hand_points, self.robot_seg_tf)
-        t = self.last_rx["tcp"]
-        if self.robot_seg is None or t is None or now - t > self.p("tcp_timeout_s"):
+        if self.robot_seg is None or not self.tcp_fresh(now):
             return None
         return hand_robot_dist(self.hand_points, self.robot_seg)
 
     def hand_judge(self, now, relax, cfg):
         if self.hand_dist is None and self.hand_lost_t is not None:
             return hand_lost_level(now - self.hand_lost_t, self.hand_level_before, relax, cfg)
+        if self.hand_unknown_t is not None:      # 보이는데 거리 NaN — 직전 레벨(hand_level_before)은 갱신하지 않는다
+            return hand_unknown_level(now - self.hand_unknown_t, self.hand_level_before, relax, cfg)
         on_table = hand_on_table(self.hand_points, self.p("table_y_min_m"), self.p("table_y_max_m"))
         level = hand_level(self.hand_dist, relax, cfg, self.robot_dist(now), on_table)
         if self.hand_dist is not None:
@@ -429,10 +485,12 @@ class SafetyMonitor(Node):
             timeouts = {k: self.p(f"{k}_timeout_s") for k in self.last_rx}
             relax = self.patient_contact() and self.hand_fresh(now)     # 손이 끊겼으면 마지막 거리로 완화하지 않는다
             rx = dict(self.last_rx)
-            if self.tf_fresh(now) and rx["tcp"] is not None:    # 로봇 위치는 tf 로 알고 있음 → tcp_pose 잠깐 끊김은 SLOW 아님
+            # 로봇 위치는 tf 로 알고 있음 → tcp_pose 짧은 끊김(robot_tf_tcp_cover_s 안)은 SLOW 아님. tf 는 cover 안에서만 갱신된다
+            if self.tf_fresh(now) and rx["tcp"] is not None and now - rx["tcp"] <= self.p("robot_tf_tcp_cover_s"):
                 rx["tcp"] = max(rx["tcp"], self.tf_rx)
             level, reason = worst(self.hand_judge(now, relax, self.cfg()),
-                                  input_level(rx, now, timeouts, self.required, now - self.t_start, self.p("required_grace_s")))
+                                  input_level(rx, now, timeouts, self.required, now - self.t_start, self.p("required_grace_s"),
+                                              self.stale_stop, self.p("stale_stop_s")))
             override = {SafetyStatus.LEVEL_NORMAL: 1.0, SafetyStatus.LEVEL_SLOW: self.p("slow_override")}.get(level, 0.0)
             self.level, self.reason, self.override = level, reason, override
             if (level, reason) != self._last_logged:

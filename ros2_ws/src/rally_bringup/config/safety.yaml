@@ -6,24 +6,29 @@ rally_safety_monitor:
     #   10/8 바꾼 이유: 테이블이 중앙선 너머 35 cm 뿐이라 모드 1 에서 환자 손끝이 레인 끝에만 있어도 선 21 cm, 조금 움직이면 15 cm 안 →
     #   로봇이 손에서 30 cm 넘게 떨어져 있어도(손 보기 자세 대기·거치대 집기) STOP 으로 세션 중단 (실로봇 3회). 위험은 손과 로봇이 가까운 것.
     #   지연 여유: 손 116 ms + tcp_pose 10 Hz(≤ 100 ms) → 로봇 0.3 m/s 에서 5~7 cm. 0.20 m 는 그만큼 포함.
+    #   거리는 선분 '중심축'까지다. 그리퍼·카메라 표면은 축에서 약 6~8 cm(RG2 손가락 최대 벌림 11 cm 의 반, 카메라 마운트 —
+    #   실측 TODO(정정인)) 바깥이라, 0.20 m 일 때 표면까지 실제 여유는 약 12~14 cm. 실측 후 표면 기준으로 올릴지 정정인 결정 (리뷰 #104)
     hand_stop_robot_m: 0.20    # 손 ↔ 로봇 이 안이면 STOP (hand_near_robot). 환자 접촉(patient_contact) 중엔 SLOW
     hand_slow_robot_m: 0.35    # 이 안이면 SLOW
     robot_segment_m: 0.228     # TCP(RG2 손가락 끝) → 플랜지. 펜던트 툴 오프셋 228 mm. 그리퍼 몸통·카메라가 이 선분 근처
     slow_distance_m: 0.10      # 손이 중앙선에서 이 안이면 SLOW. 0.25 → 0.10 (10/8): 0.25 면 모드 1 내내 SLOW 라 치는 속도가 절반 → 레시피 틀어짐
     stop_distance_m: 0.15      # tcp_pose 가 끊겨 로봇 거리를 모를 때만 쓰는 예전 선 기준 STOP (그때는 tcp_stale SLOW 도 같이)
     hand_lost_stop_s: 1.0      # 가까운 구역(직전 STOP)에서 손을 놓치면 이 시간 STOP (#95 — 손은 그리퍼(=카메라)에 가까울 때 잘 놓침)
-    hand_lost_slow_s: 3.0
+    hand_lost_slow_s: 3.0      # 놓친 때부터 이 시간까지 SLOW (직전 SLOW·환자 접촉 중이면 STOP 없이). 보이는데 거리 NaN 도 직전 STOP 이면 같은 규칙
     # 테이블 y 범위 (10/8): 손 관절이 전부 이 밖이면(옆 책상 사람 손) 선 기준 판정(깊이 STOP·선 SLOW)은 안 하고 로봇 거리로만.
     #   distance_to_centerline 은 x 만 봐서 테이블 옆 손(y 0.52)도 '선 너머 0.19 m' 로 계산 → 거치대 집기·손 보기 이동 중 STOP 2회.
     #   로봇에 가까우면 hand_stop_robot_m 으로 그대로 STOP. 로봇 위치를 모르면 선 기준 그대로. TODO 실측: 테이블 가장자리 y
     table_y_min_m: -0.40
-    table_y_max_m: 0.40      # 놓친 때부터 이 시간까지 SLOW (직전 SLOW·환자 접촉 중이면 STOP 없이)
+    table_y_max_m: 0.40
     # 로봇 위치를 tf(base_link → link_6, robot_state_publisher 65 Hz) 로도 (10/8): tcp_pose 는 get_current_posx 서비스라 로봇이 움직이는 중
     #   0.5 s 넘게 끊겨 tcp_stale SLOW ↔ NORMAL 이 번갈아 → 스킬이 매번 멈췄다 재이동(덜컹) · 손 거리가 선 기준으로 돌아감. 로봇이 멈춰 있을 때
-    #   tf 와 posx 차 2.4 mm·0.1°. tf 가 살아 있으면 손 ↔ 로봇 거리는 tf 로, tcp_pose 잠깐 끊김은 SLOW 아님 (작업 공간·nudge 속도는 tcp_pose 그대로)
+    #   tf 와 posx 차 2.4 mm·0.1°. tf 가 살아 있으면 손 ↔ 로봇 거리는 tf 로, tcp_pose 짧은 끊김(robot_tf_tcp_cover_s 안)은 SLOW 아님.
+    #   리뷰 #104 로 조임: tf stamp 가 tcp_timeout_s 넘게 오래됐으면 안 씀(joint_states 멈춤 → tf 얼어붙음, 10/10 bag stamp 지연 ≤ 4 ms) ·
+    #   tf TCP 로도 작업 공간 검사 · tcp_pose 가 cover 넘게 끊기면 tf 를 안 쓰고 tcp_stale SLOW + 선 기준 · tcp_pose 끊긴 동안 nudge '이동 중'은 관절 속도로만
     robot_tf_enabled: true
     robot_tf_frame: link_6
     robot_tf_max_diff_m: 0.20  # tf TCP 가 tcp_pose 와 이보다 다르면 tf 를 안 씀 — 관절값 끊김 시 tf 가 팔 0° 자세를 냄(#77). 이동 중 tcp_pose 지연보다 크게
+    robot_tf_tcp_cover_s: 2.0  # tcp_pose 가 이 시간 안에 있었을 때만 tf 를 씀(교차 검사 기준). 이동 중 get_current_posx 끊김(0.5 s 넘게, 10/8)을 덮는 길이
     slow_override: 0.5
     force_limit_n: 25.0        # 합력 |F| 초과 → STOP (모드 7 은 스킬 자체 한계 15 N 이 먼저 걸림)
     nudge_dfdt_n: 5.0          # 정지 구간 힘 급변 (N, wrench 한 샘플 = 20 ms @ 50 Hz 기준) → STOP. 10/6 실측: 정지 노이즈 |ΔF| ≤ 0.25 N, |F| ≤ 2.5 N → 노이즈 20배. 실제 톡 쳐서 안 걸리면 3.0 으로
@@ -51,6 +56,11 @@ rally_safety_monitor:
     #   받으면 바로 풀림 (래치 아님). 시뮬(RALLY_SIM=1)은 검사 안 함. 손은 손 노드 없이 로봇만 시험할 수 있게 넣지 않음
     required_inputs: [wrench, tcp]
     required_grace_s: 5.0
+    # 세션 중 힘 끊김 (리뷰 #104): 받다가 stale_stop_s 넘게 끊기면 STOP (wrench_lost, 받으면 풀림). 전에는 wrench_stale SLOW 만이라
+    #   force_publisher 가 도중에 멈추면 힘 한계 없이 반속으로 계속 돌았다. tcp 는 넣지 않음 — 위치는 tf 로도 보고, 길게 끊기면 tcp_stale SLOW + 선 기준.
+    #   특이점 근처에서 툴 힘이 0 이라 force_publisher 가 발행을 건너뛰면 여기서도 STOP — 그 자세를 피할 것 (시뮬 RALLY_SIM=1 은 검사 안 함)
+    stale_stop_inputs: [wrench]
+    stale_stop_s: 2.0
     workspace_enabled: true    # tcp_pose 가 아래 범위 밖이면 STOP (workspace_limit)
     # 작업 공간 (base_link, m) — table.yaml 중앙선과 맞춘다. TODO(정정인) 관측 자세 티칭 후 실측
     workspace_x_min_m: 0.20    # 10/6: 테이블 가까운 쪽 접촉점 x=0.231 m 포함

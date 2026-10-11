@@ -5,8 +5,8 @@ import math
 import pytest
 
 from rally_interfaces.msg import SafetyStatus
-from rally_robot.safety_monitor import (hand_level, hand_lost_level, hand_robot_dist, input_level, point_segment_dist,
-                                        robot_segment, worst)
+from rally_robot.safety_monitor import (hand_level, hand_lost_level, hand_robot_dist, hand_unknown_level, in_workspace,
+                                        input_level, point_segment_dist, robot_segment, worst)
 
 NORMAL, SLOW, STOP = SafetyStatus.LEVEL_NORMAL, SafetyStatus.LEVEL_SLOW, SafetyStatus.LEVEL_STOP
 CFG = {"slow_distance_m": 0.25, "stop_distance_m": 0.15, "hand_deep_stop_m": -0.15,
@@ -164,3 +164,34 @@ def test_hand_off_table_uses_robot_distance_only():
     assert hand_on_table([(0.44, 0.52, 0.1), (0.45, 0.60, 0.1)], -0.40, 0.40) is False
     assert hand_on_table([(0.44, 0.52, 0.1), (0.45, 0.38, 0.1)], -0.40, 0.40) is True    # 한 점이라도 안이면 테이블 위
     assert hand_on_table([], -0.40, 0.40) is True
+
+
+# ----- 리뷰 #104 -----
+
+def test_unknown_distance_after_stop_holds_stop():
+    # 손이 로봇 STOP 구역에 들어와 깊이가 빠짐(카메라 30 cm 안) → 바로 SLOW 로 풀리면 안 됨
+    assert hand_unknown_level(0.5, STOP, False, CFG) == (STOP, "hand_lost_near")
+    assert hand_unknown_level(1.5, STOP, False, CFG) == (SLOW, "hand_distance_unknown")
+    assert hand_unknown_level(10.0, STOP, False, CFG) == (SLOW, "hand_distance_unknown")    # NaN 인 동안은 계속 SLOW
+    assert hand_unknown_level(0.5, STOP, True, CFG) == (SLOW, "hand_distance_unknown")     # 환자 접촉 중은 SLOW
+    assert hand_unknown_level(0.1, NORMAL, False, CFG) == (SLOW, "hand_distance_unknown")
+    assert hand_unknown_level(0.1, SLOW, False, CFG) == (SLOW, "hand_distance_unknown")
+
+
+def test_wrench_lost_mid_session_is_stop():
+    rx = {"hand": 99.9, "wrench": 97.5, "tcp": 99.9}
+    assert input_level(rx, 100.0, TIMEOUTS, ("wrench", "tcp"), 60.0, 5.0) == (SLOW, "wrench_stale")       # 예전 동작
+    assert input_level(rx, 100.0, TIMEOUTS, ("wrench", "tcp"), 60.0, 5.0, ("wrench",), 2.0) == (STOP, "wrench_lost")
+    rx["wrench"] = 98.5
+    assert input_level(rx, 100.0, TIMEOUTS, ("wrench", "tcp"), 60.0, 5.0, ("wrench",), 2.0) == (SLOW, "wrench_stale")
+    rx["wrench"] = 99.9
+    assert input_level(rx, 100.0, TIMEOUTS, ("wrench", "tcp"), 60.0, 5.0, ("wrench",), 2.0) == (NORMAL, "")   # 받으면 풀림
+    # 한 번도 못 받은 것은 _missing 규칙 (grace 전에는 판정 안 함)
+    assert input_level({"hand": None, "wrench": None, "tcp": 99.9}, 100.0, TIMEOUTS, (), 1.0, 5.0, ("wrench",), 2.0) == (NORMAL, "")
+
+
+def test_in_workspace():
+    lim = {"x": (0.20, 0.57), "y": (-0.45, 0.45), "z": (0.0, 0.60)}
+    assert in_workspace((0.40, 0.0, 0.30), lim)
+    assert not in_workspace((0.65, -0.15, 0.45), lim)
+    assert not in_workspace((0.0, 0.0, 1.1), lim)       # 관절값 0 으로 채운 '똑바로 선 자세'
