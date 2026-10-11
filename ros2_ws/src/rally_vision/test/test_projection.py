@@ -126,3 +126,40 @@ def test_pick_transform_source_matrix():
     }
     for (src, tf_ok, tcp_ok), want in cases.items():
         assert pick(src, tf_ok, tcp_ok) == want, (src, tf_ok, tcp_ok)
+
+
+# ---------------------------------------------------------------- 여러 모델 병합 (10/8)
+def _obj(cls, conf, x0, x1, shape=(40, 40)):
+    m = np.zeros(shape, bool)
+    m[10:20, x0:x1] = True
+    return {"class_name": cls, "confidence": conf, "mask": m}
+
+
+def test_merge_cross_model_prefers_first_model():
+    from rally_vision.segmenter_node import merge_cross_model
+    ball = _obj("ball", 0.90, 5, 15)
+    cup_on_ball = _obj("cup", 0.97, 6, 16)          # 공 자리에 cup·stick 모델이 더 높은 신뢰도로 cup
+    real_cup = _obj("cup", 0.95, 25, 35)            # 떨어진 진짜 컵
+    out = merge_cross_model([[ball], [cup_on_ball, real_cup]])
+    assert [o["class_name"] for o in out] == ["ball", "cup"]
+    assert out[1] is real_cup
+
+
+def test_merge_cross_model_keeps_same_model_overlap():
+    from rally_vision.segmenter_node import merge_cross_model
+    a, b = _obj("ball", 0.9, 5, 15), _obj("ball", 0.8, 6, 16)
+    assert len(merge_cross_model([[a, b], []])) == 2   # 같은 모델 안 겹침은 NMS 몫
+
+
+def test_default_model_paths(tmp_path, monkeypatch):
+    from rally_vision import segmenter_node as sn
+    monkeypatch.setattr(sn, "MODEL_DIRS", (str(tmp_path),))
+    assert sn.default_model_paths() == ["yolov8n-seg.pt"]
+    (tmp_path / "yolov8n-seg_ball.pt").write_bytes(b"")
+    found, missing = sn.find_default_models()
+    assert [p.split("/")[-1] for p in found] == ["yolov8n-seg_ball.pt"] and missing == ["yolov8n-seg_cupstick.pt"]
+    (tmp_path / "yolov8n-seg_cupstick.pt").write_bytes(b"")
+    assert sn.find_default_models()[1] == []
+    assert [p.split("/")[-1] for p in sn.default_model_paths()] == ["yolov8n-seg_ball.pt", "yolov8n-seg_cupstick.pt"]
+    (tmp_path / "yolov8n-seg_rally.pt").write_bytes(b"")
+    assert [p.split("/")[-1] for p in sn.default_model_paths()] == ["yolov8n-seg_rally.pt"]

@@ -91,3 +91,59 @@ def test_mode_block_sets_current_mode():
     tree.tick_once()                                   # "모드 5 시작" → 손 대기(컨텍스트 없음, RUNNING)
     assert s.current_mode == 5
     assert tree.status == Status.RUNNING
+
+
+# ---------- 자세 기준 잡기 (#83) ----------
+class Done:
+    def __init__(self, value):
+        self.value = value
+
+    def done(self):
+        return True
+
+    def result(self):
+        return self.value
+
+
+def baseline_session(success=True):
+    s, _ = make_session()
+    said, calls = [], []
+    s.say = said.append
+    s.skills_cfg = {"brain": {"body_baseline_prompt_wait_s": 0.0, "body_baseline_hold_s": 0.0}}
+
+    def call_async(req):
+        calls.append(req)
+        return Done(NS(success=success, message="" if success else "no body"))
+    s.service_client = lambda _type, name: NS(name=name, service_is_ready=lambda: True, call_async=call_async)
+    return s, said, calls
+
+
+def tick_until(tree, cond, n=20):
+    for _ in range(n):
+        tree.tick_once()
+        if cond():
+            return True
+    return False
+
+
+def test_body_baseline_runs_once_before_first_mode():
+    s, said, calls = baseline_session()
+    tree = build_session_tree(s, [5], 1)
+    assert tree.children[0].name == "자세 기준 잡기"
+    assert tick_until(tree, lambda: s.current_mode == 5)
+    assert said[0] == "기준 자세를 잡을게요. 바르게 서서 잠깐 가만히 있어 주세요."
+    assert len(calls) == 1 and s.body_baseline_done
+    # 모드 전환으로 트리를 새로 만들어도 다시 잡지 않는다
+    assert build_session_tree(s, [7], 1).children[0].name != "자세 기준 잡기"
+
+
+def test_body_baseline_failure_does_not_block_session():
+    s, _, calls = baseline_session(success=False)
+    tree = build_session_tree(s, [5], 1)
+    assert tick_until(tree, lambda: s.current_mode == 5)
+    assert len(calls) == 1 and s.body_baseline_done
+
+
+def test_body_baseline_skipped_without_service_client():
+    s, _ = make_session()
+    assert build_session_tree(s, [5], 1).children[0].name != "자세 기준 잡기"

@@ -52,18 +52,69 @@ def parse_alias(s: str) -> dict[str, str]:
     return out
 
 
-MODEL_SEARCH = ("yolov8n-seg_rally.pt", "yolov8n-seg_ball.pt")      # model_path 가 비면 이 순서로 찾는다
+# model_path 가 비면 폴더마다 이 순서로 찾는다: 통합 모델 하나가 있으면 그것만, 없으면 모드별 모델을 있는 만큼 같이 돌린다
+#   모드 1 = ball 모델, 모드 5 = cup·stick 모델. 매 프레임 둘 다 돌려 합친다 (GPU 약 5.5 ms × 2, 30 fps 예산 33 ms 안)
+MODEL_SEARCH = (("yolov8n-seg_rally.pt",), ("yolov8n-seg_ball.pt", "yolov8n-seg_cupstick.pt"))
 MODEL_DIRS = ("/models", os.path.expanduser("~/rally/models"), "models")  # 컨테이너 볼륨(compose ../models:/models) → 네이티브
 
 
-def default_model_path() -> str:
-    """학습 모델을 찾으면 그 경로, 없으면 "yolov8n-seg.pt"(COCO 임시, 인터넷 필요)."""
+MODEL_ROLE = {"yolov8n-seg_ball.pt": "모드 1 공(ball)", "yolov8n-seg_cupstick.pt": "모드 5 컵·막대(cup·rod)"}
+
+
+def find_default_models() -> tuple[list[str], list[str]]:
+    """(찾은 경로, 같은 묶음인데 없는 파일 이름). 아무것도 없으면 (["yolov8n-seg.pt"](COCO 임시), [])."""
     for d in MODEL_DIRS:
-        for name in MODEL_SEARCH:
-            p = os.path.join(d, name)
-            if os.path.isfile(p):
-                return p
-    return "yolov8n-seg.pt"
+        for group in MODEL_SEARCH:
+            found = [os.path.join(d, n) for n in group if os.path.isfile(os.path.join(d, n))]
+            if found:
+                return found, [n for n in group if not os.path.isfile(os.path.join(d, n))]
+    return ["yolov8n-seg.pt"], []
+
+
+def default_model_paths() -> list[str]:
+    """학습 모델 경로 목록. 아무것도 없으면 ["yolov8n-seg.pt"](COCO 임시, 인터넷 필요)."""
+    return find_default_models()[0]
+
+
+def default_model_path() -> str:
+    """(하위 호환) 쉼표로 이은 모델 경로."""
+    return ",".join(default_model_paths())
+
+
+def model_train_imgsz(model, fallback: int = 640) -> int:
+    """학습 때 imgsz (ckpt train_args). ball 640, cupstick 864 처럼 모델마다 다르므로 학습값으로 추론해야 정확도가 같다."""
+    try:
+        v = (getattr(model, "ckpt", None) or {}).get("train_args", {}).get("imgsz")
+        return int(v[0] if isinstance(v, (list, tuple)) else v) if v else fallback
+    except Exception:  # noqa: BLE001
+        return fallback
+
+
+def merge_cross_model(groups: list[list[dict]], overlap: float = 0.5) -> list[dict]:
+    """여러 모델 결과를 합친다. 서로 다른 모델의 마스크가 겹치면(교집합 / 작은 쪽 넓이 > overlap) **앞 모델 것만** 남긴다.
+
+    모델 순서 = 우선순위 (기본 ball → cupstick). 10/8 data/raw 사진으로 확인:
+      - cup·stick 모델은 공을 본 적이 없어 테니스공을 "cup" 으로 잡는다 (공 사진의 20~30 %, conf 최대 0.97).
+        신뢰도로 고르면 ball_rail 120장 중 2장에서 cup 이 공을 이겨 공이 사라졌다 → 신뢰도 대신 모델 순서로 고른다.
+      - ball 모델은 컵·막대 사진에서 오검출이 거의 없다 (잡은 공은 배경의 진짜 공, 가장자리 초록 레일 조각 2건뿐).
+    같은 모델 안의 겹침은 YOLO NMS 몫이라 건드리지 않는다.
+    """
+    kept: list[tuple[dict, int]] = []
+    for gi, objs in enumerate(groups):
+        for o in sorted(objs, key=lambda t: -float(t["confidence"])):
+            m = o["mask"]
+            a = float(m.sum())
+            clash = False
+            for k, gk in kept:
+                if gk == gi:
+                    continue
+                inter = float(np.logical_and(m, k["mask"]).sum())
+                if a > 0 and inter / max(1.0, min(a, float(k["mask"].sum()))) > overlap:
+                    clash = True
+                    break
+            if not clash:
+                kept.append((o, gi))
+    return [o for o, _ in kept]
 
 
 def default_gripper2cam_path() -> str:
@@ -177,10 +228,10 @@ class SegmenterNode(Node):
     def __init__(self):
         super().__init__("rally_segmenter")
         d = self.declare_parameter
-        d("model_path", "")                       # 비면 /models·~/rally/models 의 yolov8n-seg_rally.pt → _ball.pt → COCO 임시 순으로 찾음
+        d("model_path", "")                       # 쉼표로 여러 개(앞이 우선). 비면 /models·~/rally/models 의 _rally.pt, 없으면 _ball.pt + _cupstick.pt, 없으면 COCO 임시
         d("class_alias", DEFAULT_ALIAS)           # "모델이름:INTERFACES이름,..."
         d("conf", 0.5)
-        d("imgsz", 640)
+        d("imgsz", 0)                             # 0 = 모델마다 학습 imgsz (ball 640 · cupstick 864)
         d("device", "")                           # "" 자동, "cpu", "0"
         d("rate_hz", 30.0)
         d("color_topic", "/camera/color/image_raw")
@@ -226,10 +277,20 @@ class SegmenterNode(Node):
                 self.get_logger().warn(f"npy 로드 실패 {g('gripper2cam_path')}: {e}")
 
         from ultralytics import YOLO  # 무거운 import 는 여기서
-        path = g("model_path") or default_model_path()
-        self.model = YOLO(path)
-        self.names = dict(self.model.names)
-        self.get_logger().info(f"모델 {path} 클래스 {sorted(set(self.alias.get(v, v) for v in self.names.values()))[:12]}…")
+        paths = [p.strip() for p in str(g("model_path")).split(",") if p.strip()]
+        if not paths:
+            paths, missing = find_default_models()
+            for n in missing:                              # 묶음 중 하나만 있으면 다른 모드가 조용히 '물체 없음'으로 실패하므로 원인을 남김 (PR #105 정동휘 리뷰)
+                self.get_logger().warn(f"{n} 없음 → {MODEL_ROLE.get(n, n)} 인식 안 됨. {os.path.dirname(paths[0])} 에 넣을 것")
+        self.models = []                                  # (YOLO, names, imgsz)
+        for path in paths:
+            mdl = YOLO(path)
+            names = dict(mdl.names)
+            sz = self.imgsz or model_train_imgsz(mdl)
+            self.models.append((mdl, names, sz))
+            self.get_logger().info(f"모델 {path} imgsz {sz} 클래스 {sorted(set(self.alias.get(v, v) for v in names.values()))[:12]}")
+        if len(self.models) > 1:
+            self.get_logger().info(f"모델 {len(self.models)}개를 매 프레임 같이 돌려 합침 (다른 모델끼리 겹치면 앞 모델 우선)")
 
         self.color = self.depth = self.K = self.tcp = None
         self.color_stamp = self.color_frame = None
@@ -321,9 +382,12 @@ class SegmenterNode(Node):
             self.get_logger().warn("컬러·깊이 해상도 불일치 — align_depth.enable:=true 확인", throttle_duration_sec=5.0)
             return
         t0 = time.monotonic()
-        res = self.model.predict(img, imgsz=self.imgsz, conf=self.conf, device=self.device or None, verbose=False)[0]
         T, frame = self._cam_to_base(stamp, cam_frame)
-        objs = extract_objects(res, depth, self.K, T, self.names, self.alias, self.conf, self.known_only)
+        groups = []
+        for mdl, names, sz in self.models:
+            res = mdl.predict(img, imgsz=sz, conf=self.conf, device=self.device or None, verbose=False)[0]
+            groups.append(extract_objects(res, depth, self.K, T, names, self.alias, self.conf, self.known_only))
+        objs = groups[0] if len(groups) == 1 else merge_cross_model(groups)
         self.tracks.update(objs, time.monotonic())
         self._n += 1; self._t_infer += time.monotonic() - t0
 

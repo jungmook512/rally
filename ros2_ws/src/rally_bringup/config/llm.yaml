@@ -12,3 +12,15 @@ rally_llm_advisor:
     # 보내지 않는 것: session_id(세션 식별), notes(자유 문장 — 무엇이 들어갈지 모름), header. 영상·좌표열은 TrialResult 에 없다.
     # params·metrics 는 TrialResult 의 *_keys/*_values 를 {이름: 숫자} 로 묶어 보낸다 (숫자만)
     send_fields: [mode, trial_index, success, error_mm, duration_s, params, metrics]
+
+# BtRunner 내부 휴식 선택. 익명 숫자/참거짓만, params/metrics/notes/식별자 제외.
+rally_bt_runner:
+  ros__parameters:
+    rest_enabled: true
+    rest_model: gpt-4o
+    rest_temperature: 0.2
+    rest_timeout_s: 3.0
+    rest_prompt: prompts/rest_decision.md
+    rest_history_n: 5
+    rest_send_fields: [mode, trial_index, success, error_mm, duration_s]
+    rest_send_signals: [compensation, success_drop, slowing]

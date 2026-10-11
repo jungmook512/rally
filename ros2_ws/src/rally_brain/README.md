@@ -33,7 +33,7 @@
   공을 실제로 잡았다는 증거는 아니므로 실물 검증 전 자동 난이도 변경은 차단한다. 명시적 `harder`/`easier`만 시도 경계에서 반영한다.
 - 받기 후보는 20 s까지 관측하고, 성공 여부와 별개로 **손 이탈을 확인할 때까지 세션을 유지한다**.
   `hand_clear_wait_s`(8 s)는 안내까지의 시간이다. 이후에는 시간 제한 없이 대기하며, 손을 늦게 빼도 회수가 이어진다.
-  신선하고 유효한 손 거리 ≥ `safety.slow_distance_m`(0.25 m)일 때만 회수한다. 손 미검출은 이탈로 간주하지 않는다.
+  신선하고 유효한 손 거리 ≥ `skills.yaml mode1.hand_clear_m`(0.20 m)일 때만 회수한다. 기다리는 이유(손 안 보임·거리 등)는 2 s마다 로그. 손 미검출은 이탈로 간주하지 않는다.
   대기 중 회수·다음 시도·모드 전환을 시작하지 않는다. 세션 취소·안전 STOP은 기존대로 중단하며 자동 재개하지 않는다.
 - 회수 goal 전송 직전(재시도 포함)에도 손 이탈을 검사하며 다시 가까워졌으면 기다린다.
   회수 실패나 손 보기 자세 서비스 실패는 다음 시도로 진행하지 않는다. 회수 여부는 `ball_returned`, 손동작은 `catch_gesture_detected`로 따로 기록한다.
@@ -200,7 +200,7 @@ PushBall 실패 시 공/그리퍼 상태가 불명확하므로 자동 회수나 
 
 로봇 없이 확인: `node dashboard/test/test_mode_pages.cjs`. 대시보드 실행 후 `/#mode1`, `/#mode3`, `/#mode5`, `/#mode7`을 열어 그림·단계·기록 필터를 확인한다. Brain의 새 필드를 받으려면 수정된 Brain을 재시작해야 한다.
 
-### 휴식 제안 확인 테스트 (LLM·음성 응답 연결 전)
+### 휴식 제안 확인 테스트 (테스트 생성 경로)
 
 작업본: `/tmp/rally-dashboard-pr`. 기존 격리 가짜 스킬 실행 절차를 사용하되 **모든 터미널을 이 작업본에서** 시작하고 `PYTHONPATH=/tmp/rally-dashboard-pr/ros2_ws/src/rally_brain:$PYTHONPATH`로 수정된 Brain 소스를 선택한다. 실제 로봇 launch와 context_builder는 실행하지 않는다.
 
@@ -217,7 +217,7 @@ ros2 service call /rally/brain/test/propose_rest std_srvs/srv/Trigger '{}'
 3. 새 제안에서 “네, 쉬겠습니다”를 누르면 현재 시도의 집기·GIVE·RECEIVE가 끝난 뒤 휴식한다. 마지막 시도라면 세션이 종료된다. 기존 훈련 재개 버튼으로 이어간다.
 4. 제안 중 가짜 STOP을 켜면 세션이 종료되고 제안을 수락해 되살릴 수 없다.
 
-이 단계는 rest만 구현했다. 실제 LLM 호출, 음성 수락/거절 및 tired 분류 변경, 난이도 제안은 후속 작업이다. 제안에 `source: test`를 표시하며 실제 피로 판단으로 기록하지 않는다.
+이 테스트 서비스는 rest 제안 UI 검증용이다. 실제 LLM 경로는 아래 「LLM 휴식 판단 연결」 절을 따른다. 음성 수락/거절 및 tired 분류 변경, 난이도 제안은 후속 작업이다. 제안에 `source: test`를 표시하며 실제 피로 판단으로 기록하지 않는다.
 
 #### 휴식 제안 안정화 검증 (10/8)
 
@@ -229,3 +229,35 @@ ros2 service call /rally/brain/test/propose_rest std_srvs/srv/Trigger '{}'
 위 가짜 환경에서 `http://127.0.0.1:18000/#mode5`를 열어 확인한다(이번 격리 검증은 별도 포트 18092 사용 후 종료).
 Brain 소스는 반드시 이 작업본의 `PYTHONPATH`를 우선한다. 다른 가짜 세션과도 ROS 도메인·Redis 포트를 분리하고 `ROS_DISCOVERY_SERVER`, `FASTRTPS_DEFAULT_PROFILES_FILE`, `FASTDDS_DEFAULT_PROFILES_FILE`, `ROS_STATIC_PEERS`를 해제한 뒤 `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST`로 제한한다.
 실제 LLM·음성 수락/거절·2 PC 통신·실제 로봇은 미검증이며 **로봇·인식 PC에서 확인 필요**. #98 STOP 예외는 이번 변경에 포함하지 않는다.
+
+
+### LLM 휴식 판단 연결
+
+규칙의 `ask_llm` → 비동기 휴식 판단 → 최신 상태 재검증 → 20초 제안 → 대시보드 응답 → 기존 시도 경계 휴식 순서다. 대기 중 BT는 계속 실행한다. 외부 호출 결과만으로 쉬거나 재개하지 않는다.
+
+OpenAI 공식 API의 gpt-4o에 현재 모드, 같은 모드·난이도 구간의 최근 유효 시도 최대 5개(번호·성공 여부·유한 오차·소요 시간), 보상 동작/시간 증가 등의 불리언 신호만 전송한다. 모드1의 받기 후보 성공 여부는 제외한다. 키는 기존 `docker/.env`의 `OPENAI_API_KEY`로 제공하고 출력하거나 저장소에 넣지 않는다. 승인된 목적지 외의 API 주소로 우회하지 않는다.
+
+시도 소요 시간에는 로봇 실행과 시도 중 대기가 포함된다. 시간이 길다는 것만으로 환자 피로를 단정하지 않는다. `source: llm`은 화면에서 **AI 제안**으로 보이고 테스트 서비스의 `source: test`는 **테스트**로 구분한다. 거절·만료 시 훈련 유지, 수락 시 현재 시도 전체를 마친 뒤 휴식하는 동작은 같다.
+
+최대 3초 시간 초과·인증/네트워크 오류·허용 목록 밖 응답은 제안 없이 훈련을 유지한다. 이전 세션·모드·난이도·시도, STOP/취소/휴식/상황판 상실 전의 응답은 폐기한다. 숫자 제어용 SuggestParams·로봇 임계값·STOP/reset은 변경하지 않는다. 음성 수락/거절과 KG/Graph RAG 검색은 후속이다.
+
+
+설정은 설치된 `rally_bringup/config/llm.yaml`의 `rally_bt_runner.ros__parameters`를 시작 시 직접 읽는다. `rest_enabled: true`가 기본이며 `OPENAI_API_KEY`가 없으면 외부 호출 없이 계속 훈련한다. `rest_enabled: false`로 변경하고 재시작하면 끌 수 있다. ROS 동적 파라미터가 아니므로 `ros2 param set`으로 켜지 않는다. 시작 로그 `휴식 LLM: ready/missing_api_key/disabled/invalid_config/adapter_unavailable`로 설정 상태를 구분한다.
+
+검증 실행(실제 로봇 없이, 저장소 루트):
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source /tmp/rally-llm-rest-check/install/setup.bash  # 본인의 최신 빌드 경로로 교체
+unset ROS_DISCOVERY_SERVER FASTRTPS_DEFAULT_PROFILES_FILE FASTDDS_DEFAULT_PROFILES_FILE ROS_STATIC_PEERS
+unset OPENAI_API_KEY REDIS_URL
+export ROS_DOMAIN_ID=227 ROS_LOCALHOST_ONLY=1 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
+python3 -m pytest ros2_ws/src/rally_brain/test/test_rest_advisor.py -q
+node dashboard/test/test_mode_pages.cjs
+```
+
+첫 검사는 실제 BtRunner에 가짜 LLM을 주입해 규칙→제안→수락→휴식 및 늦은 응답 폐기를 재현한다. 눈으로 확인할 때는 위 격리 가짜 세션의 대시보드에서 `source: llm` 제안이 **AI 제안**으로 표시되는지, 대기 중 훈련 지속·거절/만료 후 지속·수락 후 현재 시도 완료와 휴식을 확인한다. `/rally/brain/test/propose_rest`는 **테스트** 표시만 검증하므로 실제 API 연결 증거로 삼지 않는다.
+
+실제 API 별도 확인: 환자 기록 없이 합성 모드5 이력 3개와 허용 신호만 공식 gpt-4o로 전송해 `suggest_rest`, 1.832초를 확인했다. 이는 API 연결 확인이며 임상 정확도·실제 장비 통합·항상 3초 내 응답을 보장하는 검증은 아니다.
+
+최종 로컬 검증: 4패키지 격리 build 성공, colcon 311 tests/0 errors/0 failures/1 skip(Brain284+DB25+bringup1 통과, 전용 Redis1 생략), 대시보드 API26·Node 회귀·ontology export·Compose pc3 config 검사 통과. 실제 로봇·인식 PC에서 확인 필요.
