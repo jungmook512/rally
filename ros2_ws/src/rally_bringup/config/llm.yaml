@@ -7,6 +7,7 @@ rally_llm_advisor:
     temperature: 0.2     # 파라미터 제안은 일관성 우선
     prompt_suggest_params: prompts/suggest_params.md
     prompt_session_report: prompts/session_report.md
+    report_timeout_s: 15.0   # 세션 리포트 해석 — 세션이 끝난 뒤 별도 스레드라 제어·안전과 무관. 초과면 수치 요약만 (session_report.py)
     history_n: 5         # 최근 시도 몇 개를 보낼지
     # 전송 필드 화이트리스트(익명화) — TrialResult 에서 이 필드만 보낸다. 목록에 없는 필드는 보내지 않는다.
     # 보내지 않는 것: session_id(세션 식별), notes(자유 문장 — 무엇이 들어갈지 모름), header. 영상·좌표열은 TrialResult 에 없다.

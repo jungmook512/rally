@@ -72,6 +72,7 @@ webcam_link          측면 대각 웹캠, 높이 약 2 m (table_link 기준 sta
 | `/rally/brain/context` | `rally_interfaces/SceneContext` | rally_brain/context_builder | llm_advisor, dashboard | 5 Hz | BestEffort |
 | `/rally/brain/trial_result` | `rally_interfaces/TrialResult` | rally_brain/bt_runner | rally_db/recorder, dashboard | 이벤트 | Reliable |
 | `/rally/brain/state` | `std_msgs/String` (BT 현재 노드) | rally_brain/bt_runner | dashboard | 2 Hz | Reliable |
+| `/rally/brain/session_report` | `std_msgs/String` (JSON `session_id`·`report_md`·`source` = `llm:<s>` 또는 `numeric:<이유>`) | rally_brain/bt_runner (세션 종료 뒤 별도 스레드) | rally_db/recorder → `sessions.report_md`·`ended_at`, Redis `rally:events` kind=`session_report` → dashboard `GET /api/report/latest` | 세션당 1회 | Reliable |
 
 QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최신 것만), **정지·안전·결과는 Reliable**. TransientLocal은 "늦게 켜진 노드도 마지막 상태를 알아야 하는" 상태 토픽에만 쓴다: `/rally/safety/estop`, `/rally/voice/speaking` (#45).
 

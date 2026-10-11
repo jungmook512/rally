@@ -10,6 +10,8 @@
   /rally/voice/intent              → events kind=voice_intent + Redis rally:events
   /rally/voice/transcript          → Redis rally:dialog (최근 대화, TTL 5분)
   /rally/brain/context  5 Hz       → Redis rally:state (flush 마다 최신 것만), 모드가 바뀌면 events kind=mode_change
+  /rally/brain/session_report      → sessions.report_md·ended_at (JSON session_id·report_md·source, 세션 끝에 한 번)
+                                     + Redis rally:events kind=session_report (대시보드가 리포트를 다시 읽음)
 서비스
   /rally/db/start_session (Trigger) → 새 세션 줄, message 에 session_id(UUID)
 
@@ -21,6 +23,7 @@ DB 쓰기는 flush 타이머(별도 콜백 그룹)에서만 한다 — 구독 �
 """
 from __future__ import annotations
 
+import json
 import threading
 from collections import deque
 from datetime import datetime, timezone
@@ -56,6 +59,7 @@ class Recorder(Node):
         self._dialog: deque[tuple[str, str]] = deque(maxlen=MAX_PENDING)
         self._wrench: deque[tuple] = deque(maxlen=MAX_TS_ROWS)
         self._hand: deque[tuple] = deque(maxlen=MAX_TS_ROWS)
+        self._reports: deque[tuple[str, str]] = deque(maxlen=MAX_PENDING)   # (session_id, report_md)
         self._state: dict | None = None
         self._last_safety: tuple | None = None
         self._last_mode: int | None = None
@@ -75,6 +79,7 @@ class Recorder(Node):
         self.create_subscription(VoiceIntent, "/rally/voice/intent", self._on_intent, reliable)
         self.create_subscription(String, "/rally/voice/transcript", self._on_transcript, reliable)
         self.create_subscription(SceneContext, "/rally/brain/context", self._on_context, qos_profile_sensor_data)
+        self.create_subscription(String, "/rally/brain/session_report", self._on_report, reliable)
 
         io_group = MutuallyExclusiveCallbackGroup()   # DB·Redis 블로킹 호출은 여기서만
         self.create_timer(FLUSH_PERIOD_S, self._flush, callback_group=io_group)
@@ -87,6 +92,20 @@ class Recorder(Node):
         with self._lock:
             self._use_session(msg.session_id)
             self._trials.append(msg)
+
+    def _on_report(self, msg: String) -> None:
+        try:
+            data = json.loads(msg.data)
+            sid = convert.session_uuid(str(data["session_id"]))
+            md = str(data["report_md"])
+        except (ValueError, KeyError, TypeError) as e:
+            self.get_logger().error(f"세션 리포트 형식 오류 — 버림: {e!r}")
+            return
+        if sid is None:
+            self.get_logger().error("세션 리포트의 session_id 가 비어 있음 — 버림")
+            return
+        with self._lock:
+            self._reports.append((sid, md))
 
     def _on_wrench(self, msg: WrenchStamped) -> None:
         with self._lock:
@@ -141,6 +160,8 @@ class Recorder(Node):
             events = list(self._events)
             dialog = list(self._dialog)
             wrench, hand = list(self._wrench), list(self._hand)
+            reports = list(self._reports)
+            self._reports.clear()
             counts = {"시도": len(trials), "사건": len(events), "힘": len(wrench), "손": len(hand), "대화": len(dialog)}
             state, self._state = self._state, None
             self._trials.clear()
@@ -160,6 +181,13 @@ class Recorder(Node):
                 trial_id = self.repo.add_trial(row)
                 trials.pop(0)
                 self._notify("trial", convert.trial_to_event(row, trial_id))
+            while reports:                       # 시도를 먼저 쓴 뒤 (같은 flush 의 마지막 시도까지 들어간 세션)
+                sid, md = reports[0]
+                self.repo.ensure_session(sid)
+                self.repo.end_session(sid, md)
+                reports.pop(0)
+                self.get_logger().info(f"세션 리포트 저장 — {sid[:8]} ({len(md)}자)")
+                self._notify("session_report", {"session_id": sid})
             while events:
                 self.repo.add_event(*events[0])
                 events.pop(0)
@@ -180,7 +208,7 @@ class Recorder(Node):
                 self._written[k] += v
         except StorageUnavailable as e:
             self._set_storage_ok(False, str(e))
-            self._requeue(sessions, trials, events, dialog, wrench, hand, state)
+            self._requeue(sessions, trials, events, dialog, wrench, hand, state, reports)
         except Exception as e:   # 메시지 하나가 잘못돼도 노드는 산다 — 그 항목은 버린다
             self.get_logger().error(f"기록 실패, 해당 묶음 버림: {e!r}")
 
@@ -199,7 +227,7 @@ class Recorder(Node):
         self.get_logger().info(f"최근 {SUMMARY_PERIOD_S:.0f} s 기록 — {parts} (세션 {session})")
         self._written = dict.fromkeys(self._written, 0)
 
-    def _requeue(self, sessions, trials, events, dialog, wrench, hand, state) -> None:
+    def _requeue(self, sessions, trials, events, dialog, wrench, hand, state, reports=()) -> None:
         """못 쓴 것을 버퍼 앞쪽으로 되돌린다 (그 사이 새로 들어온 것보다 먼저 쓰이도록)."""
         with self._lock:
             self._sessions_to_create.extendleft(reversed(sessions))
@@ -208,6 +236,7 @@ class Recorder(Node):
             self._dialog.extendleft(reversed(dialog))
             self._wrench.extendleft(reversed(wrench))
             self._hand.extendleft(reversed(hand))
+            self._reports.extendleft(reversed(list(reports)))
             if self._state is None:
                 self._state = state
 

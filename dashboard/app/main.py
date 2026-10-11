@@ -177,6 +177,20 @@ async def trials(limit: int = 30) -> dict[str, Any]:
     return {"session_id": rows[0]["session_id"] if rows else None, "trials": rows}
 
 
+@app.get("/api/report/latest")
+async def latest_report() -> dict[str, Any] | None:
+    """리포트가 있는 가장 최근 세션 (sessions.report_md, rally_brain/session_report.py 가 세션 끝에 만든다). 없으면 null."""
+    rows = await _query(
+        """SELECT id::text AS session_id, started_at, ended_at, report_md FROM sessions
+           WHERE report_md IS NOT NULL ORDER BY ended_at DESC NULLS LAST LIMIT 1""")
+    if not rows:
+        return None
+    r = rows[0]
+    for k in ("started_at", "ended_at"):
+        r[k] = r[k].isoformat() if r[k] else None
+    return r
+
+
 @app.get("/api/events")
 async def events(limit: int = 30) -> list[dict[str, Any]]:
     rows = await _query("SELECT time, session_id::text, kind, payload FROM events ORDER BY time DESC LIMIT %s",
