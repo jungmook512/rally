@@ -276,7 +276,7 @@ class SkillServer(Node):
         """손 보기 자세 (모드 1 시도 전 레인 고르기 — 툴을 환자 쪽으로 기울여 RealSense 가 환자 손을 봄). 관절 이동."""
         from rally_robot.dsr_helpers import movej_to_pose
         from rally_robot.skills.push_ball import DEFAULTS as PUSH_DEFAULTS
-        from rally_robot.skills.push_ball import hand_view_pose
+        from rally_robot.skills.push_ball import hand_view_joint, hand_view_pose
         if self.stop_requested():
             res.success, res.message = False, f"safety STOP ({self.safety_reason()})"
             return res
@@ -287,7 +287,7 @@ class SkillServer(Node):
             res.success, res.message = False, "no_lanes (skills.yaml mode1.lanes)"
             return res
         try:
-            movej_to_pose(self, pose, *motion_speeds(self)[4:])
+            movej_to_pose(self, pose, *hand_view_joint(self, cfg))
         except SkillAbort as e:
             res.success, res.message = False, e.reason
             return res

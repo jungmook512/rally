@@ -99,6 +99,7 @@ class SimGripper(Node):
         self.rack, self.refill = rack, refill      # refill: 굴러가 멈춘 공을 2 s 뒤 거치대로 (거치대 공 여러 개 흉내 — brain 모드 1 은 4번 연속)
         self.rest_since = None
         self.patient1 = patient1
+        self.patient1_wait_s = 3.0       # 공이 멈추고 잡기까지 — brain 이 손 보기 자세 도착 뒤 "이제 잡으세요" 라고 하면 잡는 흉내 (치고 ≈ 4.6 s 뒤 도착)
         self.p1 = {"state": "idle", "t": 0.0, "lane_y": random.choice([float(ln["start"][1]) for ln in self.lanes]),
                    "grip": 0.0, "catch_y": 0.0}
         self.ball_v = (0.0, 0.0)        # 굴러가는 속도 (m/s)
@@ -342,7 +343,7 @@ class SimGripper(Node):
             if ly is not None and b[0] > 0.6:
                 p1.update(state="reach", t=now, catch_y=ly)
         elif p1["state"] == "reach":
-            if now - p1["t"] > 1.0:
+            if now - p1["t"] > self.patient1_wait_s:
                 self.hand = [b[0] + 0.04, p1["catch_y"], self.table_z + 0.06]
                 p1.update(state="hold", t=now, grip=0.9)
                 self.get_logger().info("환자: 공을 쥠")
