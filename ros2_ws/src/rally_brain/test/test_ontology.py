@@ -117,7 +117,7 @@ def test_queries():
     assert ontology.action_for_cue("nope") is None
     assert ontology.label("trunk_lean") == "몸통 기울이기"
     s = ontology.describe_compensation(1, "trunk_lean")
-    assert s == "모드 1 공 굴리기(팔 뻗기 훈련) 중 몸통 기울이기(15° 이상) 감지 — 피로 신호일 수 있음(근거 약함: 기획서 4.10)"
+    assert s == "모드 1 공 굴리기(팔 뻗기 훈련) 중 몸통 기울이기(20° 이상) 감지 — 피로 신호일 수 있음(근거 약함: 기획서 4.10)"
     assert ontology.describe_compensation(1, "none") == ""
 
 
