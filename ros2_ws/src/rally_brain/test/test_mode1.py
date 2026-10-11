@@ -470,11 +470,3 @@ def test_lane_ball_and_stopwatch():
     w = m.StopWatch(.5, .01)
     assert w.add(0., (.7, 0.)) is None and w.add(.6, (.705, 0.)) == (.7, 0.)
     assert w.add(.7, None) is None and w.add(.8, (.7, 0.)) is None
-
-
-def test_hand_clear_not_narrower_than_return_margin(monkeypatch):
-    # #98: 선 기준 SLOW 가 0.10 으로 줄어도 회수 전 손 이탈 기준은 0.25 (회수 때 로봇이 선 근처까지 옴)
-    monkeypatch.setattr(m, 'load_safety', lambda: {'stop_distance_m': .15, 'slow_distance_m': .10})
-    assert m.mode1_config(cfg())['hand_clear_m'] == pytest.approx(.25)
-    monkeypatch.setattr(m, 'load_safety', lambda: {'stop_distance_m': .15, 'slow_distance_m': .30})
-    assert m.mode1_config(cfg())['hand_clear_m'] == pytest.approx(.30)

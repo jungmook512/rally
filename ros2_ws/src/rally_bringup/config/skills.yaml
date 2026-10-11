@@ -93,7 +93,6 @@ mode1:
   catch_grab_hold_s: 0.3
   catch_release_closure: 0.3
   catch_prompt: "공을 잡았다가 놓아 주세요"
-  hand_clear_m: 0.25            # 회수 전 손이 중앙선에서 이만큼 빠져야 (안전 slow_distance_m 보다 작으면 그 값). 회수 때 로봇이 선 근처까지 옴
   hand_clear_wait_s: 8.0        # 안내까지의 대기. 이후에도 이탈 확인까지 세션 유지
   hand_clear_m: 0.20            # 회수 전 손 이탈 기준: 손 ↔ 중앙선 [m]. 10/11 0.25 → 0.20 (실기에서 회수 대기가 잦음).
                                 #   safety.yaml slow_distance_m 을 빌려 쓰던 것을 분리 (#104 가 그 값을 0.10 으로 바꿈).
