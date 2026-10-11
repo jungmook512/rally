@@ -44,8 +44,16 @@ docker run -d --name $NAME --network host --ipc host "${ROS_ENV[@]}" \
     -p color_topic:=/camera/color/image_raw \
     -p depth_topic:=/camera/aligned_depth_to_color/image_raw \
     -p info_topic:=/camera/color/camera_info \
-    -p base_frame:=base_link -p centerline_x_m:=$CL >/dev/null
+    -p base_frame:=base_link -p centerline_x_m:=$CL \
+    -p fist_estop_enabled:=false >/dev/null   # #97 전 이미지는 주먹 정지 기본 켬 → 끔. 새 이미지엔 이 파라미터가 없어 무시됨
 echo "[hand] 손 $IMAGE 기동 (도메인 $DOMAIN, 중앙선 x $CL) — 확인: ros2 topic echo /rally/perception/hand --once · 로그: scripts/hand_local.sh logs"
+# 옛 이미지 알아보기: 시작 로그에 '깊이 배율' 이 없으면 #91 전, '깊이 배율 1.000' 이면 #112 전 (깊이 보정·손목 필터·중앙선이 빠진 채로 돈다)
+for _ in $(seq 10); do HLOG=$(docker logs $NAME 2>&1 | grep -m1 "손 인식 시작"); [ -n "$HLOG" ] && break; sleep 1; done
+if [ -z "$HLOG" ]; then
+  echo "[hand] 손 노드 시작 로그가 10 s 안에 없음 — scripts/hand_local.sh logs"
+elif ! echo "$HLOG" | grep -q "깊이 배율" || echo "$HLOG" | grep -q "깊이 배율 1.000"; then
+  echo "[hand] ⚠ 옛 이미지 (#112 전) — 깊이 보정·손목 필터·중앙선이 빠짐. 다시 빌드: docker build -f docker/hand_pose/Dockerfile -t $IMAGE ."
+fi
 
 BODY=${BODY:-auto}
 [ "$BODY" = "0" ] && { echo "[hand] 몸 자세: 끔 (hand 옵션)"; exit 0; }
