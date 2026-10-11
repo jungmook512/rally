@@ -3,6 +3,7 @@
 
 구독                               기록
   /rally/brain/trial_result        → trials (다음 flush 에서, 최대 0.5 s 뒤, feature_vec 포함 — embeddings.py)
+                                     + kg_edge 세션→시도→모드, 시도→보상 동작 (같은 트랜잭션, schema_004 가 있을 때)
                                      + Redis rally:events kind=trial (대시보드 알림)
   /rally/robot/wrench   100 Hz     → ts_wrench (0.5 s 마다 묶어서)
   /rally/perception/hand 30 Hz     → ts_hand   (손이 잡힌 프레임만, 0.5 s 마다 묶어서)
@@ -10,6 +11,7 @@
   /rally/voice/intent              → events kind=voice_intent + Redis rally:events
   /rally/voice/transcript          → Redis rally:dialog (최근 대화, TTL 5분)
   /rally/brain/context  5 Hz       → Redis rally:state (flush 마다 최신 것만), 모드가 바뀌면 events kind=mode_change
+                                     body.compensation_type 이 보이면 다음 시도의 '관찰된 보상 동작'으로 모아 둔다
   /rally/brain/session_report      → sessions.report_md·ended_at (JSON session_id·report_md·source, 세션 끝에 한 번)
                                      + Redis rally:events kind=session_report (대시보드가 리포트를 다시 읽음)
 서비스
@@ -38,7 +40,7 @@ from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
 from rally_db import convert, embeddings
-from rally_db.repository import Repository, StorageUnavailable
+from rally_db.repository import COMPENSATION_KEYS, Repository, StorageUnavailable
 from rally_interfaces.msg import HandState, SafetyStatus, SceneContext, TrialResult, VoiceIntent
 
 FLUSH_PERIOD_S = 0.5
@@ -54,7 +56,8 @@ class Recorder(Node):
         self._lock = threading.Lock()
         self._session_id: str | None = None
         self._sessions_to_create: deque[str] = deque()
-        self._trials: deque[TrialResult] = deque(maxlen=MAX_PENDING)
+        self._trials: deque[tuple[TrialResult, tuple[str, ...]]] = deque(maxlen=MAX_PENDING)   # (시도, 관찰된 보상 동작)
+        self._seen_comp: set[str] = set()     # 지난 시도 뒤로 상황판에 보인 보상 동작 (BodyPose 는 팔을 뻗는 동안만 냄, #83)
         self._events: deque[tuple[datetime, str | None, str, dict]] = deque(maxlen=MAX_PENDING)
         self._dialog: deque[tuple[str, str]] = deque(maxlen=MAX_PENDING)
         self._wrench: deque[tuple] = deque(maxlen=MAX_TS_ROWS)
@@ -91,7 +94,8 @@ class Recorder(Node):
     def _on_trial(self, msg: TrialResult) -> None:
         with self._lock:
             self._use_session(msg.session_id)
-            self._trials.append(msg)
+            self._trials.append((msg, tuple(sorted(self._seen_comp))))
+            self._seen_comp.clear()
 
     def _on_report(self, msg: String) -> None:
         try:
@@ -137,6 +141,8 @@ class Recorder(Node):
         with self._lock:
             self._use_session(msg.session_id)
             self._state = convert.context_to_state(msg)
+            if msg.body.compensation_detected and msg.body.compensation_type in COMPENSATION_KEYS:
+                self._seen_comp.add(msg.body.compensation_type)
         if self._last_mode is not None and msg.mode != self._last_mode:
             self._add_event(msg.header.stamp, "mode_change", {"from": self._last_mode, "to": int(msg.mode)})
         self._last_mode = int(msg.mode)
@@ -151,6 +157,7 @@ class Recorder(Node):
         if sid and sid != self._session_id:
             self._session_id = sid
             self._sessions_to_create.append(sid)
+            self._seen_comp.clear()   # 지난 세션에서 본 보상 동작을 새 세션 첫 시도에 붙이지 않게
 
     # ---------- flush: DB·Redis 쓰기 ----------
     def _flush(self) -> None:
@@ -174,11 +181,11 @@ class Recorder(Node):
                 self.repo.ensure_session(sessions[0])
                 sessions.pop(0)
             while trials:
-                msg = trials[0]
+                msg, observed = trials[0]
                 row = convert.trial_to_row(msg, convert.session_uuid(msg.session_id) or self._session_id)
                 if self._embed_spec is not None:
                     row["feature_vec"] = embeddings.trial_vector(row, self._embed_spec)
-                trial_id = self.repo.add_trial(row)
+                trial_id = self.repo.add_trial(row, observed)
                 trials.pop(0)
                 self._notify("trial", convert.trial_to_event(row, trial_id))
             while reports:                       # 시도를 먼저 쓴 뒤 (같은 flush 의 마지막 시도까지 들어간 세션)
