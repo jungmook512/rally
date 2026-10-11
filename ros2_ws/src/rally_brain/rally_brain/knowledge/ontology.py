@@ -128,7 +128,7 @@ def compensation(key: str, g: Graph | None = None) -> CompensationInfo | None:
 
 
 def describe_compensation(mode_number: int, key: str, g: Graph | None = None) -> str:
-    """예: '모드 1 공 굴리기(팔 뻗기 훈련) 중 몸통 기울이기(15° 이상) 감지 — 피로 신호일 수 있음(근거 약함: 기획서 4.10)'.
+    """예: '모드 1 공 굴리기(팔 뻗기 훈련) 중 몸통 기울이기(20° 이상) 감지 — 피로 신호일 수 있음(근거 약함: 기획서 4.10)'.
     문장은 그래프를 따라가 만든다: 모드 —trains→ 동작, 보상 동작 —indicatesFatigue→ 피로."""
     g = g or load()
     comp = compensation(key, g)

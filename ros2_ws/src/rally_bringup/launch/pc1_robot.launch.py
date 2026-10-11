@@ -29,7 +29,8 @@ def generate_launch_description():
     robot_nodes = [
         Node(package="rally_robot", executable="force_publisher", output="screen"),
         Node(package="rally_robot", executable="gripper_node", output="screen"),   # IP 는 dsr_helpers.TOOLCHARGER_IP
-        Node(package="rally_robot", executable="skill_server", output="screen"),
+        Node(package="rally_robot", executable="skill_server", output="screen",
+             parameters=[os.path.join(config, "safety.yaml")]),   # status_timeout_s (#14)
     ]
 
     def after_safety(event, _context):

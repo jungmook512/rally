@@ -1,7 +1,7 @@
 """rally_bringup/launch/pc2_perception.launch.py — 로봇·인식 PC 추론 컨테이너 (역할 pc2)
 
 compose 서비스마다 part 를 하나씩 준다:
-  vision    → realsense2_camera(/camera/color/image_raw, 정렬 깊이) + segmenter · tracker · flight_predictor
+  vision    → realsense2_camera(/camera/color/image_raw, 정렬 깊이) + camera_tf · segmenter · tracker · flight_predictor
   human     → usb_cam(/webcam/image_raw) + hand_pose · body_pose
   voice     → intent_node · tts_node
   all       → 셋 다 (컨테이너 없이 한 터미널에서 확인할 때)
@@ -19,10 +19,22 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 PARTS = {
-    "vision": [("rally_vision", "segmenter"), ("rally_vision", "tracker"), ("rally_vision", "flight_predictor")],
+    "vision": [("rally_vision", "camera_tf"),                 # hand_eye.yaml → base_link→camera_link tf (손 노드·segmenter 가 조회)
+               ("rally_vision", "segmenter"), ("rally_vision", "tracker"), ("rally_vision", "flight_predictor")],
     "human": [("rally_human", "hand_pose"), ("rally_human", "body_pose")],
     "voice": [("rally_voice", "intent_node"), ("rally_voice", "tts_node")],
 }
+
+# 노드별 파라미터 (launch 인자에서). hand_pose 기본 토픽은 RealSense 를 직접 띄울 때의 /camera/camera/... 라서,
+# 이 launch 의 RealSense(camera_namespace "", INTERFACES 2.1 의 /camera/color/...) 에 맞춰 넘긴다.
+def _params(context, executable: str) -> list[dict]:
+    if executable == "hand_pose":
+        return [{"color_topic": "/camera/color/image_raw",
+                 "depth_topic": "/camera/aligned_depth_to_color/image_raw",
+                 "info_topic": "/camera/color/camera_info"}]
+    if executable == "body_pose":
+        return [{"arm": LaunchConfiguration("body_arm").perform(context)}]   # 시연은 왼팔 (10/8 결정, 웹캠이 환자 왼쪽)
+    return []
 
 
 def _has_executable(package: str, executable: str) -> bool:
@@ -40,11 +52,11 @@ def _has_package(package: str) -> bool:
         return False
 
 
-def _nodes(package: str, executables: list[str]):
+def _nodes(context, package: str, executables: list[str]):
     actions = []
     for exe in executables:
         if _has_executable(package, exe):
-            actions.append(Node(package=package, executable=exe, output="screen"))
+            actions.append(Node(package=package, executable=exe, output="screen", parameters=_params(context, exe)))
         else:
             actions.append(LogInfo(msg=f"[pc2] {package}/{exe} 실행 등록 없음 → 건너뜀 (setup.py console_scripts 확인)"))
     return actions
@@ -88,7 +100,7 @@ def _launch_part(context):
         if p == "human":
             actions += _webcam(context)
         for package in {pkg for pkg, _ in PARTS[p]}:
-            actions += _nodes(package, [exe for pkg, exe in PARTS[p] if pkg == package])
+            actions += _nodes(context, package, [exe for pkg, exe in PARTS[p] if pkg == package])
     return actions
 
 
@@ -96,5 +108,6 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("part", default_value="all", description="vision | human | voice | all"),
         DeclareLaunchArgument("webcam_device", default_value="/dev/video0", description="측면 웹캠 장치"),
+        DeclareLaunchArgument("body_arm", default_value="left", description="body_pose 뻗는 팔: left | right | auto (시연은 왼팔)"),
         OpaqueFunction(function=_launch_part),
     ])

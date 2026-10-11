@@ -128,12 +128,6 @@ rally:observed a owl:ObjectProperty ;
     rdfs:range rally:Compensation ;
     rally:source "기획서 4.10" .
 
-rally:safe_fist a rally:SafetyTrigger ;
-    rdfs:label "주먹 제스처"@ko ;
-    rally:key "fist_gesture" ;
-    rally:source "기획서 3.6" ;
-    rally:triggersLevel rally:level_stop .
-
 rally:safe_force_limit a rally:SafetyTrigger ;
     rdfs:label "힘 한계(25 N)"@ko ;
     rally:key "force_limit" ;
@@ -180,7 +174,9 @@ rally:shoulder_hike a rally:Compensation ;
     rdfs:label "어깨 들기"@ko ;
     rally:indicatesFatigue rally:fatigue ;
     rally:key "shoulder_hike" ;
-    rally:source "BodyPose.msg" .
+    rally:source "BodyPose.msg, FR-05(임계 20°, 10/8 선 자세 실측 #83·#102)" ;
+    rally:threshold 20.0 ;
+    rally:unit "deg" .
 
 rally:trains a owl:ObjectProperty ;
     rdfs:label "훈련한다"@ko ;
@@ -204,8 +200,8 @@ rally:trunk_lean a rally:Compensation ;
     rdfs:label "몸통 기울이기"@ko ;
     rally:indicatesFatigue rally:fatigue ;
     rally:key "trunk_lean" ;
-    rally:source "BodyPose.msg, FR-05(임계 15°)" ;
-    rally:threshold 15.0 ;
+    rally:source "BodyPose.msg, FR-05(임계 20°, 10/8 선 자세 실측 #83·#102)" ;
+    rally:threshold 20.0 ;
     rally:unit "deg" .
 
 rally:usedParam a owl:ObjectProperty ;

@@ -31,6 +31,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "action/Handover.action"
   "action/PickCompliant.action"
   "action/RunSession.action"
+  "action/ReturnBall.action"
   DEPENDENCIES std_msgs geometry_msgs sensor_msgs builtin_interfaces
 )
 

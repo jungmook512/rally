@@ -86,3 +86,8 @@ def test_sql_matches_yaml():
     for mode, spec in CFG["key_values"].items():
         expr = f"t.{spec['name']}" if spec["source"] == "field" else f"(t.metrics->>'{spec['name']}')::real"
         assert f"WHEN {mode} THEN {expr}" in sql
+
+
+def test_fatigue_score_is_float_without_signals():
+    # 신호가 없으면 min(1.0, 0) 이 int 0 → SceneContext.fatigue_score(float32) 대입에서 rosidl assert 로 context_builder 가 죽었다 (10/8)
+    assert isinstance(metrics.fatigue_score([]), float)

@@ -113,37 +113,32 @@ def test_distance_to_centerline_sign():
 def test_gesture_filter_needs_consecutive_frames():
     f = GestureFilter(frames=5)
     outs = [f.update(True, hg.GESTURE_FIST) for _ in range(5)]
-    assert [o[0] for o in outs[:4]] == [hg.GESTURE_NONE] * 4             # 4 프레임까지는 주먹 아님
-    assert outs[4] == (hg.GESTURE_FIST, True)                             # 5 번째에 주먹 확정 + 정지 요청 1회
-    assert f.update(True, hg.GESTURE_FIST) == (hg.GESTURE_FIST, False)    # 계속 쥐고 있어도 요청은 한 번
+    assert outs[:4] == [hg.GESTURE_NONE] * 4                             # 4 프레임까지는 주먹 아님
+    assert outs[4] == hg.GESTURE_FIST                                     # 5 번째에 주먹 확정
+    assert f.update(True, hg.GESTURE_FIST) == hg.GESTURE_FIST
 
 
-def test_gesture_filter_single_frame_glitch_does_not_stop():
+def test_gesture_filter_single_frame_glitch_ignored():
     f = GestureFilter(frames=5)
     seq = [hg.GESTURE_OPEN] * 6 + [hg.GESTURE_FIST] + [hg.GESTURE_OPEN] * 3
     outs = [f.update(True, g) for g in seq]
-    assert all(not e for _, e in outs)
-    assert all(g != hg.GESTURE_FIST for g, _ in outs)
+    assert all(g != hg.GESTURE_FIST for g in outs)
 
 
-def test_gesture_filter_release_and_disable():
+def test_gesture_filter_release():
     f = GestureFilter(frames=3)
     for _ in range(3):
         f.update(True, hg.GESTURE_FIST)
-    assert f.update(True, hg.GESTURE_OPEN)[0] == hg.GESTURE_NONE          # 손 펴면 주먹 바로 해제
-    assert f.update(False, hg.GESTURE_FIST) == (hg.GESTURE_NONE, False)   # 손 없음
-    off = GestureFilter(frames=3, fist_enabled=False)
-    outs = [off.update(True, hg.GESTURE_FIST) for _ in range(5)]
-    assert all(o == (hg.GESTURE_NONE, False) for o in outs)
+    assert f.update(True, hg.GESTURE_OPEN) == hg.GESTURE_NONE             # 손 펴면 주먹 바로 해제
+    assert f.update(False, hg.GESTURE_FIST) == hg.GESTURE_NONE            # 손 없음
 
 
-def test_fist_with_missed_frames_still_stops():
-    """검출률 65 % 처럼 중간중간 손을 놓쳐도 주먹 5 프레임이 쌓이면 정지 (#44 리뷰)."""
+def test_gesture_with_missed_frames_still_confirms():
+    """검출률 65 % 처럼 중간중간 손을 놓쳐도 5 프레임이 쌓이면 확정 (#44 리뷰)."""
     f = GestureFilter(frames=5, max_miss=3)
     seq = [True, False, True, True, False, True, False, True]          # 주먹 5 번, 사이사이 놓침
     outs = [f.update(d, hg.GESTURE_FIST) for d in seq]
-    assert outs[-1] == (hg.GESTURE_FIST, True)
-    assert sum(e for _, e in outs) == 1                                 # 정지 요청은 한 번
+    assert outs[-1] == hg.GESTURE_FIST
 
 
 def test_long_miss_resets_count():
@@ -153,13 +148,52 @@ def test_long_miss_resets_count():
     for _ in range(4):                                                  # 4 프레임 연속 놓침 → 처음부터
         f.update(False, hg.GESTURE_NONE)
     outs = [f.update(True, hg.GESTURE_FIST) for _ in range(4)]
-    assert all(not e for _, e in outs)                                  # 아직 4 개뿐
-    assert f.update(True, hg.GESTURE_FIST) == (hg.GESTURE_FIST, True)
+    assert all(g == hg.GESTURE_NONE for g in outs)                      # 아직 4 개뿐
+    assert f.update(True, hg.GESTURE_FIST) == hg.GESTURE_FIST
 
 
-def test_short_miss_keeps_stable_fist_without_refiring():
+def test_short_miss_keeps_stable_gesture():
     f = GestureFilter(frames=3, max_miss=3)
     for _ in range(3):
         f.update(True, hg.GESTURE_FIST)
-    assert f.update(False, hg.GESTURE_NONE) == (hg.GESTURE_FIST, False)  # 잠깐 놓쳐도 주먹 유지, 재요청 없음
-    assert f.update(True, hg.GESTURE_FIST) == (hg.GESTURE_FIST, False)
+    assert f.update(False, hg.GESTURE_NONE) == hg.GESTURE_FIST          # 잠깐 놓쳐도 유지
+    assert f.update(True, hg.GESTURE_FIST) == hg.GESTURE_FIST
+
+
+
+# ----- 손목 각도 안정화 (wrist_filter) -----
+from rally_human.wrist_filter import WristFilter  # noqa: E402
+
+DT = 1 / 30
+
+
+def test_wrist_filter_median_drops_outliers():
+    f = WristFilter(window_s=0.5)
+    angles = [90, 92, 88, 160, 91, 89, 20, 90]               # 튀는 값 160·20 섞임
+    out = [f.update(i * DT, True, a, False) for i, a in enumerate(angles)]
+    assert out[-1] == pytest.approx(90, abs=1.5)
+
+
+def test_wrist_filter_holds_value_while_hand_too_close():
+    """잡는 순간처럼 손이 카메라에 너무 가까워도 다가올 때의 값을 계속 낸다 — 수 초 동안."""
+    f = WristFilter(window_s=0.5, lost_s=1.0)
+    t = 0.0
+    for _ in range(30):                                       # 1 s 다가오며 60°
+        f.update(t, True, 60.0, False)
+        t += DT
+    for k in range(120):                                      # 4 s 너무 가까움, 각도 흔들림
+        v = f.update(t, True, 60.0 + (40 if k % 2 else -40), True)
+        t += DT
+    assert v == pytest.approx(60.0)
+
+
+def test_wrist_filter_nan_after_hand_lost():
+    f = WristFilter(lost_s=1.0)
+    f.update(0.0, True, 90.0, False)
+    assert f.update(0.5, False, float("nan"), False) == pytest.approx(90.0)   # 잠깐 놓침 → 유지
+    assert math.isnan(f.update(1.6, False, float("nan"), False))              # 1 s 넘게 안 보임 → NaN (0 아님)
+
+
+def test_wrist_filter_nan_when_never_good():
+    f = WristFilter()
+    assert math.isnan(f.update(0.0, True, 90.0, True))        # 처음부터 너무 가까움 → 모름

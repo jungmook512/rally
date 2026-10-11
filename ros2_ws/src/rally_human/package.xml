@@ -10,9 +10,11 @@
   <depend>std_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
+  <depend>std_srvs</depend>
   <depend>tf2_ros</depend>
   <depend>cv_bridge</depend>
   <depend>ament_index_python</depend>
+  <exec_depend>rally_bringup</exec_depend>   <!-- config/table.yaml(중앙선)·hand_eye.yaml(깊이 배율)을 실행 때 읽음. 없으면 이미지에 안 들어가 중앙선 0.60·배율 1.0 으로 돎 -->
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <!-- mediapipe 는 pip (docker/hand_pose/requirements.txt) -->

@@ -1,0 +1,9 @@
+# config/table_markers.yaml — 테이블 ArUco 마커 배치 (scripts/aruco_detect.py · verify_calibration.py)
+# 좌표는 p1 중심이 원점, x = 환자 쪽(p1→p2), y = 옆(p1→p3). 마커 중심 기준, 자 실측 (10/8).
+dictionary: DICT_5X5_50        # 인쇄된 마커는 5X5 (10/8 붙인 것은 id 5~8)
+origin: p1
+markers:
+  - {id: 5, name: p1, size_m: 0.020, x_m: 0.00, y_m: 0.00, role: board}
+  - {id: 6, name: p2, size_m: 0.020, x_m: 0.40, y_m: 0.00, role: board}   # p1→p2 40 cm
+  - {id: 7, name: p3, size_m: 0.020, x_m: 0.00, y_m: 0.50, role: board}   # p1→p3 50 cm
+  - {id: 8, name: p4, size_m: 0.020, x_m: 0.40, y_m: 0.50, role: board}   # p3→p4 40 cm, p2→p4 50 cm, p1→p4 대각선 64.0 cm

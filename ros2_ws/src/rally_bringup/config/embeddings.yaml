@@ -27,7 +27,7 @@ modes:
   5:   # trees/mode5_handover.py 가 기록하는 값
     - {source: param,  name: tilt_deg,                 range: [-90, 90]}   # skills.yaml handover.tilt_range_deg 와 같게
     - {source: metric, name: handover_time_s,          range: [0, 20]}    # handover.default_timeout_s
-    - {source: metric, name: wrist_angle_at_grasp_deg, range: [-90, 90]}
+    - {source: metric, name: wrist_angle_at_grasp_deg, range: [0, 180]}    # HandState.wrist_angle_deg 범위 (0 손바닥 아래 · 90 옆 · 180 위, #92)
     - {source: metric, name: attempts,                 range: [1, 2]}
   7:   # ResistPush goal 필드 + metrics.yaml 대표 값
     - {source: param,  name: stiffness,      range_ref: mode7.stiffness_range}

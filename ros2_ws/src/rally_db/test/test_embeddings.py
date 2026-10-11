@@ -22,14 +22,14 @@ def test_real_config_loads():
     assert SPEC.dim == 32
     assert set(SPEC.modes) == {1, 3, 5, 7}
     push = next(f for f in SPEC.modes[1] if f.name == "push_speed")
-    assert (push.lo, push.hi) == (0.05, 0.35)          # skills.yaml mode1.push_speed_range
+    assert (push.lo, push.hi) == (0.10, 0.60)          # skills.yaml mode1.push_speed_range
 
 
 def test_vector_shape_and_scale():
     vec = embeddings.trial_vector(row(params={"push_speed": 0.20, "lane": 1}), SPEC)
     assert len(vec) == 32
     assert vec[:3] == pytest.approx([1.0, 0.25, 0.2])   # 성공, 50/200, 6/30
-    assert vec[3] == pytest.approx(0.5)                  # (0.20 - 0.05) / 0.30
+    assert vec[3] == pytest.approx(0.2)                  # (0.20 - 0.10) / 0.50 (#42 실측 범위)
     assert vec[4] == pytest.approx(0.5)                  # lane 1 / 2
     assert all(v == 0.0 for v in vec[6:])                # push_dir_deg 없음(0°→0)·남는 칸 0
 
@@ -54,7 +54,7 @@ def test_mode5_uses_recorded_metrics():
     vec = embeddings.trial_vector(row(mode=5, error_mm=0.0, duration_s=10.0,
                                       metrics={"handover_time_s": 5.0, "wrist_angle_at_grasp_deg": 45.0,
                                                "attempts": 2.0}), SPEC)
-    assert vec[3:7] == pytest.approx([0.5, 0.25, 0.75, 1.0])   # tilt 없음→0°→0.5, 5/20, (45+90)/180, 2회
+    assert vec[3:7] == pytest.approx([0.5, 0.25, 0.25, 1.0])   # tilt 없음→0°→0.5, 5/20, 손목 45/180 (범위 0~180, #92), 2회
 
 
 def test_similar_trial_is_closer():

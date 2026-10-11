@@ -16,6 +16,14 @@
 - [ ] CSV 는 `data/measure/` (git 제외). 가능하면 RealSense bag 같이 녹화 → 나중에 칼만 검증용 (박성현 제안)
 - [ ] (박성현) 오전 로봇 30분: 핸드아이 검증·중앙선 실측·카메라 static tf (#59) — 시간 맞추기
 
+## 10/8 회의 결정 — 모드 1: 손 위치 레인 · 잘 받으면 멀리 · 공 회수 (브랜치 `feat/rally_robot/mode1-hand-return`)
+- [x] 레인 레시피 실측 3레인 (a 0.192/0.221/0.193, d0 0.020/0.063/0.065) → `skills.yaml mode1.lanes[].recipe`
+- [x] `ReturnBall` 액션 + `return_ball.py` (관측 자세 → 레인 안 공 → 거치대 맨 윗부분 → 손 보기), `/rally/robot/go_hand_view` 서비스, PushBall 이 손 보기 자세에서 끝남 — 시뮬 세션 4회 통과
+- [ ] **거치대 맨 윗부분 직접교시**: 공을 쥐고 손끝을 레일 위쪽 끝 위에 대고 `python3 scripts/print_pose.py` → `skills.yaml mode1.rack_drop_posx` (없으면 ReturnBall 이 `no_rack_drop_posx` 로 시작 전에 중단)
+- [ ] 실로봇: `scripts/robot.sh brain` + `session 1` 로 한 세션 (손 인식 컨테이너 필요 — 정동휘) · 손 보기 자세에서 레인 3개 끝·환자 손이 화면에 다 들어오는지
+- [ ] 공 회수 실측: 로봇이 닿는 한계 `return_reach_x_max_m` 0.55 가 맞는지, 레인 벽 0.5 cm 에서 집기·놓기 손가락 간섭
+- [ ] (안전, 팀 결정) 목표 거리를 27 cm 보다 짧게(환자에게서 더 멀리) 하려면 손 거리 STOP(15 cm) 규칙 조정 필요 — 아래 #59 3번 결정과 같이 보기
+
 ## Day 0 (10/5)
 - [x] `rally_robot/README.md` 읽기 — 선생님 코드가 어디로 옮겨졌는지, `dsr_helpers.init_dsr()` 패턴
 - [x] dsr_bringup2 빌드, M0609 연결, `movel` 기본 이동 확인
@@ -51,6 +59,8 @@
 - [x] `/rally/robot/reset_safety`
 - [ ] 3중 정지 전수 테스트 10회
 - [ ] (#59 1단계) `safety_monitor.py` 손 거리 `detected && NaN` → SLOW + 손·힘·tcp_pose 데이터 끊김 감지(#14). 지금 카메라 tf 가 없어 손 거리가 늘 NaN → 손 근접 감속·정지가 사실상 꺼져 있음. 그 뒤 박성현 tf + 체크리스트 8~10 → 주먹→STOP 제거
+  - 같은 PR (#59 3번 결정): 접촉 예정 + 로봇 거의 정지(`contact_slow_speed_max_mps`) 또는 −x 로만 이동(져주기)이면 손 거리 STOP → SLOW, 그 밖 이동 중은 STOP, 손이 로봇 구역 깊이(`hand_deep_stop_m`, 예 −0.15) 들어오면 항상 STOP. 값은 `safety.yaml`, 커밋에 완화 이유, 4가지 단위 테스트
+  - #57 제시 위치가 `table.yaml centerline_x_m`(박성현이 0.568 로 갱신 예정)을 읽도록 — 보수값 0.50 따로 두지 않기
 
 ## Day 4 — 모드 7 완성 ✅ (오전) + 모드 3 착수
 - [ ] `resist_push.py`: 손잡이 제시 → `task_compliance_ctrl` + `set_stiffnessx`(밀리는 축만 저강성) → 20 Hz 힘 누적 → 목표 유지 2 s → 져주기 저속 movel(환자 힘 벡터 방향) → 손 놓으면 저속 복귀(접촉 감지 정지) → `finally` 해제

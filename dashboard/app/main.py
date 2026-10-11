@@ -6,7 +6,8 @@
   GET  /api/trials    최근 세션의 시도 목록 — DB trials
   GET  /api/events    최근 사건 — DB events (안전·음성·모드 바뀜)
   WS   /ws            {"type": "state", "data": …} 0.5 s 마다 바뀌었을 때 / {"type": "event", "data": …} rally:events 그대로
-대시보드는 ROS 를 쓰지 않는다 (가벼운 python 이미지). 모드 전환·비상정지 버튼은 ROS 다리가 생긴 뒤 (todo Day 6).
+  GET /api/session · POST /api/session/resume — Redis를 통해 brain 상태 조회·재개 승인 요청
+대시보드는 ROS 를 쓰지 않는다. 휴식 재개·휴식 제안 응답을 Redis로 연결하며 안전 reset과 구분한다.
 Redis·DB 가 죽어 있어도 서버는 뜨고, 해당 API 는 503 + 이유를 돌려준다. 화면은 다시 연결될 때까지 재시도한다.
 """
 from __future__ import annotations
@@ -14,25 +15,33 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
+import uuid
 from contextlib import suppress
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import psycopg
 import redis.asyncio as aioredis
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from psycopg.rows import dict_row
+from pydantic import BaseModel
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://rally:rally@127.0.0.1:5432/rally")
 REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0")
 STATE_KEY = "rally:state"            # rally_db/repository.py 와 같은 이름
 EVENTS_CHANNEL = "rally:events"
+CONTROL_KEY = "rally:session_control"
+COMMAND_CHANNEL = "rally:session_commands"
+REPLY_PREFIX = "rally:session_reply:"
 STATE_PERIOD_S = 0.5
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 
 app = FastAPI(title="RALLY dashboard")
-_redis = aioredis.from_url(REDIS_URL, decode_responses=True, socket_connect_timeout=1.0)
+app.mount("/images", StaticFiles(directory=WEB_DIR / "images"), name="images")
+_redis = aioredis.from_url(REDIS_URL, decode_responses=True, socket_connect_timeout=0.5, socket_timeout=0.5)
 
 
 async def _query(sql: str, params: tuple = ()) -> list[dict[str, Any]]:
@@ -47,6 +56,87 @@ async def _query(sql: str, params: tuple = ()) -> list[dict[str, Any]]:
 async def _get_state() -> dict[str, Any] | None:
     raw = await _redis.get(STATE_KEY)
     return json.loads(raw) if raw else None
+
+
+async def _get_control() -> dict[str, Any] | None:
+    raw = await _redis.get(CONTROL_KEY)
+    state = json.loads(raw) if raw else None
+    return state if state and 0 <= time.time() - state.get("updated_at", 0) < 2 else None
+
+
+class ResumeRequest(BaseModel):
+    session_id: uuid.UUID
+    pause_id: uuid.UUID
+
+
+@app.get("/api/session")
+async def session_state() -> dict[str, Any] | None:
+    try:
+        return await _get_control()
+    except aioredis.RedisError as e:
+        raise HTTPException(503, "세션 상태 연결이 끊겼습니다") from e
+
+
+@app.post("/api/session/resume")
+async def resume_session(body: ResumeRequest) -> dict[str, Any]:
+    request_id = str(uuid.uuid4())
+    try:
+        state = await _get_control()
+        if not state:
+            raise HTTPException(503, "brain의 최신 상태가 없습니다")
+        if (state["phase"] != "paused" or state["session_id"] != str(body.session_id)
+                or state["pause_id"] != str(body.pause_id)):
+            raise HTTPException(409, "화면의 휴식 상태가 바뀌었습니다. 새 상태를 확인해 주세요")
+        if not state["can_resume"]:
+            raise HTTPException(409, state["blocked_reason"] or "현재 재개할 수 없습니다")
+        command = {"request_id": request_id, "session_id": str(body.session_id),
+                   "pause_id": str(body.pause_id), "command": "resume", "expires_at": time.time() + 2}
+        return await send_command(command)
+    except aioredis.RedisError as e:
+        raise HTTPException(503, "제어 연결이 끊겼습니다. 상태를 다시 확인해 주세요") from e
+
+
+class ProposalResponse(BaseModel):
+    session_id: uuid.UUID
+    proposal_id: uuid.UUID
+    decision: Literal["accept", "reject"]
+
+
+@app.post("/api/session/proposal/respond")
+async def respond_proposal(body: ProposalResponse) -> dict[str, Any]:
+    try:
+        state = await _get_control()
+        if not state:
+            raise HTTPException(503, "brain의 최신 상태가 없습니다")
+        proposal = state.get("proposal") or {}
+        if (state["session_id"] != str(body.session_id) or state["phase"] != "running"
+                or proposal.get("proposal_id") != str(body.proposal_id)
+                or proposal.get("status") != "pending" or proposal.get("remaining_s", 0) <= 0):
+            raise HTTPException(409, "제안이 만료·종료됐거나 상태가 바뀌었습니다")
+        return await send_command({"request_id": str(uuid.uuid4()), "session_id": str(body.session_id),
+            "proposal_id": str(body.proposal_id), "command": "proposal_" + body.decision,
+            "expires_at": time.time() + 2})
+    except aioredis.RedisError as e:
+        raise HTTPException(503, "제어 연결이 끊겼습니다. 상태를 다시 확인해 주세요") from e
+
+
+async def send_command(command: dict) -> dict[str, Any]:
+    request_id = command["request_id"]
+    try:
+        if not await _redis.publish(COMMAND_CHANNEL, json.dumps(command)):
+            raise HTTPException(503, "brain 제어 연결이 없습니다")
+        deadline = time.monotonic() + 2.5
+        while time.monotonic() < deadline:
+            raw = await _redis.get(REPLY_PREFIX + request_id)
+            if raw:
+                reply = json.loads(raw)
+                if not reply["success"]:
+                    raise HTTPException(409, reply["message"])
+                return reply
+            await asyncio.sleep(0.05)
+    except aioredis.RedisError as e:
+        raise HTTPException(503, "결과를 확인할 수 없습니다. 상태 갱신 후 확인해 주세요") from e
+    raise HTTPException(504, "응답 미확인 — 자동 재시도하지 않고 상태를 확인해 주세요")
 
 
 @app.get("/")
@@ -102,6 +192,10 @@ async def ws(socket: WebSocket) -> None:
     async def push_state() -> None:
         last = None
         while True:
+            control = None
+            with suppress(aioredis.RedisError):
+                control = await _get_control()
+            await socket.send_json({"type": "session", "data": control})
             with suppress(aioredis.RedisError):
                 current = await _get_state()
                 if current != last:
@@ -112,11 +206,11 @@ async def ws(socket: WebSocket) -> None:
     async def forward_events() -> None:
         while True:
             try:
-                pubsub = _redis.pubsub()
-                await pubsub.subscribe(EVENTS_CHANNEL)
-                async for msg in pubsub.listen():
-                    if msg.get("type") == "message":
-                        await socket.send_json({"type": "event", "data": json.loads(msg["data"])})
+                async with _redis.pubsub() as pubsub:
+                    await pubsub.subscribe(EVENTS_CHANNEL)
+                    async for msg in pubsub.listen():
+                        if msg.get("type") == "message":
+                            await socket.send_json({"type": "event", "data": json.loads(msg["data"])})
             except aioredis.RedisError:
                 await asyncio.sleep(1.0)   # Redis 가 돌아오면 다시 구독
 
@@ -129,3 +223,4 @@ async def ws(socket: WebSocket) -> None:
     finally:
         for t in tasks:
             t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)

@@ -130,10 +130,10 @@
     {"@id": "rally:hold_time", "@type": "rally:Measure", "key": "hold_time_achieved_s", "label": "버틴 시간", "unit": "s", "source": "기획서 3.5 측정, ResistPush.action"},
     {"@id": "rally:force_smoothness", "@type": "rally:Measure", "key": "force_smoothness", "label": "힘 떨림", "source": "기획서 3.5 측정, ResistPush.action"},
 
-    {"@id": "rally:trunk_lean", "@type": "rally:Compensation", "key": "trunk_lean", "label": "몸통 기울이기", "threshold": 15.0, "unit": "deg",
-     "source": "BodyPose.msg, FR-05(임계 15°)", "indicatesFatigue": "rally:fatigue"},
-    {"@id": "rally:shoulder_hike", "@type": "rally:Compensation", "key": "shoulder_hike", "label": "어깨 들기", "source": "BodyPose.msg",
-     "indicatesFatigue": "rally:fatigue"},
+    {"@id": "rally:trunk_lean", "@type": "rally:Compensation", "key": "trunk_lean", "label": "몸통 기울이기", "threshold": 20.0, "unit": "deg",
+     "source": "BodyPose.msg, FR-05(임계 20°, 10/8 선 자세 실측 #83·#102)", "indicatesFatigue": "rally:fatigue"},
+    {"@id": "rally:shoulder_hike", "@type": "rally:Compensation", "key": "shoulder_hike", "label": "어깨 들기", "threshold": 20.0, "unit": "deg",
+     "source": "BodyPose.msg, FR-05(임계 20°, 10/8 선 자세 실측 #83·#102)", "indicatesFatigue": "rally:fatigue"},
     {"@id": "rally:fatigue", "@type": "rally:FatigueSignal", "label": "피로", "source": "기획서 4.10"},
 
     {"@id": "rally:act_continue", "@type": "rally:Action", "key": "continue", "label": "계속", "source": "skills.yaml brain.actions"},
@@ -158,7 +158,6 @@
      "triggersLevel": "rally:level_slow", "source": "기획서 3.6"},
     {"@id": "rally:safe_hand_close", "@type": "rally:SafetyTrigger", "key": "hand_near_centerline", "label": "손이 중앙선 아주 가까이(0.15 m)", "threshold": 0.15, "unit": "m",
      "triggersLevel": "rally:level_stop", "source": "기획서 3.6"},
-    {"@id": "rally:safe_fist", "@type": "rally:SafetyTrigger", "key": "fist_gesture", "label": "주먹 제스처", "triggersLevel": "rally:level_stop", "source": "기획서 3.6"},
     {"@id": "rally:safe_voice_stop", "@type": "rally:SafetyTrigger", "key": "voice_stop", "label": "\"그만\" 음성", "triggersLevel": "rally:level_stop", "source": "기획서 3.6, 4.8"},
     {"@id": "rally:safe_nudge", "@type": "rally:SafetyTrigger", "key": "nudge", "label": "로봇 툭 치기", "triggersLevel": "rally:level_stop", "source": "기획서 3.6"},
     {"@id": "rally:safe_force_limit", "@type": "rally:SafetyTrigger", "key": "force_limit", "label": "힘 한계(25 N)", "threshold": 25.0, "unit": "N",

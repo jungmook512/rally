@@ -117,7 +117,7 @@ def test_queries():
     assert ontology.action_for_cue("nope") is None
     assert ontology.label("trunk_lean") == "몸통 기울이기"
     s = ontology.describe_compensation(1, "trunk_lean")
-    assert s == "모드 1 공 굴리기(팔 뻗기 훈련) 중 몸통 기울이기(15° 이상) 감지 — 피로 신호일 수 있음(근거 약함: 기획서 4.10)"
+    assert s == "모드 1 공 굴리기(팔 뻗기 훈련) 중 몸통 기울이기(20° 이상) 감지 — 피로 신호일 수 있음(근거 약함: 기획서 4.10)"
     assert ontology.describe_compensation(1, "none") == ""
 
 
@@ -130,3 +130,10 @@ def test_ttl_and_owl_copies_match_source():
     for name, fmt in (("ontology.ttl", "turtle"), ("ontology.owl", "xml")):
         copy = Graph().parse(str(knowledge / name), format=fmt)
         assert isomorphic(source, copy), f"{name} 이 원본과 다름 → python3 scripts/export_ontology.py"
+
+
+def test_fist_is_not_a_safety_trigger():
+    # #59: 쥐는 훈련과 충돌하는 주먹 → STOP 관계를 지식 계층에 남기지 않는다.
+    assert "fist_gesture" not in keys_of(RALLY.SafetyTrigger)
+    assert not list(G.triples((RALLY.safe_fist, None, None)))
+    assert not list(G.triples((None, None, RALLY.safe_fist)))

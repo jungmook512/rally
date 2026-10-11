@@ -89,7 +89,8 @@ def hand_to_row(msg, session_id: str | None) -> tuple | None:
         return None
     p = msg.palm_pose.position
     return (stamp_to_datetime(msg.header.stamp), session_id, None,
-            p.x, p.y, p.z, msg.wrist_angle_deg, msg.grip_closure, int(msg.gesture))
+            p.x, p.y, p.z, finite_or_none(msg.wrist_angle_deg),   # 손목 필터(#92): 손이 보여도 못 잰 프레임은 NaN → NULL
+            msg.grip_closure, int(msg.gesture))
 
 
 def safety_to_payload(msg) -> dict[str, Any]:
@@ -97,7 +98,7 @@ def safety_to_payload(msg) -> dict[str, Any]:
         "level": SAFETY_LEVELS.get(int(msg.level), str(msg.level)),
         "reason": msg.reason,
         "speed_override": round(float(msg.speed_override), 3),
-        "min_hand_distance": round(float(msg.min_hand_distance), 3),
+        "min_hand_distance": finite_or_none(round(float(msg.min_hand_distance), 3)),   # NaN = 손은 보이는데 거리 모름 → null (jsonb 는 NaN 거부)
     }
 
 

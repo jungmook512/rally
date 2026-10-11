@@ -91,6 +91,13 @@ def test_hand_row():
     assert convert.hand_to_row(hand(detected=False), None) is None
 
 
+def test_hand_row_nan_wrist_is_null():
+    """손목 필터(#92): 손은 보이는데 손목을 못 잰 프레임은 NaN → NULL (0° 가 아니라 '모름')."""
+    msg = hand()
+    msg.wrist_angle_deg = float("nan")
+    assert convert.hand_to_row(msg, None)[6] is None
+
+
 def safety(level=2, reason="force_limit"):
     return NS(header=header(), level=level, reason=reason, speed_override=0.0, min_hand_distance=0.12345)
 
@@ -98,6 +105,15 @@ def safety(level=2, reason="force_limit"):
 def test_safety_payload():
     p = convert.safety_to_payload(safety())
     assert p == {"level": "stop", "reason": "force_limit", "speed_override": 0.0, "min_hand_distance": 0.123}
+
+
+def test_safety_payload_nan_hand_distance_is_null():
+    # safety_monitor 는 '손은 보이는데 거리 모름' 을 NaN 으로 싣는다 (#88) — jsonb·브라우저 JSON 은 NaN 을 못 받는다
+    import json
+    p = convert.safety_to_payload(NS(header=header(), level=1, reason="hand_distance_unknown", speed_override=0.5,
+                                     min_hand_distance=float("nan")))
+    assert p["min_hand_distance"] is None
+    json.dumps(p, allow_nan=False)
 
 
 def test_context_to_state():

@@ -14,6 +14,9 @@
       · 환자가 막대를 든 채 로봇이 물러났다 빈손(열림)으로 다시 오면(RECEIVE) 막대를 그리퍼 사이에 밀어 넣으며 −x 로 민다
     힘은 /rally/sim/external_force(Vector3, N, base)로 발행 → skill_server(RALLY_SIM=1)가 get_tool_force 에 더한다.
     RViz: 막대(초록 원기둥) · 환자 손(살구색) · 카메라 시야(손이 보이면 초록, 안 보이면 회색 사각뿔).
+모드 1 환자 흉내 (--mode1-patient, 10/8 회의 흐름): /rally/perception/hand(HandState) 를 15 Hz 발행. 손은 무작위 레인 앞
+    (중앙선 + 0.28 m, 안전감시 SLOW 밖)에서 기다리다, 친 공이 레인 끝(x > 0.6)에 멈추면 1 s 뒤 손을 공으로 → 쥠(grip 0.9) 1.5 s →
+    폄(0) + 공을 로봇이 닿는 곳(레인 x 0.50)으로 굴려 줌 → 손 제자리 → 다음 레인 무작위. 거치대에 놓인 공(레인 밖)은 굴러 내려가 맨 앞으로.
 가상 비전: /rally/perception/objects (base_link) 로 공·막대 위치를 10 Hz 발행 — 모드 1 비전 집기(PushBall pickup_source: vision)를 시뮬에서.
     공은 처음에 거치대(--rack x,y)에 놓여 있다. skills.yaml mode1.vision_offset_m 보정을 거꾸로 빼서 발행 → 로봇이 보정 후 정확히 공 위로 간다.
 
@@ -42,7 +45,9 @@ from tf2_ros import Buffer, TransformListener
 from visualization_msgs.msg import Marker, MarkerArray
 
 from onrobot_rg_msgs.srv import SetCommand
-from rally_interfaces.msg import TrackedObject, TrackedObjectArray
+import random
+
+from rally_interfaces.msg import HandState, TrackedObject, TrackedObjectArray
 from rally_interfaces.srv import GripperCommand
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -78,7 +83,7 @@ def quat_rotate(q, v):
 
 class SimGripper(Node):
     def __init__(self, ball_mm: float, decel: float, rod=(0.30, 0.25, 0.0), rod_mm=30.0, rod_len=0.20,
-                 patient_s=2.0, patient_n=12.0, rack=(0.36, 0.24)):
+                 patient_s=2.0, patient_n=12.0, rack=(0.334, 0.282), refill=False, patient1=False):
         super().__init__("rally_sim_gripper")
         skills = yaml.safe_load((CFG / "skills.yaml").read_text(encoding="utf-8"))
         table = yaml.safe_load((CFG / "table.yaml").read_text(encoding="utf-8"))["table"]
@@ -91,6 +96,11 @@ class SimGripper(Node):
         self.held = False
         self.ball = [rack[0], rack[1], self.table_z + self.r] if rack else None   # [x, y, z] base_link — 없으면 화면에 안 그림. 처음엔 거치대 위
         self.vision_offset = (skills["mode1"].get("vision_offset_m") or [0.0, 0.0, 0.0])
+        self.rack, self.refill = rack, refill      # refill: 굴러가 멈춘 공을 2 s 뒤 거치대로 (거치대 공 여러 개 흉내 — brain 모드 1 은 4번 연속)
+        self.rest_since = None
+        self.patient1 = patient1
+        self.p1 = {"state": "idle", "t": 0.0, "lane_y": random.choice([float(ln["start"][1]) for ln in self.lanes]),
+                   "grip": 0.0, "catch_y": 0.0}
         self.ball_v = (0.0, 0.0)        # 굴러가는 속도 (m/s)
         self.tip_hist = []              # [(monotonic, x, y)] 최근 0.25 s 손가락 끝 위치
         self.tip_q = (0.0, 0.0, 0.0, 1.0)
@@ -124,6 +134,9 @@ class SimGripper(Node):
         self.pub_force = self.create_publisher(Vector3, "/rally/sim/external_force", 10)
         self.pub_obj = self.create_publisher(TrackedObjectArray, "/rally/perception/objects", qos_profile_sensor_data)
         self.create_timer(0.1, self.publish_objects, callback_group=cbg)
+        if patient1:
+            self.pub_hand = self.create_publisher(HandState, "/rally/perception/hand", qos_profile_sensor_data)
+            self.create_timer(1.0 / 15.0, self.publish_hand, callback_group=cbg)
         self.create_timer(0.02, self.step, callback_group=cbg)
         self.create_timer(0.05, self.publish_state, callback_group=cbg)
         self.get_logger().info(f"sim gripper ready — 공 지름 {ball_mm:.0f} mm, 감속도 {decel} m/s² · /rally/sim/give_ball · /rally/sim/place_ball")
@@ -256,8 +269,21 @@ class SimGripper(Node):
                         self.ball_v = (self.ball_v[0] * k, self.ball_v[1] * k)
                         self.ball[0] += self.ball_v[0] * dt
                         self.ball[1] += self.ball_v[1] * dt
+            if self.refill and self.rack and self.ball is not None and not self.held:
+                away = math.hypot(self.ball[0] - self.rack[0], self.ball[1] - self.rack[1]) > 0.05
+                if self.patient1 and self._lane_of(self.ball) is not None:
+                    away = False                     # 레인 안 공은 환자·ReturnBall 몫 — 거치대에 놓인 공(레인 밖)만 굴러 내려감
+                if away and math.hypot(*self.ball_v) < 1e-4 and (tip is None or math.dist(tip[1:], self.ball) > 0.08):
+                    self.rest_since = self.rest_since or time.monotonic()
+                    if time.monotonic() - self.rest_since > 2.0:
+                        self.ball, self.ball_v, self.rest_since = [self.rack[0], self.rack[1], self.table_z + self.r], (0.0, 0.0), None
+                        self.get_logger().info("멈춘 공을 거치대로 되돌림 (--refill)")
+                else:
+                    self.rest_since = None
             ball = list(self.ball) if self.ball else None
             self._patient(tip)
+            if self.patient1:
+                self._patient1()
         self.pub_force.publish(Vector3(x=self.force[0], y=self.force[1], z=self.force[2]))
         self.publish_scene(ball)
 
@@ -297,6 +323,51 @@ class SimGripper(Node):
                 self.rod_pos, self.rod_axis = list(self.hand), [0.0, 0.0, 1.0]
         else:
             self.hand = list(self.hand_rest)
+
+    def _lane_of(self, p):
+        for ln in self.lanes:
+            if abs(p[1] - float(ln["start"][1])) < 0.07 and p[0] > float(ln["start"][0]) - 0.05:
+                return float(ln["start"][1])
+        return None
+
+    def _patient1(self):
+        """모드 1 환자 (lock 안). 손 = self.hand, 쥔 정도 = self.p1['grip']."""
+        p1, now, cl = self.p1, time.monotonic(), self.centerline_x
+        rest = [cl + 0.28, p1["lane_y"], self.table_z + 0.12]
+        b = self.ball
+        resting = b is not None and not self.held and math.hypot(*self.ball_v) < 1e-4
+        if p1["state"] == "idle":
+            self.hand, p1["grip"] = rest, 0.0
+            ly = self._lane_of(b) if resting else None
+            if ly is not None and b[0] > 0.6:
+                p1.update(state="reach", t=now, catch_y=ly)
+        elif p1["state"] == "reach":
+            if now - p1["t"] > 1.0:
+                self.hand = [b[0] + 0.04, p1["catch_y"], self.table_z + 0.06]
+                p1.update(state="hold", t=now, grip=0.9)
+                self.get_logger().info("환자: 공을 쥠")
+        elif p1["state"] == "hold":
+            self.ball = [self.hand[0] - 0.04, self.hand[1], self.table_z + self.r]     # 손에 든 공
+            if now - p1["t"] > 1.5:
+                self.ball, self.ball_v = [0.50, p1["catch_y"], self.table_z + self.r], (0.0, 0.0)   # 로봇 쪽으로 굴려 줌
+                p1.update(state="idle", t=now, grip=0.0,
+                          lane_y=random.choice([float(ln["start"][1]) for ln in self.lanes]))
+                self.get_logger().info("환자: 공을 놓고 로봇 쪽으로 굴려 줌")
+
+    def publish_hand(self):
+        m = HandState()
+        m.header.stamp, m.header.frame_id = self.get_clock().now().to_msg(), "base_link"
+        with self.lock:
+            hx, hy, hz = self.hand
+            grip = self.p1["grip"]
+        m.detected, m.handedness = True, "right"
+        m.landmarks = [Point(x=hx, y=hy, z=hz) for _ in range(21)]
+        m.palm_pose.position = Point(x=hx, y=hy, z=hz)
+        m.palm_pose.orientation.w = 1.0
+        m.grip_closure = float(grip)
+        m.gesture = HandState.GESTURE_NONE
+        m.distance_to_centerline = float(hx - self.centerline_x)
+        self.pub_hand.publish(m)
 
     def _camera(self):
         try:
@@ -396,7 +467,9 @@ def main():
     ap.add_argument("--decel", type=float, default=0.08, help="공 감속도 [m/s²] (레시피 실험 전 추정값)")
     ap.add_argument("--object-mm", type=float, default=None, help="(이전 옵션 호환) --ball-mm 과 같음")
     ap.add_argument("--rod", default="0.30,-0.25,0", help="막대 위치 x,y[m],yaw[deg] (모드 5)")
-    ap.add_argument("--rack", default="0.36,0.24", help="처음 공 위치 = 거치대 x,y[m] (모드 1 비전 집기). none 이면 공 없음")
+    ap.add_argument("--mode1-patient", action="store_true", help="모드 1 환자 흉내 (손 인식 발행·공 받기·굴려 주기). --refill 과 같이")
+    ap.add_argument("--refill", action="store_true", help="굴러가 멈춘 공을 2 s 뒤 거치대로 되돌림 (brain 모드 1 연속 시도용)")
+    ap.add_argument("--rack", default="0.334,0.282", help="처음 공 위치 = 거치대 x,y[m] (모드 1 비전 집기). none 이면 공 없음")
     ap.add_argument("--rod-mm", type=float, default=30.0)
     ap.add_argument("--rod-len", type=float, default=0.20)
     ap.add_argument("--patient-s", type=float, default=2.0, help="제시 위치에서 이 시간 멈추면 환자가 당김/밀어 넣음")
@@ -405,7 +478,7 @@ def main():
     rclpy.init()
     rod = tuple(float(v) for v in opt.rod.split(","))
     rack = None if opt.rack == "none" else tuple(float(v) for v in opt.rack.split(","))
-    n = SimGripper(opt.object_mm or opt.ball_mm, opt.decel, rod, opt.rod_mm, opt.rod_len, opt.patient_s, opt.patient_n, rack)
+    n = SimGripper(opt.object_mm or opt.ball_mm, opt.decel, rod, opt.rod_mm, opt.rod_len, opt.patient_s, opt.patient_n, rack, opt.refill, opt.mode1_patient)
     ex = MultiThreadedExecutor(4)
     ex.add_node(n)
     try:

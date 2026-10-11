@@ -27,12 +27,14 @@ class Done:
 
 
 class FakeClient:
-    """outcomes: goal 마다 하나씩 (succeeded, 결과 필드 dict). succeeded=False 면 abort (실제 스킬처럼 결과 메시지는 있음)."""
-    def __init__(self, result_type, outcomes, ready=True):
+    """outcomes: goal 마다 하나씩 (succeeded, 결과 필드 dict). succeeded=False 면 abort (실제 스킬처럼 결과 메시지는 있음).
+    feedbacks: goal 마다 보낼 feedback 필드 dict 목록 (feedback_callback 이 있으면 결과 전에 차례로 부름)."""
+    def __init__(self, result_type, outcomes, ready=True, feedbacks=None):
         self.result_type = result_type
         self.outcomes = list(outcomes)
         self.ready = ready
         self.goals = []
+        self.feedbacks = list(feedbacks or [])
 
     @property
     def sent(self):
@@ -41,8 +43,11 @@ class FakeClient:
     def server_is_ready(self):
         return self.ready
 
-    def send_goal_async(self, goal):
+    def send_goal_async(self, goal, feedback_callback=None):
         self.goals.append(goal)
+        if feedback_callback is not None:
+            for fields in (self.feedbacks.pop(0) if self.feedbacks else []):
+                feedback_callback(NS(feedback=self.result_type.Feedback(**fields)))
         succeeded, fields = self.outcomes.pop(0)
         status = GoalStatus.STATUS_SUCCEEDED if succeeded else GoalStatus.STATUS_ABORTED
         result = self.result_type.Result(**fields)

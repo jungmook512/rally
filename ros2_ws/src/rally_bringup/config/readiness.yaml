@@ -20,8 +20,10 @@ robot:
     - {name: /rally/robot/wrench, type: geometry_msgs/msg/WrenchStamped, max_age_s: 0.5}
   services:
     - {name: /rally/gripper/command, type: rally_interfaces/srv/GripperCommand}
+    - {name: /rally/robot/go_hand_view, type: std_srvs/srv/Trigger}          # 모드 1 시도 전 손 보기 자세 (10/8)
   actions:
     - {name: /rally/skill/push_ball, type: rally_interfaces/action/PushBall}
+    - {name: /rally/skill/return_ball, type: rally_interfaces/action/ReturnBall}   # 모드 1 시도 뒤 공 회수 (10/8)
     - {name: /rally/skill/pick_compliant, type: rally_interfaces/action/PickCompliant}
     - {name: /rally/skill/handover, type: rally_interfaces/action/Handover}
     - {name: /rally/skill/resist_push, type: rally_interfaces/action/ResistPush}

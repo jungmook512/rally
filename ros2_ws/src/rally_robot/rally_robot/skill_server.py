@@ -6,9 +6,13 @@
   여기서는 main()에서 init_dsr() 한 번 호출하고, 스킬 콜백은 ReentrantCallbackGroup 에서 돌려
   safety_monitor 구독(별도 그룹)이 막히지 않게 한다. Executor 는 MultiThreadedExecutor.
 - 모든 스킬은 실행 중 SafetyStatus.level == STOP 이면 즉시 abort 하고 순응 해제 → 후퇴 (dsr_helpers.move_checked / compliance).
+  안전 상태를 한 번도 못 받았거나 status_timeout_s 넘게 끊겨도 STOP 으로 본다 (#14) — safety_monitor 없이 띄우면 goal 거부.
 - DRL 함수(movel, task_compliance_ctrl, ...)는 init_dsr() 이후 import.
 - 접촉이 예정된 구간(집기 하강·핸드오버 당김 대기·저항 밀기)에서는 /rally/safety/contact_expected 를 True 로 올린다(5 Hz 하트비트).
   safety_monitor 는 이 동안 nudge(힘 급변) 판정만 끄고 절대 힘 한계는 그대로 둔다. skill_server 가 죽으면 0.5 s 뒤 자동으로 꺼진다.
+- 환자가 물체·손잡이를 잡는 구간(건네기 당김 대기 → 후퇴, 저항 밀기)에서만 /rally/safety/patient_contact 도 올린다(5 Hz).
+  safety_monitor 는 이 동안 손 거리 STOP 을 SLOW 로 낮춘다(#59). **이 플래그를 켠 동안 스킬은 환자 쪽(+x)으로 명령 이동을 하지 않는다**
+  — 제자리 순응 대기와 환자에게서 멀어지는 이동만. 치기·집기·놓기·ReturnBall 에서는 켜지 않는다.
 - 설정: rally_bringup/config/skills.yaml + table.yaml (share 에 설치된 것 → 없으면 소스 트리 폴백).
 - 로봇 없이: `ros2 run rally_robot skill_server --fake` 또는 RALLY_FAKE=1 → rally_robot.fake_dsr 를 DSR_ROBOT2 자리에 끼운다. 실제 모드 경로는 그대로.
 """
@@ -28,7 +32,7 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool
 from std_srvs.srv import Trigger
 
-from rally_interfaces.action import CatchBall, DetachBall, Handover, MoveTarget, PickCompliant, PushBall, ResistPush
+from rally_interfaces.action import CatchBall, DetachBall, Handover, MoveTarget, PickCompliant, PushBall, ResistPush, ReturnBall
 from rally_interfaces.msg import HandState, SafetyStatus, TrackedObjectArray
 from rally_interfaces.srv import GripperCommand
 from rally_robot.dsr_helpers import OBSERVE_POS, ROBOT_ID, SkillAbort, init_dsr, motion_speeds
@@ -68,8 +72,11 @@ class SkillServer(Node):
         self.cb_state = MutuallyExclusiveCallbackGroup()
         self.cb_skill = ReentrantCallbackGroup()
         self.safety = SafetyStatus()
+        self.safety_rx = None                # 마지막 /rally/safety/status 수신 monotonic. None = 한 번도 못 받음 → STOP 취급 (#14)
+        self.declare_parameter("status_timeout_s", 0.5)   # safety.yaml rally_skill_server. 이보다 오래 못 받으면 STOP 취급
         self.last_hand = None
         self._contact = False
+        self._patient_contact = False
         self._cm_client = None
         self.last_pick = None                # PickCompliant 성공 자세 {pose(mm·deg), grip_force} — 모드 5 내려놓기 자리
         self.holding = False                 # 물체를 쥐고 있는지 — gripper() 가 닫힘+감지면 True, 열면 False
@@ -83,11 +90,14 @@ class SkillServer(Node):
         self.objects = None                  # (monotonic 수신 시각, TrackedObjectArray) — 비전 물체 (모드 1 공 집기)
         self.create_subscription(TrackedObjectArray, "/rally/perception/objects", self._on_objects, qos_profile_sensor_data, callback_group=self.cb_state)
         self.pub_contact = self.create_publisher(Bool, "/rally/safety/contact_expected", reliable1)
+        self.pub_patient_contact = self.create_publisher(Bool, "/rally/safety/patient_contact", reliable1)
         self.create_timer(1.0 / CONTACT_HZ, self._contact_tick, callback_group=self.cb_state)
         self.gripper_cli = self.create_client(GripperCommand, "/rally/gripper/command", callback_group=self.cb_state)
         self.create_service(Trigger, "/rally/robot/go_observe_pose", self._go_observe, callback_group=self.cb_skill)
+        self.create_service(Trigger, "/rally/robot/go_hand_view", self._go_hand_view, callback_group=self.cb_skill)
 
-        from rally_robot.skills import catch_ball, detach_ball, handover, move_target, pick_compliant, push_ball, resist_push
+        from rally_robot.skills import (catch_ball, detach_ball, handover, move_target, pick_compliant, push_ball, resist_push,
+                                        return_ball)
         self._servers = [
             ActionServer(self, PushBall, "/rally/skill/push_ball", push_ball.execute(self), callback_group=self.cb_skill,
                          goal_callback=self._accept, cancel_callback=self._cancel),
@@ -103,12 +113,19 @@ class SkillServer(Node):
                          goal_callback=self._accept, cancel_callback=self._cancel),
             ActionServer(self, PickCompliant, "/rally/skill/pick_compliant", pick_compliant.execute(self), callback_group=self.cb_skill,
                          goal_callback=self._accept, cancel_callback=self._cancel),
+            ActionServer(self, ReturnBall, "/rally/skill/return_ball", return_ball.execute(self), callback_group=self.cb_skill,
+                         goal_callback=self._accept, cancel_callback=self._cancel),
         ]
         self.get_logger().info(f"skill_server ready ({'FAKE' if fake else 'real'} DSR)")
 
     # ----- 안전 -----
     def _on_safety(self, msg):
         self.safety = msg
+        self.safety_rx = time.monotonic()
+
+    def safety_stale(self) -> bool:
+        """안전 상태를 한 번도 못 받았거나 status_timeout_s 넘게 끊김 (#14) — safety_monitor 가 없거나 죽음."""
+        return self.safety_rx is None or time.monotonic() - self.safety_rx > float(self.get_parameter("status_timeout_s").value)
 
     def _on_objects(self, msg):
         self.objects = (time.monotonic(), msg)
@@ -138,9 +155,12 @@ class SkillServer(Node):
         self.last_hand = msg
 
     def stop_requested(self):
-        return self.safety.level == SafetyStatus.LEVEL_STOP
+        """STOP 이거나 안전 상태가 끊겼으면 참 → 새 goal 거부, 실행 중 스킬은 check_stop 에서 abort (#14)."""
+        return self.safety_stale() or self.safety.level == SafetyStatus.LEVEL_STOP
 
     def safety_reason(self):
+        if self.safety_stale():
+            return "safety_status_stale"
         return self.safety.reason or "safety_stop"
 
     def speed_scale(self):
@@ -177,9 +197,16 @@ class SkillServer(Node):
         self._contact = bool(on)
         self.pub_contact.publish(Bool(data=self._contact))
 
+    def set_patient_contact(self, on: bool):
+        """환자가 물체·손잡이를 잡는 구간 (#59). 켠 동안 환자 쪽(+x) 명령 이동 금지 — 위 설계 메모."""
+        self._patient_contact = bool(on)
+        self.pub_patient_contact.publish(Bool(data=self._patient_contact))
+
     def _contact_tick(self):
         if self._contact:
             self.pub_contact.publish(Bool(data=True))
+        if self._patient_contact:
+            self.pub_patient_contact.publish(Bool(data=True))
 
     # ----- 그리퍼 -----
     def gripper_cfg(self, object_class: str):
@@ -245,6 +272,29 @@ class SkillServer(Node):
         return res
 
 
+    def _go_hand_view(self, req, res):
+        """손 보기 자세 (모드 1 시도 전 레인 고르기 — 툴을 환자 쪽으로 기울여 RealSense 가 환자 손을 봄). 관절 이동."""
+        from rally_robot.dsr_helpers import movej_to_pose
+        from rally_robot.skills.push_ball import DEFAULTS as PUSH_DEFAULTS
+        from rally_robot.skills.push_ball import hand_view_pose
+        if self.stop_requested():
+            res.success, res.message = False, f"safety STOP ({self.safety_reason()})"
+            return res
+        m1 = self.cfg.get("mode1") or {}
+        cfg = {**PUSH_DEFAULTS, **{k: v for k, v in m1.items() if k in PUSH_DEFAULTS}}
+        pose = hand_view_pose(cfg, m1.get("lanes") or [], self.cfg.get("table") or {})
+        if pose is None:
+            res.success, res.message = False, "no_lanes (skills.yaml mode1.lanes)"
+            return res
+        try:
+            movej_to_pose(self, pose, *motion_speeds(self)[4:])
+        except SkillAbort as e:
+            res.success, res.message = False, e.reason
+            return res
+        res.success, res.message = True, f"hand view {[round(v, 1) for v in pose]}"
+        return res
+
+
 def _install_sim_force(node):
     """시뮬 전용(RALLY_SIM=1, 에뮬레이터): 에뮬레이터에는 외력이 없으니 /rally/sim/external_force(Vector3, N, base)를
     get_tool_force 에 더한다. scripts/sim_gripper.py 의 환자 흉내(당기기·밀어 넣기)가 발행. 실로봇 경로에는 안 들어간다."""
@@ -280,6 +330,10 @@ def main(args=None):
     node.dsr = dsr_node
     if not fake and os.environ.get("RALLY_SIM") == "1":
         _install_sim_force(node)
+        m1 = node.cfg.get("mode1") or {}
+        if not m1.get("rack_drop_posx") and m1.get("sim_rack_drop_posx"):   # 시뮬 전용 거치대 자리 (직접교시 전)
+            m1["rack_drop_posx"] = m1["sim_rack_drop_posx"]
+            node.get_logger().warning(f"시뮬 모드: rack_drop_posx ← sim_rack_drop_posx {m1['rack_drop_posx']}")
     ex = MultiThreadedExecutor(num_threads=6)
     ex.add_node(node)
     if dsr_node is not None:
