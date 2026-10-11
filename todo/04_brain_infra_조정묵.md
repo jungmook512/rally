@@ -138,16 +138,16 @@
 - [x] `embeddings.py`: 시도 특징 32차원 벡터(파라미터·오차·속도·방향 정규화) → `feature_vec`, pgvector 코사인 검색 `repository.find_similar_trials` → #68. 설정 `embeddings.yaml`, 검색은 코사인 대신 L2(값 크기가 중요), recorder 가 저장 때 계산, 실제 DB 확인
 - [x] `llm.yaml` 전송 필드 화이트리스트(익명화) → #62 `send_fields`(숫자 필드만, session_id·notes 제외). LLM 이 조절할 수 있는 값·범위는 `skills.yaml llm_tunable`
 - [ ] 문맥 유무 비교 사례 10개 시나리오 작성 (평가용)
-- [ ] **Knowledge Graph** PostgreSQL 노드·엣지 테이블 `schema_002_*.sql` (노드 타입은 ontology.jsonld 클래스), recorder가 시도마다 기록 (기획서 4.10, 필수 · 활용 방식 TBD)
+- [x] **Knowledge Graph** PostgreSQL 노드·엣지 테이블 `schema_002_*.sql` (노드 타입은 ontology.jsonld 클래스), recorder가 시도마다 기록 (기획서 4.10, 필수 · 활용 방식 TBD) → #125 `schema_004_graph.sql`(kg_node·kg_edge), recorder 가 시도와 같은 트랜잭션으로 세션→시도→모드·시도→보상 동작. 운영 DB 적용 완료 (10/11)
 - [ ] **HMI** 예측 vs 실제 정지 위치 산점도, 시도별 오차 추이(학습 곡선)
 
 ## Day 6 — 학습 루프 + 세션 전체 ✅
-- [ ] **CP13 최종 결정**: 모드 3 요격 성공률 ≥ 70 % 면 포함, 아니면 `mode3_challenge.enabled: false` 로 빼고 시도 데이터는 발표 "도전 과제" 슬라이드로
+- [x] **CP13 최종 결정**: 모드 3 요격 성공률 ≥ 70 % 면 포함, 아니면 `mode3_challenge.enabled: false` 로 빼고 시도 데이터는 발표 "도전 과제" 슬라이드로 → **10/11 조정묵 결정: 모드 3 포함** (`mode3_challenge.enabled: true` 그대로, 세션 1 → 3 → 5 → 7). 요격 성공률 실측은 아직 없음 — 리허설에서 확인
 - [ ] 30회 반복 시도에서 오차 감소 확인 (목표 ≥ 30 %) → **CP11 결정**: 미달 시 학습 루프를 모드 3 궤적 조절로 이전
 - [x] `trees/session_tree.py`: 1 → 3 → 5 연속, `RunSession` action, 세션 시작·종료 DB → 시작은 trial session_id 로 자동, 종료·리포트는 #121
-- [x] `prompts/session_report.md`: 회차별 변화 해석 → `sessions.report_md` → #121 (머지 대기)
+- [x] `prompts/session_report.md`: 회차별 변화 해석 → `sessions.report_md` → #121 (머지 10/11)
 - [x] LLM 피로·교정 판단 (규칙으로 애매한 케이스만) → 피로(휴식) 판단은 #103. 자세 교정은 #119 문구로 규칙 처리 예정
-- [ ] **Graph RAG** `rally_brain/graph_rag.py`: pgvector 유사 시도 + 그래프 맥락 → `llm_advisor` 입력, 보내는 필드는 `llm.yaml` 화이트리스트 (기획서 4.10, 필수 · 활용 방식 TBD)
+- [x] **Graph RAG** `rally_brain/graph_rag.py`: pgvector 유사 시도 + 그래프 맥락 → `llm_advisor` 입력, 보내는 필드는 `llm.yaml` 화이트리스트 (기획서 4.10, 필수 · 활용 방식 TBD) → 세션 리포트 근거 #125 (머지), 휴식 판단 근거 #126 (Draft, 실기 확인 후 머지). 집계 숫자만 전송
 - [ ] **HMI** 세션 리포트 뷰(`sessions.report_md` 렌더링) ✅ #121, 대시보드 비상정지 버튼 → `/rally/safety/estop` (보조 수단)
 
 ## Day 7 — 통합·안정화 · 기능 동결
