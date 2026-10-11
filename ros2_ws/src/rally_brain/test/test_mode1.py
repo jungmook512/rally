@@ -244,7 +244,7 @@ def test_late_hand_clear_keeps_trial_active_then_returns(blocked, monkeypatch):
     tree = m.build_trial(session)
     tree.tick_once()  # PushBall goal
     h = session.get_context().hand
-    if blocked == 'near': h.distance_to_centerline = .20
+    if blocked == 'near': h.distance_to_centerline = .15
     if blocked == 'absent': h.detected = False
     if blocked == 'stale': h.header.stamp.sec -= 10
     if blocked == 'frame': h.header.frame_id = 'camera_link'
@@ -268,7 +268,7 @@ def test_cancel_during_clear_wait_records_once_and_never_returns(monkeypatch):
     clock = [0.]
     monkeypatch.setattr(behaviours, 'time', NS(monotonic=lambda: clock[0]))
     _, session, published = arrange([OK])
-    session.get_context().hand.distance_to_centerline = .20
+    session.get_context().hand.distance_to_centerline = .15
     ret = session.action_client(ReturnBall, m.RETURN_ACTION)
     tree = m.build_trial(session)
     tree.tick_once(); tree.tick_once()
@@ -335,10 +335,67 @@ def test_hand_returns_while_return_server_pending_waits_again(monkeypatch):
     tree.tick_once(); tree.tick_once()
     clock[0] = 1.
     tree.tick_once()  # catch timeout, 손 이탈 확인 후 서버 대기
-    session.get_context().hand.distance_to_centerline = .20
+    session.get_context().hand.distance_to_centerline = .15
     ret.ready = True
     tree.tick_once()
     assert tree.status == Status.RUNNING and session.trial_active
     assert ret.sent == 0 and published == []
     session.get_context().hand = hand()
     assert run(tree) == Status.SUCCESS and ret.sent == 1
+
+
+def test_hand_clear_threshold_is_mode1_config_not_safety():
+    # 회수 기준은 skills.yaml mode1.hand_clear_m — safety.yaml slow_distance_m 이 바뀌어도(#104) 따라가지 않는다
+    _, session, _ = arrange([OK])
+    c = m.mode1_config(session.skills_cfg)
+    assert c['hand_clear_m'] == pytest.approx(.20)
+    h = session.get_context().hand
+    h.distance_to_centerline = .19
+    assert m.hand_clear_block(session, c) == '손 거리 0.19 m < 0.20 m'
+    h.distance_to_centerline = .20
+    assert m.hand_clear_block(session, c) is None
+
+
+@pytest.mark.parametrize('blocked, reason', [
+    ('absent', '손 안 보임'), ('frame', '손 좌표가 base_link 아님(camera_link)'),
+    ('stale', '손 관측이 오래됨·좌표 없음'), ('nan', '손 거리 모름(NaN)'), ('stop', '안전 STOP')])
+def test_hand_clear_block_reason(blocked, reason):
+    _, session, _ = arrange([OK])
+    c = m.mode1_config(session.skills_cfg)
+    ctx = session.get_context()
+    h = ctx.hand
+    if blocked == 'absent': h.detected = False
+    if blocked == 'frame': h.header.frame_id = 'camera_link'
+    if blocked == 'stale': h.header.stamp.sec -= 10
+    if blocked == 'nan': h.distance_to_centerline = math.nan
+    if blocked == 'stop': ctx.safety.level = 2
+    assert m.hand_clear_block(session, c) == reason
+
+
+def test_clear_wait_logs_reason_on_change_and_period(monkeypatch):
+    clock = [0.0]
+    monkeypatch.setattr(behaviours, 'time', NS(monotonic=lambda: clock[0]))
+    monkeypatch.setattr(m, 'time', NS(monotonic=lambda: clock[0]))
+    _, session, published = arrange([OK])
+    logged = []
+    session.node.get_logger = lambda: NS(info=logged.append, warn=logged.append, error=logged.append)
+    tree = m.build_trial(session)
+    tree.tick_once()                                        # PushBall goal
+    session.get_context().hand.distance_to_centerline = .10
+    tree.tick_once()                                        # 결과 → 받기 관측
+    clock[0] = 1.0
+    tree.tick_once()                                        # 받기 timeout → 손 이탈 대기
+    waits = lambda: [x for x in logged if x.startswith('[모드 1] 회수 대기')]
+    assert waits() == ['[모드 1] 회수 대기: 손 거리 0.10 m < 0.20 m']
+    clock[0] = 1.5
+    tree.tick_once()
+    assert len(waits()) == 1                                # 같은 이유, 2 s 안 → 다시 안 남김
+    session.get_context().hand.detected = False
+    tree.tick_once()
+    assert waits()[-1] == '[모드 1] 회수 대기: 손 안 보임'      # 이유가 바뀌면 바로
+    clock[0] = 4.0
+    tree.tick_once()
+    assert len(waits()) == 3                                # 2 s 지나면 다시
+    session.get_context().hand = hand()
+    assert run(tree) == Status.SUCCESS
+    assert '[모드 1] 손 이탈 확인 — 회수 진행' in logged

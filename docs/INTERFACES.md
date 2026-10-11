@@ -157,7 +157,7 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
   측정되지 않은 `error_mm` 및 `stop_x_m`/`stop_y_m`은 NaN. DB는 기존 유한값 정리 경로를 사용.
 - `TrialResult.success`는 타격 후 새 손 표본의 펼침→쥠 유지→펼침을 관측한 받기 후보 판정. 실제 공 접촉 증거는 아니며 실물 검증 전 자동 난이도 변경에서 제외한다.
   `catch_gesture_detected`, `ball_returned`, `lane_by_hand`를 metric에 추가한다. 명시적 harder/easier는 시도 경계에서 반영하며 단계 0 아래로 낮추지 않는다. 온라인 레시피 갱신은 후속 연결 사항.
-- 손에 가까운 레인을 선택한다. 받기 관측 후 손 이탈은 최신 유효 손 거리 ≥ safety.slow_distance_m일 때만 인정한다.
+- 손에 가까운 레인을 선택한다. 받기 관측 후 손 이탈은 최신 유효 손 거리 ≥ `skills.yaml mode1.hand_clear_m`(0.20 m, safety.slow_distance_m 과 별개)일 때만 인정한다.
   `hand_clear_wait_s` 이후 안내하고 계속 대기한다. 미검출·시간 초과만으로 회수하거나 세션을 종료하지 않는다.
   뒤늦게 이탈이 확인되면 ReturnBall을 보낸다. 대기 중 취소·STOP은 기존대로 중단하며 자동 재개하지 않는다.
 - 기존 ROS 메시지·토픽·서비스 이름과 STOP/reset 계약은 변경하지 않는다. 두 PC의 시계·레인·레시피 설정을 일치시켜야 한다.

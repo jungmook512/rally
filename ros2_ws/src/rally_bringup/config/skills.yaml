@@ -94,6 +94,10 @@ mode1:
   catch_release_closure: 0.3
   catch_prompt: "공을 잡았다가 놓아 주세요"
   hand_clear_wait_s: 8.0        # 안내까지의 대기. 이후에도 이탈 확인까지 세션 유지
+  hand_clear_m: 0.20            # 회수 전 손 이탈 기준: 손 ↔ 중앙선 [m]. 10/11 0.25 → 0.20 (실기에서 회수 대기가 잦음).
+                                #   safety.yaml slow_distance_m 을 빌려 쓰던 것을 분리 (#104 가 그 값을 0.10 으로 바꿈).
+                                #   0.20 미만은 회수 중 #104 손 ↔ 로봇 STOP(0.20 m)에 걸릴 수 있어 내리지 않는다
+  hand_clear_log_s: 2.0         # 회수 대기 이유 로그 간격 (바뀌면 바로)
   hand_start_prompt: "손을 몸 쪽으로 조금 더 두세요"
   start_wait_prompt: "손을 카메라에 보여 주세요. 시작 조건을 확인하고 있어요"
   hand_clear_prompt: "손을 잠깐 빼 주세요"
