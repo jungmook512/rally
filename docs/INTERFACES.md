@@ -45,7 +45,7 @@ webcam_link          측면 대각 웹캠, 높이 약 2 m (table_link 기준 sta
 | `/rally/perception/body` | `rally_interfaces/BodyPose` | rally_human/body_pose_node | brain | 15 Hz | BestEffort |
 | `/rally/voice/intent` | `rally_interfaces/VoiceIntent` | rally_voice/intent_node | brain, safety | 이벤트 | Reliable |
 | `/rally/voice/transcript` | `std_msgs/String` | rally_voice/intent_node | dashboard | 이벤트 | Reliable |
-| `/rally/voice/speaking` | `std_msgs/Bool` | rally_voice/tts_node | rally_voice/intent_node (dashboard 선택) | 발화 시작·끝 이벤트 | **Reliable, TransientLocal**, depth 1 |
+| `/rally/voice/speaking` | `std_msgs/Bool` | rally_voice/tts_node | rally_voice/intent_node, rally_brain/bt_runner (말하는 중 자세 교정 안내 건너뜀, #119), dashboard 선택 | 발화 시작·끝 이벤트 | **Reliable, TransientLocal**, depth 1 |
 
 **objects 좌표 프레임** (#66): `/rally/perception/objects` 의 `header.frame_id` 가 `base_link` 가 아니면(카메라 프레임 `camera_color_optical_frame`) 카메라→base 변환을 못 구한 것이다 — 그 좌표로 로봇을 움직이지 않는다(abort 또는 대기). segmenter 는 파라미터 `transform_source` 로 변환을 고른다: `tcp_npy`(기본, `/rally/robot/tcp_pose` × hand_eye) · `tf` · `auto`(tf 우선). **로봇 PC bringup URDF(`m0609_with_rg2_camera`)가 `tool0 → bracket_link → camera_bottom_screw_frame → camera_link → … → camera_color_optical_frame` 을 설계값으로 발행**(10/8 정정인 view_frames)하므로, 그 체인이 있는 동안 `tf`/`auto` 는 설계값을 집어 1 cm·2.5° 치우친다(PR #42 원인). URDF 에서 카메라 체인을 빼고 `camera_tf` 가 유일한 `camera_link` 부모가 되면 기본을 `auto` 로 바꾼다. `tcp_npy` 는 영상 시각이 아니라 마지막 `tcp_pose`(10 Hz) 를 쓰므로 **로봇이 멈춰 있을 때의 좌표만 정확**하다 — 이동 중 좌표로 로봇을 보내지 않는다. `camera_tf` 가 떠 있으면 `auto`(tf 는 영상 시각으로 보간) 가 낫다.
 
