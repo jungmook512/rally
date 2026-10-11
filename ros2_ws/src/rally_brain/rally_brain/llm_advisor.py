@@ -278,25 +278,31 @@ class Advisor:
         return Suggestion(values, rationale, reply.confidence, "llm", " / ".join(notes), time.monotonic() - t0, request)
 
 
-def openai_llm(model: str, temperature: float, timeout_s: float) -> LlmCall | None:
-    """OpenAI 함수 호출. 키(OPENAI_API_KEY, docker/.env)가 없으면 None → 항상 대체값."""
+def openai_llm(model: str, temperature: float, timeout_s: float, *,
+               tool_name: str = TOOL_NAME, description: str = "다음 시도 파라미터 제안",
+               base_url: str | None = None) -> LlmCall | None:
+    """OpenAI 함수 호출. 키(OPENAI_API_KEY, docker/.env)가 없으면 None → 항상 대체값.
+    tool_name·description: 휴식 판단·세션 리포트(session_report.py)도 같은 경로를 쓴다."""
     key = os.environ.get("OPENAI_API_KEY")
     if not key:
         return None
     from openai import OpenAI
-    client = OpenAI(api_key=key, timeout=timeout_s, max_retries=0)
+    client = OpenAI(api_key=key, timeout=timeout_s, max_retries=0,
+                    **({"base_url": base_url} if base_url else {}))
 
     def call(system_prompt: str, request: dict, schema: dict) -> dict:
         resp = client.chat.completions.create(
             model=model, temperature=temperature,
             messages=[{"role": "system", "content": system_prompt},
                       {"role": "user", "content": json.dumps(request, ensure_ascii=False)}],
-            tools=[{"type": "function", "function": {"name": TOOL_NAME, "description": "다음 시도 파라미터 제안",
+            tools=[{"type": "function", "function": {"name": tool_name, "description": description,
                                                       "parameters": schema}}],
-            tool_choice={"type": "function", "function": {"name": TOOL_NAME}})
+            tool_choice={"type": "function", "function": {"name": tool_name}})
         calls = resp.choices[0].message.tool_calls
         if not calls:
             raise ValueError("함수 호출 없이 글로 답함")
+        if tool_name != TOOL_NAME and (len(calls) != 1 or calls[0].function.name != tool_name):
+            raise ValueError(f"{tool_name} 함수 이름 또는 호출 개수 불일치")
         return json.loads(calls[0].function.arguments)
 
     return call

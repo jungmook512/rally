@@ -10,7 +10,7 @@ float32 release_force_threshold_n     # GIVE: 환자가 당기는 힘 감지 임
 float32 timeout_s
 ---
 bool success
-float32 wrist_angle_at_grasp_deg      # 환자 손목 각도 (HandState에서)
+float32 wrist_angle_at_grasp_deg      # 환자 손목 각도 (HandState에서). NaN = 못 잼 (손 메시지 없음·1 s 넘게 오래됨)
 float32 handover_time_s
 string failure_reason
 ---

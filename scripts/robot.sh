@@ -61,7 +61,13 @@ case "$1" in
     fi
     if [ "$2" != "novision" ]; then
       "$ROOT/scripts/vision_local.sh" | sed 's/^/    /'
-      trap '"$ROOT/scripts/vision_local.sh" stop' EXIT
+      if docker image inspect rally/hand_pose:local >/dev/null 2>&1; then   # 손 인식 (모드 1 레인 고르기·받기 판정)
+        "$ROOT/scripts/hand_local.sh" | sed 's/^/    /'
+        trap '"$ROOT/scripts/vision_local.sh" stop; "$ROOT/scripts/hand_local.sh" stop' EXIT
+      else
+        echo "    [hand] 손 인식 이미지 없음 — 모드 1 세션은 레인 무작위·받기 판정 안 됨 (빌드: docker build -f docker/hand_pose/Dockerfile -t rally/hand_pose:local .)"
+        trap '"$ROOT/scripts/vision_local.sh" stop' EXIT
+      fi
     fi
     echo "[robot] safety_monitor → force_publisher · gripper_node · skill_server — 끌 때 Ctrl+C. 'skill_server ready' 가 나오면 터미널 3 에서 명령"
     [ "${HAND_STOP:-stop}" != stop ] && echo "[robot] ★ 손 근접 STOP = ${HAND_STOP} (개발용). 시연·환자 앞에서는 HAND_STOP 없이"
@@ -112,6 +118,7 @@ case "$1" in
 
   down)
     "$ROOT/scripts/vision_local.sh" stop
+    "$ROOT/scripts/hand_local.sh" stop
     # launch 를 죽여도 자식(ros2_control_node·OnRobot 그리퍼 서버·rviz·노드)이 남는 경우가 있어 실행 파일로 다 찾는다 (10/8)
     PAT='ros2 launch|cobot2_ws/install|ros2_control_node|/opt/ros/jazzy/lib/(rviz2|robot_state_publisher|joint_state_publisher)|rally_robot/lib/rally_robot/|rally_brain/lib/rally_brain/'
     pids=$(real_pids "$PAT")

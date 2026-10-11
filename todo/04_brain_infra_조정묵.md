@@ -3,13 +3,29 @@
 패키지: `ros2_ws/src/rally_brain`, `rally_db`, `rally_bringup`, `rally_interfaces`, `docker/`, `dashboard/` · 책임: **세션 전체 흐름**
 참고: `docs/INTERFACES.md` 전체, `rally_db/schema.sql`
 
+## 10/11 — 손 STOP 대기·회수 기준·자세 기준·세션 리포트
+
+- [x] #110 보상 동작 임계 15° → 20°(몸통·어깨, 온톨로지) + 세션 시작 때 `/rally/perception/body/reset_baseline` (머지). 훈련 팔 변경 시 재호출은 운영자(확인 창 b).
+- [x] #113 모드 1 회수 손 이탈 기준을 `skills.yaml mode1.hand_clear_m` 0.20 m 로 분리(#104 의 slow_distance_m 0.10 을 따라가던 것) + 회수 대기 이유 로그 (머지).
+- [x] #103 실제 LLM 휴식 제안 머지 (main 과 합친 상태로 Brain 302·대시보드 26·화면 검사 통과 뒤).
+- [x] #115 모드 1 손 근접 STOP 대기(#98 4번): 손 STOP(`hand_near_robot`·`hand_near_centerline`·`hand_lost_near`)이면 세션 유지 → NORMAL 1 s 뒤 같은 시도. 로봇 동작 중이면 받은 phase 로 재전송/종료. 재진행 조건은 NORMAL 1 s (eye-in-hand 라 '손 보여야 재진행'은 재작동 불가 — 정정인·정동휘 리뷰에 답, 변경 요청 해제). **머지 대기**.
+- [x] #121 세션 리포트: 수치 요약 + LLM 해석(집계 숫자만, 15 s, 실패 시 수치만) → `/rally/brain/session_report`(새 토픽) → `sessions.report_md`·`ended_at` → 대시보드 패널. 서버 PC 실물(가짜 리포트 → DB → 화면) 확인. **머지 대기**.
+- [x] #111 에이전트 지침(AGENTS·CLAUDE) + INTERFACES 8·9절 (10/8 작업본에서 옮김). **머지 대기**.
+- [x] 리뷰: #104(tf·tcp_pose 끊김 지적 → 반영돼 머지), #109·#112 승인, #116 승인(정지 위치·손 머묾 레인), #108·#117 이슈 등록(빠진 커밋·로봇 스킬 옵션).
+- [ ] #118 개발용 손 STOP 스위치 — 정정인 수정 대기(기본 off, off YAML bool 버그, 읽기 전용, 모드 표시). 시연 전 `stop`.
+- [ ] #117 로봇 옵션(입구 공 바로 치기·쥔 공 거치대로) 들어오면 손 STOP 뒤 이어 가기 구간 확장.
+- [ ] 실기: #115 손 넣었다 빼면 1 s 뒤 이어짐, #113 회수 대기 로그로 원인, #121 실제 세션 끝 리포트 생성(컨테이너 pydantic v2).
+- [ ] #119 음성 피드백 문구 붙이기 (정동휘 제안).
+- [ ] OpenAI 키 한도 갱신 뒤 LLM 해석·휴식 제안 실제 응답 확인 (10/11 RateLimitError).
+
 ## 휴식 제안 상태·대시보드 응답 구현 (10/8)
 
 - [x] rest 제안 ID·20초 만료·수락/거절·상태 변경 무효화, 기존 시도 경계 휴식 연결.
 - [x] Redis 승인 왕복·HTTP 응답 API·대시보드 문구/카운트다운/버튼. 테스트 제안 서비스는 기본 비활성.
 - [x] 안정화: Brain 249개(격리 Redis 포함) + API 17개 = 266개 통과·skip 없음. Node 비동기 응답 회귀 통과. 결과 안내를 동일 세션·제안 갱신·재접속 뒤에도 보존하고 새 세션·새 제안에서는 초기화.
 - [x] 팀장 통합 검증: localhost ROS domain 222+임시 Redis에서 거절·중복 거절·20초 만료·수락 후 경계 휴식·STOP·취소·마지막 시도 종료 통과. 브라우저 탭 전환·카운트다운·거절 안내 유지·수락·재개·연결 종료 확인. 실제 로봇·음성·2 PC 검증은 별도.
-- [ ] 실제 LLM 생성·음성 수락/거절·tired 명시 요청 분리·난이도 제안 연결(이번 범위 밖).
+- [x] 실제 LLM 휴식 생성: 규칙 ask_llm → 단일 비동기 판단 → 현재 상태 재검증 → 기존 20초 제안. 모드1 받기 후보 성공률 제외, 장비 실패 이력 제외.
+- [ ] 음성 수락/거절·tired 명시 요청 분리·난이도 제안 연결(후속).
 - 작업본 `/tmp/rally-dashboard-pr`, 대시보드 PR #94에 함께 반영하는 변경. 게시 상태·커밋은 PR의 최신 head로 확인한다. #94는 #90 기반이며 #90→#87 의존 관계를 유지한다.
 
 ## 모드별 대시보드 적용 (10/8)
@@ -73,7 +89,7 @@
 - [x] 온톨로지 `safe_fist` → STOP 관계 제거, TTL·OWL 재생성. 제스처 관측·모드 1 쥐었다 폄 판정은 유지.
 - [x] 아키텍처 v4에 주먹 정지 문구·손 노드 estop 배선 제거. v1~v3은 과거 기록으로 보존, 기획서 현재 그림 교체 및 배포 대기 명시.
 - [x] 온톨로지 13개 테스트·사본 동등성 검사 통과.
-- [ ] 손 노드·safety_monitor 제거 PR 머지·배포 후 지식 계층과 실제 상태 일치 확인. 준비·재개 제스처 추가는 보류(기존 음성·대시보드 재개 유지).
+- [x] 손 노드·safety_monitor 제거 PR 머지·배포 후 지식 계층과 실제 상태 일치 확인 (#97 머지). 준비·재개 제스처 추가는 보류(기존 음성·대시보드 재개 유지).
 
 
 ## Day 0 (10/5)
@@ -128,11 +144,11 @@
 ## Day 6 — 학습 루프 + 세션 전체 ✅
 - [ ] **CP13 최종 결정**: 모드 3 요격 성공률 ≥ 70 % 면 포함, 아니면 `mode3_challenge.enabled: false` 로 빼고 시도 데이터는 발표 "도전 과제" 슬라이드로
 - [ ] 30회 반복 시도에서 오차 감소 확인 (목표 ≥ 30 %) → **CP11 결정**: 미달 시 학습 루프를 모드 3 궤적 조절로 이전
-- [ ] `trees/session_tree.py`: 1 → 3 → 5 연속, `RunSession` action, 세션 시작·종료 DB
-- [ ] `prompts/session_report.md`: 회차별 변화 해석 → `sessions.report_md`
-- [ ] LLM 피로·교정 판단 (규칙으로 애매한 케이스만)
+- [x] `trees/session_tree.py`: 1 → 3 → 5 연속, `RunSession` action, 세션 시작·종료 DB → 시작은 trial session_id 로 자동, 종료·리포트는 #121
+- [x] `prompts/session_report.md`: 회차별 변화 해석 → `sessions.report_md` → #121 (머지 대기)
+- [x] LLM 피로·교정 판단 (규칙으로 애매한 케이스만) → 피로(휴식) 판단은 #103. 자세 교정은 #119 문구로 규칙 처리 예정
 - [ ] **Graph RAG** `rally_brain/graph_rag.py`: pgvector 유사 시도 + 그래프 맥락 → `llm_advisor` 입력, 보내는 필드는 `llm.yaml` 화이트리스트 (기획서 4.10, 필수 · 활용 방식 TBD)
-- [ ] **HMI** 세션 리포트 뷰(`sessions.report_md` 렌더링), 대시보드 비상정지 버튼 → `/rally/safety/estop` (보조 수단)
+- [ ] **HMI** 세션 리포트 뷰(`sessions.report_md` 렌더링) ✅ #121, 대시보드 비상정지 버튼 → `/rally/safety/estop` (보조 수단)
 
 ## Day 7 — 통합·안정화 · 기능 동결
 - [ ] `full_system.launch.py`, 2 PC 일괄 기동 문서 (README)
@@ -155,3 +171,11 @@
 - (10/7, 정동휘) 모드 3 `lead_time_s`·CP13 관련 실측 → 이슈 #38 (비행 0.40~0.55 s, 로봇 이동 거리 한계)
 - (10/6) HMI 대시보드를 정동휘에게서 가져옴. 골격은 하루 당겨 Day 3 (Day 2 recorder·Redis 와 바로 연결)
 - 지식 계층(Ontology · KG · Graph RAG · 시맨틱 레이어)은 **반드시 사용**. 구체적인 활용 방식은 추후 결정 → 정해지면 기획서 4.10·FR-20~23 갱신
+
+## LLM 휴식 제안 연결 (10/8)
+
+- [x] 공식 gpt-4o, 승인된 익명 수치 최대 5회·불리언 신호만 전송. 최대 3초, 큐 없는 단일 작업자, 실패 시 계속 훈련. STOP/취소/세션·모드·난이도/완료 시도 변경 전 응답 폐기.
+- [x] 대시보드 AI 제안/테스트 구분 및 수락·거절·만료 회귀. 기존 난이도 규칙과 로봇 제어·STOP/reset 유지.
+- [x] 합성 데이터 실제 API 1회: suggest_rest, 1.832초. 실제 환자·영상·음성 사용 없음.
+- [ ] 실제 장비·2 PC·음성 응답 확인. KG/Graph RAG·리포트는 이 연결 완료에 포함하지 않음.
+- [x] 최종 격리 검증: build4패키지, Brain284+DB25+bringup1+API26=336 PASS, 선택 Redis1 SKIP, Node/ontology/Compose pc3 config 통과.

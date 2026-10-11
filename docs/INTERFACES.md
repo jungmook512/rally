@@ -72,6 +72,7 @@ webcam_link          측면 대각 웹캠, 높이 약 2 m (table_link 기준 sta
 | `/rally/brain/context` | `rally_interfaces/SceneContext` | rally_brain/context_builder | llm_advisor, dashboard | 5 Hz | BestEffort |
 | `/rally/brain/trial_result` | `rally_interfaces/TrialResult` | rally_brain/bt_runner | rally_db/recorder, dashboard | 이벤트 | Reliable |
 | `/rally/brain/state` | `std_msgs/String` (BT 현재 노드) | rally_brain/bt_runner | dashboard | 2 Hz | Reliable |
+| `/rally/brain/session_report` | `std_msgs/String` (JSON `session_id`·`report_md`·`source` = `llm:<s>` 또는 `numeric:<이유>`) | rally_brain/bt_runner (세션 종료 뒤 별도 스레드) | rally_db/recorder → `sessions.report_md`·`ended_at`, Redis `rally:events` kind=`session_report` → dashboard `GET /api/report/latest` | 세션당 1회 | Reliable |
 
 QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최신 것만), **정지·안전·결과는 Reliable**. TransientLocal은 "늦게 켜진 노드도 마지막 상태를 알아야 하는" 상태 토픽에만 쓴다: `/rally/safety/estop`, `/rally/voice/speaking` (#45).
 
@@ -96,7 +97,7 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 
 | 액션 | 타입 | 모드 | 핵심 로봇 기능 |
 |---|---|---|---|
-| `/rally/skill/push_ball` | `rally_interfaces/PushBall` | 1 | 거치대 공 비전 집기 → 레인 입구 → 퍼터식 치기 → **손 보기 자세에서 끝남**(`mode1.end_at_hand_view`, 환자가 받는 모습). 훈련 Brain은 `target` + 계산한 양수 `push_speed` 전달. 속도 0의 로봇 계산 경로는 단독 시험용 |
+| `/rally/skill/push_ball` | `rally_interfaces/PushBall` | 1 | 거치대 공 비전 집기 → 레인 입구 → 퍼터식 치기 → **손 보기 자세에서 끝남**(`mode1.end_at_hand_view`, 환자가 받는 모습). 훈련 Brain은 `target` + 계산한 양수 `push_speed` 전달. 속도 0의 로봇 계산 경로는 단독 시험용. 결과 `stop_position`·`error_mm` 은 `mode1.stop_measure: true`(단독 시험)일 때만 채움 — 세션에선 brain 이 받기 관측과 동시에 손 보기 자세 카메라(`SceneContext.objects`)로 재서 `TrialResult.error_mm`·`stop_d_m` 에 기록 |
 | `/rally/skill/return_ball` | `rally_interfaces/ReturnBall` | 1 | 시도 뒤 레인 안 공을 비전으로 찾아 집고 거치대 맨 윗부분(`mode1.rack_drop_posx`, 직접교시)에 넣기 → 손 보기 자세. 로봇이 닿는 곳(중앙선 앞)에 올 때까지 기다림 (feedback `out_of_reach` → brain 이 안내) |
 | `/rally/skill/pick_compliant` | `rally_interfaces/PickCompliant` | 1·3·5 공통 | task_compliance_ctrl(Z 저강성), 접촉 감지 후 파지 |
 | `/rally/skill/catch_ball` | `rally_interfaces/CatchBall` | 3 (챌린지) | 예측 착지점으로 amovel 선행 이동 + servol 보정, 패드 면 정렬 |
@@ -167,14 +168,14 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 - 기존 `/rally/voice/intent`의 `pause` 또는 `tired` → 현재 시도를 마친 뒤 휴식. `resume` → 휴식 중인 세션만 재개. 음성 계약 필드 변경 없음.
 - 시도 경계는 모드 1의 타격·받기 관측·손 이탈 대기·회수·기록, 모드 5의 집기·GIVE·RECEIVE를 모두 포함한다. 손 이탈 대기는 시간 초과로 끝내지 않으며 이때 휴식 요청도 유지한다. 휴식 대기 중에는 현재 시도를 계속 처리하고, 다음 시도 앞의 BT 관문에서 대기한다. 마지막 시도면 휴식 대신 세션을 종료한다.
 - 휴식 중 모드 전환·난이도 변경은 거절한다. 휴식 요청 시 대기하던 모드/난이도 요청은 비운다. 재개는 같은 난이도로 다음 시도부터 진행한다. 레시피 없는 모드의 난이도 변경은 안내만 한다 (모드 1 명시적 변경·모드 7 지원).
-- STOP·context 끊김·세션 취소는 휴식 중에도 세션을 종료한다. STOP 해제 서비스는 기존 그대로이며 재개로 해제하지 않는다. 준비 조건 미충족이면 재개를 거절한다.
-- `/rally/brain/state`는 기존 BT 노드 이름을 유지하되 휴식 요청 후 `pause_pending`, 실제 휴식 중 `paused`를 발행한다. 상세 상태는 아래 Redis 상태에 제공한다.
+- STOP·context 끊김·세션 취소는 휴식 중에도 세션을 종료한다 (예외: 아래 「모드 1 손 근접 STOP 대기」). STOP 해제 서비스는 기존 그대로이며 재개로 해제하지 않는다. 준비 조건 미충족이면 재개를 거절한다.
+- `/rally/brain/state`는 기존 BT 노드 이름을 유지하되 휴식 요청 후 `pause_pending`, 실제 휴식 중 `paused`, 손 근접 STOP 대기 중 `hand_stop_wait`를 발행한다. 상세 상태는 아래 Redis 상태에 제공한다.
 
 대시보드는 ROS를 import하지 않는다. brain의 별도 I/O 콜백이 기존 Redis로 일시적 요청·응답을 주고받는다. `REDIS_URL`이 있으면 활성화되며 `dashboard_control` 노드 파라미터로 끌 수 있다. Redis 장애는 음성·안전 감시를 막지 않는다.
 
 | 경로 | 계약 |
 |---|---|
-| Redis `rally:session_control` | brain이 0.2 s마다 갱신, TTL 2 s. `session_id`, `phase`(idle/running/pause_pending/paused/ended), `pause_id`, `reason`, `mode`, `difficulty`, `trial_index`, `can_resume`, `blocked_reason`, `updated_at`(Unix s), `bt_node`(현재 BT 실행 노드명), `mode3_enabled`(챌린지 설정) |
+| Redis `rally:session_control` | brain이 0.2 s마다 갱신, TTL 2 s. `session_id`, `phase`(idle/running/pause_pending/paused/ended), `pause_id`, `reason`, `mode`, `difficulty`, `trial_index`, `can_resume`, `blocked_reason`, `updated_at`(Unix s), `bt_node`(현재 BT 실행 노드명), `mode3_enabled`(챌린지 설정), `hand_wait`(손 근접 STOP 대기 중이면 그 사유, 아니면 빈 문자열 — 뒤에 추가) |
 | Redis pub/sub `rally:session_commands` | 재개 요청 JSON: `request_id`, `session_id`, `pause_id`(모두 UUID 문자열), `command: resume`, `expires_at`(Unix s, 최대 3 s). 저장·재전송하지 않음 |
 | Redis `rally:session_reply:<request_id>` | brain 응답 `success`, `message`, `request_id`. TTL 5 s. 세션·휴식 식별값을 확인한 뒤 현재 안전·준비 조건으로 재검증. 중복 요청은 이미 소비된 휴식 ID이므로 재실행 불가 |
 | HTTP `GET /api/session` | 최신 Redis 제어 상태 또는 null (미수신·만료). Redis 연결 실패 503 |
@@ -183,6 +184,17 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 
 음성 재개는 발화 timestamp가 현재 휴식 시작 이후인 경우만 허용한다. zero stamp·오래된/중복 발화는 재개하지 않는다. 대시보드 요청은 화면에 표시된 세션·휴식 ID를 보내므로 이전 세션/휴식에서 누른 버튼은 거절된다. 안전 여부는 화면의 표시가 아니라 brain이 결정한다.
 
+### 모드 1 손 근접 STOP 대기 (#98 4번, 1단계 — 2026-10-11)
+
+- 대상: 모드 1에서 걸린 STOP 중 사유가 `skills.yaml brain.hand_stop_wait_reasons`(`hand_near_robot`·`hand_near_centerline`·`hand_lost_near`, 정확한 문자열)인 것. safety_monitor 에서 비래치(손이 빠지면 스스로 풀림)인 사유다.
+- 동작: 세션을 끝내지 않고 BT tick 을 멈춘 채 기다린다(새 명령 없음). 안내 TTS `hand_stop_prompt`(10 s 간격). 안전 레벨이 **NORMAL** 로 `hand_stop_resume_hold_s`(1 s) 이어지면 같은 시도를 이어 간다. SLOW 는 재진행 조건이 아니다. 기다린 시간은 대기 블록의 timeout 계산에서 뺀다. Brain 은 STOP 을 낮추거나 reset 하지 않는다.
+- 로봇이 서 있을 때(스킬 goal 전·받기 관측·손 이탈 대기·시도 사이)는 그대로 기다린다. **로봇이 움직이는 중**이면 그 명령이 받은 진행 단계(`feedback.phase`)로 판단한다:
+  `go_hand_view` → 손이 빠지면 다시 요청 / PushBall `place` 전(관측 자세·집기) → 같은 goal 다시 보냄(쥐고 있으면 스킬이 집기를 건너뜀) / ReturnBall `find`·`out_of_reach` → 다시 보냄, `hand_view` → 회수 끝난 것으로.
+  PushBall `place` 이후(놓기~치기~복귀)·ReturnBall `pickup`~`drop` 은 공·그리퍼 상태가 애매해 세션 종료(2단계: 로봇 스킬에 '입구 공 바로 치기'·'쥔 공 거치대로' 옵션 필요). 재전송은 NORMAL 1 s 유지 뒤, 명령당 최대 5회.
+- 그대로 세션 종료: 위 표에서 이어 갈 수 없는 단계의 STOP, 그 밖의 모든 STOP 사유(래치·`*_missing`·`wrench_lost`·모르는 사유), 모드 1 이 아닌 모드, 대기 중 다른 STOP·context 끊김·세션 취소.
+- 대기 중 모드 전환·난이도 변경은 거절, LLM 제안은 무효화, 휴식 요청은 보존한다. TrialResult 는 만들지 않는다(로그만).
+- 깊은 침입과 선 기준 근접의 구분, 위 세션 종료 단계의 이어 가기는 2단계(로봇 쪽 계약 필요).
+
 ### 모드 1 손 시작 위치 대기 (PR #87 PM 정정·사용자 합의)
 
 공 목표는 레인별 고정값을 실측·안전·속도 구간으로 제한한다. 손 위치나 난이도로 목표를 이동시키지 않는다.
@@ -190,13 +202,27 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 부족하거나 유효 손/NORMAL이 없으면 안내하며 대기한다. 대기 중에는 손 표본을 갱신하고 전송 직전에 조건을 재검증한다.
 STOP·취소는 기존 세션 중단 처리. 타격 action 실패 시에도 다음 타격을 시작하지 않고 기록 후 종료하여 운영자가 공·그리퍼 상태를 확인한다.
 
-## 테스트 휴식 제안 확인 — LLM·음성 응답 연결 전
+## 휴식 제안 — LLM 판단·대시보드 응답
 
 - Brain의 `test_rest_proposals` 파라미터는 기본 false. true로 시작할 때만 `/rally/brain/test/propose_rest` (`std_srvs/Trigger`)를 제공한다. 격리 가짜 스킬 환경에서만 켠다. 최신 상황판·안전·준비 조건과 running 상태, 대기 중인 모드/난이도 요청 없음을 검사한다. 이미 pending인 제안을 덮어쓰지 않는다.
 - 발화/화면 문구: “혹시 피곤하진 않으세요? 조금 쉬었다 할까요?”. 생성 시점부터 monotonic 20초이며 TTS 재생 완료를 기다리지 않는다. 응답 대기 중 기존 훈련은 계속한다. 현재 구현은 rest만 지원한다.
-- Redis `rally:session_control.proposal`: null 또는 `proposal_id`(UUID), `action: rest`, `source: test`, `prompt`, `status`(pending/accepted/rejected/expired/invalidated), `remaining_s`. 기존 GET `/api/session`과 WS `type: session`에 포함한다.
+- Redis `rally:session_control.proposal`: null 또는 `proposal_id`(UUID), `action: rest`, `source: test|llm`, `prompt`, `status`(pending/accepted/rejected/expired/invalidated), `remaining_s`. 기존 GET `/api/session`과 WS `type: session`에 포함한다.
 - POST `/api/session/proposal/respond`: `{session_id, proposal_id, decision: accept|reject}`. ID는 UUID, 임의의 행동명 불허. API는 최신 상태를 확인하고 Redis에 `command: proposal_accept|proposal_reject`, `request_id`, `session_id`, `proposal_id`, `expires_at`을 보낸다. 요청 기한·reply 키·TTL·응답 대기는 resume과 동일하다. HTTP 200은 Brain 응답 후에만, 거절은 409, 연결/상태 없음 503, 결과 미확인 504. 자동 재전송하지 않는다.
 - Brain은 같은 lock에서 현재 세션·모드·난이도·상태·제안 ID·monotonic 만료·안전·준비 상태를 다시 검사한다. 수락은 한 번 소비하고 기존 `_pause`로 적용 예약하여 현재 시도 전체 완료 후 휴식한다. 수락 후 응답 타이머로 예약을 취소하지 않는다. 마지막 시도라면 기존대로 세션 종료다.
 - 거절은 즉시 rejected, 무응답은 20초 뒤 expired. 둘 다 훈련을 바꾸지 않는다. STOP/취소/상황판 상실/세션 종료/모드·난이도 변경/직접 휴식 요청은 pending을 무효화한다. 종료된 제안은 다시 수락할 수 없다. #98 손 근접 STOP 예외는 구현하지 않는다.
 - 화면은 응답 결과(성공·거절·결과 미확인)를 같은 제안의 상태 갱신·재접속 뒤에도 보존한다. 새 세션 또는 새 제안 ID를 받으면 이전 안내를 초기화하며, 이전 세션·제안의 늦은 응답은 새 안내를 덮지 않는다. 최신 상태가 없으면 응답 버튼을 비활성화하고 자동 재전송하지 않는다.
 - 테스트 제안 생성은 안전 판단이나 LLM 호출이 아니다. `tired` 직접 휴식의 기존 동작은 아직 변경하지 않으며, 실제 음성 분류·제안 응답 연결 전 상태다. 임의의 “네/아니요”나 resume은 제안 응답으로 사용하지 않는다.
+
+### 실제 LLM 휴식 판단
+
+외부 전송 목적지·필드는 사용자 승인 완료. OpenAI 공식 `https://api.openai.com/v1`의 `gpt-4o`를 사용한다.
+
+- `rule_layer`가 애매한 신호를 `ask_llm`으로 분류한 경우에만 BtRunner 내부 비동기 작업자로 호출한다. 새 ROS 서비스는 추가하지 않는다. 기존 숫자 파라미터용 `SuggestParams`와 휴식 판단의 프롬프트·출력을 분리한다.
+- 허용 출력은 `continue` 또는 `suggest_rest`뿐이다. pydantic 검증을 통과해도 현재 세션·모드·난이도·시도 세대와 안전·준비 상태를 다시 확인한다. 상태가 바뀌었다가 돌아와도 이전 응답을 적용하지 않는다.
+- 동시에 한 요청만 처리하고 대기열을 쌓지 않는다. 최대 3초 후 실패로 처리하며, 늦게 끝난 응답은 버린다. 오류·키 없음·형식 오류·시간 초과는 기존 훈련 유지로 폴백한다. 네트워크 대기는 BT tick과 안전 콜백을 막지 않는다.
+- `suggest_rest`는 `source: llm`의 20초 제안만 생성한다. LLM이 휴식을 즉시 적용하거나 로봇 제어값·STOP/reset을 변경하지 않는다. 화면은 **AI 제안**으로 표시하고 고정 안내 문구를 사용한다. 실제 휴식 적용에는 기존 대시보드 수락이 필요하다.
+- 외부 전송은 `llm.yaml`의 휴식 판단 전용 허용 필드만 사용한다. 같은 모드의 유효 이력 최대 5개와 유한한 수치·불리언만 사용하며 세션 식별자·자유 메모·영상·원시 좌표·임의 params/metrics 키를 보내지 않는다.
+- 모드 1의 받기 후보는 실제 공 받기의 성공률로 사용하지 않고 자동 난이도 변경도 계속 차단한다. 휴식 판단은 불확실한 신호에 대한 제안이며 피로 진단이나 치료 효과 판정이 아니다.
+- 음성 `tired`의 직접 휴식은 기존대로다. 음성 수락/거절, KG/Graph RAG 검색 연결은 별도 후속 범위다.
+
+설정은 BtRunner가 시작할 때 설치된 `llm.yaml`의 `rally_bt_runner.ros__parameters`를 직접 읽는다. `rest_enabled`, `rest_model`, `rest_temperature`, `rest_timeout_s`, `rest_prompt`, `rest_history_n`, `rest_send_fields`, `rest_send_signals`가 휴식 전용 설정이다. 변경 후 Brain 재시작이 필요하며 ROS 동적 파라미터로 제공하지 않는다. 외부 주소 환경변수로 목적지를 바꾸지 않는다.

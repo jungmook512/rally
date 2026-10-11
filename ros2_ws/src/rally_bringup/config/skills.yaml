@@ -103,7 +103,7 @@ mode1:
   hand_clear_prompt: "손을 잠깐 빼 주세요"
   return_tries: 2
   return_timeout_s: 20.0
-  out_of_reach_prompt: "공을 로봇 쪽으로 굴려 주세요"
+  out_of_reach_prompt: "공을 보라색 선 너머로 굴려 주세요"   # 10/8 정정인: 회수는 환자가 공을 선 너머 로봇 쪽으로 굴려 줘야 함 (로봇은 x ≤ 0.55 만 집음)
   return_fail_prompt: "공을 거치대에 올려 주세요"
   reach_rmse_multiplier: 2.0     # 사용자 합의: 초기 reach/단계 = RMSE×2, 실물 확인용
   brain_speed_range_mps: [0.10, 0.37]  # PM 정정: 0.40은 테이블 끝 근접. 0.38 이상은 실물 확인 전 사용 금지
@@ -119,7 +119,7 @@ mode1:
   # 이동 속도는 맨 위 motion: 에서 (모든 스킬 공통)
   pickup_slow_above_m: 0.03       # 집기: 공 중심 + 3 cm 까지 빠르게
   place_slow_above_m: 0.07        # 놓기: 테이블 + 7 cm 까지 빠르게
-  push_acc_mm_s2: 2000.0          # ★ 스윙(치기) 가속도 — 스윙 속도는 goal.push_speed (≈0.2 g). 백스윙 원호 ≈110 mm 안에서 0.6 m/s 까지 붙는 최소 ≈1600 + 여유. 10/7 3000 → 2000
+  push_acc_mm_s2: 1000.0          # ★ 스윙(치기) 가속도 — 스윙 속도는 goal.push_speed. 백스윙 원호 ≈110 mm 안에서 v 까지 붙는 최소 v²/(2·0.11): 0.37 m/s → 620, 0.47 → 1000. 10/7 3000 → 2000, 10/8 2000 → 1000 (실로봇: 스윙 가속·정지 순간 관절 토크 추정 툴 힘이 +30 → −20 N 출렁여 force_limit 25 N STOP 2회, 접촉 없음)
   tool_down_zyz: [174.8, -177.0, 175.1]   # 10/6 테이블 접촉 자세 (툴 수직 아래)
   push_yaw_deg: 90.0              # 놓기·치기 때 툴 Z 회전 = 집을 때(pickup_yaw_deg)와 같게 → 집은 뒤 90° 돌리지 않음 (10/8). 손가락이 좌우로 열려도 레인 벽 0.5 cm 라 안 닿음. 카메라가 그리퍼 앞쪽 → 손 보기 자세에서 위로 감
   gripper_close_force_n: 10.0
@@ -142,15 +142,27 @@ mode1:
                                   # 10/7: 4 N 은 이동 중 힘 튐(최대 6.5 N)에 걸려 공중에서 열렸다
   # 치기 — 10/7 실로봇: 수직 밀기는 공이 미끄러지기만 하고 안 굴러서, 닫은 손가락을 퍼터처럼 휘두르는 방식으로 변경
   # 시도 뒤 공 회수 (ReturnBall, 10/8 회의) — 환자가 받았다 놓은 공을 레인에서 집어 거치대 맨 윗부분에 넣는다
-  rack_drop_posx: null            # TODO(정정인) 직접교시: 공을 쥐고 손끝을 거치대 맨 윗부분(레일 위쪽 끝) 위에 대고 scripts/print_pose.py → [x, y, z, a, b, c] (mm·deg)
-  rack_drop_above_m: 0.06         # 그 위 6 cm 에서 내려가 놓는다
+  rack_drop_posx: [462.5, 289.8, 76.3, -171.6, -157.3, -92.0]   # 10/8 직접교시: 공을 쥐고 거치대 맨 윗부분(레일 위쪽 끝) 위 (posj [38.3, 12.2, 100.0, -14.8, 48.8, 125.8])
+  rack_drop_above_m: 0.06         # 접근점: 놓는 자리 위 6 cm (z)
+  rack_joint_vel_deg_s: 30.0      # ★ 공 집고 거치대 접근점으로 가는 관절 이동 속도·가속 상한 (motion: joint_* 의 절반). 10/11 실로봇:
+  rack_joint_acc_deg_s2: 60.0     #   60/120 에서 출발 1.3 s 만에 관절 토크 추정 툴 힘 25 N 초과(force_limit STOP, 접촉 없음) — 손 보기 자세(10/8)와 같은 원인
+  rack_drop_back_m: 0.06          # 접근점: 놓는 자리에서 −x 6 cm → 대각선으로 들어가 놓는다 (10/11: 바로 위에서 수직 하강하면 공이 거치대에 부딪힘)
   sim_rack_drop_posx: [450.0, 282.0, 115.0, -5.2, 177.0, 85.1]   # 시뮬(RALLY_SIM=1)에서 rack_drop_posx 가 비었을 때만 쓰는 가짜 자리 — 실로봇은 안 씀
   return_reach_x_max_m: 0.55      # 공 중심이 이 x 안쪽이어야 집는다 (보라색 선 0.568 · safety workspace_x_max 0.57). 밖이면 brain 이 굴려 달라고 안내
+  # 회수 구역 (10/8 정정인): 레인과 상관없이 이 안의 공이면 집는다 — 환자가 굴린 공이 레인 밖으로 가도 회수. x 위쪽 한계는 return_reach_x_max_m
+  return_zone_x_min_m: 0.28       # 이보다 로봇 쪽은 팔이 너무 접힘 → 무시
+  return_zone_y_min_m: -0.30
+  return_zone_y_max_m: 0.21       # 이보다 +y 는 거치대(y ≈ 0.28) — 거치대 공을 집지 않게
   return_wait_s: 20.0             # 공이 닿는 곳에 올 때까지 기다리는 시간
   end_at_hand_view: true          # PushBall 이 친 뒤 손 보기 자세에서 끝남 (brain 이 환자가 공을 받는지 본다). false 면 2 s 뒤 관측 자세로
+  stop_measure: false             # true = PushBall 이 끝나기 전에 정지 위치를 재서 결과에 (brain 없이 단독 시험용). 세션에선 brain 이 받기 확인과 같이 잰다
   hand_view: true                 # 친 뒤 툴을 환자 쪽으로 기울여 RealSense 로 환자 손 보기 (공 받는 모습). 레인 선택은 brain 이 손에 가장 가까운 레인
   hand_view_tilt_deg: 45.0        # 10/8 에뮬레이터: 45° · 30 cm 가 팔로스루 끝에서 관절 이동 가장 작음(합 74°, 60° 는 185°) + 손 후보 9/9 화면 안
   hand_view_back_m: 0.10
+  hand_view_joint_vel_deg_s: 30.0  # ★ 손 보기 자세로 가는 관절 이동 속도·가속 상한 (motion: joint_* 의 절반). 10/8 실로봇: 손목 45° 기울이는 이 이동에서
+  hand_view_joint_acc_deg_s2: 60.0 #   관절 토크 추정 툴 힘 19 N(도착)·25 N 초과(force_limit STOP, 접촉 없음) → 60/120 에서 낮춤
+  hand_hold_s: 1.5                # ★ 손바닥이 hand_hold_tol_m 안에 이 시간 머물러야 레인을 정하고 친다. 10/11 실로봇: 지나가는 손 한 프레임에
+  hand_hold_tol_m: 0.04           #   레인 0 으로 결정돼 바로 침 (원래 레인 1). 레인 간격 ≈ 12 cm 라 4 cm 안이면 같은 레인
   hand_view_height_m: 0.30
   hand_view_hold_s: 2.0
   push_mode: strike               # strike | push(예전 수직 밀기)
@@ -198,6 +210,19 @@ brain:
   success_drop_rate: 0.4            # 최근 시도 성공률이 이 이하면 '성공률 하락' 신호 (최소 3회)
   slowing_ratio: 1.5                # 마지막 시도 시간이 앞선 시도 평균의 이 배 이상이면 '시도 시간 증가' 신호
   difficulty_range: [-3, 3]
+  # 세션 시작 때 몸 자세 기준(평소 자세) 잡기 — /rally/perception/body/reset_baseline (#83, INTERFACES 3절)
+  #   안내 → 말이 끝날 즈음 호출 → body_pose 가 약 2 s 바른 자세를 기준으로. body_pose 가 없으면 경고만 남기고 세션은 계속
+  body_baseline_prompt: "기준 자세를 잡을게요. 바르게 서서 잠깐 가만히 있어 주세요."
+  body_baseline_prompt_wait_s: 2.5  # 안내를 듣고 자세를 잡을 시간
+  body_baseline_hold_s: 3.5         # 호출 뒤 기준을 잡는 동안 — body_pose 는 어깨가 잘 보이는 30 프레임(15 Hz 최소 2 s)이 모여야 확정, 놓친 프레임 여유 (#110 리뷰)
+  # 모드 1 손 근접 STOP 대기 (#98 4번, INTERFACES 9절 1단계, rally_brain/hand_stop.py)
+  #   로봇이 서 있을 때 걸린 아래 사유의 STOP(safety_monitor 비래치)은 세션을 끝내지 않고 기다렸다가, NORMAL 이 resume_hold_s
+  #   이어지면 같은 시도를 이어 간다 (SLOW 는 재진행 아님, 10/11 결정). 로봇이 움직이는 중이거나 그 밖의 STOP 은 기존대로 세션 종료
+  hand_stop_wait_reasons: [hand_near_robot, hand_near_centerline, hand_lost_near]
+  hand_stop_wait_modes: [1]
+  hand_stop_resume_hold_s: 1.0
+  hand_stop_prompt: "손을 조금 떼어 주세요. 손이 빠지면 이어서 할게요"
+  hand_stop_prompt_s: 10.0          # 기다리는 동안 안내 간격
 
 mode3_challenge:
   enabled: true                     # CP13 결정에 따라 false 로 시연에서 제외

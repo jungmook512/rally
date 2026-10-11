@@ -73,7 +73,9 @@ rally_safety_monitor:
     workspace_y_min_m: -0.45
     workspace_y_max_m: 0.45
     workspace_z_min_m: 0.00
-    workspace_z_max_m: 0.60
+    workspace_z_max_m: 2.00    # 위쪽은 사실상 제한 없음 (M0609 도달 최대 ≈ 1.25 m). 10/11 정정인 결정: 0.60 → 2.00.
+                               #   모드 1↔3 전환에 팔꿈치(J3 부호)를 넘기는 관절 이동이 꼭 있는데, 그 경로가 TCP z 0.82~1.19 m 까지 올라가
+                               #   tf 작업 공간 검사(#104)에 이동 중 STOP (10/11 실로봇 z 0.645). 위쪽은 환자·테이블과 멀어지는 방향이라 뺌. x·y·z_min 은 그대로
     return_speed_mm_s: 30.0    # 모드 7 복귀·STOP 후 후퇴 속도 상한 (CP14)
 
 # skill_server (#14) — 안전 상태를 한 번도 못 받았거나 이 시간 넘게 끊기면 STOP 취급: 새 goal 거부, 실행 중 스킬 abort

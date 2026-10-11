@@ -93,11 +93,12 @@ def test_invalid_request_never_published(monkeypatch):
     assert r.status_code == 422 and store.command is None
 
 
+@pytest.mark.parametrize('source', ['test', 'llm'])
 @pytest.mark.parametrize('case,code', [('accept',200),('reject',200),('old',409),('expired',409),
                                      ('stale',503),('brain_reject',409),('no_reply',504),('invalid',422)])
-def test_proposal_response_checks_brain_and_current_proposal(monkeypatch, case, code):
+def test_proposal_response_checks_brain_and_current_proposal(monkeypatch, source, case, code):
     state = snapshot()
-    state.update(phase='running',proposal={'proposal_id':str(uuid.uuid4()),'status':'pending','remaining_s':20})
+    state.update(phase='running',proposal={'source':source,'proposal_id':str(uuid.uuid4()),'status':'pending','remaining_s':20})
     body = {'session_id':state['session_id'],'proposal_id':state['proposal']['proposal_id'],
             'decision':'reject' if case=='reject' else 'accept'}
     if case == 'old': body['proposal_id'] = str(uuid.uuid4())
@@ -129,3 +130,28 @@ def test_training_illustrations_are_served_without_control_requests(monkeypatch)
             assert (await client.get("/images/%2e%2e/index.html")).status_code == 404
     asyncio.run(call())
     assert store.command is None
+
+
+def test_latest_report(monkeypatch):
+    from datetime import datetime, timezone
+    seen = []
+
+    async def fake_query(sql, params=()):
+        seen.append(sql)
+        return [{"session_id": "11111111-2222-3333-4444-555555555555", "report_md": "## 세션 요약\n| 1 |",
+                 "started_at": datetime(2026, 10, 11, 1, 0, tzinfo=timezone.utc),
+                 "ended_at": datetime(2026, 10, 11, 1, 12, tzinfo=timezone.utc)}]
+
+    async def empty(sql, params=()):
+        return []
+
+    async def call():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url="http://test") as client:
+            return await client.get("/api/report/latest")
+
+    monkeypatch.setattr(web, "_query", fake_query)
+    r = asyncio.run(call())
+    assert r.status_code == 200 and r.json()["report_md"].startswith("## 세션 요약")
+    assert r.json()["ended_at"].startswith("2026-10-11T01:12") and "report_md IS NOT NULL" in seen[0]
+    monkeypatch.setattr(web, "_query", empty)
+    assert asyncio.run(call()).json() is None

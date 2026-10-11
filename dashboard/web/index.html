@@ -100,6 +100,7 @@
   .card .value { font-size:30px; line-height:1.35; margin-top:13px; font-weight:800; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
   #events-view { background:#f5f0fb; border-color:#b6a6cd; }
   #trials-view .scroll,#events-view .scroll { max-height:520px; }
+  #report { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.6; max-height:520px; overflow:auto; }
   table { width:100%; border-collapse:collapse; font-size:14px; }
   th,td { text-align:left; padding:8px; border-bottom:1px solid var(--line); white-space:nowrap; }
   th { color:var(--muted); font-weight:700; font-size:13px; }
@@ -144,7 +145,7 @@
     <small>휴식 후 같은 난이도로 이어갑니다. 안전 정지 해제는 운영자의 별도 절차가 필요합니다.</small>
   </section>
   <section id="proposal-panel" class="panel" hidden aria-label="휴식 제안">
-    <div class="panel-top"><h2><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5V19M16 5V19"/></svg>휴식 제안 <small class="section-tag">테스트</small></h2><span id="proposal-time" class="badge"></span></div>
+    <div class="panel-top"><h2><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5V19M16 5V19"/></svg>휴식 제안 <small id="proposal-source" class="section-tag"></small></h2><span id="proposal-time" class="badge"></span></div>
     <p id="proposal-prompt"></p><p id="proposal-status" role="status"></p>
     <button id="proposal-accept" type="button">네, 쉬겠습니다</button>
     <button id="proposal-reject" type="button">아니요, 계속할게요</button>
@@ -164,6 +165,10 @@
     <div class="panel card"><div class="label">피로도</div><div class="value" id="fatigue">—</div><div class="sub" id="hand">손 —</div></div>
   </section>
 
+  <section id="report-view" class="panel" aria-label="세션 리포트">
+      <h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3H18V21H6ZM9 8H15M9 12H15M9 16H12"/></svg>세션 리포트</h2><p class="section-help" id="report-meta">가장 최근에 끝난 세션의 요약 · 표의 수치가 기준이고 해석은 참고용입니다</p>
+      <div id="report"></div><div class="empty" id="report-empty">아직 리포트 없음 — 세션이 끝나면 표시됩니다</div>
+  </section>
   <section id="trials-view" class="panel" hidden>
       <h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3H15L19 7V21H6ZM15 3V7H19M9 11H16M9 15H16M9 18H13"/></svg>최근 시도</h2><p class="section-help">수신된 시도별 결과 · 오차 · 소요 시간</p>
       <div class="scroll">
@@ -185,7 +190,7 @@
 const MODES = {1: "공 굴리기", 3: "캐치볼", 5: "건네고 받기", 7: "저항 밀기"};
 const LEVELS = {normal: ["normal", "정상"], slow: ["slow", "느리게"], stop: ["stop", "정지"]};   // rally_db convert.SAFETY_LEVELS
 const ROBOT = {idle: "대기", moving: "움직이는 중", holding: "잡고 있음", stopped: "멈춤"};
-const KINDS = {safety_change: "안전", voice_intent: "음성", mode_change: "모드", trial: "시도"};
+const KINDS = {safety_change: "안전", voice_intent: "음성", mode_change: "모드", trial: "시도", session_report: "리포트"};
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 const modeName = (m) => m ? `${m} ${MODES[m] ?? ""}`.trim() : "—";
@@ -215,7 +220,8 @@ function renderControl(s) {
   controlReceived = performance.now();
   renderProposal();
   $("phase").textContent = s ? `${PHASES[s.phase] ?? s.phase} · ${modeName(s.mode)} · 난이도 ${s.difficulty ?? "—"}`
-    + (s.phase === "paused" && s.blocked_reason ? ` · ${s.blocked_reason}` : "") : "세션 상태 연결 끊김";
+    + (s.phase === "paused" && s.blocked_reason ? ` · ${s.blocked_reason}` : "")
+    + (s.hand_wait ? ` · 손 근접 정지 대기(${s.hand_wait}) — 손이 빠지면 이어감` : "") : "세션 상태 연결 끊김";
   $("resume").disabled = resuming || !s?.can_resume || s.phase !== "paused";
 }
 
@@ -288,6 +294,7 @@ function describe(e) {
     case "voice_intent": return `"${e.text || e.intent}" → ${e.intent}${e.is_emergency ? " (비상)" : ""}`;
     case "mode_change": return `${modeName(e.from)} → ${modeName(e.to)}`;
     case "trial": return `${e.trial_index}회째 ${modeName(e.mode)} ${e.success ? "성공" : "실패"}`;
+    case "session_report": return `세션 ${String(e.session_id || "").slice(0, 8)} 리포트 저장`;
     default: return JSON.stringify(e);
   }
 }
@@ -307,6 +314,18 @@ async function load() {
   try { renderControl(await get("/api/session")); } catch (e) { renderControl(null); }
   try { (await get("/api/trials")).trials.reverse().forEach((t) => addTrial(t, false)); } catch (e) { console.warn(e); }
   try { (await get("/api/events")).forEach((e) => addEvent(e, false, true)); } catch (e) { console.warn(e); }
+  await loadReport();
+}
+
+async function loadReport() {
+  try {
+    const r = await fetch("/api/report/latest");
+    if (!r.ok) throw new Error(await r.text());
+    const rep = await r.json();
+    $("report-empty").hidden = !!rep;
+    $("report").textContent = rep ? rep.report_md : "";     // 글자 그대로 (HTML 해석 안 함)
+    if (rep) $("report-meta").textContent = `세션 ${rep.session_id.slice(0, 8)} · 끝난 시각 ${rep.ended_at ? clock(rep.ended_at) : "—"} · 표의 수치가 기준이고 해석은 참고용입니다`;
+  } catch (e) { console.warn(e); }
 }
 
 function connect() {
@@ -320,6 +339,7 @@ function connect() {
     else if (msg.type === "event") {
       addEvent(msg.data, true, false);
       if (msg.data.kind === "trial") addTrial(msg.data, true);
+      if (msg.data.kind === "session_report") loadReport();
     }
   };
 }
@@ -338,6 +358,7 @@ function renderProposal() {
   const remaining=Math.max(0, Number(p.remaining_s||0)-age);
   const fresh=Number.isFinite(control.updated_at)&&Date.now()/1000-control.updated_at>=0&&Date.now()/1000-control.updated_at<2;
   const pending=p.status==='pending'&&remaining>0&&fresh&&control.phase==='running';
+  $('proposal-source').textContent=({test:'테스트',llm:'AI 제안'})[p.source]||'출처 미확인';
   $('proposal-prompt').textContent=p.prompt;
   $('proposal-time').textContent=pending?`${Math.ceil(remaining)}초 남음`:'';
   const statuses={accepted:'수락됨 · 휴식 예약 처리 결과를 확인해 주세요',rejected:'거절됨 · 훈련 계속',expired:'시간 만료 · 훈련 계속',invalidated:'훈련 상태 변경으로 제안 종료'};
@@ -389,6 +410,7 @@ function selectPage() {
   document.querySelectorAll('#mode-nav a').forEach(a=>{if(a.dataset.page===selectedPage)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
   $('mode-view').hidden=selectedMode===null;
   $('overview-cards').hidden=selectedPage!=='overview';
+  $('report-view').hidden=selectedPage!=='overview';
   $('trials-view').hidden=selectedPage!=='trials';
   $('events-view').hidden=selectedPage!=='events';
   if(selectedMode!==null) {
@@ -441,6 +463,7 @@ function renderModePage(){
   else if(index>=0){title=page.steps[index];description=page.help[index];}
   else if(running){title='세부 단계 확인 중';description='수신한 상태에 대응하는 단계가 아직 연결되지 않았습니다.';}
   if(active&&control.phase==='pause_pending')description+=' 현재 시도와 회수 완료 후 휴식합니다.';
+  if(active&&control.hand_wait){title='손 근접 정지 대기';description=`안전 감시 ${control.hand_wait} — 로봇은 멈춰 있고, 손이 빠져 정상 상태가 1초 이어지면 같은 시도를 이어갑니다.`;}
   $('step-title').textContent=title;$('step-description').textContent=description;$('raw-stage').textContent=node?`수신 상태 · ${node}`:'';
   $('steps').innerHTML=page.steps.map((step,i)=>`<li class="${i===index?'active':''}" ${i===index?'aria-current="step"':''}><span>${i+1}</span><strong>${esc(step)}</strong></li>`).join('');
 }
