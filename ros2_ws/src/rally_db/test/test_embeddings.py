@@ -54,7 +54,7 @@ def test_mode5_uses_recorded_metrics():
     vec = embeddings.trial_vector(row(mode=5, error_mm=0.0, duration_s=10.0,
                                       metrics={"handover_time_s": 5.0, "wrist_angle_at_grasp_deg": 45.0,
                                                "attempts": 2.0}), SPEC)
-    assert vec[3:7] == pytest.approx([0.5, 0.25, 0.75, 1.0])   # tilt 없음→0°→0.5, 5/20, (45+90)/180, 2회
+    assert vec[3:7] == pytest.approx([0.5, 0.25, 0.25, 1.0])   # tilt 없음→0°→0.5, 5/20, 손목 45/180 (범위 0~180, #92), 2회
 
 
 def test_similar_trial_is_closer():

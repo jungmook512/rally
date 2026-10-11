@@ -9,7 +9,7 @@ bool detected
 string handedness                    # left | right
 geometry_msgs/Point[21] landmarks    # MediaPipe 21점, [m]
 geometry_msgs/Pose palm_pose         # 손바닥 좌표계
-float32 wrist_angle_deg              # 손목 회전(전완 대비) [deg]
+float32 wrist_angle_deg              # 손목 회전(전완 대비) [deg], 0~180 (0 손바닥 아래 · 90 옆 · 180 위). 0.5 s 안정화 값, NaN = 모름 (INTERFACES 2.2)
 float32 grip_closure                 # 0 = 펼침, 1 = 주먹
 uint8 gesture
 geometry_msgs/Vector3 pointing_dir

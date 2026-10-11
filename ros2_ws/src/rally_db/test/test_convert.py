@@ -91,6 +91,13 @@ def test_hand_row():
     assert convert.hand_to_row(hand(detected=False), None) is None
 
 
+def test_hand_row_nan_wrist_is_null():
+    """손목 필터(#92): 손은 보이는데 손목을 못 잰 프레임은 NaN → NULL (0° 가 아니라 '모름')."""
+    msg = hand()
+    msg.wrist_angle_deg = float("nan")
+    assert convert.hand_to_row(msg, None)[6] is None
+
+
 def safety(level=2, reason="force_limit"):
     return NS(header=header(), level=level, reason=reason, speed_override=0.0, min_hand_distance=0.12345)
 
