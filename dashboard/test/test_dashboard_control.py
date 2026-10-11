@@ -93,11 +93,12 @@ def test_invalid_request_never_published(monkeypatch):
     assert r.status_code == 422 and store.command is None
 
 
+@pytest.mark.parametrize('source', ['test', 'llm'])
 @pytest.mark.parametrize('case,code', [('accept',200),('reject',200),('old',409),('expired',409),
                                      ('stale',503),('brain_reject',409),('no_reply',504),('invalid',422)])
-def test_proposal_response_checks_brain_and_current_proposal(monkeypatch, case, code):
+def test_proposal_response_checks_brain_and_current_proposal(monkeypatch, source, case, code):
     state = snapshot()
-    state.update(phase='running',proposal={'proposal_id':str(uuid.uuid4()),'status':'pending','remaining_s':20})
+    state.update(phase='running',proposal={'source':source,'proposal_id':str(uuid.uuid4()),'status':'pending','remaining_s':20})
     body = {'session_id':state['session_id'],'proposal_id':state['proposal']['proposal_id'],
             'decision':'reject' if case=='reject' else 'accept'}
     if case == 'old': body['proposal_id'] = str(uuid.uuid4())

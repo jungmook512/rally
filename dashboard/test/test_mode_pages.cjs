@@ -136,6 +136,22 @@ assert.equal(get('proposal-accept').disabled,true);
 run("renderControl(null);");
 assert.equal(get('proposal-panel').hidden,true);
 
+for (const [source,label] of [['test','테스트'],['llm','AI 제안'],['unknown','출처 미확인']]) {
+  context.proposalSource=source;
+  run("renderControl({phase:'running',session_id:'source-session',updated_at:Date.now()/1000,proposal:{proposal_id:proposalSource,source:proposalSource,prompt:'혹시 피곤하진 않으세요? 조금 쉬었다 할까요?',status:'pending',remaining_s:20}});");
+  assert.equal(get('proposal-source').textContent,label);
+  assert.equal(get('proposal-accept').disabled,false);
+  assert.equal(get('proposal-reject').disabled,false);
+  for (const [status,message] of [['accepted','수락됨'],['rejected','거절됨'],['expired','시간 만료']]) {
+    run(`renderControl({...control,proposal:{...control.proposal,status:'${status}'}});`);
+    assert.equal(get('proposal-source').textContent,label);
+    assert(get('proposal-status').textContent.includes(message));
+    assert.equal(get('proposal-accept').disabled,true);
+    assert.equal(get('proposal-reject').disabled,true);
+  }
+}
+run('renderControl(null)');
+
 async function testProposalResponses() {
   let socket, calls = 0, finish;
   context.WebSocket = class { constructor() { socket = this; } };
@@ -153,7 +169,7 @@ async function testProposalResponses() {
   assert.equal(get('events').children.length,3);
   visit('#overview');
   const snapshot = id => ({phase:'running', session_id:'session', updated_at:Date.now()/1000,
-    proposal:{proposal_id:id, prompt:'휴식 제안', status:'pending', remaining_s:20}});
+    proposal:{proposal_id:id, source:'llm', prompt:'휴식 제안', status:'pending', remaining_s:20}});
   const receive = data => socket.onmessage({data:JSON.stringify({type:'session',data})});
   receive(snapshot('timeout'));
   const click = get('proposal-accept').onclick();

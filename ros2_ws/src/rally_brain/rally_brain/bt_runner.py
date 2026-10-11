@@ -18,7 +18,7 @@
 트리는 execute 콜백 안에서 tick_hz(기본 10 Hz)로 돈다. 스킬 action 은 비동기라 tick 이 막히지 않는다.
 시도가 기록될 때마다 rule_layer 가 다음 행동을 고른다 (/rally/voice/intent 의 tired·harder·easier 도 여기서 소비).
   harder/easier → 구현된 모드 레시피의 난이도 단계만 바꾼다. suggest_rest → 현재 시도 후 휴식.
-  ask_llm → llm_advisor 가 생기기 전까지 continue 로 대체.
+  ask_llm → 비동기 휴식 판단. 승인된 제안 수락 전에는 훈련 계속.
 모드 전환: /rally/brain/set_mode (SetMode, 대시보드) · 음성 next_mode (+ 슬롯 mode, INTERFACES 2.2).
   요청은 바로 답하고, 실제 전환은 시도와 시도 사이(또는 손 대기 중)에만 한다 — 로봇이 물체를 건네는 도중에 끊지 않음.
   고른 모드부터 원래 순서대로 이어 간다 (session_tree.modes_after_switch). 슬롯 없는 next_mode = 다음 모드.
@@ -29,6 +29,7 @@ TODO: 준비가 도중에 깨지면 중단 + 관측 자세 대기, 음성 start_
 from __future__ import annotations
 
 import threading
+import math
 import time
 from typing import Any
 import uuid
@@ -43,13 +44,14 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from std_msgs.msg import String
 
-from rally_brain import hand_stop, rule_layer
+from rally_brain import hand_stop, rule_layer, metrics
 from rally_brain.config import load_skills
 from rally_brain.behaviours import SkillCall
 from rally_brain.knowledge import ontology
 from rally_brain.speech import phrase_problem
 from rally_brain.session_control import SessionControl
 from rally_brain.proposal_control import ProposalControl, REST_PROMPT
+from rally_brain.rest_advisor import configured_advisor
 from rally_brain.trees.session_tree import MODE_NAMES, Session, build_session_tree, modes_after_switch
 from rally_bringup.readiness import ReadinessChecker
 from rally_interfaces.action import RunSession
@@ -108,6 +110,9 @@ class BtRunner(Node):
         self.control = SessionControl()
         self.proposals = ProposalControl()
         self._proposal_cancelled = False
+        self._rest_generation = 0
+        self._rest_advisor = configured_advisor()
+        self.get_logger().info(f"휴식 LLM: {self._rest_advisor.status}")
         self._switch_lock = self.control.lock                         # 세션·전환·휴식의 공통 lock
         self._safety_abort = False                                    # STOP 한 번 수신하면 세션 종료까지 유지
         self._hand_cfg = hand_stop.config(self._skills_cfg)
@@ -147,6 +152,8 @@ class BtRunner(Node):
     # ---------- 상태 ----------
     def _on_context(self, msg: SceneContext) -> None:
         with self._switch_lock:
+            if self._session is not None and self._context_stale(0.0):
+                self._invalidate_rest()  # 끊겼다 복구된 입력도 이전 판단을 되살리지 않는다.
             self._context = msg
             self._context_rx = time.monotonic()
             if self._session is not None and msg.safety.level == SafetyStatus.LEVEL_STOP:
@@ -154,7 +161,7 @@ class BtRunner(Node):
                     self._hand_stop_seen = msg.safety.reason   # 로봇이 움직이는지는 tick 이 보고 대기·종료를 정한다
                 else:
                     self._safety_abort = True
-                self.proposals.invalidate()
+                self._invalidate_rest()
 
     def _context_stale(self, since: float) -> bool:
         """상황판이 context_timeout_s 넘게 안 왔으면 True. since = 세션 시작 (그 전 수신은 인정)."""
@@ -191,7 +198,7 @@ class BtRunner(Node):
                 if self.control.phase in ("paused", "pause_pending") or self.control.hand_wait:
                     self._say("쉬는 동안에는 난이도를 그대로 유지할게요")
                 elif self._session is not None:
-                    self.proposals.invalidate()
+                    self._invalidate_rest()
                     self._pending_intent = msg.intent
         elif msg.intent == "next_mode":
             slots = dict(zip(msg.slot_keys, msg.slot_values))
@@ -236,7 +243,7 @@ class BtRunner(Node):
                 if target == session.current_mode:
                     return False, f"이미 모드 {target} {MODE_NAMES[target]} 진행 중"
             replaced = self._pending_switch is not None
-            self.proposals.invalidate()
+            self._invalidate_rest()
             self._pending_switch = (target, source)
         if target is None and not modes_after_switch(session.modes, session.current_mode, None):
             what = "다음 모드 없음(마지막 모드) — 전환하면 세션이 끝남"
@@ -266,6 +273,7 @@ class BtRunner(Node):
 
     def _after_trial(self, session: Session, trial: TrialResult) -> None:
         with self._switch_lock:
+            self._invalidate_rest(proposal=False)  # 새로운 완료 시도의 이전 LLM 결과 폐기
             if self.control.phase in ("pause_pending", "paused", "ended") or self._safety_abort:
                 self._pending_intent = None
                 return   # 휴식 전후 난이도 보존. 중단 경로의 기록으로 난이도를 바꾸지 않음
@@ -273,7 +281,10 @@ class BtRunner(Node):
 
     def _apply_trial_rule(self, session: Session, trial: TrialResult) -> None:
         intent, self._pending_intent = self._pending_intent, None
-        d = rule_layer.decide(self._context, session.trials_for_rules(trial.mode), intent, self._rule_cfg, self._graph)
+        history = self._rest_history(session, trial.mode)
+        d = rule_layer.decide(self._context, session.trials_for_rules(trial.mode), intent,
+                              self._rule_cfg, self._graph,
+                              performance=trial.mode != TrialResult.MODE_PUSH_BALL, fatigue_history=history)
         log = self.get_logger()
         if d.action in ("harder", "easier"):
             if trial.mode not in (TrialResult.MODE_PUSH_BALL, TrialResult.MODE_RESIST):
@@ -286,12 +297,15 @@ class BtRunner(Node):
             if trial.mode == TrialResult.MODE_PUSH_BALL:
                 new = max(0, new)  # 모드 1의 가장 쉬운 개발 단계는 0
             if old != new:
-                self.proposals.invalidate()
+                self._invalidate_rest()
             session.set_difficulty(trial.mode, new)
             log.info(f"[규칙] {d.reason} — 모드 {trial.mode} 난이도 {old} → {new}"
                      + ("" if new != old else " (한계)"))
         elif d.action == "ask_llm":
-            log.info(f"[규칙] {d.reason} — llm_advisor 전이라 continue")
+            started = False
+            if not self._proposal_blocked() and not self._pending_proposal():
+                started = self._rest_advisor.start(self._rest_token(), trial.mode, history, d.signals)
+            log.info(f"[규칙] {d.reason} — 휴식 판단 요청" if started else "[규칙] 휴식 판단 생략 — 계속 훈련")
         elif d.action == "suggest_rest":
             self._pause(d.reason)
         else:
@@ -309,6 +323,7 @@ class BtRunner(Node):
 
     def _publish_state(self) -> None:
         with self._switch_lock:
+            self._poll_rest()
             self._proposal_snapshot()
             phase = self.control.phase
             name = ("hand_stop_wait" if self.control.hand_wait
@@ -322,7 +337,7 @@ class BtRunner(Node):
                 return False, "진행 중인 세션 없음 또는 안전 중단 중"
             ok, message = self.control.pause(reason)
             if ok:
-                self.proposals.invalidate()
+                self._invalidate_rest()
                 self._pending_switch = self._pending_intent = None
             return ok, message
 
@@ -351,6 +366,7 @@ class BtRunner(Node):
 
     def _resume(self, session_id: str, pause_id: str) -> tuple[bool, str]:
         with self._switch_lock:
+            self._invalidate_rest(proposal=False)
             ok, message = self.control.resume(session_id, pause_id, self._resume_blocked())
             if ok:
                 self.get_logger().info(f"[휴식] {message}")
@@ -360,8 +376,39 @@ class BtRunner(Node):
     def _cancel_session(self, _):
         with self._switch_lock:
             self._proposal_cancelled = True
-            self.proposals.invalidate()
+            self._invalidate_rest()
         return CancelResponse.ACCEPT
+
+    def _invalidate_rest(self, proposal=True):
+        self._rest_generation += 1
+        self._rest_advisor.invalidate()
+        if proposal:
+            self.proposals.invalidate()
+
+    @staticmethod
+    def _rest_history(session, mode):
+        # 모드1 시간 추세는 받기 후보 성공 판정·자동 난이도와 분리한다.
+        allowed_notes = {1: {"", "not_caught"}, 5: {"", "timeout"},
+                         7: {"", "timeout", "released"}}
+        return [t for t in metrics.counted(session.trials[session.level_changed_at.get(mode, 0):])
+                if t.mode == mode and t.notes in allowed_notes.get(mode, set())
+                and math.isfinite(t.duration_s) and t.duration_s > 0]
+
+    def _rest_token(self):
+        session = self._session
+        return (self._rest_generation, self._proposal_context(), len(session.trials) if session else -1)
+
+    def _pending_proposal(self):
+        item = self._proposal_snapshot()
+        return item is not None and item["status"] == "pending"
+
+    def _poll_rest(self):
+        blocked = bool(self._proposal_blocked())
+        action = self._rest_advisor.poll(self._rest_token(), blocked)
+        if action == "suggest_rest" and not blocked and not self._pending_proposal():
+            ok, _ = self.proposals.propose(self._proposal_context(), source="llm")
+            if ok:
+                self._say(REST_PROMPT)
 
     def _proposal_context(self):
         session = self._session
@@ -381,6 +428,7 @@ class BtRunner(Node):
             if self._proposal_blocked():
                 response.success, response.message = False, "제안할 수 있는 훈련 상태가 아닙니다"
             else:
+                self._invalidate_rest(proposal=False)
                 response.success, response.message = self.proposals.propose(self._proposal_context())
                 if response.success:
                     self._say(REST_PROMPT)
@@ -391,6 +439,7 @@ class BtRunner(Node):
             blocked = bool(self._proposal_blocked())
             if session_id != self.control.session_id:
                 return False, "이전 세션의 요청입니다"
+            self._invalidate_rest(proposal=False)
             ok, message = self.proposals.respond(self._proposal_context(), proposal_id, decision, blocked)
             if ok and decision == "accept":
                 ok, message = self._pause("휴식 제안 수락")
@@ -477,6 +526,7 @@ class BtRunner(Node):
             self._safety_abort = False
             self._hand_stop_seen = self._hand_wait = self._normal_since = None
             self._proposal_cancelled = False
+            self._invalidate_rest()
             self.proposals = ProposalControl()
             self.control.start(session.session_id)
         started = time.monotonic()
@@ -505,6 +555,8 @@ class BtRunner(Node):
                         last_feedback = time.monotonic()
                     time.sleep(self.tick_period)
                     continue
+                with self._switch_lock:
+                    self._poll_rest()
                 tree = self._apply_switch(tree, session, n)
                 tree.tick()
                 tip = tree.tip()
@@ -524,7 +576,7 @@ class BtRunner(Node):
             self._state_name = "idle"
             self._hand_wait = None
             with self._switch_lock:
-                self.proposals.invalidate()
+                self._invalidate_rest()
                 self.control.finish(outcome)
                 self._session = self._pending_switch = None
                 self._pending_intent = None
@@ -589,6 +641,7 @@ class BtRunner(Node):
                 and time.monotonic() - self._normal_since >= hold)
 
     def destroy_node(self):
+        self._rest_advisor.close()
         if self._dashboard_bridge is not None:
             self._dashboard_bridge.close()
         return super().destroy_node()

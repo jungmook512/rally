@@ -2,6 +2,8 @@
 담당: 조정묵
 
   세션 (Sequence)
+   ├─ 자세 기준 잡기 — 안내 → /rally/perception/body/reset_baseline → 기준 잡는 동안 대기 (#83). 세션에 한 번.
+   │    body_pose 가 없거나 실패해도 경고만 남기고 넘어간다 (보상 동작 감지만 빠짐). 값은 skills.yaml brain.body_baseline_*
    ├─ 모드 1 × 공 개수 (Repeat) ─ 시도 서브트리 (trees/mode1_push.py) — 시도 수는 TRIAL_COUNTS (거치대 공 4개 = 한 사이클)
    ├─ 모드 5 × N (Repeat) ─ 시도 서브트리 (trees/mode5_handover.py)
    ├─ 모드 7 × N (Repeat) ─ 시도 서브트리 (trees/mode7_resist.py)
@@ -12,6 +14,7 @@
 """
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from typing import Any
 from dataclasses import dataclass, field
@@ -19,13 +22,17 @@ from dataclasses import dataclass, field
 import py_trees
 from rclpy.action import ActionClient
 from rclpy.node import Node
+from std_srvs.srv import Trigger
 
 from rally_brain.config import load_table
-from rally_brain.behaviours import Do, WaitUntil
+from rally_brain.behaviours import Do, ServiceCall, WaitUntil
 from rally_brain.trees import mode1_push, mode5_handover, mode7_resist
 from rally_interfaces.msg import SafetyStatus, SceneContext, TrialResult
 
 MODE_NAMES = {1: "공 굴리기", 3: "캐치볼", 5: "건네고 받기", 7: "팔씨름"}
+BODY_BASELINE_SERVICE = "/rally/perception/body/reset_baseline"
+BODY_BASELINE_DEFAULTS = {"body_baseline_prompt": "기준 자세를 잡을게요. 바르게 서서 잠깐 가만히 있어 주세요.",
+                          "body_baseline_prompt_wait_s": 2.5, "body_baseline_hold_s": 3.5}
 NOT_PERFORMANCE = {"no_hand"}   # 환자가 자리에 없었던 시도 — 기록은 하되 난이도 규칙에는 안 셈
 
 TRIAL_BUILDERS: dict[int, Callable[["Session"], py_trees.behaviour.Behaviour]] = {
@@ -59,6 +66,7 @@ class Session:
     trial_active: bool = False                                      # 로봇이 시도 중 (begin_trial ~ record). 모드 전환은 이때 안 함
     allow_trial: Callable[[], bool] = lambda: True                   # 시도 전체(손 대기 포함) 시작 전 휴식 관문
     robot_resume_ok: Callable[[], bool] = lambda: True               # 손 근접 STOP 으로 멈춘 명령을 다시 보내도 되는가 (#98, bt_runner)
+    body_baseline_done: bool = False                                # 자세 기준 잡기를 지났음 (모드 전환으로 트리를 새로 만들어도 다시 안 함)
 
     table_cfg: dict = field(default_factory=load_table)             # 중앙선 원본: table.yaml
 
@@ -115,9 +123,51 @@ def modes_after_switch(modes: list[int], current: int | None, target: int | None
     return [target] + [m for m in after_current if m != target]
 
 
+def elapsed(seconds: float) -> Callable[[], bool]:
+    """처음 부른 때부터 seconds 가 지나면 True — WaitUntil 조건용 (블록이 다시 시작되면 새로 만든다)."""
+    t0: list[float] = []
+
+    def check() -> bool:
+        now = time.monotonic()
+        if not t0:
+            t0.append(now)
+        return now - t0[0] >= seconds
+    return check
+
+
+def body_baseline(session: Session) -> py_trees.behaviour.Behaviour:
+    """세션 시작 때 몸 자세 기준 잡기 (#83). 안내 → 자세 잡을 시간 → reset_baseline → 기준 잡는 동안 대기.
+    서비스가 없거나 실패하면 경고만 — body_pose 는 보상 동작 감지용이라 세션을 막지 않는다.
+    훈련 팔을 바꾸면 다시 불러야 하지만, brain 은 훈련 팔을 모르므로 지금은 운영자(확인 창 b)가 한다."""
+    cfg = {**BODY_BASELINE_DEFAULTS, **(session.skills_cfg.get("brain") or {})}
+    log = session.node.get_logger()
+
+    def warn_failed() -> None:
+        log.warn("[자세 기준] reset_baseline 실패·없음 — 보상 동작 값은 NaN 으로 남을 수 있음 (세션은 계속)")
+
+    def done() -> None:
+        session.body_baseline_done = True
+
+    call = py_trees.composites.Selector("기준 호출", memory=True, children=[
+        ServiceCall("reset_baseline", session.service_client(Trigger, BODY_BASELINE_SERVICE), Trigger.Request,
+                    timeout_s=3.0, server_timeout_s=2.0),
+        Do("기준 호출 실패 — 계속", warn_failed),
+    ])
+    hold = py_trees.composites.Sequence("기준 잡는 동안", memory=True, children=[
+        call, WaitUntil("기준 잡는 중", elapsed(float(cfg["body_baseline_hold_s"]))),
+    ])
+    return py_trees.composites.Sequence("자세 기준 잡기", memory=True, children=[
+        Do("자세 안내", lambda: session.say(str(cfg["body_baseline_prompt"]))),
+        WaitUntil("자세 잡을 시간", elapsed(float(cfg["body_baseline_prompt_wait_s"]))),
+        hold, Do("자세 기준 끝", done),
+    ])
+
+
 def build_session_tree(session: Session, modes: list[int], trials_per_mode: int) -> py_trees.behaviour.Behaviour:
     session.modes = list(modes)
     root = py_trees.composites.Sequence("세션", memory=True)
+    if session.service_client is not None and not session.body_baseline_done:
+        root.add_child(body_baseline(session))
     for mode in modes:
         name = f"모드 {mode} {MODE_NAMES.get(mode, '?')}"
 

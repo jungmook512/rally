@@ -201,13 +201,27 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 부족하거나 유효 손/NORMAL이 없으면 안내하며 대기한다. 대기 중에는 손 표본을 갱신하고 전송 직전에 조건을 재검증한다.
 STOP·취소는 기존 세션 중단 처리. 타격 action 실패 시에도 다음 타격을 시작하지 않고 기록 후 종료하여 운영자가 공·그리퍼 상태를 확인한다.
 
-## 테스트 휴식 제안 확인 — LLM·음성 응답 연결 전
+## 휴식 제안 — LLM 판단·대시보드 응답
 
 - Brain의 `test_rest_proposals` 파라미터는 기본 false. true로 시작할 때만 `/rally/brain/test/propose_rest` (`std_srvs/Trigger`)를 제공한다. 격리 가짜 스킬 환경에서만 켠다. 최신 상황판·안전·준비 조건과 running 상태, 대기 중인 모드/난이도 요청 없음을 검사한다. 이미 pending인 제안을 덮어쓰지 않는다.
 - 발화/화면 문구: “혹시 피곤하진 않으세요? 조금 쉬었다 할까요?”. 생성 시점부터 monotonic 20초이며 TTS 재생 완료를 기다리지 않는다. 응답 대기 중 기존 훈련은 계속한다. 현재 구현은 rest만 지원한다.
-- Redis `rally:session_control.proposal`: null 또는 `proposal_id`(UUID), `action: rest`, `source: test`, `prompt`, `status`(pending/accepted/rejected/expired/invalidated), `remaining_s`. 기존 GET `/api/session`과 WS `type: session`에 포함한다.
+- Redis `rally:session_control.proposal`: null 또는 `proposal_id`(UUID), `action: rest`, `source: test|llm`, `prompt`, `status`(pending/accepted/rejected/expired/invalidated), `remaining_s`. 기존 GET `/api/session`과 WS `type: session`에 포함한다.
 - POST `/api/session/proposal/respond`: `{session_id, proposal_id, decision: accept|reject}`. ID는 UUID, 임의의 행동명 불허. API는 최신 상태를 확인하고 Redis에 `command: proposal_accept|proposal_reject`, `request_id`, `session_id`, `proposal_id`, `expires_at`을 보낸다. 요청 기한·reply 키·TTL·응답 대기는 resume과 동일하다. HTTP 200은 Brain 응답 후에만, 거절은 409, 연결/상태 없음 503, 결과 미확인 504. 자동 재전송하지 않는다.
 - Brain은 같은 lock에서 현재 세션·모드·난이도·상태·제안 ID·monotonic 만료·안전·준비 상태를 다시 검사한다. 수락은 한 번 소비하고 기존 `_pause`로 적용 예약하여 현재 시도 전체 완료 후 휴식한다. 수락 후 응답 타이머로 예약을 취소하지 않는다. 마지막 시도라면 기존대로 세션 종료다.
 - 거절은 즉시 rejected, 무응답은 20초 뒤 expired. 둘 다 훈련을 바꾸지 않는다. STOP/취소/상황판 상실/세션 종료/모드·난이도 변경/직접 휴식 요청은 pending을 무효화한다. 종료된 제안은 다시 수락할 수 없다. #98 손 근접 STOP 예외는 구현하지 않는다.
 - 화면은 응답 결과(성공·거절·결과 미확인)를 같은 제안의 상태 갱신·재접속 뒤에도 보존한다. 새 세션 또는 새 제안 ID를 받으면 이전 안내를 초기화하며, 이전 세션·제안의 늦은 응답은 새 안내를 덮지 않는다. 최신 상태가 없으면 응답 버튼을 비활성화하고 자동 재전송하지 않는다.
 - 테스트 제안 생성은 안전 판단이나 LLM 호출이 아니다. `tired` 직접 휴식의 기존 동작은 아직 변경하지 않으며, 실제 음성 분류·제안 응답 연결 전 상태다. 임의의 “네/아니요”나 resume은 제안 응답으로 사용하지 않는다.
+
+### 실제 LLM 휴식 판단
+
+외부 전송 목적지·필드는 사용자 승인 완료. OpenAI 공식 `https://api.openai.com/v1`의 `gpt-4o`를 사용한다.
+
+- `rule_layer`가 애매한 신호를 `ask_llm`으로 분류한 경우에만 BtRunner 내부 비동기 작업자로 호출한다. 새 ROS 서비스는 추가하지 않는다. 기존 숫자 파라미터용 `SuggestParams`와 휴식 판단의 프롬프트·출력을 분리한다.
+- 허용 출력은 `continue` 또는 `suggest_rest`뿐이다. pydantic 검증을 통과해도 현재 세션·모드·난이도·시도 세대와 안전·준비 상태를 다시 확인한다. 상태가 바뀌었다가 돌아와도 이전 응답을 적용하지 않는다.
+- 동시에 한 요청만 처리하고 대기열을 쌓지 않는다. 최대 3초 후 실패로 처리하며, 늦게 끝난 응답은 버린다. 오류·키 없음·형식 오류·시간 초과는 기존 훈련 유지로 폴백한다. 네트워크 대기는 BT tick과 안전 콜백을 막지 않는다.
+- `suggest_rest`는 `source: llm`의 20초 제안만 생성한다. LLM이 휴식을 즉시 적용하거나 로봇 제어값·STOP/reset을 변경하지 않는다. 화면은 **AI 제안**으로 표시하고 고정 안내 문구를 사용한다. 실제 휴식 적용에는 기존 대시보드 수락이 필요하다.
+- 외부 전송은 `llm.yaml`의 휴식 판단 전용 허용 필드만 사용한다. 같은 모드의 유효 이력 최대 5개와 유한한 수치·불리언만 사용하며 세션 식별자·자유 메모·영상·원시 좌표·임의 params/metrics 키를 보내지 않는다.
+- 모드 1의 받기 후보는 실제 공 받기의 성공률로 사용하지 않고 자동 난이도 변경도 계속 차단한다. 휴식 판단은 불확실한 신호에 대한 제안이며 피로 진단이나 치료 효과 판정이 아니다.
+- 음성 `tired`의 직접 휴식은 기존대로다. 음성 수락/거절, KG/Graph RAG 검색 연결은 별도 후속 범위다.
+
+설정은 BtRunner가 시작할 때 설치된 `llm.yaml`의 `rally_bt_runner.ros__parameters`를 직접 읽는다. `rest_enabled`, `rest_model`, `rest_temperature`, `rest_timeout_s`, `rest_prompt`, `rest_history_n`, `rest_send_fields`, `rest_send_signals`가 휴식 전용 설정이다. 변경 후 Brain 재시작이 필요하며 ROS 동적 파라미터로 제공하지 않는다. 외부 주소 환경변수로 목적지를 바꾸지 않는다.
