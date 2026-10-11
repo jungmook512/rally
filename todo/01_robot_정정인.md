@@ -19,6 +19,8 @@
 ## 10/8 회의 결정 — 모드 1: 손 위치 레인 · 잘 받으면 멀리 · 공 회수 (브랜치 `feat/rally_robot/mode1-hand-return`)
 - [x] 레인 레시피 실측 3레인 (a 0.192/0.221/0.193, d0 0.020/0.063/0.065) → `skills.yaml mode1.lanes[].recipe`
 - [x] `ReturnBall` 액션 + `return_ball.py` (관측 자세 → 레인 안 공 → 거치대 맨 윗부분 → 손 보기), `/rally/robot/go_hand_view` 서비스, PushBall 이 손 보기 자세에서 끝남 — 시뮬 세션 4회 통과
+- [x] 정지 위치·목표 오차: brain 이 받기 확인과 동시에 손 보기 자세 카메라로 (로봇이 기다리면 그동안 환자가 공을 잡는 걸 brain 이 못 봄 — 시뮬에서 확인). 로봇 쪽 측정은 `stop_measure`(단독 시험용, 기본 끔). 시뮬 세션 4회 정지 위치·오차 기록
+- [ ] 실로봇: 치고 손 보기 자세 도착까지 ≈ 4.6 s (시뮬) — 그 전에 환자가 공을 잡으면 정지 위치를 못 잼(NaN). 안내 문구 타이밍 확인
 - [ ] **거치대 맨 윗부분 직접교시**: 공을 쥐고 손끝을 레일 위쪽 끝 위에 대고 `python3 scripts/print_pose.py` → `skills.yaml mode1.rack_drop_posx` (없으면 ReturnBall 이 `no_rack_drop_posx` 로 시작 전에 중단)
 - [ ] 실로봇: `scripts/robot.sh brain` + `session 1` 로 한 세션 (손 인식 컨테이너 필요 — 정동휘) · 손 보기 자세에서 레인 3개 끝·환자 손이 화면에 다 들어오는지
 - [ ] 공 회수 실측: 로봇이 닿는 한계 `return_reach_x_max_m` 0.55 가 맞는지, 레인 벽 0.5 cm 에서 집기·놓기 손가락 간섭

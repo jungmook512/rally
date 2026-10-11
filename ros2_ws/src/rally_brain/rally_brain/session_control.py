@@ -13,16 +13,19 @@ class SessionControl:
         self.pause_id = ""
         self.reason = ""
         self.paused_stamp_ns = 0
+        self.hand_wait = ""          # 손 근접 STOP 대기 중이면 그 사유 (#98). 휴식 phase 와 별개 — 휴식 요청을 덮지 않는다
 
     def start(self, session_id: str) -> None:
         with self.lock:
             self.session_id = session_id
             self.phase, self.pause_id, self.reason = "running", "", ""
             self.paused_stamp_ns = 0
+            self.hand_wait = ""
 
     def finish(self, reason: str) -> None:
         with self.lock:
             self.phase, self.pause_id, self.reason = "ended", "", reason
+            self.hand_wait = ""
 
     def pause(self, reason: str) -> tuple[bool, str]:
         with self.lock:

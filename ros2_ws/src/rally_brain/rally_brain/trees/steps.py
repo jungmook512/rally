@@ -75,6 +75,7 @@ def skill_step(state: TrialState, name: str, client: ActionClient, make_goal: Ca
                on_retry: Callable[[str, int], None] = lambda *_: None,
                reason_of: Callable[[Any, bool], str] = lambda r, _aborted: getattr(r, "failure_reason", ""),
                on_feedback: Callable[[Any], None] | None = None,
+               hand_resume: Callable[[str, list[str]], str | None] | None = None,
                ) -> py_trees.behaviour.Behaviour:
     """on_success(result, k) / on_fail(result 또는 None, reason, k) / on_retry(reason, k): k = 방금 끝난 회차 (1부터).
     reason_of(result, aborted): 실패 이유. 빈 문자열이면 skill_<상태> (예: skill_aborted — 이유 없는 abort 는 안전 정지일 수 있다)."""
@@ -96,7 +97,8 @@ def skill_step(state: TrialState, name: str, client: ActionClient, make_goal: Ca
 
         skill = SkillCall(f"{name} {k}", session.node, client, make_goal, on_result=on_result,
                           on_interrupt=interrupted, on_feedback=on_feedback, can_send=can_send,
-                          wait_for_precondition=wait_for_precondition)
+                          wait_for_precondition=wait_for_precondition,
+                          hand_resume=hand_resume, resume_ok=session.robot_resume_ok)
 
         def begin() -> bool:
             if k == 1:

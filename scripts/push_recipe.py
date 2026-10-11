@@ -180,6 +180,7 @@ class Runner:
         res = rf.result().result
         if not res.success:
             raise RuntimeError(f"밀기 실패: {res.failure_reason}")
+        return res
 
     def wait_stop(self, timeout_s=8.0, still_s=0.8, tol_m=0.01):
         """레인 안 공의 위치가 still_s 동안 tol_m 안에서 안 변하면(그리고 is_moving 아님) 그 위치 (비전 보정 포함).
@@ -248,9 +249,15 @@ def main():
                     r.hand_ball(label)
                 else:
                     input(f"{label} — 레인을 비우고(굴러간 공은 거치대로) Enter ")
-                r.push(v)
+                res = r.push(v)
                 pred = None
-                stop = None if opt.manual else r.wait_stop()
+                sp = res.stop_position                        # 로봇이 친 뒤 손 보기 자세에서 잰 정지 위치 (못 쟀으면 0)
+                if opt.manual:
+                    stop = None
+                elif abs(sp.x) + abs(sp.y) > 1e-6:
+                    stop = (sp.x, sp.y)
+                else:
+                    stop = r.wait_stop()
                 if stop is not None:
                     dx, dy = stop[0] - sx, stop[1] - sy
                     dist, lat = dx * ux + dy * uy, -dx * uy + dy * ux
