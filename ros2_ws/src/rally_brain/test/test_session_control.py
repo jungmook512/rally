@@ -256,7 +256,7 @@ def test_accepted_proposal_survives_deadline_until_whole_trial_finishes(node, mo
         first, session, trials = arrange([OK] * count)
         session.skills_cfg["mode1"]["balls_per_cycle"] = count
         session.get_context().hand = hand(1.0)
-        session.get_context().hand.distance_to_centerline = 0.20
+        session.get_context().hand.distance_to_centerline = 0.15
         final = session.action_client(ReturnBall, "/rally/skill/return_ball")
     else:
         ok = (True, {"success": True})

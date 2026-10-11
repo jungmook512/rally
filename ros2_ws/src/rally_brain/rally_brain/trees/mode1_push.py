@@ -27,14 +27,14 @@ ACTION = "/rally/skill/push_ball"
 RETURN_ACTION = "/rally/skill/return_ball"
 HAND_VIEW_SERVICE = "/rally/robot/go_hand_view"
 DEFAULTS: dict[str, Any] = {**HAND_DEFAULTS, "balls_per_cycle": 4, "push_speed_range": [0.05, 0.35],
-                           "hand_max_age_s": 1.0, "patient_margin_m": 0.05}
+                           "hand_max_age_s": 1.0, "patient_margin_m": 0.05,
+                           "hand_clear_m": 0.20, "hand_clear_log_s": 2.0}
 
 
 def mode1_config(skills_cfg: dict) -> dict[str, Any]:
     cfg = {**DEFAULTS, **(skills_cfg.get("mode1") or {})}
     safety = load_safety()
     cfg["patient_margin_m"] = max(float(cfg["patient_margin_m"]), float(safety["stop_distance_m"]) + 0.05)
-    cfg["hand_clear_m"] = float(safety["slow_distance_m"])
     cfg["lane_count"] = len(cfg.get("lanes") or []) or 3
     return cfg
 
@@ -185,14 +185,32 @@ class CatchWatch:
         return self.caught
 
 
-def hand_clear(session: Session, cfg: dict[str, Any]) -> bool:
-    """신선한 base_link 손의 거리로만 회수 허용. 미검출/NaN은 이탈 확인이 아니다."""
+def hand_clear_block(session: Session, cfg: dict[str, Any]) -> str | None:
+    """회수를 막는 이유 (None = 회수 가능). 신선한 base_link 손의 거리로만 허용 — 미검출/NaN은 이탈 확인이 아니다.
+    기준 hand_clear_m 은 skills.yaml mode1 (safety.yaml slow_distance_m 과 별개, #104 에서 SLOW 거리가 바뀌어도 그대로)."""
     ctx = session.get_context()
-    if ctx is None or not session.safe():
-        return False
+    if ctx is None:
+        return "상황판 없음"
+    if not session.safe():
+        return "안전 STOP"
     h = ctx.hand
-    return (valid_hand(h, session.node.get_clock().now().nanoseconds, cfg["hand_max_age_s"])
-            and math.isfinite(h.distance_to_centerline) and h.distance_to_centerline >= cfg["hand_clear_m"])
+    now_ns = session.node.get_clock().now().nanoseconds
+    if not h.detected:
+        return "손 안 보임"
+    if h.header.frame_id != "base_link":
+        return f"손 좌표가 base_link 아님({h.header.frame_id or '없음'})"
+    if not valid_hand(h, now_ns, cfg["hand_max_age_s"]):
+        return "손 관측이 오래됨·좌표 없음"
+    d = h.distance_to_centerline
+    if not math.isfinite(d):
+        return "손 거리 모름(NaN)"
+    if d < cfg["hand_clear_m"]:
+        return f"손 거리 {d:.2f} m < {cfg['hand_clear_m']:.2f} m"
+    return None
+
+
+def hand_clear(session: Session, cfg: dict[str, Any]) -> bool:
+    return hand_clear_block(session, cfg) is None
 
 
 def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.behaviour.Behaviour:
@@ -292,11 +310,27 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
     ])
 
     # 손 이탈 대기는 세션을 끝내지 않는다. 안내 후에도 새 관측을 기다린다.
+    # 기다리는 이유는 바뀔 때와 hand_clear_log_s 마다 로그 — 실기에서 회수가 안 될 때 원인(미검출·거리 등)을 보려고
+    clear_log = {"reason": None, "t": 0.0}
+
+    def clear_check() -> bool:
+        reason = hand_clear_block(session, cfg)
+        now = time.monotonic()
+        if reason is None:
+            if clear_log["reason"] is not None:
+                log.info("[모드 1] 손 이탈 확인 — 회수 진행")
+            clear_log["reason"] = None
+            return True
+        if reason != clear_log["reason"] or now - clear_log["t"] >= cfg["hand_clear_log_s"]:
+            log.info(f"[모드 1] 회수 대기: {reason}")
+            clear_log.update(reason=reason, t=now)
+        return False
+
     clear = py_trees.composites.Selector("손 빼기", memory=True, children=[
-        WaitUntil("손 빠짐 대기", lambda: hand_clear(session, cfg), max(0.1, cfg["hand_clear_wait_s"])),
+        WaitUntil("손 빠짐 대기", clear_check, max(0.1, cfg["hand_clear_wait_s"])),
         py_trees.composites.Sequence("안내 후 계속 대기", memory=True, children=[
             Do("손 빼기 안내", lambda: session.say(cfg["hand_clear_prompt"])),
-            WaitUntil("손 이탈 확인 대기", lambda: hand_clear(session, cfg)),
+            WaitUntil("손 이탈 확인 대기", clear_check),
         ]),
     ])
 
@@ -320,7 +354,7 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
     ret = skill_step(state, "공 회수", return_client,
                      lambda: ReturnBall.Goal(lane=int(state.data["lane"]), timeout_s=float(cfg["return_timeout_s"])),
                      tries=int(cfg["return_tries"]),
-                     can_send=lambda: hand_clear(session, cfg), wait_for_precondition=True,
+                     can_send=clear_check, wait_for_precondition=True,
                      on_success=returned, on_fail=return_failed, on_interrupt=on_interrupt,
                      can_retry=lambda r: reason_code(r) in ("ball_out_of_reach", "no_ball_in_lane"),
                      on_retry=lambda _r, _k: session.say(cfg["out_of_reach_prompt"]),
