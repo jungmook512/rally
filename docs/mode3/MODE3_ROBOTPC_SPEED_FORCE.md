@@ -44,6 +44,7 @@ python3 scripts/mode3_reach_test.py --dist 5 10 15 --dirs -y +u -u --acc 1000 15
 | T4 | 2000 · 730 | −y 만 · 10/15 cm | `python3 scripts/mode3_reach_test.py --run --dist 10 15 --dirs -y --acc 2000 --vel 730 --reps 2` | 4 |
 
 - 순서대로. 앞 단계에서 80 N STOP 이 나면 그 가속 이상은 하지 않는다.
+- **−u 는 5 cm 까지만** — 10/11 T1 에서 −u 약 9.4 cm 에 두산 자기충돌 정지 (`MODE3_RESULTS.md`). T1 을 다시 할 때는 `--dirs -y +u` 와 `--dirs -u --dist 5` 로 나눠서. T1 은 10/11 에 됨 → **남은 것 T2~T4**
 - `+y`(왼쪽)는 하지 않는다 (어깨 특이점, 모드 3 은 왼쪽으로 안 감).
 - 끝나면: bag 기록 Ctrl+C → `ros2 param set /rally_safety_monitor force_limit_n 25.0` → `ros2 param get` 으로 25.0 확인.
 
@@ -61,14 +62,19 @@ python3 scripts/mode3_servol_test.py --run --reps 2        # 실제 (step 3방�
 - 결과: `data/measure/mode3_servol_MMDD_HHMM.csv`
 
 ## (선택, 10분) 움직이는 중 amovel 다시 보내기
-나중 단계(예측이 바뀌면 목표를 고치기)에 필요. 지금 스크립트에는 없으니 **로봇 PC Claude 가 짧은 시험 스크립트를 만들어** 아래만 확인:
-대기 자세에서 −y 10 cm 로 amovel(1000 · 450) → 0.15 s 뒤 −y 15 cm 로 amovel 한 번 더 → ① 알람/거부(반환값) ② 멈췄다 다시 가는지 ③ 이어서 가는지, 15 cm 도착 시각. 3회. (`move_checked` 가 아니라 `amovel` 직접, 정지 확인은 `check_motion`)
+나중 단계(예측이 바뀌면 목표를 고치기)에 필요. `scripts/mode3_amovel_resend_test.py` — 대기 자세에서 −y 10 cm 로 amovel(1000 · 450) → 0.15 s 뒤 −y 15 cm 로 amovel 한 번 더.
+`single`(15 cm 한 번, 비교 기준) · `duplicate`(두산 기본 `ra`) · `override`(`DR_MV_RA_OVERRIDE`) 세 경우 × 3회. 반환값(알람·거부), 사이에 멈췄는지, 첫 목표에 머문 시간, 15 cm 도착 시각을 CSV 로.
+```bash
+python3 scripts/mode3_amovel_resend_test.py                  # 계획만
+python3 scripts/mode3_amovel_resend_test.py --run --reps 3   # 9번. 다른 간격도 보려면 --delay 0.1 0.15 0.25
+```
+결과: `data/measure/mode3_resend_MMDD_HHMM.csv`
 
 ## 보낼 것
 - `data/measure/mode3_reach_*.csv` (T1~T4), `data/measure/mode3_servol_*.csv` (T5)
-- `data/bags/mode3_speedforce_*` 폴더 (힘·관절, 작음)
+- `data/bags/mode3_speedforce_*` 폴더 (힘·관절, 작음). 이동마다 힘 최대는 CSV `force_peak_n`·`force_dpeak_n` 에도 있음
 - STOP 이 난 이동 목록, 힘 한계를 25.0 으로 되돌렸는지
-- (선택) amovel 재전송 결과 3줄
+- (선택) `data/measure/mode3_resend_*.csv`
 
 ## 이걸로 정할 것 (박성현이 계산해서 팀에)
 1. 가속·속도별 이동 중 최대 추정 힘 → **모드 3 힘 한계** 값(최대 관성 + 공 충격 15 N + 여유)과 쓸 가속

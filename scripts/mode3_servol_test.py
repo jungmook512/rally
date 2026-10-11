@@ -183,6 +183,7 @@ def main() -> int:
             d = directions()[name]
             dur = opt.hold if kind == "step" else opt.cycles / f
             for rep in range(opt.reps):
+                w.wait_normal()                 # 멈춰 있을 때만 잠깐 기다림 (wrench_stale 순간). 스트리밍 중에는 그대로 즉시 정지
                 safe_or_stop()
                 time.sleep(opt.settle)
                 w.clear()
@@ -216,13 +217,16 @@ def main() -> int:
                     row.update(analyse(smp, t_start, p0, p0 + d * opt.amp / 100.0, d))
                 else:
                     row.update(lag_and_gain([t - t_start for t in sent], cmd, t_act, s_act))
+                row.update(w.force_stats(t_start, time.monotonic()))
                 rows.append(row)
                 print(f"{kind} {name} {f:.1f} Hz · 보냄 {row.get('send_hz', 0):.0f} Hz #{rep + 1}: "
                       + (f"시작 {row.get('t_start_ms') or float('nan'):.0f} ms · 도착 {row.get('t_arrive_s') or float('nan'):.3f} s · "
                          f"지나침 {row.get('overshoot_mm', 0):.1f} mm" if kind == "step" else
                          f"지연 {row.get('lag_ms', float('nan')):.0f} ms · 진폭비 {row.get('gain', float('nan')):.2f} · "
                          f"오차 {row.get('rms_err_mm', float('nan')):.1f} mm")
+                      + f" · 힘 최대 {row.get('force_peak_n', float('nan')):.1f} N"
                       + (f" · {err}" if err else ""))
+                w.wait_normal()
                 safe_or_stop()
                 movel(start6, vel=opt.return_vel, acc=opt.return_vel * 2)
                 mwait()
