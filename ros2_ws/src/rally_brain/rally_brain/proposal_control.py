@@ -27,13 +27,15 @@ class ProposalControl:
         return {**self.item, "remaining_s": max(0.0, self.deadline - self.clock())
                 if self.item["status"] == "pending" else 0.0}
 
-    def propose(self, context):
+    def propose(self, context, source="test"):
+        if source not in ("test", "llm"):
+            return False, "알 수 없는 제안 출처입니다"
         self.snapshot(context)
         if self.item and self.item["status"] == "pending":
             return False, "이미 응답을 기다리는 제안이 있습니다"
         self.context = context
         self.deadline = self.clock() + 20.0
-        self.item = {"proposal_id": str(uuid.uuid4()), "action": "rest", "source": "test",
+        self.item = {"proposal_id": str(uuid.uuid4()), "action": "rest", "source": source,
                      "prompt": REST_PROMPT, "status": "pending"}
         return True, REST_PROMPT
 
