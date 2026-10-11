@@ -6,6 +6,7 @@
   single    : 둘째 목표로 한 번만 (비교 기준)
   duplicate : 두 번째를 ra=DR_MV_RA_DUPLICATE(두산 기본)로 — 앞 동작 끝난 뒤 이어 가는지
   override  : 두 번째를 ra=DR_MV_RA_OVERRIDE 로 — 앞 동작을 바로 바꿔 가는지
+  movel     : 두 번째를 movel(블로킹, 두산 기본 ra) 로 — 움직이는 중 movel 이 받아지는지 (10/12 추가)
 기록 (한 줄 = 한 번): 두 amovel 반환값, 출발, 둘째 목표 도착 시각, 사이에 멈췄는지(속도가 --stop-mps 아래로 떨어졌다 다시 감),
   첫 목표 근처에 머문 시간, 지나침, 최고 속도, 힘 최대. 측정은 mode3_reach_test.py 와 같은 joint_states 순기구학.
 
@@ -73,7 +74,7 @@ def resend_stats(samples, t_cmd, p0, d, first_m, second_m, stop_mps):
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--run", action="store_true", help="실제로 로봇을 움직임 (없으면 계획만)")
-    ap.add_argument("--cases", nargs="+", default=["single", "duplicate", "override"], choices=["single", "duplicate", "override"])
+    ap.add_argument("--cases", nargs="+", default=["single", "duplicate", "override"], choices=["single", "duplicate", "override", "movel"])
     ap.add_argument("--dir", type=str.strip, default="-y", choices=list(DIRS))
     ap.add_argument("--first", type=float, default=10.0, help="첫 목표 cm")
     ap.add_argument("--second", type=float, default=15.0, help="둘째 목표 cm")
@@ -165,8 +166,11 @@ def main() -> int:
                         if w.safety is None or w.safety.level != 0:     # 움직이는 중에는 기다리지 않음
                             raise SystemExit("둘째 amovel 전 안전 상태가 NORMAL 아님 — 멈춤")
                         t2 = time.monotonic() - t_cmd
-                        ra = DR_MV_RA_OVERRIDE if case == "override" else DR_MV_RA_DUPLICATE
-                        ret2 = amovel(target(opt.second), vel=opt.vel * k, acc=opt.acc * k, ra=ra)
+                        if case == "movel":
+                            ret2 = movel(target(opt.second), vel=opt.vel * k, acc=opt.acc * k)   # 도착(또는 거부)까지 블로킹
+                        else:
+                            ra = DR_MV_RA_OVERRIDE if case == "override" else DR_MV_RA_DUPLICATE
+                            ret2 = amovel(target(opt.second), vel=opt.vel * k, acc=opt.acc * k, ra=ra)
                     while True:
                         time.sleep(0.01)
                         if time.monotonic() - t_cmd > 0.2 + (0 if case == "single" else delay) and check_motion() == 0:
