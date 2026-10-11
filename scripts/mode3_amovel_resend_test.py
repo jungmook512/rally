@@ -126,7 +126,7 @@ def main() -> int:
 
     from rally_robot.dsr_helpers import init_dsr
     dsr = init_dsr("rally_mode3_resend")
-    from DSR_ROBOT2 import DR_MV_RA_DUPLICATE, DR_MV_RA_OVERRIDE, amovel, check_motion, get_current_posx, movel, mwait  # noqa: E402
+    from DSR_ROBOT2 import DR_MV_RA_DUPLICATE, DR_MV_RA_OVERRIDE, amovel, check_motion, get_current_posx, get_robot_state, movel, mwait  # noqa: E402
     start6 = list(get_current_posx()[0])
     d = directions()[opt.dir]
 
@@ -144,7 +144,7 @@ def main() -> int:
             raise SystemExit(f"안전 상태가 NORMAL 아님 (level {s.level}, {s.reason}) — 멈춤")
         return float(s.speed_override)
 
-    out = ROOT / "data" / "measure" / f"mode3_resend_{datetime.now():%m%d_%H%M}.csv"
+    out = ROOT / "data" / "measure" / f"mode3_resend_{datetime.now():%m%d_%H%M%S}.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     rows = []
     try:
@@ -181,12 +181,15 @@ def main() -> int:
                     row.update(analyse(smp, t_cmd, p0, tgt, d))
                     row.update(resend_stats(smp, t_cmd, p0, d, opt.first / 100.0, opt.second / 100.0, opt.stop_mps))
                     row.update(w.force_stats(t_cmd, time.monotonic()))
+                    row["robot_state"] = get_robot_state()     # 1 STANDBY · 2 MOVING 아니면 두산 알람·정지
                     rows.append(row)
                     print(f"{case} delay {delay:.2f} #{rep + 1}: 반환 {ret1}/{ret2} · 시작 {row.get('t_start_ms') or float('nan'):.0f} ms · "
                           f"{opt.second:.0f} cm 도착 {row.get('t_arrive_s') or float('nan'):.3f} s · "
                           f"멈춤 {'예' if row.get('stopped_between') else '아니오'} (최저 {row.get('min_mps_between', float('nan')):.2f} m/s) · "
                           f"첫 목표 머묾 {row.get('dwell_first_s', 0):.2f} s · 지나침 {row.get('overshoot_mm', 0):.1f} mm · "
                           f"끝 오차 {row.get('final_err_mm', float('nan')):.1f} mm · 힘 최대 {row.get('force_peak_n', float('nan')):.1f} N")
+                    if row["robot_state"] not in (1, 2):
+                        raise SystemExit(f"로봇 상태 {row['robot_state']} (알람·정지) — 펜던트에서 해제 후 대기 자세로")
                     movel(start6, vel=opt.return_vel * scale(), acc=opt.return_vel * 2 * scale())
                     mwait()
     finally:

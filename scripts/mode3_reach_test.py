@@ -247,9 +247,9 @@ def main():
 
     from rally_robot.dsr_helpers import init_dsr
     dsr = init_dsr("rally_mode3_reach")
-    from DSR_ROBOT2 import amovel, check_motion, get_current_posx, movel, mwait  # noqa: E402  init_dsr 뒤
+    from DSR_ROBOT2 import amovel, check_motion, get_current_posx, get_robot_state, movel, mwait  # noqa: E402  init_dsr 뒤
     start6 = list(get_current_posx()[0])
-    out = ROOT / "data" / "measure" / f"mode3_reach_{datetime.now():%m%d_%H%M}.csv"
+    out = ROOT / "data" / "measure" / f"mode3_reach_{datetime.now():%m%d_%H%M%S}.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     rows = []
 
@@ -283,12 +283,15 @@ def main():
                     time.sleep(0.3)
                     r = analyse(w.take(t_cmd), t_cmd, p0, s["target"], d)
                     r.update(w.force_stats(t_cmd, time.monotonic()))
+                    r["robot_state"] = get_robot_state()      # 1 STANDBY · 2 MOVING 아니면 두산 알람·정지 (10/11 −u 자기충돌)
                     row = dict(dir=s["dir"], dist_cm=s["dist_cm"], acc=acc, vel=opt.vel * k, rep=rep + 1, **r)
                     rows.append(row)
                     print(f"{s['dir']} {s['dist_cm']:.0f} cm acc {acc:.0f} #{rep + 1}: 시작 {r.get('t_start_ms') or float('nan'):.0f} ms · "
                           f"도착 {r.get('t_arrive_s') or float('nan'):.3f} s · 지나침 {r.get('overshoot_mm', 0):.1f} mm · "
                           f"최고 {r.get('peak_mps', 0):.2f} m/s · 끝 오차 {r.get('final_err_mm', 0):.1f} mm · "
                           f"힘 최대 {r.get('force_peak_n', float('nan')):.1f} N (변화 {r.get('force_dpeak_n', float('nan')):.1f})")
+                    if r["robot_state"] not in (1, 2):
+                        raise SystemExit(f"로봇 상태 {r['robot_state']} (알람·정지) — 펜던트에서 해제 후 대기 자세로")
                     scale()
                     movel(start6, vel=opt.return_vel * scale(), acc=opt.return_vel * 2 * scale())
                     mwait()

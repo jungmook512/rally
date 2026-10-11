@@ -13,7 +13,7 @@
     python3 scripts/mode3_servol_test.py --run --tests step sine --dirs -y +u -u --amp 3 --freqs 0.5 1 2 --rates 30 60
 결과 CSV: data/measure/mode3_servol_MMDD_HHMM.csv (한 줄 = 한 번 시험).
 안전: servol 은 두산 속도 슬라이더·Safety Zone 감속을 따르지 않는다 → 매 명령 전에 /rally/safety/status 를 보고 NORMAL 이 아니면
-      즉시 정지(move_stop) 후 끝냄 (SLOW 도 멈춤 — 이 시험은 감속 배율을 적용하지 않음). 폭은 5 cm 까지만, 시험마다 대기 자세로 천천히 복귀.
+      즉시 정지(move_stop) 후 끝냄 (SLOW 도 멈춤 — 이 시험은 감속 배율을 적용하지 않음). −u 폭은 8 cm 까지(자기충돌), 시험마다 대기 자세로 천천히 복귀.
 DSR_ROBOT2 는 rally_robot.dsr_helpers.init_dsr() 뒤에 import (CLAUDE.md).
 """
 from __future__ import annotations
@@ -30,7 +30,8 @@ import rclpy
 
 from mode3_reach_test import JOINT_VMAX, ROOT, Kin, Watch, analyse, directions, in_workspace
 
-AMP_MAX_CM = 5.0
+AMP_MAX_DOWN_CM = 8.0     # −u: 대기 자세에서 약 9.4 cm 에 두산 자기충돌 (10/11 실측). −y·+u 는 폭 상한 없이 계획(IK·관절 속도·작업 공간)으로만 거름 (10/12 정정인)
+ROBOT_OK = (1, 2)         # 두산 get_robot_state: 1 STANDBY · 2 MOVING. 3 SAFE_OFF · 5 SAFE_STOP 등은 알람·정지
 DIRS = ("-y", "+u", "-u")
 
 
@@ -101,7 +102,7 @@ def main() -> int:
     ap.add_argument("--run", action="store_true", help="실제로 로봇을 움직임 (없으면 계획만)")
     ap.add_argument("--tests", nargs="+", default=["step", "sine"], choices=["step", "sine"])
     ap.add_argument("--dirs", nargs="+", type=str.strip, default=list(DIRS), choices=list(DIRS))
-    ap.add_argument("--amp", type=float, default=3.0, help=f"cm (최대 {AMP_MAX_CM})")
+    ap.add_argument("--amp", type=float, default=3.0, help=f"cm (−u 는 최대 {AMP_MAX_DOWN_CM})")
     ap.add_argument("--freqs", type=float, nargs="+", default=[0.5, 1.0, 2.0], help="sine Hz")
     ap.add_argument("--rates", type=float, nargs="+", default=[30.0, 60.0], help="목표 보내는 주기 Hz")
     ap.add_argument("--cycles", type=int, default=3, help="sine 반복 수")
@@ -113,8 +114,8 @@ def main() -> int:
     ap.add_argument("--return-vel", type=float, default=100.0, help="대기 자세 복귀 mm/s")
     ap.add_argument("--settle", type=float, default=1.0, help="시험 사이 정지 s")
     opt = ap.parse_args([a + " " if a in ("-y", "-u") else a for a in sys.argv[1:]])   # "-y" 를 값으로 (reach 시험과 같음)
-    if opt.amp > AMP_MAX_CM:
-        print(f"--amp {opt.amp} cm > {AMP_MAX_CM} cm — 이 시험은 작은 폭만")
+    if "-u" in opt.dirs and opt.amp > AMP_MAX_DOWN_CM:
+        print(f"-u 는 {AMP_MAX_DOWN_CM} cm 까지 (자기충돌 약 9.4 cm) — --dirs 에서 -u 를 빼거나 --amp 를 줄일 것")
         return 1
 
     rclpy.init()
@@ -158,9 +159,9 @@ def main() -> int:
 
     from rally_robot.dsr_helpers import init_dsr, move_stop
     dsr = init_dsr("rally_mode3_servol")
-    from DSR_ROBOT2 import check_motion, get_current_posx, movel, mwait, servol  # noqa: E402  init_dsr 뒤
+    from DSR_ROBOT2 import check_motion, get_current_posx, get_robot_state, movel, mwait, servol  # noqa: E402  init_dsr 뒤
     start6 = list(get_current_posx()[0])
-    out = ROOT / "data" / "measure" / f"mode3_servol_{datetime.now():%m%d_%H%M}.csv"
+    out = ROOT / "data" / "measure" / f"mode3_servol_{datetime.now():%m%d_%H%M%S}.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     rows = []
 
@@ -208,11 +209,14 @@ def main() -> int:
                     cmd.append(s)
                 wait_still()
                 time.sleep(0.3)
+                state = get_robot_state()       # servol 알람은 반환값으로 안 잡힘 (10/11 −u 2 Hz·60 Hz 관절 속도 알람)
+                if state not in ROBOT_OK:
+                    err = (err + " · " if err else "") + f"로봇 상태 {state} (알람·정지 — 펜던트에서 해제)"
                 smp = w.take(t_start)
                 t_act = [t - t_start for t, _ in smp]
                 s_act = [float((p - p0) @ d) for _, p in smp]
                 row = dict(test=kind, dir=name, amp_cm=opt.amp, freq_hz=f, rate_hz=rate, vel=opt.vel, acc=opt.acc,
-                           servo_time=opt.time, rep=rep + 1, error=err, **send_stats(sent))
+                           servo_time=opt.time, rep=rep + 1, error=err, robot_state=state, **send_stats(sent))
                 if kind == "step":
                     row.update(analyse(smp, t_start, p0, p0 + d * opt.amp / 100.0, d))
                 else:
@@ -226,6 +230,8 @@ def main() -> int:
                          f"오차 {row.get('rms_err_mm', float('nan')):.1f} mm")
                       + f" · 힘 최대 {row.get('force_peak_n', float('nan')):.1f} N"
                       + (f" · {err}" if err else ""))
+                if state not in ROBOT_OK:
+                    raise SystemExit(err)
                 w.wait_normal()
                 safe_or_stop()
                 movel(start6, vel=opt.return_vel, acc=opt.return_vel * 2)
