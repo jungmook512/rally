@@ -22,7 +22,7 @@ OK = (True, {"success": True, "contact_force_peak": 3.0})
 
 def cfg():
     c = yaml.safe_load((CONFIG / 'skills.yaml').read_text())
-    c['mode1'].update(catch_timeout_s=.01, hand_clear_wait_s=.02)
+    c['mode1'].update(catch_timeout_s=.01, hand_clear_wait_s=.02, hand_hold_s=0.0)   # 손 머묾은 test_lane_waits_for_hand_to_stay 에서
     return c
 
 
@@ -101,6 +101,31 @@ def test_hand_arrives_during_wait():
     assert client.sent == 0 and tree.status == Status.RUNNING
     session.get_context().hand = hand()
     assert run(tree) == Status.SUCCESS and client.sent == 1 and len(published) == 1
+
+
+def test_lane_waits_for_hand_to_stay(monkeypatch):
+    # 10/11 실로봇: 지나가는 손 한 프레임으로 레인 0 → 치기. 손바닥이 hand_hold_tol_m 안에 hand_hold_s 머문 뒤 그 레인으로
+    clock = [0.]
+    monkeypatch.setattr(m, 'time', NS(monotonic=lambda: clock[0]))
+    c = cfg()
+    c['mode1'].update(hand_hold_s=1.5, hand_hold_tol_m=.04)
+    client, session, _ = arrange([OK], c)
+    lanes = c['mode1']['lanes']
+    y0, y1 = float(lanes[0]['start'][1]), float(lanes[1]['start'][1])
+    session.get_context().hand = hand(y=y0)            # 레인 0 위를 지나가는 손
+    tree = m.build_trial(session)
+    tree.tick_once()
+    clock[0] = .5
+    session.get_context().hand = hand(y=y1)            # 레인 1 로 옮겨 감 → 다시 셈
+    tree.tick_once()
+    clock[0] = 1.9
+    session.get_context().hand = hand(y=y1)
+    tree.tick_once()
+    assert client.sent == 0                             # 레인 1 에 1.4 s — 아직
+    clock[0] = 2.1
+    session.get_context().hand = hand(y=y1)
+    tree.tick_once()
+    assert client.sent == 1 and client.goals[-1].lane == 1
 
 
 @pytest.mark.parametrize('bad', ['missing', 'nan', 'negative', 'range', 'speed_range', 'lane', 'table', 'unreachable'])

@@ -246,3 +246,11 @@ def test_grasp_wrist_nan_when_unknown():
     assert grasp_wrist_deg(h, now) == 35.0                    # 가까워서 detected=false 여도 필터가 유지한 값
     assert math.isnan(grasp_wrist_deg(None, now))
     assert math.isnan(grasp_wrist_deg(h, now + 2_000_000_000))  # 오래된 메시지
+
+
+def test_rack_drop_approach_is_up_and_back():
+    # 10/11: 놓는 자리 바로 위가 아니라 위 6 cm · −x 6 cm 에서 대각선으로 (자세는 그대로)
+    from rally_robot.skills.return_ball import rack_drop_approach
+    drop = [462.5, 289.8, 76.3, -171.6, -157.3, -92.0]
+    assert rack_drop_approach(drop, 0.06, 0.06) == pytest.approx([402.5, 289.8, 136.3, -171.6, -157.3, -92.0])
+    assert rack_drop_approach(drop, 0.06, 0.0) == pytest.approx([462.5, 289.8, 136.3, -171.6, -157.3, -92.0])   # 예전 (수직)

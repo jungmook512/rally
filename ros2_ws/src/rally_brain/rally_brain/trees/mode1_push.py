@@ -29,6 +29,8 @@ HAND_VIEW_SERVICE = "/rally/robot/go_hand_view"
 DEFAULTS: dict[str, Any] = {**HAND_DEFAULTS, "balls_per_cycle": 4, "push_speed_range": [0.05, 0.35],
                            "hand_max_age_s": 1.0, "patient_margin_m": 0.05,
                            "hand_clear_m": 0.20, "hand_clear_log_s": 2.0,
+                           # 레인 결정: 손바닥이 hand_hold_tol_m 안에서 hand_hold_s 머물러야 (10/11 실로봇: 지나가는 손 한 프레임으로 레인 0 → 치기)
+                           "hand_hold_s": 1.5, "hand_hold_tol_m": 0.04,
                            # 정지 위치: 받기 관측 중 손 보기 자세 카메라(SceneContext.objects)로, 손이 쥐기 전까지만 잰다
                            # still_s 짧게: 공은 로봇이 손 보기 자세에 오기 전에 이미 멈춰 있다 (10/8 시뮬: 치고 ≈ 4.6 s 뒤 도착)
                            "stop_still_s": 0.3, "stop_tol_m": 0.01, "stop_lane_halfwidth_m": 0.07,
@@ -278,7 +280,8 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
 
     def start() -> bool:
         state.start()
-        state.data.update(caught=None, returned=False, notes="", push=None, stop=None, stop_d=math.nan)
+        state.data.update(caught=None, returned=False, notes="", push=None, stop=None, stop_d=math.nan,
+                          hand_hold=StopWatch(cfg["hand_hold_s"], cfg["hand_hold_tol_m"]), logged_lane=None)
         if not session.safe() or not hand_ready():
             state.data["notes"] = "no_hand"
             record()
@@ -293,7 +296,7 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
             record()
             return False
         state.data.update(plan)
-        log.info(f"[모드 1] 고정 목표 레인 {lane} · 목표 {plan['target_d']:.3f} m · 속도 {plan['speed']:.3f} m/s")
+        log.info(f"[모드 1] 손 확인 (지금 레인 {lane}) — 손이 {cfg['hand_hold_s']:.1f} s 머물면 그 레인으로")
         return True
 
     def record() -> None:
@@ -319,13 +322,20 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
         ctx = session.get_context()
         ready = False
         prompt = cfg["start_wait_prompt"]
-        if hand_ready() and ctx.safety.level == SafetyStatus.LEVEL_NORMAL:
+        p = ctx.hand.palm_pose.position if hand_ready() else None
+        pos = None if p is None else (p.x, p.y)
+        held = pos if cfg["hand_hold_s"] <= 0 else state.data["hand_hold"].add(time.monotonic(), pos)
+        if held is not None and ctx.safety.level == SafetyStatus.LEVEL_NORMAL:
             try:
                 lane = lane_for_hand(cfg, ctx.hand)
                 plan = plan_push(ctx.hand, lane, session.difficulty.get(1, 0), cfg, session.table_cfg)
                 state.data.update(plan)
                 ready = plan["reach_actual"] >= plan["reach_requested"]
-                if not ready:
+                if ready and state.data.get("logged_lane") != lane:   # ready_to_push 는 대기·전송 확인에서 두 번 불린다
+                    state.data["logged_lane"] = lane
+                    log.info(f"[모드 1] 손이 {cfg['hand_hold_s']:.1f} s 머묾 → 레인 {lane} · 목표 {plan['target_d']:.3f} m · "
+                             f"속도 {plan['speed']:.3f} m/s")
+                else:
                     prompt = cfg["hand_start_prompt"]
             except ValueError:
                 # 최초 설정 오류는 start에서 기록. 대기 중 잘못된 입력은 명령으로 쓰지 않는다.

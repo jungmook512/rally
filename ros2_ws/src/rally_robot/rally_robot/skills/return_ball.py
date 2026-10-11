@@ -7,8 +7,9 @@
   out_of_reach : 공이 레인 안에 있지만 로봇이 닿는 곳(return_reach_x_max_m, 중앙선 앞)보다 멀다 → 그대로 기다림.
                  brain 이 이 피드백을 보고 "공을 로봇 쪽으로 굴려 주세요" 안내 (timeout_s 넘으면 ball_out_of_reach)
   pickup       : 공 위 → 멈춤 → 순응 → 천천히 하강, 접촉에서 멈춤 → 쥠 → 들기 (PushBall 과 같은 집기)
-  to_rack      : 거치대 맨 윗부분 위(rack_drop_posx + rack_drop_above_m)로 관절 이동 → rack_drop_posx 로 내려감
-  drop         : 그리퍼 열기 → 공이 레일을 따라 굴러 내려감 → 위로 빠짐
+  to_rack      : 놓는 자리에서 위로 rack_drop_above_m, x 로 −rack_drop_back_m 인 접근점으로 관절 이동 → 대각선 직선으로 rack_drop_posx.
+                 (10/11 정정인: 바로 위에서 수직으로 내려가면 쥔 공이 거치대에 부딪힘)
+  drop         : 그리퍼 열기 → 공이 레일을 따라 굴러 내려감 → 같은 대각선으로 접근점까지 빠짐
   hand_view    : 손 보기 자세 (다음 시도의 레인 고르기)
 거치대 좌표 rack_drop_posx 는 직접교시 (공을 쥐고 손끝을 거치대 맨 윗부분 위에 대고 scripts/print_pose.py). 없으면 시작 전에 중단.
 공통 규칙 — 단계 사이 node.check_stop(goal_handle). 이동은 move_checked / movej_to_pose (속도 skills.yaml motion:).
@@ -23,8 +24,11 @@ from rally_robot.skills.push_ball import _joint, _speeds, hand_view_joint, hand_
 
 DEFAULTS = dict(
     rack_drop_posx=None,           # 거치대 맨 윗부분에 공을 놓는 TCP 자세 (mm, ZYZ deg) — 직접교시
-    rack_drop_above_m=0.06,        # 그 위 이만큼에서 내려간다
+    rack_drop_above_m=0.06,        # 접근점: 놓는 자리 위로 이만큼 (z)
+    rack_drop_back_m=0.06,         # 접근점: 놓는 자리에서 로봇 쪽(−x)으로 이만큼 → 대각선으로 들어간다
     rack_drop_wait_s=0.5,          # 연 뒤 공이 굴러 내려갈 시간
+    rack_joint_vel_deg_s=30.0,     # 공 집고 접근점으로 가는 관절 이동 속도·가속 상한 (motion: joint_* 와 작은 쪽)
+    rack_joint_acc_deg_s2=60.0,    #   10/11 실로봇: 60/120 에서 출발 1.3 s 만에 관성 가짜 힘 force_limit STOP (접촉 없음)
     return_wait_s=20.0,            # goal.timeout_s 가 0 이면 — 공이 닿는 곳에 올 때까지 기다림
     return_reach_x_max_m=0.55,     # 공 중심 x 가 이 이하여야 집는다 (TCP 가 safety workspace_x_max 0.57 안)
     return_lane_halfwidth_m=0.07,  # 레인 통로 반폭 (레인 벽 간격 ≈ 11.7 cm 의 반 + 여유) — return_zone_enabled false 일 때만
@@ -34,6 +38,11 @@ DEFAULTS = dict(
     return_zone_y_min_m=-0.30,
     return_zone_y_max_m=0.21,      # 이보다 +y 는 거치대(y ≈ 0.28) — 거치대 공을 집지 않게
 )
+
+
+def rack_drop_approach(drop, above_m, back_m):
+    """놓는 자리 posx (mm, deg) → 접근점 posx: z +above_m, x −back_m, 자세 그대로."""
+    return [drop[0] - back_m * 1000.0, drop[1], drop[2] + above_m * 1000.0, *drop[3:]]
 
 
 def lane_ball_candidates(objects, cfg, lanes, lane, table_z):
@@ -132,10 +141,11 @@ def execute(node):
             res.ball_position.z = tz + cfg["ball_radius_m"]
 
             drop = [float(v) for v in cfg["rack_drop_posx"]]
-            drop_above = [drop[0], drop[1], drop[2] + cfg["rack_drop_above_m"] * 1000.0, *drop[3:]]
+            drop_above = rack_drop_approach(drop, cfg["rack_drop_above_m"], cfg["rack_drop_back_m"])
             phase("to_rack")
-            movej_to_pose(node, drop_above, *_joint(node))
-            move_checked(node, drop, cv, ca)
+            jv, ja = _joint(node)
+            movej_to_pose(node, drop_above, min(jv, cfg["rack_joint_vel_deg_s"]), min(ja, cfg["rack_joint_acc_deg_s2"]))
+            move_checked(node, drop, cv, ca)             # 대각선 직선 (접촉 속도)
 
             phase("drop")
             open_mm, grip_n = node.gripper_cfg("ball")
@@ -144,7 +154,7 @@ def execute(node):
                 raise SkillAbort("gripper_unavailable")
             node.holding = False
             time.sleep(cfg["rack_drop_wait_s"])
-            move_checked(node, drop_above, tv, ta)
+            move_checked(node, drop_above, cv, ca)       # 같은 대각선으로 빠짐 (열린 손가락이 거치대에 걸리지 않게 천천히)
 
             hv = hand_view_pose(cfg, lanes, table)
             if cfg["hand_view"] and hv:
