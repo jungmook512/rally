@@ -196,9 +196,9 @@ brain:
   difficulty_range: [-3, 3]
   # 세션 시작 때 몸 자세 기준(평소 자세) 잡기 — /rally/perception/body/reset_baseline (#83, INTERFACES 3절)
   #   안내 → 말이 끝날 즈음 호출 → body_pose 가 약 2 s 바른 자세를 기준으로. body_pose 가 없으면 경고만 남기고 세션은 계속
-  body_baseline_prompt: "기준 자세를 잡을게요. 바르게 서 주세요."
+  body_baseline_prompt: "기준 자세를 잡을게요. 바르게 서서 잠깐 가만히 있어 주세요."
   body_baseline_prompt_wait_s: 2.5  # 안내를 듣고 자세를 잡을 시간
-  body_baseline_hold_s: 2.5         # 호출 뒤 기준을 잡는 동안 (body_pose 약 2 s + 여유)
+  body_baseline_hold_s: 3.5         # 호출 뒤 기준을 잡는 동안 — body_pose 는 어깨가 잘 보이는 30 프레임(15 Hz 최소 2 s)이 모여야 확정, 놓친 프레임 여유 (#110 리뷰)
 
 mode3_challenge:
   enabled: true                     # CP13 결정에 따라 false 로 시연에서 제외

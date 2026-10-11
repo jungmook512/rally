@@ -31,8 +31,8 @@ from rally_interfaces.msg import SafetyStatus, SceneContext, TrialResult
 
 MODE_NAMES = {1: "공 굴리기", 3: "캐치볼", 5: "건네고 받기", 7: "팔씨름"}
 BODY_BASELINE_SERVICE = "/rally/perception/body/reset_baseline"
-BODY_BASELINE_DEFAULTS = {"body_baseline_prompt": "기준 자세를 잡을게요. 바르게 서 주세요.",
-                          "body_baseline_prompt_wait_s": 2.5, "body_baseline_hold_s": 2.5}
+BODY_BASELINE_DEFAULTS = {"body_baseline_prompt": "기준 자세를 잡을게요. 바르게 서서 잠깐 가만히 있어 주세요.",
+                          "body_baseline_prompt_wait_s": 2.5, "body_baseline_hold_s": 3.5}
 NOT_PERFORMANCE = {"no_hand"}   # 환자가 자리에 없었던 시도 — 기록은 하되 난이도 규칙에는 안 셈
 
 TRIAL_BUILDERS: dict[int, Callable[["Session"], py_trees.behaviour.Behaviour]] = {

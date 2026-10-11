@@ -131,7 +131,7 @@ def test_body_baseline_runs_once_before_first_mode():
     tree = build_session_tree(s, [5], 1)
     assert tree.children[0].name == "자세 기준 잡기"
     assert tick_until(tree, lambda: s.current_mode == 5)
-    assert said[0] == "기준 자세를 잡을게요. 바르게 서 주세요."
+    assert said[0] == "기준 자세를 잡을게요. 바르게 서서 잠깐 가만히 있어 주세요."
     assert len(calls) == 1 and s.body_baseline_done
     # 모드 전환으로 트리를 새로 만들어도 다시 잡지 않는다
     assert build_session_tree(s, [7], 1).children[0].name != "자세 기준 잡기"
