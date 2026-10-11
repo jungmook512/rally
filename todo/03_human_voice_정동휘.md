@@ -8,9 +8,9 @@ brain 모드 1 이 `/rally/perception/hand`(HandState)를 이렇게 쓴다 (`ral
 - **레인 고르기**: `palm_pose.position.y`(**base_link**) 에 가장 가까운 레인 → header.frame_id 가 base_link 가 아니면 무작위로 대체
 - **잘 받음 판정**: `grip_closure` ≥ 0.6 을 0.3 s 유지(쥠) → ≤ 0.3 (폄)
 - **손 빼기**: `distance_to_centerline` ≥ 0.25 m 가 되면 로봇이 공을 회수
-- [ ] 로봇·인식 PC 에서 `hand_pose` 를 RealSense 토픽에 맞게 실행 — `vision_local.sh` 카메라는 `/camera/color/image_raw`·`/camera/aligned_depth_to_color/image_raw`·`/camera/color/camera_info` (노드 기본값 `/camera/camera/...` 과 다름)
-- [ ] 카메라 → base_link tf 가 이미지 시각 기준으로 나오는지 (팔이 손 보기 자세로 움직임) — 안 되면 distance NaN → 안전감시 SLOW
-- [ ] **테니스공을 쥔 손이 주먹(GESTURE_FIST → 비상정지)으로 잡히는지** 확인 — 잡히면 매 시도마다 로봇이 멈춤. 안전 규칙이라 임의로 끄지 말고 팀과 결정
+- [x] 로봇·인식 PC 에서 `hand_pose` 를 RealSense 토픽에 맞게 실행 — `vision_local.sh` 카메라는 `/camera/color/image_raw`·`/camera/aligned_depth_to_color/image_raw`·`/camera/color/camera_info` (노드 기본값 `/camera/camera/...` 과 다름). 10/8 실기 체크리스트 1~10 통과, 실행은 `scripts/hand_local.sh`(#114)·pc2 launch(#109)
+- [x] 카메라 → base_link tf 가 이미지 시각 기준으로 나오는지 (팔이 손 보기 자세로 움직임) — 안 되면 distance NaN → 안전감시 SLOW. 10/8 확인 (체크리스트 8, 영상 시각 tf 없으면 0.15 s 안 최신 tf #91). 지금은 bringup URDF 카메라 체인(설계값, 약 1 cm·2.5° 치우침) — #106 뒤 camera_tf 로
+- [x] **테니스공을 쥔 손이 주먹(GESTURE_FIST → 비상정지)으로 잡히는지** 확인 — 잡혀서 매 시도마다 멈춤 → 팀 결정으로 주먹 정지 삭제 (#97, 10/8 머지). 더 확인할 것 없음
 - [ ] 공을 쥐었다 폈을 때 `grip_closure` 값 범위 기록 → 임계값(0.6 / 0.3) 확정
 
 ## 지금 상태 (10/8 기준) — 한눈에
@@ -72,7 +72,7 @@ brain 모드 1 이 `/rally/perception/hand`(HandState)를 이렇게 쓴다 (`ral
   - [ ] 기록 쪽(정정인 `handover.py` 106행): 안 보이면 0 → NaN, 오래된 값 확인 → #79. 범위(조정묵 `embeddings.yaml`) → #68 댓글
 - [ ] 음성 시나리오: "랠리야, 훈련 시작" → "건네기 시작할게요" → … 문구 초안, 되묻기 문구 — 문구 15개(모드 5·7 안내 + 난이도·휴식·자세 교정)를 #119 로 조정묵에게 넘김 (10/11, `phrase_problem()` 통과). 되묻기는 Day 6 '음성 의도 고도화'. (10/8 에 적힌 '팀원에게 맡김' 은 사실이 아니었음 — 실제로 맡긴 적 없음)
 - [x] #77(카메라 tf) 대응: 손 깊이에 `depth_scale`(0.971) 곱하기 + 영상 시각 tf 없으면 0.15 s 안 최신 tf 로 대체 — #91 (깊이 오차 중간값 2.9 mm, yaml 없으면 1.0 이라 #77 보다 먼저 머지돼도 됨)
-- [ ] 주먹 정지 제거 (#59 3단계, 정정인 동의): 정정인 NaN→SLOW → tf(#77) → 체크리스트 8~10 → 손 노드 주먹 → `/rally/safety/estop` 발행 제거 PR + 기획서 "3중 정지"·FR-07 문구
+- [x] 주먹 정지 제거 (#59 3단계, 정정인 동의) — #97 (10/8 머지, 기획서 3중 정지·FR-07 문구 포함): 정정인 NaN→SLOW → tf(#77) → 체크리스트 8~10 → 손 노드 주먹 → `/rally/safety/estop` 발행 제거 PR + 기획서 "3중 정지"·FR-07 문구
 - [ ] 모드 5 통합 시연 참여
 
 ## Day 4 — 모드 3
@@ -83,8 +83,8 @@ brain 모드 1 이 `/rally/perception/hand`(HandState)를 이렇게 쓴다 (`ral
   - 환자는 모든 모드를 **서서** (10/8 결정). 웹캠은 측면 대각 **높이 약 2 m** (모드 3 공 비행도 같이), 훈련하는 팔 쪽, 1 m 이상
 - [ ] (박성현과) 릴리스 순간 검출: 손 마스크·공 마스크 분리 + 손 속도 피크 교차 확인 — 요격 타이머의 시작점이라 지연 최소화
 - [ ] 릴리스 속도·각도(손목 속도 벡터) 계산 → TrialResult metrics (환자 던지기 지표)
-- [ ] **3D 출력: 패드 손잡이** (마감 Day 4, 10/8 출력 걸어 둠) — 벨크로 패드(지름 15 cm) 뒤에 붙여 RG2 가 잡는 손잡이. 지금은 육각렌치를 테이프로 붙여 씀. RealSense 시야를 가리지 않게 패드에서 튀어나오는 구조, 충격 시 회전 방지 (기획서 CP12)
-- [ ] **3D 출력: 패드 거치대** (마감 Day 4, 10/8 출력 걸어 둠) — 로봇이 받은 패드를 걸어두는 곳. 정정인 "패드 거치대에 걸기 동작" · `DetachBall`(공 떼기) 이 이 위에서 이뤄지므로 위치·높이·패드 면 방향을 정정인과 맞춤
+- [x] **3D 출력: 패드 손잡이** (10/11 완료) (마감 Day 4, 10/8 출력 걸어 둠) — 벨크로 패드(지름 15 cm) 뒤에 붙여 RG2 가 잡는 손잡이. 지금은 육각렌치를 테이프로 붙여 씀. RealSense 시야를 가리지 않게 패드에서 튀어나오는 구조, 충격 시 회전 방지 (기획서 CP12)
+- [x] **3D 출력: 패드 거치대** (10/11 완료) (마감 Day 4, 10/8 출력 걸어 둠) — 로봇이 받은 패드를 걸어두는 곳. 정정인 "패드 거치대에 걸기 동작" · `DetachBall`(공 떼기) 이 이 위에서 이뤄지므로 위치·높이·패드 면 방향을 정정인과 맞춤
 
 ## Day 5 — 모드 1 · 7 지원
 - [ ] **모드 1 `rally_vision/predictor.py`** (박성현 항목을 맡음, 10/7): 칼만(위치·속도, 등속) + 마찰 감속 → `velocity`·`predicted_stop`·`predicted_stop_time`·`prediction_confidence`. 브랜치 `feat/rally_vision/kalman-predictor`
