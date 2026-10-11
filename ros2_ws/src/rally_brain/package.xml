@@ -15,6 +15,7 @@
   <exec_depend>py_trees</exec_depend>
   <exec_depend>py_trees_ros</exec_depend>
   <exec_depend>rally_bringup</exec_depend>
+  <exec_depend>rally_db</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>python3-rdflib</exec_depend>
   <exec_depend>python3-redis</exec_depend>

@@ -6,6 +6,7 @@
   1. 수치 요약 (항상) — 모드별 시도·성공률·대표 값 평균·개선율·시간·난이도. 계산은 metrics.py (시맨틱 레이어) 와 같은 정의
   2. LLM 해석 (선택) — 모드별 **집계 숫자만** 보낸다(세션 ID·notes·좌표열·영상 없음). 함수 호출 + pydantic 검증 + 시간 제한.
      키가 없거나 실패·시간 초과·형식 오류면 수치 요약만 남기고 이유를 적는다. 세션·로봇 제어와 무관(끝난 뒤에만).
+  3. 지식 그래프 근거 (DB 가 되면) — graph_rag.py: 비슷한 과거 시도 + 보상 동작 관계. 표는 리포트에, 집계 숫자는 LLM 입력 "graph" 에.
 LLM 은 측정값과 추정을 구분하고 임상 효과를 단정하지 않는다 (prompts/session_report.md).
 """
 from __future__ import annotations
@@ -20,7 +21,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
 
-from rally_brain import metrics
+from rally_brain import graph_rag, metrics
 from rally_interfaces.msg import TrialResult
 
 MODE_NAMES = {1: "공 굴리기", 3: "캐치볼", 5: "건네고 받기", 7: "팔씨름"}
@@ -142,8 +143,10 @@ def numeric_markdown(rows: Sequence[ModeSummary], started: datetime, ended: date
 OUTCOME_KO = {"succeeded": "완료", "aborted": "중단", "canceled": "취소"}
 
 
-def llm_request(rows: Sequence[ModeSummary], minutes: float, outcome: str) -> dict[str, Any]:
-    """LLM 에 보내는 것 — 모드별 집계 숫자와 이름표만. 세션 ID·notes 원문·좌표·영상은 넣지 않는다."""
+def llm_request(rows: Sequence[ModeSummary], minutes: float, outcome: str,
+                graph: Sequence[graph_rag.GraphMode] | None = None) -> dict[str, Any]:
+    """LLM 에 보내는 것 — 모드별 집계 숫자와 이름표만. 세션 ID·notes 원문·좌표·영상은 넣지 않는다.
+    graph 가 있으면 "graph" 에 Graph RAG 집계 (graph_rag.llm_payload, 역시 숫자와 온톨로지 key 만)."""
     def num(v: float | None, nd: int = 3) -> float | None:
         return None if v is None else round(float(v), nd)
     return {
@@ -154,7 +157,7 @@ def llm_request(rows: Sequence[ModeSummary], minutes: float, outcome: str) -> di
                    "key_mean": num(r.key_mean, 1), "key_measured": r.key_measured,
                    "improvement": num(r.improvement), "duration_mean_s": num(r.duration_mean_s, 1),
                    "final_level": r.level, "excluded_count": sum(r.excluded.values())} for r in rows],
-    }
+    } | ({"graph": graph_rag.llm_payload(graph)} if graph else {})
 
 
 def llm_markdown(reply: ReportReply) -> str:
@@ -189,14 +192,21 @@ def ask_llm(llm: LlmCall | None, system_prompt: str, request: dict, timeout_s: f
 
 def build_report(trials: Sequence[TrialResult], difficulty: dict[int, int], started: datetime, ended: datetime,
                  outcome: str, llm: LlmCall | None, system_prompt: str, timeout_s: float,
-                 cfg: dict[str, Any] | None = None) -> tuple[str, str]:
-    """(report_md, source). source = "llm" | "numeric:<이유>". 시도가 없으면 LLM 을 부르지 않는다."""
+                 cfg: dict[str, Any] | None = None, graph: Sequence[graph_rag.GraphMode] | None = None,
+                 graph_note: str = "") -> tuple[str, str]:
+    """(report_md, source). source = "llm" | "numeric:<이유>". 시도가 없으면 LLM 을 부르지 않는다.
+    graph = Graph RAG 집계 (없으면 graph_note 에 이유 — 리포트에 한 줄로 남김)."""
     rows = summarize(trials, difficulty, cfg)
     md = numeric_markdown(rows, started, ended, outcome)
     if not rows:
         return md, "numeric:시도 없음"
+    if graph:
+        md += "\n\n" + graph_rag.markdown(graph, MODE_NAMES)
+    elif graph_note:
+        md += f"\n\n_지식 그래프 근거 없음 ({graph_note})_"
     t0 = time.monotonic()
-    reply, why = ask_llm(llm, system_prompt, llm_request(rows, (ended - started).total_seconds() / 60.0, outcome), timeout_s)
+    request = llm_request(rows, (ended - started).total_seconds() / 60.0, outcome, graph)
+    reply, why = ask_llm(llm, system_prompt, request, timeout_s)
     if reply is None:
         return md + f"\n\n_해석 없음 ({why}) — 수치 요약만 기록했습니다._", f"numeric:{why}"
     return md + "\n\n" + llm_markdown(reply), f"llm:{time.monotonic() - t0:.1f}s"

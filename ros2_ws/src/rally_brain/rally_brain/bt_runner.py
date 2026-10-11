@@ -47,7 +47,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from std_msgs.msg import String
 
-from rally_brain import hand_stop, rule_layer, metrics, session_report
+from rally_brain import graph_rag, hand_stop, rule_layer, metrics, session_report
 from rally_brain.config import config_path, load_skills
 from rally_brain.behaviours import SkillCall
 from rally_brain.knowledge import ontology
@@ -608,8 +608,10 @@ class BtRunner(Node):
                              float(cfg.get("report_timeout_s", 15.0)), tool_name=session_report.REPORT_TOOL,
                              description="세션 기록 해석 작성", base_url="https://api.openai.com/v1")   # rest_advisor 와 같게
             prompt = load_prompt(cfg.get("prompt_session_report", "prompts/session_report.md"))
+            graph, graph_note = self._graph_context(session_id, len(trials), cfg)
             md, source = session_report.build_report(trials, difficulty, started_at, ended_at, outcome, llm, prompt,
-                                                     float(cfg.get("report_timeout_s", 15.0)))
+                                                     float(cfg.get("report_timeout_s", 15.0)),
+                                                     graph=graph, graph_note=graph_note)
         except Exception as e:  # noqa: BLE001 — 리포트 실패가 노드를 죽이지 않게. 수치만이라도
             self.get_logger().error(f"[리포트] 생성 실패 ({type(e).__name__}: {e}) — 수치 요약만")
             rows = session_report.summarize(trials, difficulty)
@@ -617,6 +619,32 @@ class BtRunner(Node):
         self._report_pub.publish(String(data=json.dumps(
             {"session_id": session_id, "report_md": md, "source": source}, ensure_ascii=False)))
         self.get_logger().info(f"[리포트] 세션 {session_id[:8]} 발행 ({source}, {len(md)}자)")
+
+    def _graph_context(self, session_id: str, expected: int, cfg: dict) -> tuple[list | None, str]:
+        """Graph RAG 집계 (리포트 스레드). (rows, "") 또는 (None, 이유). DB·그래프가 안 돼도 리포트는 그대로."""
+        if not cfg.get("report_graph_enabled", True) or expected == 0:
+            return None, ""
+        repo = None
+        try:
+            from rally_db.convert import session_uuid
+            from rally_db.repository import Repository
+            repo = Repository()
+            got = graph_rag.fetch(repo, session_uuid(session_id), expected, int(cfg.get("report_graph_k", 5)),
+                                  float(cfg.get("report_graph_wait_s", 3.0)))
+            if got is None:
+                return None, "DB 에 그래프 테이블 없음 — schema_004_graph.sql 적용 필요"
+            rows = graph_rag.summarize(*got)
+            self.get_logger().info(f"[리포트] 그래프 근거 — 이번 시도 {len(got[0])}/{expected}, 비슷한 과거 시도 {len(got[1])}")
+            return rows, ""
+        except Exception as e:  # noqa: BLE001 — DB 끊김·SQL 오류 무엇이든 리포트에서만 뺀다
+            self.get_logger().warn(f"[리포트] 그래프 근거 실패 ({type(e).__name__}: {e})")
+            return None, f"DB 조회 실패 {type(e).__name__}"
+        finally:
+            if repo is not None:
+                try:
+                    repo.close()
+                except Exception:  # noqa: BLE001
+                    pass
 
     @staticmethod
     def _llm_cfg() -> dict:
