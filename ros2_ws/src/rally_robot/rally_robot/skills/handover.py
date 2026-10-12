@@ -52,7 +52,7 @@ DEFAULTS = dict(present_pose=None, present_margin_m=0.06, present_y_m=0.0, prese
                                    trigger_frac=0.30, hold_s=0.3, freeze_frac=0.10, max_regrasps=3, stale_s=0.5, base_cap=0.15),
                 # 받기 기울기를 손에 든 막대 화면 각도(비전 image_axis)에 맞춤 (10/12) — 제자리 손목 회전만.
                 # 그리퍼 사이에 뭔가 들어오기 시작했거나(freeze_frac) 힘이 걸려 있으면(max_force_n) 안 돌림
-                receive_tilt_follow=dict(enabled=True, class_name="rod", min_conf=0.25, sign=1.0, window_s=1.0, min_samples=3,
+                receive_tilt_follow=dict(enabled=False, class_name="rod", min_conf=0.25, sign=1.0, window_s=1.0, min_samples=3,
                                          deadband_deg=10.0, max_step_deg=20.0, period_s=1.0, speed_scale=0.5, max_force_n=2.0))
 AXES = {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0)}
 
@@ -237,7 +237,8 @@ def execute(node):
                         over_f = over_d = None
                         continue
                     # 기울기 맞춤: 그리퍼 사이에 뭔가 들어오기 시작했거나 무언가 닿아 있으면 돌리지 않는다 (10/12 막대 걸린 채 회전 → force_limit)
-                    if (target is not None and (dd is None or dd < rd["freeze_frac"]) and dev < rt["max_force_n"]
+                    # 깊이를 못 받으면(dd None) 그리퍼 사이를 볼 수 없으므로 돌리지 않는다 — 힘 2 N 하나로만 막지 않게 (#142 리뷰)
+                    if (target is not None and dd is not None and dd < rd["freeze_frac"] and dev < rt["max_force_n"]
                             and now - last_move >= rt["period_s"]):
                         new = tilt_step(cur_tilt, target, rt["deadband_deg"], rt["max_step_deg"])
                         if new is not None:

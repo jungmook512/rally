@@ -288,7 +288,9 @@ handover:
   # ★ 10/12 받기 기울기 = 손에 든 막대의 화면 각도(비전 /rally/perception/objects/image_axis, 신뢰도 min_conf 이상) 1 s 중앙값에 맞춤.
   #   제자리 손목 회전만 (10° 넘게 다를 때, 한 번에 20° 까지, 모드 5 속도 × speed_scale). 그리퍼 사이에 뭔가 들어오기 시작했거나 힘 2 N 넘으면 안 돌림.
   #   손목 각도·손가락 뿌리 줄로는 막대 기울기와 안 맞았다 (10/12 실로봇) → 장갑 끼고 막대만 본다 (HAND=0). 반대로 돌면 sign: -1, 끄기 enabled: false
-  receive_tilt_follow: {enabled: true, class_name: rod, min_conf: 0.25, sign: 1.0, deadband_deg: 10.0, max_step_deg: 20.0, speed_scale: 0.5, max_force_n: 2.0}
+  #   10/12 #142 리뷰: 기본 끔 — 손에 든 막대 인식 모델이 아직 없고, 켜면 받기 대기가 순응 없이(딱딱하게) 돈다. 다시 켜기 전에:
+  #   회전할 때만 순응 해제·대기는 순응, 손에 든 막대 인식 확인. 깊이가 없으면 켜져 있어도 돌리지 않는다
+  receive_tilt_follow: {enabled: false, class_name: rod, min_conf: 0.25, sign: 1.0, deadband_deg: 10.0, max_step_deg: 20.0, speed_scale: 0.5, max_force_n: 2.0}
   place_after_receive: true       # RECEIVE 성공 후 마지막 PickCompliant 자리에 내려놓기
   place_above_m: 0.08
   place_drop_m: 0.01              # ★ 10/12: 실제로 쥐었던 높이 + 이만큼 위에서 그리퍼를 열어 놓음 (정확히 제자리일 필요 없음). 3 cm(실제 4 cm)는 너무 높았음. 0 = 예전처럼 테이블 닿을 때까지 순응 하강

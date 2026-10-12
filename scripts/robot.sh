@@ -5,6 +5,7 @@
 #              (개발 기간 기본 HAND_STOP=off — 손 판정 꺼짐) HAND_STOP=slow|stop scripts/robot.sh nodes  # 리허설·시연은 slow 또는 stop
 #              scripts/robot.sh nodes novision     #   비전 없이
 #              HAND=0 scripts/robot.sh nodes       #   손 인식 없이 (모드 5 장갑 끼고 막대만 볼 때). CONF=0.25 면 약한 검출도 보임
+#                                                  #   ★ HAND=0 은 손 거리 안전 판정이 없다 — 리허설·시연·환자 앞에서는 쓰지 않는다
 #   터미널 4:  scripts/robot.sh brain              # (세션으로 돌릴 때만) brain: context_builder + bt_runner (준비 확인 끔). DB·LLM·음성 없이
 #   터미널 3:  source scripts/robot.sh env         # 명령 터미널 (그 뒤 ros2 action send_goal ... / python3 scripts/...)
 #              scripts/robot.sh session 1          # 모드 1 세션 한 번 (brain 이 레인 무작위로 공 4개). 모드 5 는 session 5
@@ -64,7 +65,7 @@ case "$1" in
     if [ "$2" != "novision" ]; then
       "$ROOT/scripts/vision_local.sh" | sed 's/^/    /'
       if [ "${HAND:-1}" = 0 ]; then                                    # 10/12 모드 5 비전 막대 기울기 시험: 손 인식 끔
-        echo "    [hand] HAND=0 — 손 인식 안 띄움 (손 거리 안전 판정·손목 각도 기록 없음. 모드 1 은 레인 무작위)"
+        echo "    [hand] ★ HAND=0 — 손 인식 안 띄움 (손 거리 안전 판정·손목 각도 기록 없음. 모드 1 은 레인 무작위). 리허설·시연·환자 앞에서는 쓰지 않는다"
         trap '"$ROOT/scripts/vision_local.sh" stop' EXIT
       elif docker image inspect rally/hand_pose:local >/dev/null 2>&1; then   # 손 인식 (모드 1 레인 고르기·받기 판정)
         "$ROOT/scripts/hand_local.sh" | sed 's/^/    /'
