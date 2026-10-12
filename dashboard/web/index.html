@@ -218,10 +218,7 @@
   <h1><span class="brand">RALLY<span>●</span></span></h1>
 <nav id="mode-nav" aria-label="훈련 모드 페이지">
 <a href="#overview" data-page="overview">전체 현황</a>
-<a href="#mode1" data-page="1">모드 1 · 공 굴리기</a>
-<a href="#mode3" data-page="3">모드 3 · 캐치볼 <small>챌린지</small></a>
-<a href="#mode5" data-page="5">모드 5 · 건네고 받기</a>
-<a href="#mode7" data-page="7">모드 7 · 저항 밀기</a>
+<a href="#mode1" id="nav-mode" data-page="mode">훈련</a>
 <a href="#trials" data-page="trials">최근 시도</a>
 <a href="#events" data-page="events">사건 기록</a>
 </nav>
@@ -333,6 +330,7 @@ function renderControl(s) {
     $("proposal-message").textContent = "";
   }
   control = s;
+  if (s && [1, 3, 5, 7].includes(Number(s.mode))) $('nav-mode').setAttribute('href', `#mode${s.mode}`);   // '훈련' 탭 = 지금 진행 중인 모드
   renderModePage();
   controlReceived = performance.now();
   renderProposal();
@@ -574,7 +572,8 @@ function selectPage() {
   const hash=location.hash.slice(1);
   selectedPage=/^mode[1357]$/.test(hash)?hash.slice(4):(['trials','events'].includes(hash)?hash:'overview');
   selectedMode=Object.hasOwn(PAGES,selectedPage)?Number(selectedPage):null;
-  document.querySelectorAll('#mode-nav a').forEach(a=>{if(a.dataset.page===selectedPage)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
+  // 모드 화면은 '훈련' 탭 하나 (모드끼리는 아래 모드별 진행 카드로 옮겨 감)
+  document.querySelectorAll('#mode-nav a').forEach(a=>{if(a.dataset.page===selectedPage||(a.dataset.page==='mode'&&selectedMode!==null))a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
   $('mode-view').hidden=selectedMode===null;
   $('overview-cards').hidden=selectedPage!=='overview';
   $('report-view').hidden=selectedPage!=='overview';

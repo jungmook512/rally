@@ -39,7 +39,7 @@ for(const mode of [1,3,5,7]) {
   assert.match(picture, /aria-label=["'][^"']+["']/);
   assert.equal(get('trials-view').hidden,true);
   assert.equal(get('events-view').hidden,true);
-  assert.equal(nav.find(a=>a.attributes['aria-current']==='page').dataset.page,String(mode));
+  assert.equal(nav.find(a=>a.attributes['aria-current']==='page').dataset.page,'mode');
 }
 run("location.hash='#mode1';selectPage();renderControl({mode:1,phase:'running',bt_node:'손 이탈 확인 대기',updated_at:Date.now()/1000,trial_index:2,difficulty:1});");
 assert.equal(get('step-title').textContent,'손 이탈 대기');
