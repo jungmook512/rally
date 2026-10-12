@@ -267,6 +267,27 @@
   #recent-list .r-res.ok { background:#e2f1e6; color:#2f6b45; } #recent-list .r-res.fail { background:#f6e3e3; color:#9a2525; }
   #recent-list .r-m { color:var(--text); font-variant-numeric:tabular-nums; } #recent-list .r-note { color:var(--muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   #recent-panel .empty { padding:4px 0; }
+  /* 최근 시도·사건 기록 탭 (10/12) */
+  #trials-view .scroll, #events-view .scroll { max-height:calc(100vh - 190px); }
+  .list-head { flex-wrap:wrap; gap:12px; margin-bottom:12px; }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; margin-right:auto; }
+  .chips button { margin:0; padding:5px 12px; font-size:12.5px; border-radius:999px; background:#eef3ef; border:1px solid transparent; color:var(--muted); font-weight:600; }
+  .chips button.on { background:var(--accent); color:#fff; }
+  #trials-view table { font-size:14px; }
+  #trials-view thead { background:var(--panel); }
+  #trials-view th { font-size:12px; font-weight:650; color:var(--muted); border-bottom:1px solid var(--line); padding:8px 10px; }
+  #trials-view td { padding:10px; border-bottom:1px solid #e3ebe5; }
+  #trials-view tbody tr:hover { background:#f1f6f2; }
+  #trials-view td.num { font-variant-numeric:tabular-nums; }
+  .mchip { display:inline-grid; place-items:center; width:22px; height:22px; border-radius:50%; background:#e2efeb; color:var(--accent); font-size:12px; font-weight:700; margin-right:8px; }
+  #trials-view .r-res { display:inline-block; min-width:44px; font-size:12px; font-weight:700; padding:2px 8px; border-radius:999px; text-align:center; }
+  #trials-view .r-res.ok { background:#e2f1e6; color:#2f6b45; } #trials-view .r-res.fail { background:#f6e3e3; color:#9a2525; }
+  ul#events li { align-items:center; padding:9px 4px; border-bottom:1px solid #e3ebe5; }
+  ul#events time { width:72px; color:var(--muted); font-size:13px; }
+  ul#events .kind { flex:none; min-width:52px; text-align:center; font-size:12px; font-weight:700; padding:2px 8px; border-radius:999px; background:#eef3ef; color:var(--muted); }
+  ul#events .kind.safety-normal { background:#e2f1e6; color:#2f6b45; } ul#events .kind.safety-slow { background:#f8ecd0; color:#7a5414; } ul#events .kind.safety-stop { background:#f6e3e3; color:#9a2525; }
+  ul#events .kind.ok { background:#e2efeb; color:var(--accent); } ul#events .kind.fail { background:#f6e3e3; color:#9a2525; }
+  ul#events .kind.voice_intent { background:#ece7f5; color:#5b4a8a; } ul#events .kind.mode_change { background:#e4ecf3; color:#3b5a78; } ul#events .kind.session_report { background:#f1ece2; color:#6b5a3a; }
 </style>
 </head>
 <body>
@@ -349,17 +370,17 @@
     </div>
   </section>
   <section id="trials-view" class="panel" hidden>
-      <h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3H15L19 7V21H6ZM15 3V7H19M9 11H16M9 15H16M9 18H13"/></svg>최근 시도</h2>
+      <div class="panel-top list-head"><h2>최근 시도</h2><div class="chips" id="trial-filter"><button type="button" data-f="" class="on">전체</button><button type="button" data-f="1">1 공 굴리기</button><button type="button" data-f="3">3 캐치볼</button><button type="button" data-f="5">5 건네고 받기</button><button type="button" data-f="7">7 저항 밀기</button></div><span class="stat-line" id="trials-sum"></span></div>
       <div class="scroll">
         <table>
-          <thead><tr><th>#</th><th>모드</th><th>결과</th><th>오차</th><th>시간</th><th>메모</th></tr></thead>
+          <thead><tr><th>회차</th><th>모드</th><th>결과</th><th>오차</th><th>걸린 시간</th><th>메모</th></tr></thead>
           <tbody id="trials"></tbody>
         </table>
         <div class="empty" id="trials-empty">아직 시도 없음</div>
       </div>
   </section>
   <section id="events-view" class="panel" hidden>
-      <h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4A8 8 0 1 1 4 12M4 4V9H9M12 7V12L16 14"/></svg>사건 기록</h2>
+      <div class="panel-top list-head"><h2>사건 기록</h2><span class="stat-line">안전 상태 · 음성 · 모드 변경 · 시도 · 리포트 (최신이 위)</span></div>
       <div class="scroll"><ul id="events"></ul><div class="empty" id="events-empty">아직 사건 없음</div></div>
   </section>
 
@@ -380,7 +401,7 @@ const KINDS = {safety_change: "안전", voice_intent: "음성", mode_change: "�
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 const modeName = (m) => m ? `${m} ${MODES[m] ?? ""}`.trim() : "—";
-const clock = (iso) => iso ? new Date(iso).toLocaleTimeString("ko-KR", {hour12: false}) : "";
+const clock = (iso) => iso ? new Date(iso).toLocaleTimeString("en-GB", {hour12: false}) : "";   // 15:16:22
 const pct = (x) => x == null ? "—" : `${Math.round(x * 100)}%`;
 const seenTrials = new Set();
 const recentTrials = [];   // 받은 시도 (최신이 앞) — 모드 화면 '최근 시도' 칸
@@ -470,21 +491,21 @@ function addTrial(t, flash) {
   recentTrials.unshift(t); if (recentTrials.length > 200) recentTrials.pop();
   $("trials-empty").hidden = true;
   const tr = document.createElement("tr");
-  tr.dataset.mode = t.mode;
+  tr.dataset.mode = t.mode; tr.dataset.ok = t.success ? '1' : '';
   tr.hidden = selectedMode !== null && Number(t.mode) !== selectedMode;
   if (flash) tr.className = "new";
   const err = (t.mode === 1 || t.mode === 3) && t.error_mm != null ? `${Number(t.error_mm).toFixed(0)} mm` : "—";
-  tr.innerHTML = `<td>${t.trial_index}</td><td>${esc(modeName(t.mode))}</td>` +
-    `<td class="${t.success ? "ok" : "fail"}">${t.success ? "성공" : "실패"}</td>` +
-    `<td>${err}</td><td>${t.duration_s != null ? Number(t.duration_s).toFixed(1) + " s" : "—"}</td>` +
-    `<td class="notes">${esc(t.notes)}</td>`;
+  tr.innerHTML = `<td class="num">${t.trial_index}회</td><td><span class="mchip">${t.mode}</span>${esc(MODES[t.mode] ?? "")}</td>` +
+    `<td><span class="r-res ${t.success ? "ok" : "fail"}">${t.success ? "성공" : "실패"}</span></td>` +
+    `<td class="num">${err}</td><td class="num">${t.duration_s != null ? Number(t.duration_s).toFixed(1) + " s" : "—"}</td>` +
+    `<td class="notes">${esc(NOTES[t.notes] ?? t.notes ?? "")}</td>`;
   $("trials").prepend(tr);
   filterTrials();
 }
 
 function describe(e) {
   switch (e.kind) {
-    case "safety_change": return `${(LEVELS[e.level] ?? [, e.level])[1]}${e.reason ? " — " + e.reason : ""}`;
+    case "safety_change": return `${(LEVELS[e.level] ?? [, e.level])[1]}${e.reason ? " — " + reasonText(e.reason) : ""}`;
     case "voice_intent": return `"${e.text || e.intent}" → ${e.intent}${e.is_emergency ? " (비상)" : ""}`;
     case "mode_change": return `${modeName(e.from)} → ${modeName(e.to)}`;
     case "trial": return `${e.trial_index}회째 ${modeName(e.mode)} ${e.success ? "성공" : "실패"}`;
@@ -497,7 +518,8 @@ function addEvent(e, flash, atEnd) {
   $("events-empty").hidden = true;
   const li = document.createElement("li");
   if (flash) li.className = "new";
-  li.innerHTML = `<time>${clock(e.time || e.ended_at)}</time><span><b>${KINDS[e.kind] ?? esc(e.kind)}</b> ${esc(describe(e))}</span>`;
+  const tone = e.kind === "safety_change" ? `safety-${e.level}` : e.kind === "trial" ? (e.success ? "ok" : "fail") : e.kind;
+  li.innerHTML = `<time>${clock(e.time || e.ended_at)}</time><span class="kind ${esc(tone)}">${KINDS[e.kind] ?? esc(e.kind)}</span><span>${esc(describe(e))}</span>`;
   atEnd ? $("events").append(li) : $("events").prepend(li);
   while ($("events").children.length > 100) $("events").lastChild.remove();
 }
@@ -677,9 +699,12 @@ function selectPage() {
   }
   filterTrials(); renderModePage();
 }
+let trialFilter=null;   // 최근 시도 탭의 모드 거르기 (null = 전체)
 function filterTrials(){
-  let visible=0;
-  for(const row of $('trials').children){row.hidden=selectedMode!==null&&Number(row.dataset.mode)!==selectedMode;if(!row.hidden)visible++;}
+  let visible=0, ok=0;
+  const only=selectedMode??trialFilter;
+  for(const row of $('trials').children){row.hidden=only!==null&&Number(row.dataset.mode)!==only;if(!row.hidden){visible++;if(row.dataset.ok==='1')ok++;}}
+  $('trials-sum').textContent=visible?`${visible}회 · 성공 ${ok} (${Math.round(ok/visible*100)}%)`:'';
   $('trials-empty').hidden=visible>0;
   $('trials-empty').textContent=selectedMode===null?'아직 수신한 시도 기록이 없습니다.':'이 모드의 수신된 시도 기록이 없습니다.';
 }
@@ -793,6 +818,12 @@ for (const id of ['v-track', 'v-rail']) $(id).onclick = (e) => {
   if (t.dataset.mode) location.hash = `#mode${t.dataset.mode}`;
   else if (t.dataset.i !== undefined) { clearInterval(previewTimer); previewTimer = null; showPreview(Number(t.dataset.i)); }
   else $('steps-play').onclick();
+};
+$('trial-filter').onclick = (e) => {
+  const b = e.target.closest?.('[data-f]'); if (!b) return;
+  trialFilter = b.dataset.f ? Number(b.dataset.f) : null;
+  for (const x of $('trial-filter').children) x.className = x === b ? 'on' : '';
+  filterTrials();
 };
 window.addEventListener("hashchange", ()=>{ stopPreview(); selectPage(); });
 selectPage();
