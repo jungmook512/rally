@@ -95,10 +95,10 @@
   #mode-right { grid-area:right; display:grid; gap:14px; min-width:0; }
   #mode-view .diagram-panel { padding:12px; }
   #mode-view #mode-diagram { margin-top:10px; }
-  #mode-view #mode-diagram svg { min-width:0; max-height:calc(100vh - 570px); min-height:200px; }
+  #mode-view #mode-diagram svg { min-width:0; max-height:calc(100vh - 400px); min-height:200px; }
   #camera-slot .camera .frame { max-height:calc(100vh - 440px); } #camera-slot .cameras { justify-content:start; }
   #camera-slot #camera-view { padding:12px; } #camera-slot #camera-view .section-heading { margin-bottom:8px; padding-bottom:6px; font-size:14px; }
-  #camera-slot .cameras { grid-template-columns:1fr; gap:8px; }
+  #camera-slot .cameras { grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:8px; }
   #camera-slot .camera figcaption { font-size:12px; }
   .stat-line { color:var(--muted); font-size:14px; } .stat-line b { color:var(--text); font-size:16px; font-variant-numeric:tabular-nums; }
   .mode-cards { display:flex; gap:10px; align-items:flex-start; }
@@ -227,6 +227,35 @@
   #mode-diagram { border-color:var(--line); background:#f1f5f2; }
   #safety { border-width:1px; border-left-width:1px; border-radius:10px; font-weight:650; }
   #safety.normal { background:#eef7ef; color:#2f6b45; border-color:#b9dcc2; }
+  /* 모드 화면 최종 배치 (10/12): 왼쪽 세로 레일(모드 고르기) · 가운데 그림 + 진행 트랙 · 오른쪽 현재 단계 + 카메라 */
+  .badges label { font-size:0; gap:0; } .badges output { font-size:12.5px; }
+  .badges output::before { content:""; display:inline-block; width:7px; height:7px; border-radius:50%; background:currentColor; margin-right:6px; vertical-align:1px; }
+  #mode-view { grid-template-columns:108px minmax(0,1.3fr) minmax(0,1fr); grid-template-areas:"control control control" "rail left right"; }
+  #mode-view #progress-panel { display:none; }
+  .v-head { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:14px; }
+  .v-head button { margin:0; width:auto; padding:5px 12px; font-size:12.5px; }
+  .track-title { font-family:"Noto Serif KR","Nanum Myeongjo",Georgia,serif; font-size:20px; color:var(--text); }
+  .track-title small { font-family:system-ui,"Noto Sans KR",sans-serif; font-size:13px; color:var(--muted); margin-left:8px; }
+  .ticks { display:flex; position:relative; }
+  .ticks::before { content:""; position:absolute; left:calc(50% / var(--n)); right:calc(50% / var(--n)); top:10px; height:4px; background:#d3ddd6; border-radius:2px; }
+  .ticks::after { content:""; position:absolute; left:calc(50% / var(--n)); top:10px; height:4px; border-radius:2px; background:var(--accent); width:calc((100% - 100% / var(--n)) * var(--p)); transition:width .4s; }
+  .tick { flex:1 1 0; display:grid; justify-items:center; gap:8px; background:none; border:0; padding:0 2px; font:inherit; color:var(--muted); cursor:pointer; position:relative; z-index:1; border-radius:8px; }
+  .tick:hover span { color:var(--text); }
+  .tick i { width:24px; height:24px; border-radius:50%; background:#fff; border:2px solid #b9c9be; display:grid; place-items:center; font-style:normal; font-size:11px; font-weight:700; color:#8a978f; }
+  .tick span { font-size:12.5px; line-height:1.3; text-align:center; word-break:keep-all; }
+  .tick.done i { background:#9fc5bc; border-color:#9fc5bc; color:#fff; }
+  .tick.now i { background:var(--accent); border-color:var(--accent); color:#fff; box-shadow:0 0 0 5px #2b6f6a2e; } .tick.now span { color:var(--accent); font-weight:700; }
+  .tick.pv i { background:#4f9a8f; border-color:#4f9a8f; color:#fff; } .tick.pv span { color:#4f9a8f; font-weight:700; }
+  #v-rail { grid-area:rail; display:grid; gap:8px; align-content:start; }
+  .rail-m { background:var(--panel); border:1px solid #dde6df; border-radius:14px; padding:12px 8px; text-align:center; cursor:pointer; box-shadow:0 1px 2px #2a40300d; position:relative; }
+  .rail-m:hover { border-color:#9fc5bc; }
+  .rail-m .n { font-family:"Noto Serif KR",Georgia,serif; font-size:30px; line-height:1; color:var(--muted); }
+  .rail-m .t { font-size:12px; margin-top:6px; color:var(--text); word-break:keep-all; } .rail-m .s { font-size:11px; color:var(--muted); margin-top:4px; }
+  .rail-m .mini { height:4px; border-radius:2px; background:#e1e9e3; margin:8px 6px 0; overflow:hidden; } .rail-m .mini i { display:block; height:100%; background:#7fae8c; }
+  .rail-m.sel { background:var(--accent); border-color:var(--accent); cursor:default; } .rail-m.sel .n, .rail-m.sel .t, .rail-m.sel .s { color:#fff; } .rail-m.sel .mini { background:#ffffff40; } .rail-m.sel .mini i { background:#fff; }
+  .rail-m.live::after { content:""; position:absolute; top:9px; right:9px; width:8px; height:8px; border-radius:50%; background:#3f9a6a; box-shadow:0 0 0 3px #3f9a6a33; }
+  .rail-m.paused::after { content:""; position:absolute; top:9px; right:9px; width:8px; height:8px; border-radius:50%; background:#d0a95b; }
+  @media(max-width:1000px) { #mode-view { grid-template-columns:1fr; grid-template-areas:"control" "rail" "left" "right"; } #v-rail { grid-template-columns:repeat(4,1fr); } }
 </style>
 </head>
 <body>
@@ -259,9 +288,11 @@
     <p id="proposal-message" role="status" aria-live="polite"></p>
   </section>
   <section id="mode-view" hidden>
+    <nav class="variant" id="v-rail" hidden aria-label="모드"></nav>
     <div id="mode-left">
       <div class="panel diagram-panel"><div class="panel-top"><h2 id="diagram-title">훈련 그림</h2><span class="badge">위에서 본 설명 그림</span></div><div id="mode-diagram" tabindex="0" role="region" aria-label="현재 실행 단계를 설명하는 훈련 그림"></div><p id="diagram-caption" class="caption" hidden></p></div>
 
+      <div class="panel variant" id="v-track" hidden></div>
       <div class="panel progress-panel" id="progress-panel"><div class="panel-top"><h2>모드별 진행</h2><span class="stat-line">카드를 누르면 그 모드 화면</span></div>
       <div class="mode-cards">
         <div class="mode-card" id="card-1" role="link" tabindex="0"><div class="top"><span class="num">1</span><span class="state" id="card-state-1">대기</span></div>
@@ -618,6 +649,7 @@ function selectPage() {
   const stepsHome = selectedMode !== null ? $(`card-slot-${selectedMode}`) : $('steps-home');
   if ($('steps-panel').parentNode !== stepsHome) stepsHome.append($('steps-panel'));
   for (const m of [1, 3, 5, 7]) $(`card-${m}`).className = `mode-card${m === selectedMode ? ' selected' : ''}`;
+  $('v-rail').hidden = $('v-track').hidden = selectedMode === null;
   showCameras();
   $('trials-view').hidden=selectedPage!=='trials';
   $('events-view').hidden=selectedPage!=='events';
@@ -634,6 +666,25 @@ function filterTrials(){
   for(const row of $('trials').children){row.hidden=selectedMode!==null&&Number(row.dataset.mode)!==selectedMode;if(!row.hidden)visible++;}
   $('trials-empty').hidden=visible>0;
   $('trials-empty').textContent=selectedMode===null?'아직 수신한 시도 기록이 없습니다.':'이 모드의 수신된 시도 기록이 없습니다.';
+}
+// 모드 화면 (10/12): 왼쪽 레일 = 모드 고르기, 그림 아래 트랙 = 지금 모드의 단계 진행도
+function modeStatus(m, fresh) {
+  const live = fresh && Number(control.mode) === m;
+  if (m === 3 && fresh && control.mode3_enabled === false) return ['off', '꺼짐'];
+  if (live && ['running', 'pause_pending'].includes(control.phase)) return ['live', '진행 중'];
+  if (live && control.phase === 'paused') return ['paused', '휴식'];
+  return ['', '대기'];
+}
+function renderVariants(page, index, preview, fresh) {
+  const steps = page.steps, t = modeTally[selectedMode];
+  const cls = (i) => `${index >= 0 && i < index ? 'done' : ''} ${i === index ? 'now' : ''} ${preview && i === previewStage ? 'pv' : ''}`;
+  const [, word] = modeStatus(selectedMode, fresh);
+  const shown = preview ? previewStage : index;
+  $('v-rail').innerHTML = [1, 3, 5, 7].map((m) => { const [st, w] = modeStatus(m, fresh), k = modeTally[m];
+    return `<div class="rail-m ${m === selectedMode ? 'sel' : ''} ${st}" data-mode="${m}" role="link" tabindex="0" title="모드 ${m} 화면"><div class="n">${m}</div><div class="t">${MODES[m]}</div><div class="s">${w} · ${k.n}회</div><div class="mini"><i style="width:${k.n ? Math.round(k.ok / k.n * 100) : 0}%"></i></div></div>`; }).join('');
+  $('v-track').innerHTML = `<div class="v-head"><span class="track-title">${shown >= 0 ? `${shown + 1} / ${steps.length} · ${esc(steps[shown])}` : `단계 ${steps.length}개`}<small>${preview ? '미리보기' : `${word} · ${t.n ? `시도 ${t.n}회 · 성공 ${t.ok}` : '시도 0회'}`}</small></span>
+    <button type="button" class="ghost" data-play>${preview ? '■ 실시간 보기' : '▶ 단계 미리보기'}</button></div>
+    <div class="ticks" style="--n:${steps.length};--p:${index > 0 ? index / (steps.length - 1) : 0}">${steps.map((x, i) => `<button type="button" class="tick ${cls(i)}" data-i="${i}"><i>${i + 1}</i><span>${esc(x)}</span></button>`).join('')}</div>`;
 }
 function renderModeCards(fresh){
   for (const m of [1, 3, 5, 7]) {
@@ -693,6 +744,7 @@ function renderModePage(){
   $('step-title').textContent=title;$('step-description').textContent=description;$('raw-stage').textContent=node?`BT · ${node}`:'';
   $('steps').innerHTML=page.steps.map((step,i)=>`<li data-i="${i}" title="눌러서 이 단계 그림 보기" class="${i===index?'active':''}${preview&&i===previewStage?' preview':''}" ${i===index?'aria-current="step"':''}><span>${i+1}</span><strong>${esc(step)}</strong></li>`).join('');
   $('steps-play').textContent=preview?'■ 실시간 보기':'▶ 단계 미리보기';
+  renderVariants(page,index,preview,fresh);
 }
 
 // 단계 미리보기 — 실제 상태와 상관없이 단계별 그림을 보여 준다 (그림 칸에 '미리보기' 표시). 로봇에는 아무것도 보내지 않음
@@ -708,6 +760,13 @@ for (const m of [1, 3, 5, 7]) {
   const go = (e) => { if (e?.target?.closest?.('#steps-panel') || selectedMode === m) return; location.hash = `#mode${m}`; };
   $(`card-${m}`).onclick = go; $(`card-${m}`).onkeydown = (e) => { if (e.key === 'Enter') go(e); };
 }
+// 레일·트랙 누르기: data-mode = 그 모드 화면, data-i = 단계 미리보기, data-play = 자동 재생/실시간
+for (const id of ['v-track', 'v-rail']) $(id).onclick = (e) => {
+  const t = e.target.closest?.('[data-mode],[data-i],[data-play]'); if (!t) return;
+  if (t.dataset.mode) location.hash = `#mode${t.dataset.mode}`;
+  else if (t.dataset.i !== undefined) { clearInterval(previewTimer); previewTimer = null; showPreview(Number(t.dataset.i)); }
+  else $('steps-play').onclick();
+};
 window.addEventListener("hashchange", ()=>{ stopPreview(); selectPage(); });
 selectPage();
 load().then(connect);
