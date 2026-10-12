@@ -83,7 +83,7 @@
   #mode-right { grid-area:right; display:grid; gap:14px; min-width:0; }
   #mode-view .diagram-panel { padding:12px; }
   #mode-view #mode-diagram { margin-top:10px; }
-  #mode-view #mode-diagram svg { min-width:0; max-height:calc(100vh - 650px); min-height:200px; }
+  #mode-view #mode-diagram svg { min-width:0; max-height:calc(100vh - 570px); min-height:200px; }
   #camera-slot .camera .frame { max-height:calc(100vh - 440px); } #camera-slot .cameras { justify-content:start; }
   #camera-slot #camera-view { padding:12px; } #camera-slot #camera-view .section-heading { margin-bottom:8px; padding-bottom:6px; font-size:14px; }
   #camera-slot .cameras { grid-template-columns:1fr; gap:8px; }
@@ -139,7 +139,7 @@
   #steps li.active span { background:#ffe4a3; border:2px solid #a57617; box-shadow:0 0 0 3px #fff8dc; }
   .instruction { background:var(--cream); border-color:#c5ab72; }
   .instruction h2 { font-size:24px; line-height:1.35; margin:2px 0 12px; overflow-wrap:anywhere; }
-  .instruction p { margin:8px 0; font-size:15px; }
+  .instruction p { margin:6px 0; font-size:14px; color:var(--muted); }
   .stats { background:var(--mint); border-color:#9bbda9; }
   .stats dl { margin:0; }
   .stats dl>div { display:flex; justify-content:space-between; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); }
@@ -189,6 +189,23 @@
   button { background:#fffdf7; color:var(--text); border-color:#cfc5ae; border-radius:999px; }
   button:not(:disabled):hover { border-color:var(--accent); }
   #resume:not(:disabled) { background:var(--accent); border-color:var(--accent); color:#fff; }
+  /* 정돈 (10/12): 칸 제목은 작은 회색 글씨 하나로, 아이콘·장식 배지 없음 */
+  .section-icon, .diagram-panel .panel-top .badge { display:none; }
+  .panel h2:not(#step-title), .panel .section-heading, .current-label, .control-status h2 { font-size:13px!important; font-weight:650; color:var(--muted)!important; letter-spacing:.02em; border:0!important; padding:0!important; margin:0 0 10px!important; }
+  .panel-top { margin-bottom:10px; } .panel-top h2, .panel-top .section-heading { margin:0!important; }
+  .diagram-panel>.panel-top { border:0; padding:0; }
+  .panel { border:1px solid #ebe4d4; box-shadow:0 1px 2px #5a46200d, 0 6px 18px #5a46200a; }
+  /* 안전 띠: 정상·모름이면 숨김 (상태 줄 배지로 충분), 느리게·정지일 때만 경고 띠 */
+  #safety.normal, #safety.unknown { display:none; }
+  #safety.slow, #safety.stop { font-size:16px; padding:10px 16px; border-width:1px; border-left-width:6px; }
+  /* 그림: 회색 상자·안쪽 테두리 없이 칸에 바로 */
+  #mode-diagram { border:0!important; background:none!important; margin-top:0!important; }
+  /* 메뉴: 상자 대신 밑줄 탭 */
+  #mode-nav { gap:2px; align-self:stretch; }
+  #mode-nav a { border:0; border-radius:0; border-bottom:2px solid transparent; padding:16px 10px 14px; }
+  #mode-nav a[aria-current] { background:none; color:var(--accent); border-bottom-color:var(--accent); }
+  #mode-nav a:hover { color:var(--text); }
+  header { padding-block:0; }
   .instruction h2 { font-family:"Noto Serif KR","Nanum Myeongjo",Georgia,serif; font-size:30px; font-weight:600; margin:6px 0 4px; }
   .current-label { color:var(--muted); font-size:14px; } .instruction .section-heading { border:0; padding:0; margin:0; }
   #mode-diagram { border-color:var(--line); background:#f4f0e6; }
@@ -626,8 +643,8 @@ function renderModePage(){
   renderModeCards(fresh); $('badge-step').textContent=index>=0?page.steps[index]:active?(PHASES[control.phase]||'—'):'—';
   $('mode-level').textContent=active&&control.difficulty!=null?`${control.difficulty}단계`:'—';
   $('mode-extra').textContent=selectedMode===3&&fresh&&!control.mode3_enabled?'챌린지 꺼짐 (skills.yaml mode3_challenge)':'';
-  let title='이 모드는 진행 중이 아님',description='';
-  if(!fresh){title='대기 중';description='';}
+  let title='이 모드는 진행 중이 아님',description='세션에서 이 모드가 시작되면 단계가 표시됩니다.';
+  if(!fresh){title='대기 중';description='세션이 시작되면 지금 단계가 여기 표시됩니다.';}
   else if(active&&control.phase==='paused'){title='휴식 중';description='준비되면 상단 훈련 재개 버튼으로 같은 난이도에서 이어갑니다.';}
   else if(active&&control.phase==='ended'){title='세션 종료';description='완료된 시도 기록을 확인할 수 있습니다.';}
   else if(index>=0){title=page.steps[index];description=page.help[index];}

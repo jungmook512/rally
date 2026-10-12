@@ -38,7 +38,7 @@ function tCapsule([x1, y1], [x2, y2], w, fill, extra = '') {
 }
 function topTable() {
   const grain = [60, 120, 175, 240, 300].map((y, i) => `<path d="M160 ${y}Q480 ${y + (i % 2 ? 8 : -8)} 800 ${y}" stroke="#cdb894" stroke-width="1" opacity=".35" fill="none"/>`).join('');
-  return `<rect width="960" height="410" fill="#e9ecea"/>
+  return `<rect width="960" height="410" fill="#fbf8f0"/>
     <rect x="150" y="22" width="660" height="336" rx="10" fill="url(#t-wood)" filter="url(#t-sh)"/>${grain}`;
 }
 // 오른손 손등 윤곽 한 줄 (손목 왼쪽 → 엄지 → 검지·중지·약지·새끼 → 손날 → 팔뚝). 손목 = (0, 40), 손가락 = 위
@@ -210,7 +210,7 @@ function renderTrainingScene(mode, stageIndex, status, opts = {}) {
   const pill = label ? `<g transform="translate(100 0)"><rect x="20" y="16" width="${40 + label.length * 16 + (preview ? 64 : 0)}" height="36" rx="18" fill="#fff" stroke="${tone}" stroke-width="2"/>
     <text x="36" y="40" class="pill" style="fill:${tone}">${preview ? '미리보기 · ' : ''}${sceneEscape(label)}</text></g>` : '';
   const frame = status === 'stopped' && !preview ? '<rect x="113" y="3" width="734" height="404" rx="10" fill="none" stroke="#a71d28" stroke-width="6"/>' : '';
-  const veil = !active ? '<rect width="960" height="410" fill="#f3f6f4" opacity=".35"/>' : '';
+  const veil = !active ? '<rect width="960" height="410" fill="#fbf8f0" opacity=".35"/>' : '';
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="110 0 740 410" role="img" aria-label="${sceneEscape(label || stages.join(' → '))} · 환자 자리에서 본 설명 그림" data-scene-mode="${mode}" data-scene-stage="${stage}" data-scene-status="${sceneEscape(status)}" class="${motion ? 'scene-moving' : 'scene-still'}">
     <style>
       text{font-family:system-ui,'Noto Sans KR',sans-serif;font-weight:650}.pill{font-size:17px}.note{font-size:15px;fill:#3a4a55}.note.small{font-size:13px;fill:#6c6352}
