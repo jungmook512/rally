@@ -294,11 +294,12 @@ def test_hand_stop_mode_starts(monitor_with, args, mode):
     assert monitor_with(*args).hand_mode() == mode
 
 
-def test_safety_yaml_default_off_and_starts(monitor_with):
-    """safety.yaml(개발 기간 기본 "off")을 그대로 읽어 기동되는지 (launch 인자 없이 = robot.sh 기본)."""
+def test_safety_yaml_default_slow_and_starts(monitor_with):
+    """safety.yaml(10/12~ 기본 "slow" — 개발 기간 off 종료, #145)을 그대로 읽어 기동되는지 (launch 인자 없이 = robot.sh 기본).
+    시연 기본값이 off 로 돌아가면 이 테스트가 깨진다."""
     from pathlib import Path
     path = Path(__file__).resolve().parents[2] / "rally_bringup/config/safety.yaml"
-    assert monitor_with("--params-file", str(path)).hand_mode() == "off"
+    assert monitor_with("--params-file", str(path)).hand_mode() == "slow"
 
 
 def test_hand_stop_mode_read_only(monitor_with):
