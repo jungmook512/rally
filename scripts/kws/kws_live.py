@@ -85,12 +85,13 @@ class Mic:
                 "  · --list 로 다른 장치 번호를 골라 --mic 번호") from None
 
 
-def speech_end(rms: list[float]) -> int | None:
-    """조각별 음량에서 말소리가 끝난 조각 번호 (최고 음량의 20 % 를 넘는 마지막 조각)."""
+def speech_span(rms: list[float]) -> tuple[int, int] | None:
+    """조각별 음량에서 말소리 첫·마지막 조각 번호 (최고 음량의 20 % 를 넘는 조각들)."""
     r = np.asarray(rms)
     if len(r) == 0 or r.max() < 300:                     # 거의 무음이면 말 안 한 것
         return None
-    return int(np.where(r >= 0.2 * r.max())[0][-1])
+    idx = np.where(r >= 0.2 * r.max())[0]
+    return int(idx[0]), int(idx[-1])
 
 
 class Runner:
@@ -134,38 +135,59 @@ def run_free(r: Runner, a) -> float:
 def run_trial(r: Runner, a) -> None:
     """'지금!' 에 맞춰 a.n 번 말하게 하고, 매번 잡혔는지 · 말 끝에서 감지까지 걸린 시간을 잰다."""
     window = int(a.window / CHUNK_S)
-    results: list[tuple[bool, float | None]] = []
+    results: list[tuple[str, float | None]] = []        # (감지·놓침·말 전·무음, 지연)
+    stray = 0
+    stamp = f"{datetime.now():%m%d_%H%M%S}"
     print(f"\n'{a.trial}' {a.n} 번. '지금!' 이 뜨면 한 번 말하세요. 매번 {a.window:g} 초 듣습니다.")
+    print("  시각은 모두 '지금!' 기준 · 말 = 음량이 최고의 20 % 를 넘는 구간 · 감지 = 모델이 울린 때")
     with Mic(a.mic) as s:
         t0 = time.monotonic()
         for _ in range(int(2.0 / CHUNK_S)):              # 특징이 차도록 2 s 그냥 흘림 (EmergencyKws warmup)
             r.feed(s.read(), time.monotonic() - t0, quiet=True)
         for i in range(a.n):
-            for _ in range(int(1.0 / CHUNK_S)):          # 앞 시도와 1 s 띄움 (같은 말로 두 번 안 세게)
-                r.feed(s.read(), time.monotonic() - t0, quiet=True)
+            for _ in range(int(1.0 / CHUNK_S)):          # 앞 시도와 1 s 띄움. 여기서 울리면 앞 회 끝자락이나 소음
+                if r.feed(s.read(), time.monotonic() - t0, quiet=True) is not None:
+                    stray += 1
             print(f"  {i + 1:2d}/{a.n}  지금!", end="", flush=True)
-            rms, hit_at, word = [], None, None
+            rms, hit_at, word, audio = [], None, None, []
             for j in range(window):
                 c = s.read()
+                audio.append(c)
                 rms.append(float(np.sqrt(np.mean(c.astype(np.float64) ** 2))))
                 hit = r.feed(c, time.monotonic() - t0, quiet=True)
                 if hit is not None and hit_at is None:
                     hit_at, word = j, hit.word
-            end = speech_end(rms)
-            if end is None:
-                print("  (말소리 없음 — 이 회는 빼고 다시 세세요)")
-                results.append((False, None))
+            if r.save:
+                save_wav(REVIEW / f"trial_{stamp}_{a.trial}_{i + 1:02d}.wav", np.concatenate(audio))
+            span = speech_span(rms)
+            if span is None:
+                print("  (말소리 없음 — 셈에서 뺌)")
+                results.append(("무음", None))
                 continue
+            st, en = span
+            timing = f"말 {st * CHUNK_S:.2f}~{(en + 1) * CHUNK_S:.2f} s"
             if hit_at is None:
-                print("  놓침")
-                results.append((False, None))
+                print(f"  놓침   ({timing})")
+                results.append(("놓침", None))
                 continue
-            lat = (hit_at - end) * CHUNK_S                 # 조각 끝 기준. 음수 = 말이 끝나기 전에 감지
-            print(f"  감지 '{word}'  말 끝 → 감지 {lat:+.2f} s")
-            results.append((True, lat))
-    ok = [x for x in results if x[0]]
-    lats = [x[1] for x in ok]
-    print(f"\n[인식 '{a.trial}'] {len(ok)}/{len(results)} 감지  (목표 9/10 이상)")
+            when = f"감지 {(hit_at + 1) * CHUNK_S:.2f} s"
+            if hit_at < st:
+                print(f"  말 전에 울림 ({timing}, {when}) — 소음 오탐으로 봄")
+                results.append(("말 전", None))
+                continue
+            lat = (hit_at - en) * CHUNK_S                 # 조각 단위. 음수 = 말이 끝나기 전에 감지
+            print(f"  감지 '{word}'  ({timing}, {when})  말 끝 → 감지 {lat:+.2f} s")
+            results.append(("감지", lat))
+    counted = [x for x in results if x[0] != "무음"]
+    lats = [x[1] for x in counted if x[0] == "감지"]
+    silent = len(results) - len(counted)
+    print(f"\n[인식 '{a.trial}'] {len(lats)}/{len(counted)} 감지  (목표 9/10 이상"
+          f"{f', 말소리 없던 {silent} 회 뺌' if silent else ''})")
+    pre = sum(1 for x in counted if x[0] == "말 전")
+    if pre:
+        print(f"  말 전에 울림 {pre} 회 — 감지로 안 셈 (소음 오탐)")
+    if stray:
+        print(f"  쉬는 1 초 동안 울림 {stray} 회 — 앞 회 말 끝자락이나 소음")
     if lats:
         print(f"  말 끝 → 감지: 중간값 {np.median(lats):+.2f} s · 가장 늦음 {max(lats):+.2f} s  (목표 0.3 s 이내, 80 ms 단위)")
 
@@ -215,7 +237,9 @@ def main() -> int:
                 print(f"  0 회여도 {mins:.0f} 분으로는 '시간당 {3 / mins * 60:.0f} 회 이하' 까지만 말할 수 있음 (95 %). 길게 켤수록 정확")
         else:
             print(f"\n[{a.label}] {mins:.1f} 분 동안 {len(r.hits)} 회   {counts}")
-    if r.hits and r.save:
+    if a.trial and r.save:
+        print(f"  회차별 소리: {REVIEW}\\trial_*.wav  — 놓친 회를 들어 보면 원인을 알 수 있음")
+    elif r.hits and r.save:
         print(f"  울린 순간 소리: {REVIEW}  — 오탐이면 other 폴더로 옮기고 train.py 다시")
     return 0
 
