@@ -142,7 +142,7 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 
 - `hand_eye.yaml` — `tcp_T_camera_optical`(TCP ← camera_color_optical_frame, xyz m + 쿼터니언), `depth_scale`, `tcp_offset_from_flange_m`. 10/8 ArUco 터치 재맞춤 값(`scripts/fit_hand_eye.py`, 평균 6 mm·최대 9 mm). 재검증은 `scripts/aruco_detect.py --json` → `scripts/verify_calibration.py --depth-scale 0.971`
 - `table.yaml` — table_link 원점, 중앙선 위치, 작업 공간 한계(x,y,z min/max)
-- `safety.yaml` — 손 근접 감속 거리(기본 0.25 m → 50 %, 0.15 m → 정지), 힘 한계(기본 25 N, 항상 적용), nudge 임계(한 주기 |Δ|F|| 8 N — 로봇 정지 중이고 `/rally/safety/contact_expected` 가 아닐 때만 판정), 작업 공간(x·y·z min/max → 밖이면 STOP. 10/11: 환자 쪽 x_max 0.57 m(보라색 선)만 실제 제한, x_min −2.0 · y ±0.60 · z 0~2.0 은 자세 전환 경로를 위해 넓힘)
+- `safety.yaml` — 손 근접(손 ↔ 로봇 끝 선분 `hand_slow_robot_m` 0.35 m 안 → SLOW(`slow_override` 50 %), `hand_stop_robot_m` 0.20 m 안 → STOP, 중앙선 `slow_distance_m` 0.10 m 안 → SLOW. 개발용 `hand_stop_mode` stop·slow·off — #118), 힘 한계(기본 25 N, 항상 적용), nudge 임계(한 샘플 |Δ|F|| `nudge_dfdt_n` 5 N — 로봇 정지 중이고 `/rally/safety/contact_expected` 가 아닐 때만 판정), 작업 공간(x·y·z min/max → 밖이면 STOP. TCP 한 점 기준. 10/11: 환자 쪽 x_max 0.57 m(보라색 선)가 주된 제한, y ±0.60 은 테이블 옆으로 크게 나가지 않게 남김, x_min −2.0 · z 0~2.0 은 자세 전환 경로를 위해 사실상 열어 둠)
 - `skills.yaml` — 관측 자세, 모드별 기본 파라미터와 허용 범위(LLM 클램핑 범위와 동일), `gripper.<class>` 열림 폭·힘, `pick.*`, `handover.*`(제시 자세·당김 임계)
 - `table.yaml` — `table.z_m` 테이블 면 높이: 집기 Z 는 비전 깊이가 아니라 이 평면 + 물체 반지름으로 계산
 - `llm.yaml` — 모델, 타임아웃(3 s), 프롬프트 템플릿 경로, 전송 필드 화이트리스트(익명화)
