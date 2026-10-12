@@ -95,6 +95,7 @@ class SkillServer(Node):
         self.gripper_cli = self.create_client(GripperCommand, "/rally/gripper/command", callback_group=self.cb_state)
         self.create_service(Trigger, "/rally/robot/go_observe_pose", self._go_observe, callback_group=self.cb_skill)
         self.create_service(Trigger, "/rally/robot/go_hand_view", self._go_hand_view, callback_group=self.cb_skill)
+        self.create_service(Trigger, "/rally/robot/go_pick_view", self._go_pick_view, callback_group=self.cb_skill)
 
         from rally_robot.skills import (catch_ball, detach_ball, handover, move_target, pick_compliant, push_ball, resist_push,
                                         return_ball)
@@ -260,17 +261,42 @@ class SkillServer(Node):
         return CancelResponse.ACCEPT
 
     def _go_observe(self, req, res):
-        from DSR_ROBOT2 import movej, mwait
+        """관측 자세 (관절 이동). 10/11: 동기 movej+mwait 는 이동 내내 두산 서비스(get_tool_force)를 막아 힘이 끊기고
+        wrench_lost STOP — 다른 이동과 같이 amovej + 폴링(movej_checked, STOP 이면 멈춤)으로."""
+        from rally_robot.dsr_helpers import movej_checked
         if self.stop_requested():
             res.success, res.message = False, f"safety STOP ({self.safety_reason()})"
             return res
         posj = (self.cfg.get("observe_pose") or {}).get("posj") or OBSERVE_POS   # skills.yaml 티칭 값 우선
         jv, ja = motion_speeds(self)[4:]                                          # skills.yaml motion: joint_vel_deg_s
-        movej([float(v) for v in posj], vel=jv * self.speed_scale(), acc=ja * self.speed_scale())
-        mwait()
+        try:
+            movej_checked(self, [float(v) for v in posj], jv, ja)
+        except SkillAbort as e:
+            res.success, res.message = False, e.reason
+            return res
         res.success, res.message = True, f"observe pose {posj}"
         return res
 
+
+    def _go_pick_view(self, req, res):
+        """모드 5 물체 보기 자세 — 관측 자세(관절 이동) → mode5.pick_view_posx 로 직선 이동.
+        10/11: 관측 자세에선 흰 배경(물체 놓는 자리, −y 쪽)이 카메라 화면 아래로 잘림. 관측 자세를 거쳐 가서 IK 해가 튀지 않게."""
+        from rally_robot.dsr_helpers import move_checked, movej_checked
+        if self.stop_requested():
+            res.success, res.message = False, f"safety STOP ({self.safety_reason()})"
+            return res
+        pose = (self.cfg.get("mode5") or {}).get("pick_view_posx")
+        posj = (self.cfg.get("observe_pose") or {}).get("posj") or OBSERVE_POS
+        tv, ta, _, _, jv, ja = motion_speeds(self, "mode5")
+        try:
+            movej_checked(self, [float(v) for v in posj], jv, ja)
+            if pose:
+                move_checked(self, [float(v) for v in pose], tv, ta)
+        except SkillAbort as e:
+            res.success, res.message = False, e.reason
+            return res
+        res.success, res.message = True, f"pick view {pose or posj}"
+        return res
 
     def _go_hand_view(self, req, res):
         """손 보기 자세 (모드 1 시도 전 레인 고르기 — 툴을 환자 쪽으로 기울여 RealSense 가 환자 손을 봄). 관절 이동."""

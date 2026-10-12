@@ -86,14 +86,26 @@ ros2 action send_goal /rally/skill/return_ball rally_interfaces/action/ReturnBal
 
 ### 모드 5 — 건네고 받기
 
-막대 위치를 먼저 잰다: 수동 모드에서 손끝을 막대 가운데에 대고 `python3 scripts/print_pose.py` → x, y 기록 → 자동 모드.
-막대는 **y 방향(보라색 한계선과 평행)** 으로 눕힌다. 굵기 2 cm 이상.
+**세션 (비전, 10/11~)**: 터미널 2 를 모드 5 모델로 띄우고 `session 5`.
+```bash
+MODEL=yolov8n-seg_864.pt IMGSZ=864 scripts/robot.sh nodes     # 터미널 2 — 막대·컵 분할 모델
+scripts/robot.sh session 5                                       # 터미널 3
+```
+흐름: 관측 자세 → 물체 보기 자세(`skills.yaml mode5.pick_view_posx`, 흰 배경이 화면에 다 들어오게) → 보이는 막대·컵 중 무작위 →
+마스크 주축 방향으로 그리퍼를 돌려 집기(높이 = 테이블 + `mode5.grasp_height_m`) → 기울여 건네기(당기면 놓음) → 물러난 자리에서 그리퍼 열고 대기 →
+**환자가 물체를 그리퍼 사이로 넣어 준다**(4 N, 로봇은 손을 따라가지 않음 #134) → 집었던 자리에 내려놓기.
+- 막대·컵은 흰 배경 위에 아무 방향으로 둔다(그리퍼가 마스크 방향에 맞춰 돈다). 막대 굵기 14.5 mm.
+- 속도는 `skills.yaml mode5.speed_scale` 하나로 조절(기본 0.5). 손 근접 STOP 이 풀리면 하던 단계를 이어 간다(#115, `brain.hand_stop_wait_modes`).
+- 물체 보기 자세를 다시 잡을 때: `python3 scripts/jog.py --dy -0.10` (NORMAL 일 때만, 도착 posx 를 `pick_view_posx` 에 옮겨 적기).
+
+**수동 좌표 (비전 없이)**: 수동 모드에서 손끝을 막대 가운데에 대고 `python3 scripts/print_pose.py` → x, y 기록 → 자동 모드.
+`yaw: 0.0` 이면 그리퍼를 돌리지 않으니 막대를 **y 방향(보라색 한계선과 평행)** 으로 눕힌다.
 
 ```bash
 # 단계별 (X, Y 는 잰 값, m)
 ros2 action send_goal /rally/skill/pick_compliant rally_interfaces/action/PickCompliant "{target: {header: {frame_id: base_link}, pose: {position: {x: X, y: Y}}}, yaw: 0.0, grip_force_n: 20.0, z_stiffness: 300.0}" --feedback
 ros2 action send_goal /rally/skill/handover rally_interfaces/action/Handover "{direction: 0, object_class: rod, tilt_deg: 0.0, timeout_s: 30.0}" --feedback   # 건네기
-ros2 action send_goal /rally/skill/handover rally_interfaces/action/Handover "{direction: 1, object_class: rod, tilt_deg: 0.0, timeout_s: 30.0}" --feedback   # 받기 → 제자리
+ros2 action send_goal /rally/skill/handover rally_interfaces/action/Handover "{direction: 1, object_class: rod, tilt_deg: 0.0, timeout_s: 30.0}" --feedback   # 받기(환자가 넣어 줌) → 제자리
 
 # 한 사이클 자동 (집기 → 기울여 건네기 → 받기 → 제자리)
 python3 scripts/mode5_cycle.py --cycles 1 --manual rod:X,Y,0 --tilt 30 30

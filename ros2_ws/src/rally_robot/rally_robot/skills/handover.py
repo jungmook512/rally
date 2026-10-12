@@ -3,7 +3,7 @@
 
 모드 5 한 번 (brain 또는 scripts/mode5_cycle.py 가 차례로 부른다):
   PickCompliant(비전 마스크 위치·yaw 로 막대/컵 집기) → Handover GIVE(무작위 tilt) → 환자가 잡고 당기면 놓음
-  → Handover RECEIVE(환자가 다시 내밀면 받음) → 집었던 자리에 내려놓기 → 다른 물체·다른 각도로 반복.
+  → Handover RECEIVE(후퇴 자리에서 열고 대기, 환자가 그리퍼 사이로 넣어 줌) → 집었던 자리에 내려놓기 → 다른 물체·다른 각도로 반복.
   잡는 순간 환자 손목 각도는 result.wrist_angle_at_grasp_deg (HandState, 정동휘) — 제시 각도와 비교해 점수는 brain 이 낸다.
 
 제시 자세 (교시 없음)
@@ -23,10 +23,11 @@ GIVE (물체는 이미 쥔 상태)
   환자 접촉 플래그(set_patient_contact): wait 시작 ~ retreat 끝. 이 동안 손 거리 STOP 이 SLOW 로 낮아진다(#59) —
   그래서 이 구간엔 환자 쪽(+x) 명령 이동이 없어야 한다 (제자리 순응 대기, 베이스 쪽 + 위로 후퇴만).
 RECEIVE
-  present : 그리퍼 연 채 제시 자세(receive_tilt_deg, 기본 똑바로)
-  wait    : 환자가 물체를 그리퍼 사이로 밀어 넣는 힘 감지 → grasp: 닫기 → 물체 판정 → retreat
+  present : 그리퍼 연 채 제시 자세(receive_tilt_deg, 기본 똑바로). receive_at_retreat 면 건네기 후퇴 자리(베이스 쪽 retreat_m, 위 retreat_up_m)
+            — 막대를 방금 받은 손 쪽으로 다가가지 않는다 (손 근접 STOP 반복, 10/11)
+  wait    : 환자가 물체를 그리퍼 사이로 밀어 넣는 힘(receive_threshold_n) 감지 → grasp: 닫기 → 물체 판정 → retreat
   place   : (place_after_receive 이고 마지막 PickCompliant 자리가 있으면) 그 위 → 순응 하강, 테이블 접촉(Z 힘)에서 멈춤
-            → 열기 → 위로. 손 추종(follow_hand, servol)은 아직 — 고정 제시 자세에서 받는다.
+            → 열기 → 위로. 손 추종(follow_hand, servol)은 범위에서 제외 (#134) — 고정 자세에서 받는다.
 공통 규칙
 - 단계 사이 node.check_stop(goal_handle). 이동은 move_checked. 순응은 compliance 컨텍스트로 반드시 해제.
 """
@@ -40,7 +41,8 @@ DEFAULTS = dict(present_pose=None, present_margin_m=0.06, present_y_m=0.0, prese
                 tilt_axis="x", tilt_range_deg=[-90.0, 90.0], receive_tilt_deg=0.0,
                 stiffness=[2000, 2000, 2000, 200, 200, 200], pull_hold_s=0.2, poll_hz=20.0,
                 settle_s=0.3, retreat_m=0.03, retreat_up_m=0.06, release_wait_s=0.3, default_threshold_n=6.0, default_timeout_s=20.0,
-                place_after_receive=True, place_above_m=0.08, place_contact_force_n=6.0, place_below_m=0.02)
+                place_after_receive=True, place_above_m=0.08, place_contact_force_n=6.0, place_below_m=0.02,
+                receive_at_retreat=True, receive_threshold_n=4.0)
 AXES = {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0)}
 
 
@@ -92,7 +94,7 @@ def execute(node):
         log = node.get_logger()
         give = goal.direction == Handover.Goal.DIR_GIVE
         t_start = time.monotonic()
-        tv, ta, cv, ca, jv, ja = motion_speeds(node)   # skills.yaml motion: (모든 스킬 공통). 툴 아래 ↔ 수평은 관절 이동 — movel 은 손목 특이점
+        tv, ta, cv, ca, jv, ja = motion_speeds(node, "mode5")   # skills.yaml motion: (모든 스킬 공통). 툴 아래 ↔ 수평은 관절 이동 — movel 은 손목 특이점
 
         def phase(name, force=0.0):
             node.check_stop(goal_handle)
@@ -162,6 +164,14 @@ def execute(node):
             open_mm, grip_force = node.gripper_cfg(goal.object_class or "rod")
             cur = get_current_posx()[0]
             present, tilt = present_pose(cfg, table, cur, goal.tilt_deg if give else cfg["receive_tilt_deg"])
+            if not give:
+                if goal.release_force_threshold_n <= 0:
+                    threshold = cfg["receive_threshold_n"]
+                if cfg["receive_at_retreat"]:
+                    # 10/11: 받기는 건네기 후퇴 자리(제시 자세에서 베이스 쪽·위)에서 — 막대를 방금 받은 손 쪽으로 다시 다가가면
+                    # 손 근접 STOP 으로 찔끔찔끔 멈춤. 여기선 자세(기울기)만 바로 세우고, 환자가 그리퍼 사이에 넣어 준다
+                    present = _retreat_pose(present, cfg["retreat_m"])
+                    present[2] += cfg["retreat_up_m"] * 1000.0
             if give and abs(tilt - goal.tilt_deg) > 1e-3:
                 log.warning(f"[handover] tilt {goal.tilt_deg:.0f}° → 범위 {cfg['tilt_range_deg']} 로 클램프 {tilt:.0f}°")
             log.info(f"[handover] {'GIVE' if give else 'RECEIVE'} class={goal.object_class} tilt={tilt:.0f}° (축 {cfg['tilt_axis']}) "
@@ -172,12 +182,14 @@ def execute(node):
                 if not ok:
                     raise SkillAbort("gripper_unavailable")
                 if goal.follow_hand:
-                    log.warning("[handover] follow_hand 손 추종은 아직 미구현 — 고정 제시 자세로 진행")
+                    log.warning("[handover] follow_hand 손 추종은 제외됨 (#134) — 고정 자세에서 받음")
 
             phase("present")
             movej_to_pose(node, present, jv, ja)
 
             phase("wait")
+            if not give:
+                log.info(f"[handover] 받기 대기 — 물체를 열린 그리퍼 사이에 넣고 로봇 쪽으로 살짝 밀어 주세요 (≥ {threshold:.1f} N, {timeout_s:.0f} s)")
             node.set_contact(True)
             node.set_patient_contact(True)            # 환자가 잡는 구간 (#59) — 여기부터 후퇴 끝까지 +x 명령 이동 없음
             with compliance(cfg["stiffness"], log):
@@ -203,7 +215,9 @@ def execute(node):
             phase("retreat")
             back = _retreat_pose(present, cfg["retreat_m"])          # 뒤로만 빼면 팔이 더 접혀 J3 한계(±150°) → 뒤 + 위로 비스듬히
             back[2] += cfg["retreat_up_m"] * 1000.0
-            move_checked(node, back, tv, ta)                         # 베이스 쪽(−x) + 위 — 환자에게서 멀어짐
+            # 베이스 쪽(−x) + 위 — 환자에게서 멀어짐. 관절 이동: 10/11 실로봇(제시 높이 44 cm) 직선 후퇴가 특이점 구역에 들어가
+            # 'not_arrived' — 놓은 뒤라 건네기는 성공인데 실패로 끝남. 짧은 이동이라 관절 보간 경로도 거의 직선
+            movej_to_pose(node, back, jv, ja)
             node.set_patient_contact(False)
             if res.success and not give and cfg["place_after_receive"]:
                 if not place_back():

@@ -3,6 +3,19 @@
 패키지: `ros2_ws/src/rally_brain`, `rally_db`, `rally_bringup`, `rally_interfaces`, `docker/`, `dashboard/` · 책임: **세션 전체 흐름**
 참고: `docs/INTERFACES.md` 전체, `rally_db/schema.sql`
 
+## 10/12 — 모드 3 트리·카메라 2대·대시보드 카메라 화면·시연 체크리스트 (기능 동결)
+
+- [x] #136 **모드 3 시도 트리** (`trees/mode3_catch.py`): CatchBall 호출 → 결과 기록(caught·이동 거리·반응 시간), 결과별 TTS, 연속 2번 안 던지면 남은 시도 건너뜀, 받기 서버 없으면 모드 3 만 건너뜀(세션 실패 아님). `skill_step` 에 `succeeded` 훅. #147(카메라 판정)에 맞춰 설명 갱신. **리뷰·머지 대기**.
+- [x] #137 `docs/INTELLIGENCE.md` 전문가 시스템과의 차이(다섯 층·#78 이유·한계·확장) — 포트폴리오용, 머지.
+- [x] #139 **RealSense 2대 60 fps** (`cameras.yaml`, 손목 컬러+깊이·측면 컬러) + 모드 3 동안만 노출 고정(20·gain 128), 모드 1·5 자동(`camera_exposure.py`). **박성현 리뷰·로봇 PC 확인 대기**.
+- [x] #140 **대시보드 카메라 화면** (#139 위): 로봇 PC `web_video_server` → 대시보드 모든 모드 화면, 카메라 없으면 "No Image", 측면은 개요·모드 3 만. 레이아웃 스케치(IMG_2037) 기준. **#139 뒤 머지**.
+- [x] #143 세션 시작 조건(readiness)에 `go_observe_pose`·`go_pick_view` (#132 머지됨 → 머지 가능).
+- [x] #145 `docs/DEMO_CHECKLIST.md` 시연 기동 체크리스트 — `robot.sh` 는 항상 로컬 모드라 시연에 못 씀 → `env_robot_pc.sh` + `ros2 launch`. **리허설에서 따라 해 보고 고친 뒤 머지**.
+- [x] 리뷰: #132 코멘트(관측 자세 서비스 readiness → #143), #142 승인·코멘트, #139 박성현 리뷰 요청, #147 코멘트(새 실패 사유 brain 처리 확인, 시연 `hand_stop:=slow` 에서 `slow_at_catch` 반복 가능성 리허설 확인 요청), #146 승인 코멘트(INTERFACES `ball_on_pad`).
+- [ ] 리허설: 체크리스트 2절 비전 실행 방식(compose pc2 vs `vision_local.sh`) 확인 → #145 고치고 머지.
+- [ ] 리허설: 모드 3 투구 때 손 때문에 SLOW → `slow_at_catch` 반복되면 #136 에 연속 중단 세기 추가.
+- [ ] 실기: 카메라 토픽 2개·모드 3 노출 전환·대시보드 화면(#139·#140), 모드 3 결과 기록(#136).
+
 ## 10/11 — 손 STOP 대기·회수 기준·자세 기준·세션 리포트·지식 그래프
 
 - [x] #110 보상 동작 임계 15° → 20°(몸통·어깨, 온톨로지) + 세션 시작 때 `/rally/perception/body/reset_baseline` (머지). 훈련 팔 변경 시 재호출은 운영자(확인 창 b).
@@ -18,7 +31,7 @@
 - [x] **CP13: 모드 3 포함 결정** (아래 Day 6).
 - [x] 리뷰: #104(tf·tcp_pose 끊김 지적 → 반영돼 머지), #109·#112 승인, #116 승인(정지 위치·손 머묾 레인), #108·#117 이슈 등록(빠진 커밋·로봇 스킬 옵션).
 - [ ] 리허설 값(slow/stop) 정해지면 #118 되돌림 PR + 시연 체크리스트(`robot.sh` ★ 경고, `hand_stop_mode=…` 로그).
-- [ ] 시연 기동 체크리스트 (서버 PC·로봇 PC 순서, 모드 1 → 3 → 5 → 7, 문제 시 복구).
+- [x] 시연 기동 체크리스트 (서버 PC·로봇 PC 순서, 모드 1 → 3 → 5 → 7, 문제 시 복구) → #145 (10/12, 리허설 뒤 머지).
 - [ ] #117 로봇 옵션(입구 공 바로 치기·쥔 공 거치대로) 들어오면 손 STOP 뒤 이어 가기 구간 확장.
 - [ ] 실기 (로봇 PC 비면, brain 은 main 으로 재빌드돼 있음): #115 손 넣었다 빼면 1 s 뒤 이어짐(`HAND_STOP=stop`), #113 회수 대기 로그로 원인, #121·#125 실제 세션 끝 리포트(두 번째 세션부터 '비슷한 과거 시도' 숫자), #126 휴식 판단 때 멈춤 없음·`[휴식 그래프] 조회 실패` 없음, #124 안내 TTS 타이밍.
 - [ ] OpenAI 키 한도 갱신 뒤 LLM 해석·휴식 제안 실제 응답 확인 (10/11 RateLimitError).
@@ -130,11 +143,11 @@
 ## Day 4 — 모드 7 통합 ✅ + 모드 3 착수
 - [x] `trees/mode7_resist.py`: ResistPush(지난 peak_force 60 % 에서 시작) → 성공 3연속 +10 % / 실패 2회 -10 % → TrialResult(peak, hold, smoothness) → TTS → (10/8) 목표 = 5 N × 1.1^난이도(rule_layer), 3~12 N, 강성 700 고정, 손 대기, 결과별 TTS. LLM 안 씀. **시작값 '지난 세션 60 %'는 brain → DB 읽기가 생길 때(Day 6 Graph RAG)**. `handle_pose` 비워 보냄 → 로봇이 정하는지 정정인 확인. 실로봇 확인은 `resist_push.py` 구현 후
 - [x] 세션 트리 순서 1 → (3 조건부) → 5 → 7, 모드 3 은 `skills.yaml mode3_challenge.enabled` 플래그로 on/off → `bt_runner.default_modes`, 모드 전환(#51)도 꺼진 모드 3 거절
-- [ ] `trees/mode3_catch.py`: CatchBall(catch_radius=0.35, lead_time, 타임아웃) → caught 면 패드 거치 → DetachBall → Handover GIVE / missed 면 TTS 격려 후 재시도. 떼어내기 실패 시 각도 변경 재시도
-  - 10/12 (정동휘, `docs/mode3/MODE3_PLAN.md`): `catch_radius 0.35`·`lead_time_s` 는 #128 스킬이 안 씀. goal 은 `catch_radius`(유효 범위)·`timeout_s` 만. 패드 거치·DetachBall·Handover 는 `after_catch()` 보류 상태라 트리는 CatchBall 결과 기록까지 먼저
+- [x] `trees/mode3_catch.py`: CatchBall(catch_radius=0.35, lead_time, 타임아웃) → caught 면 패드 거치 → DetachBall → Handover GIVE / missed 면 TTS 격려 후 재시도. 떼어내기 실패 시 각도 변경 재시도
+  - 10/12 (정동휘, `docs/mode3/MODE3_PLAN.md`): `catch_radius 0.35`·`lead_time_s` 는 #128 스킬이 안 씀. goal 은 `catch_radius`(유효 범위)·`timeout_s` 만. 패드 거치·DetachBall·Handover 는 `after_catch()` 보류 상태라 트리는 CatchBall 결과 기록까지 먼저 → #136 (10/12, 결과 기록까지. 패드 거치·떼기는 로봇 `after_catch()` 뒤)
 - [ ] (10/12 MODE3_PLAN 8절) `/rally/perception/landing_info` 를 전용 msg 로 바꿀지 결정 → rally_interfaces PR (지금 `Float64MultiArray` 순서 해석, #128 성현 요청)
 - [ ] (10/12 MODE3_PLAN 8절) `CatchBall.action` 필드 정리 PR — `ready_pose`·`lead_time_s` 삭제 여부, 패드 중심·유효 범위·단계 ①~④ 선택, 결과에 붙음/튕김/빗나감·범위 안 여부 (내용은 박성현)
-- [ ] (10/12 MODE3_PLAN 8절) pc2 launch 에 측면 RealSense (시리얼 147122075430, 컬러 848×480@60, 노출 20·gain 128 param set) + tf 값은 박성현
+- [x] (10/12 MODE3_PLAN 8절) pc2 launch 에 측면 RealSense (시리얼 147122075430, 컬러 848×480@60, 노출 20·gain 128 param set) + tf 값은 박성현 → #139 (리뷰 대기)
 - [ ] (10/12 MODE3_PLAN 8절) `skills.yaml mode3` 키 추가 — 패드 TCP·유효 범위·방향별 속도(옆 730·위아래 600)·받기 창 힘 한계 130 N, 옛 `catch_radius_m 0.35`·`lead_time_s`·`max_ball_speed_mps 3.0` 정리 (값은 정동휘·박성현)
 - [ ] `skills.yaml` mode3 단계값(0.35 / 0.15 / 0), Phase 1은 0.35 고정. `rule_layer` 에 단계 전환 자리만
 - [x] ~~`scripts/measure_latency.py` 로 웹캠→landing→skill_server 지연 측정 → lead_time 결정~~ — 10/12: 웹캠 아님(RealSense 2대), `lead_time_s` 안 씀. 촬영→수신 20 ms·명령→출발 107~243 ms 는 #107·#130 에 실측됨

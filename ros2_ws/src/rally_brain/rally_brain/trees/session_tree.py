@@ -24,11 +24,13 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 from std_srvs.srv import Trigger
 
+from rally_brain import hand_stop
 from rally_brain.config import load_table
 from rally_brain.behaviours import Do, ServiceCall, WaitUntil
 from rally_brain.trees import mode1_push, mode5_handover, mode7_resist
 from rally_interfaces.msg import SafetyStatus, SceneContext, TrialResult
 
+OBSERVE_SERVICE = "/rally/robot/go_observe_pose"
 MODE_NAMES = {1: "공 굴리기", 3: "캐치볼", 5: "건네고 받기", 7: "팔씨름"}
 BODY_BASELINE_SERVICE = "/rally/perception/body/reset_baseline"
 BODY_BASELINE_DEFAULTS = {"body_baseline_prompt": "기준 자세를 잡을게요. 바르게 서서 잠깐 가만히 있어 주세요.",
@@ -194,7 +196,17 @@ def build_session_tree(session: Session, modes: list[int], trials_per_mode: int)
             WaitUntil("휴식 대기", session.allow_trial),
             Do(f"{name} 시작", enter), builder(session),
         ])
-        root.add_child(py_trees.decorators.Repeat(f"{name} × {count}", trial, count))
+        repeat = py_trees.decorators.Repeat(f"{name} × {count}", trial, count)
+        if session.service_client is None:              # 테스트 — 자세 이동 없음
+            root.add_child(repeat)
+        else:
+            # 10/11: 모든 모드는 관측 자세에서 시작 (테이블·중앙선·환자 손이 화면에 들어옴). 못 가면 세션 실패
+            # 10/12: 이동 중 손 STOP 이면 손이 빠지고 NORMAL 유지 뒤 다시 요청 — 시도 안쪽 손 보기·물체 보기 자세와 같게 (#132 정동휘 리뷰)
+            hand_reasons = tuple(hand_stop.config(session.skills_cfg)["hand_stop_wait_reasons"])
+            root.add_child(py_trees.composites.Sequence(name, memory=True, children=[
+                ServiceCall(f"{name} — 관측 자세로", session.service_client(Trigger, OBSERVE_SERVICE), Trigger.Request,
+                            timeout_s=40.0, resend_reasons=hand_reasons, resume_ok=session.robot_resume_ok),
+                repeat]))
         if mode_prompt(session, mode, "done_prompt"):
             root.add_child(Do(f"{name} 끝 안내", lambda m=mode: session.say(mode_prompt(session, m, "done_prompt"))))
     return root

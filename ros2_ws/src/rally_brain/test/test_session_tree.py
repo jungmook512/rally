@@ -6,7 +6,7 @@ import py_trees
 
 from rally_brain.behaviours import Do, WaitUntil
 from rally_brain.bt_runner import default_modes
-from rally_brain.trees.session_tree import Session, build_session_tree
+from rally_brain.trees.session_tree import BODY_BASELINE_SERVICE, Session, build_session_tree
 from rally_interfaces.msg import SafetyStatus, SceneContext, TrialResult
 
 Status = py_trees.common.Status
@@ -111,10 +111,14 @@ def baseline_session(success=True):
     s.say = said.append
     s.skills_cfg = {"brain": {"body_baseline_prompt_wait_s": 0.0, "body_baseline_hold_s": 0.0}}
 
-    def call_async(req):
-        calls.append(req)
-        return Done(NS(success=success, message="" if success else "no body"))
-    s.service_client = lambda _type, name: NS(name=name, service_is_ready=lambda: True, call_async=call_async)
+    def client(_type, name):
+        def call_async(req):
+            if name != BODY_BASELINE_SERVICE:            # 모드 시작 관측 자세(10/11) 등 다른 서비스는 성공, 셈에서 뺌
+                return Done(NS(success=True, message=""))
+            calls.append(req)
+            return Done(NS(success=success, message="" if success else "no body"))
+        return NS(name=name, service_is_ready=lambda: True, call_async=call_async)
+    s.service_client = client
     return s, said, calls
 
 
@@ -147,3 +151,52 @@ def test_body_baseline_failure_does_not_block_session():
 def test_body_baseline_skipped_without_service_client():
     s, _ = make_session()
     assert build_session_tree(s, [5], 1).children[0].name != "자세 기준 잡기"
+
+
+def test_each_mode_starts_at_observe_pose():
+    # 10/11: 모든 모드는 관측 자세에서 시작 — 자세 기준(있으면) 다음, 첫 시도 전
+    from rally_brain.trees.session_tree import OBSERVE_SERVICE
+    s, _, _ = baseline_session()
+    names = []
+    inner = s.service_client
+    s.service_client = lambda t, name: (names.append(name), inner(t, name))[1]
+    build_session_tree(s, [5], 1)
+    assert names.count(OBSERVE_SERVICE) == 1           # 모드 시작 (모드 5 는 손 확인 안 함 — require_hand 기본 False)
+
+
+def test_observe_pose_resends_after_hand_stop():
+    # 10/12 (#132 정동휘 리뷰): 모드 시작 관측 자세 이동 중 손 STOP 이면 세션을 끝내지 않고 NORMAL 유지 뒤 다시 요청.
+    # 요청을 받을 때 이미 STOP 이면 skill_server 가 "safety STOP (사유)" 로 답한다 — 이것도 같은 손 STOP
+    from rally_brain.trees.session_tree import OBSERVE_SERVICE
+    s, _, _ = baseline_session()
+    gate = {"ok": False}
+    s.robot_resume_ok = lambda: gate["ok"]
+    answers = [NS(success=False, message="hand_near_robot"), NS(success=False, message="safety STOP (hand_lost_near)"),
+               NS(success=True, message="observe pose")]
+    sent = []
+    inner = s.service_client
+
+    def client(t, name):
+        if name != OBSERVE_SERVICE:
+            return inner(t, name)
+        return NS(name=name, service_is_ready=lambda: True,
+                  call_async=lambda req: sent.append(req) or Done(answers[len(sent) - 1]))
+    s.service_client = client
+    tree = build_session_tree(s, [5], 1)
+    assert not tick_until(tree, lambda: s.current_mode == 5, n=5)
+    assert len(sent) == 1 and tree.status != Status.FAILURE        # 손 STOP — 손이 빠지기 전엔 다시 안 보냄
+    gate["ok"] = True
+    assert tick_until(tree, lambda: s.current_mode == 5)
+    assert len(sent) == 3                                           # 이동 중 STOP · 받을 때 STOP 둘 다 다시 요청
+
+
+def test_observe_pose_other_failure_ends_session():
+    from rally_brain.trees.session_tree import OBSERVE_SERVICE
+    s, _, _ = baseline_session()
+    inner = s.service_client
+    s.service_client = lambda t, name: (NS(name=name, service_is_ready=lambda: True,
+                                           call_async=lambda req: Done(NS(success=False, message="force_limit")))
+                                        if name == OBSERVE_SERVICE else inner(t, name))
+    tree = build_session_tree(s, [5], 1)
+    tick_until(tree, lambda: tree.status == Status.FAILURE, n=5)
+    assert tree.status == Status.FAILURE and s.current_mode != 5   # 래치 STOP 등은 지금처럼 세션 실패

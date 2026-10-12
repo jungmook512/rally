@@ -144,6 +144,14 @@ class SkillCall(py_trees.behaviour.Behaviour):
                 return Status.RUNNING
             self._goal_handle = self._send_future.result()
             if not self._goal_handle.accepted:
+                if self.hand_resume is not None and self._resends < self.max_resends:
+                    # 10/11 실로봇(모드 5): 손 STOP 대기에서 NORMAL 을 보고 다시 보낸 순간 손이 또 가까워져 skill_server 가 거절
+                    # (STOP 중 goal 거부) → 세션 종료됐다. 손 STOP 재전송이 붙은 단계면 거절도 같은 대기로 돌린다
+                    self._resends += 1
+                    self.node.get_logger().info(f"[{self.name}] goal 거절 (안전 STOP 중) — 다시 NORMAL 이 되면 다시 보냄 ({self._resends}회)")
+                    self._reset()
+                    self._resend_wait = True
+                    return Status.RUNNING
                 self._handled = True
                 self.feedback_message = "goal 거절"
                 self.node.get_logger().warn(f"[{self.name}] goal 거절")
@@ -209,6 +217,17 @@ class SkillCall(py_trees.behaviour.Behaviour):
             self.on_interrupt(reason)
 
 
+SAFETY_STOP_PREFIX = "safety STOP ("
+
+
+def service_stop_reason(message: str) -> str:
+    """서비스 응답 message → 안전 사유. 이동 중 STOP 은 사유가 첫 낱말("hand_near_robot ..."), 요청을 받을 때 이미 STOP 이면
+    skill_server 가 "safety STOP (hand_near_robot)" 로 돌려준다 (10/12: 이 경우도 재요청 대상). 사유가 여럿이면 첫 사유."""
+    if message.startswith(SAFETY_STOP_PREFIX):
+        message = message[len(SAFETY_STOP_PREFIX):].split(")")[0]
+    return (message.replace(",", " ").split() or [""])[0]
+
+
 class ServiceCall(py_trees.behaviour.Behaviour):
     """서비스 한 번 호출하고 응답을 기다린다. ok(응답) 이면 SUCCESS. 서버 없음·시간 초과·ok 아님 → FAILURE.
     (예: /rally/robot/go_hand_view — 손 보기 자세로)"""
@@ -265,7 +284,7 @@ class ServiceCall(py_trees.behaviour.Behaviour):
             return Status.FAILURE
         if self.response is not None and self.ok(self.response):
             return Status.SUCCESS
-        reason = (str(getattr(self.response, "message", "") or "").split() or [""])[0]
+        reason = service_stop_reason(str(getattr(self.response, "message", "") or ""))
         if reason in self.resend_reasons and self._resends < self.max_resends:
             self._resends += 1
             self._future, self.response, self._resend_wait = None, None, True
