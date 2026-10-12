@@ -191,3 +191,15 @@ def test_contact_window_judge_closes_first_and_cancels_timer():
     w.schedule_close(0.0)                                    # 닫힌 뒤 다시 걸어도 무시
     time.sleep(0.05)
     assert calls == ["x"]
+
+
+def test_window_close_delay_caps_at_window_max():
+    """#171 리뷰: 설계(교차 + 0.5 s)와 창 절대 상한(연 뒤 1.5 s) 중 이른 쪽."""
+    from rally_robot.skills.catch_plan import window_close_delay
+    # 정상: 연 지 0.3 s, 교차 0.4 s 뒤 → 0.9 s 뒤 닫음 (창 1.2 s)
+    assert window_close_delay(10.4, 10.0, 1.5, 0.5, 0.3, 1.5) == pytest.approx(0.9)
+    # 교차가 늦게 예측(1.5 s 로 잘림 → 2.0 s 뒤): 상한이 이김 → 1.5 − 0.3 = 1.2 s 뒤
+    assert window_close_delay(15.0, 10.0, 1.5, 0.5, 0.3, 1.5) == pytest.approx(1.2)
+    # 이미 상한을 넘김 / 교차가 이미 지남 → 바로
+    assert window_close_delay(10.4, 10.0, 1.5, 0.5, 1.6, 1.5) == 0.0
+    assert window_close_delay(9.0, 10.0, 1.5, 0.5, 0.3, 1.5) == 0.0

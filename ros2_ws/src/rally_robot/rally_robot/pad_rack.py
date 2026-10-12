@@ -197,8 +197,12 @@ def place_pad(node, log, check=lambda: None):
             try:
                 how = move_checked(node, B, min(lv, 20.0), ca, on_poll=seated, stall_ok=True)
             finally:
-                cur = [float(v) for v in get_current_posx()[0]]
-                log.info(f"[pad_rack] 하강 끝 TCP {[round(v) for v in cur[:3]]} (입구 위 {[round(v) for v in P[:3]]} → G {[round(v) for v in pts['G'][:3]]})"
+                try:                                         # STOP 예외 경로에서 이게 실패해도 원래 예외(SkillAbort)를 가리지 않게
+                    cur = [float(v) for v in get_current_posx()[0]]
+                except Exception as e:  # noqa: BLE001
+                    log.warning(f"[pad_rack] 하강 끝 위치 읽기 실패: {e}")
+                    cur = [float("nan")] * 6
+                log.info(f"[pad_rack] 하강 끝 TCP [{', '.join(f'{v:.0f}' for v in cur[:3])}] (입구 위 {[round(v) for v in P[:3]]} → G {[round(v) for v in pts['G'][:3]]})"
                          f" · 힘 변화 최대 {peak[0]:.1f} N")
             off = float(np.linalg.norm(np.array(cur[:3]) - np.array(pts["G"][:3])))
             log.info(f"[pad_rack] 꽂힘 ({how}) — G 와 {off:.1f} mm")

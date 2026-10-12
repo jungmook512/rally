@@ -178,3 +178,11 @@ class ContactWindow:
         with self._lock:
             if self._timer is not None:
                 self._timer.cancel()
+
+
+def window_close_delay(t_cross_ros: float, now_ros: float, cross_max_after_s: float, after_cross_s: float,
+                       opened_for_s: float, window_max_s: float) -> float:
+    """받기 창을 지금부터 몇 s 뒤에 닫을지. 설계 = 교차(clamp_cross 로 자름) + after_cross_s, 단 창을 연 뒤 window_max_s 를 넘지 않게
+    (#171 리뷰: cross_max_after_s 로만 자르면 최대 약 2.3 s — #144 "창 약 1 s"). 0 이하면 바로 닫는다."""
+    by_cross = clamp_cross(t_cross_ros, now_ros, cross_max_after_s) + after_cross_s - now_ros
+    return max(0.0, min(by_cross, window_max_s - opened_for_s))
