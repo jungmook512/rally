@@ -96,6 +96,8 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 | `/rally/robot/go_observe_pose` | `std_srvs/Trigger` | rally_robot/skill_server | 관측 자세로 이동 (카메라가 테이블 전체를 보는 자세) |
 | `/rally/robot/go_hand_view` | `std_srvs/Trigger` | rally_robot/skill_server | 손 보기 자세로 이동 — 툴을 환자 쪽으로 기울여 그리퍼 위 RealSense 가 환자 손을 본다 (모드 1 시도 전 레인 고르기). `skills.yaml mode1.hand_view_*`. 이미 그 자세면 바로 성공 |
 | `/rally/robot/go_pick_view` | `std_srvs/Trigger` | rally_robot/skill_server | 모드 5 물체 보기 자세로 이동 — 관측 자세(관절 이동) → `skills.yaml mode5.pick_view_posx`(직선). 흰 배경(물체 놓는 자리)이 화면에 다 들어오는 자세. 세션 5 가 집기 전에 부른다 (10/11) |
+| `/rally/robot/pad_pick` | `std_srvs/Trigger` | rally_robot/skill_server | 모드 3 패드 거치대에서 패드 집기 → 거치대 위 20 cm(U)에서 끝 — A(관절) → 열기 → G(직선) → 쥐기(폭 24~38 mm 확인) → 홈 따라 순응으로 들어 올림. 교시 `skills.yaml mode3.pad_rack_*_posj` (10/12) |
+| `/rally/robot/pad_place` | `std_srvs/Trigger` | rally_robot/skill_server | 모드 3 쥔 패드를 거치대에 꽂기 — U(관절) → 홈 입구 위 3 cm → 옆·회전을 무르게 한 순응 하강(위아래 힘 6 N 에서 멈춤) → 열기 → 손잡이 축 따라 빠짐 |
 | `/rally/robot/reset_safety` | `std_srvs/Trigger` | rally_robot/safety_monitor | 정지 해제 (운영자만) |
 | `/rally/perception/body/reset_baseline` | `std_srvs/Trigger` | rally_human/body_pose | 몸 자세 기준(평소 자세) 다시 잡기 — 부른 뒤 약 2 s 바르게. 환자가 자리를 잡은 뒤 운영자(확인 창 `b`)·brain(세션 시작)이 부름 |
 | `/rally/db/start_session` | `std_srvs/Trigger` → 추후 커스텀 | rally_db | 세션 레코드 생성 |
@@ -112,8 +114,8 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 | `/rally/skill/catch_ball` | `rally_interfaces/CatchBall` | 3 (챌린지) | 패드 집기(`catch_ball.pickup_pad()`, 정정인 자리) → 대기 자세 → 공 놓은 뒤 0.16 s 예측점으로 amovel 한 번(TCP 자세 고정, 왼쪽 안 감, 오른쪽·위 15 cm, 아래 8 cm — 대기 자세 −9.4 cm 자기충돌). 예측 std > 10 cm·관측 < 4 면 안 움직임(`low_confidence`), 안전 SLOW 면 `slow_at_catch` 중단 → **비전 판정**: `/rally/perception/ball_on_pad` 가 3 s 연속이면 `caught` (힘 판정 없음, 10/12) → 판정 뒤 로직(`catch_ball.after_catch()`, 정정인 자리) → 복귀. 비행 중 `contact_expected`. servol 보정은 나중 |
 | `/rally/skill/move_target` | `rally_interfaces/MoveTarget` | 3 (Phase 2) | movec / movesx / moveb 궤적, 환자가 맞혀야 하는 후기 단계 |
 | `/rally/skill/detach_ball` | `rally_interfaces/DetachBall` | 3 | 힘 제어 당김, 힘 급락으로 떼어짐 판정 |
-| `/rally/skill/handover` | `rally_interfaces/Handover` | 5 | 기울여 제시, 당김 힘 감지 해제 / 받기: 후퇴 자리에서 열고 대기(막대 화면 기울기에 손목만 맞춤) → 밀어 넣는 힘·그리퍼 사이 깊이 감지 또는 다가가기(툴 z 로만 ≤ 10 cm, 보라색 선 3 cm 앞까지, phase `approach`) → 잡기 → 제자리. `follow_hand` 는 쓰지 않음 (#134) |
-| `/rally/skill/resist_push` | `rally_interfaces/ResistPush` | 7 | 순응 강성으로 버티기, 목표 힘 유지 시 져주기(밀려남), 저속 복귀. 로봇은 절대 밀지 않음 |
+| `/rally/skill/handover` | `rally_interfaces/Handover` | 5 | 기울여 제시, 당김 힘 감지 해제 / 받기: 보라색 선 − 20 cm 에서 열고 대기(막대 화면 기울기에 손목만 맞춤) → 막대 3D 위치로 다가가기(막대 앞에서 옆·위아래 맞춘 뒤 툴 z 로 ≤ 20 cm, 보라색 선 3 cm 앞까지, phase `approach`) 또는 밀어 넣는 힘 → 잡기 → 제자리. `follow_hand` 는 쓰지 않음 (#134) |
+| `/rally/skill/resist_push` | `rally_interfaces/ResistPush` | 7 | 환자가 로봇 손목(J5·J6)을 직접 민다(10/12, 손잡이 없음). 제시 x 고정·y 만 손에 맞춤 → 순응 강성으로 버티기, 목표 힘 유지 시 −x 로 져주기, 손 뗀 뒤 저속 복귀. 로봇은 절대 밀지 않음. `handle_pose` 는 쓰지 않음 |
 | `/rally/session/run` | `rally_interfaces/RunSession` | 전체 | brain 최상위 action |
 
 ## 4.1 모드 3 요격 타이밍

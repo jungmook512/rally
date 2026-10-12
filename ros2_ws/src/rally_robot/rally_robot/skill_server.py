@@ -104,6 +104,8 @@ class SkillServer(Node):
         self.create_service(Trigger, "/rally/robot/go_observe_pose", self._go_observe, callback_group=self.cb_skill)
         self.create_service(Trigger, "/rally/robot/go_hand_view", self._go_hand_view, callback_group=self.cb_skill)
         self.create_service(Trigger, "/rally/robot/go_pick_view", self._go_pick_view, callback_group=self.cb_skill)
+        self.create_service(Trigger, "/rally/robot/pad_pick", self._pad_pick, callback_group=self.cb_skill)     # 모드 3 패드 거치대 (10/12)
+        self.create_service(Trigger, "/rally/robot/pad_place", self._pad_place, callback_group=self.cb_skill)
 
         from rally_robot.skills import (catch_ball, detach_ball, handover, move_target, pick_compliant, push_ball, resist_push,
                                         return_ball)
@@ -334,6 +336,30 @@ class SkillServer(Node):
             res.success, res.message = False, e.reason
             return res
         res.success, res.message = True, f"pick view {pose or posj}"
+        return res
+
+    def _pad_pick(self, req, res):
+        """모드 3: 거치대에서 패드 집기 → U(거치대 위 20 cm)에서 끝 (rally_robot/pad_rack.py)."""
+        return self._pad_call(res, "pick")
+
+    def _pad_place(self, req, res):
+        """모드 3: 쥔 패드를 거치대에 순응으로 꽂고 놓은 뒤 빠짐."""
+        return self._pad_call(res, "place")
+
+    def _pad_call(self, res, what):
+        from rally_robot import pad_rack
+        if self.stop_requested():
+            res.success, res.message = False, f"safety STOP ({self.safety_reason()})"
+            return res
+        try:
+            self.check_controller()
+            fn = pad_rack.pick_pad if what == "pick" else pad_rack.place_pad
+            fn(self, self.get_logger(), self.check_stop)
+        except SkillAbort as e:
+            self.get_logger().error(f"[pad_rack] {what} 중단: {e.reason}")
+            res.success, res.message = False, e.reason
+            return res
+        res.success, res.message = True, f"pad {what} done"
         return res
 
     def _go_hand_view(self, req, res):

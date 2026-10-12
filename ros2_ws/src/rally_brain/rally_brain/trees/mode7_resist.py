@@ -3,11 +3,11 @@
 
   모드 7 시도 (Guard — 도중에 멈추면 interrupted 기록)
    └─ Selector
-       ├─ 손 없음            모드 5 와 같은 손 대기 (steps.no_hand) — 손잡이를 내밀기 전에 환자가 있는지
+       ├─ 손 없음            모드 5 와 같은 손 대기 (steps.no_hand) — 로봇이 손목을 내밀기 전에 환자가 있는지
        └─ 진행 (Selector)
            ├─ 밀기 (Sequence)
            │   ├─ 시작        목표 힘 = target_force_start_n × (1 + level_step_ratio)^난이도, target_force_range_n 으로 자름
-           │   └─ ResistPush  로봇이 손잡이를 잡아 내밀고 버팀 → 목표 힘을 hold_time_s 유지하면 져준다 → 기록 + TTS
+           │   └─ ResistPush  로봇이 손목을 내밀고 환자가 미는 힘을 버팀 (10/12: 손잡이 없음) → 목표 힘을 hold_time_s 유지하면 져준다 → 기록 + TTS
            └─ 끝              실패도 기록했으면 시도는 끝 (서버 없음이면 세션 실패)
   난이도는 rule_layer 가 정한다 (3연속 성공 → +1, 2연속 실패 → -1, brain.difficulty_range). 이 트리는 단계 → 힘 변환만.
   재시도 없음: 실패 이유(timeout·force_limit·released·safety_stop)가 환자의 결과이거나 안전이라 다시 할 이유가 없다.
@@ -42,7 +42,7 @@ DEFAULTS: dict[str, Any] = {
 PROMPTS: dict[str, str] = {
     "success": "좋아요, {hold:.0f}초 버텼어요",
     "timeout": "조금만 더 힘을 줘 볼까요",
-    "released": "손잡이를 끝까지 잡아 주세요",
+    "released": "로봇 손목을 끝까지 밀어 주세요",
     "force_limit": "힘을 조금 빼고 다시 해 볼게요",
 }
 
