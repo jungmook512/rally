@@ -61,7 +61,7 @@ cd docker && docker compose --profile pc3 up --build
 |---|---|---|---|
 | 1 | 공 굴려주기 | 팔 뻗기 | `PickCompliant` → `PushBall`, LLM 파라미터 학습 |
 | 3 (챌린지) | 던진 공 예측 요격 | 던지기 · 협응 | `CatchBall` → `DetachBall` → `Handover` — Day 6 성공률로 포함 여부 결정 |
-| 5 | 기울인 물체 건네고 받기 | 손목 회전 · 쥐기 | `Handover` (GIVE / RECEIVE, 손 추종) |
+| 5 | 기울인 물체 건네고 받기 | 손목 회전 · 쥐기 | `PickCompliant` → `Handover` (GIVE / RECEIVE — 환자가 넣어 줌, 손 추종은 제외 #134) |
 | 7 | 저항 밀기 (팔씨름형) | 등척성 근력 | `ResistPush` — 순응 버티기 → 목표 힘 유지 시 져주기. 로봇은 절대 밀지 않음 |
 
 Phase 2 (범위 밖): 모드 3 중간·후기 단계(받아주는 반경 좁히기 → 패드 고정), 굴러오는 공 받기, 블록 번갈아 쌓기, VLA 비교.
