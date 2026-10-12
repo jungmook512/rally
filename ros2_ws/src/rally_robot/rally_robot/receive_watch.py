@@ -83,3 +83,74 @@ def tilt_step(current, target, deadband_deg, max_step_deg):
     if abs(d) < deadband_deg:
         return None
     return current + max(-max_step_deg, min(max_step_deg, d))
+
+
+def wrap90(a: float) -> float:
+    """막대는 앞뒤 방향이 없다 → 각도를 (−90, 90] 로. +90 과 −90 은 같은 자세."""
+    return (float(a) + 90.0) % 180.0 - 90.0 if (float(a) + 90.0) % 180.0 != 0.0 else 90.0
+
+
+def axis_mean(samples, now_s, window_s, min_samples):
+    """막대 각도들(deg, ±90 근처에서 −89·+89 로 뒤집혀 들어옴)의 평균 — 2θ 로 원형 평균. 표본 부족이면 None.
+    10/12 실로봇: 막대가 거의 가로면 −90·+90 이 섞여 중앙값이 흔들려 손목이 안 돌았다."""
+    vals = [v for t, v in samples if now_s - t <= window_s and math.isfinite(v)]
+    if len(vals) < min_samples:
+        return None
+    c = sum(math.cos(math.radians(2.0 * v)) for v in vals)
+    s = sum(math.sin(math.radians(2.0 * v)) for v in vals)
+    if math.hypot(c, s) < 1e-6 * len(vals):
+        return None
+    return wrap90(math.degrees(math.atan2(s, c)) / 2.0)
+
+
+def recent_position(objects, class_name, min_conf=0.25, frame="base_link"):
+    """objects 에서 class_name 중 신뢰도가 가장 높은 것의 3D 중심 (x, y, z) [m]. base 좌표가 아니거나 깊이를 못 쟀으면 None."""
+    if objects is None or objects.header.frame_id != frame:
+        return None
+    best = None
+    for o in objects.objects:
+        p = o.position
+        if o.class_name != class_name or o.confidence < min_conf or not all(map(math.isfinite, (p.x, p.y, p.z))):
+            continue
+        if abs(p.x) + abs(p.y) + abs(p.z) < 1e-6:
+            continue
+        if best is None or o.confidence > best[0]:
+            best = (o.confidence, (float(p.x), float(p.y), float(p.z)))
+    return None if best is None else best[1]
+
+
+def median_xyz(samples, now_s, window_s, min_samples):
+    """samples [(t_s, (x, y, z))] 최근 window_s 안 축별 중앙값. 표본 부족이면 None."""
+    pts = [p for t, p in samples if now_s - t <= window_s]
+    if len(pts) < min_samples:
+        return None
+    return tuple(float(np.median([p[i] for p in pts])) for i in range(3))
+
+
+def approach_plan(tcp_posx, obj_m, jaw_depth_m, max_m, min_m, finger_max_m, along_rod_max_m, x_limit_m):
+    """받기 다가가기 (10/12 정정인 결정, #134 일부 뒤집음) — 툴 z(그리퍼가 향한 쪽) 방향으로만 얼마나 갈지.
+    tcp_posx: 지금 TCP posx (mm·ZYZ deg), obj_m: 물체 3D 중심 (base, m). 그리퍼는 툴 x 로 닫히고, 기울기를 맞췄으면 막대는 툴 y 를 따라 놓인다.
+    TCP(손가락 끝)가 물체를 jaw_depth_m 지나가게: 이동 = 툴 z 성분 + jaw_depth_m.
+    10/12 밤 정정인 "앞으로만 가서는 안 잡힘, 위아래도": 손가락 닫히는 방향(툴 x)·막대 길이 방향(툴 y) 어긋남도 같이 옮겨
+    막대 3D 중심으로 간다 (각각 finger_max_m · along_rod_max_m 안일 때).
+    → (앞 이동 m, 이유, (툴 x 이동 m, 툴 y 이동 m)). 이동 None = 안 감(이유), 0 = 이미 그리퍼 사이."""
+    from scipy.spatial.transform import Rotation
+    R = Rotation.from_euler("ZYZ", tcp_posx[3:6], degrees=True).as_matrix()
+    tcp = np.asarray(tcp_posx[:3], float) / 1000.0
+    rel = np.asarray(obj_m, float) - tcp
+    along, finger, rod = float(rel @ R[:, 2]), float(rel @ R[:, 0]), float(rel @ R[:, 1])
+    if abs(finger) > finger_max_m:
+        return None, f"손가락 닫히는 방향으로 {finger * 100:+.1f} cm 벗어남 (한계 {finger_max_m * 100:.0f} cm)", (0.0, 0.0)
+    if abs(rod) > along_rod_max_m:
+        return None, f"막대 방향으로 {rod * 100:+.1f} cm 벗어남 (한계 {along_rod_max_m * 100:.0f} cm)", (0.0, 0.0)
+    adv = along + jaw_depth_m
+    if adv < min_m:
+        if abs(finger) < min_m and abs(rod) < min_m:
+            return 0.0, f"이미 그리퍼 사이 (앞 {along * 100:+.1f} cm)", (0.0, 0.0)
+        adv = 0.0                                   # 앞은 충분 — 옆·위아래만 맞춤
+    if adv > max_m:
+        return None, f"{along * 100:.1f} cm 앞 — 다가가기 한계 {max_m * 100:.0f} cm 보다 멂", (0.0, 0.0)
+    end_x = tcp[0] + R[0, 2] * adv + R[0, 0] * finger + R[0, 1] * rod
+    if end_x > x_limit_m:
+        return None, f"다가가면 x {end_x:.3f} m — 보라색 선 앞 한계 {x_limit_m:.3f} m 넘음", (0.0, 0.0)
+    return adv, f"{along * 100:.1f} cm 앞 → {adv * 100:.1f} cm 다가감 · 옆 {finger * 100:+.1f} cm · 위아래(막대 방향) {rod * 100:+.1f} cm", (finger, rod)

@@ -112,7 +112,7 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 | `/rally/skill/catch_ball` | `rally_interfaces/CatchBall` | 3 (챌린지) | 패드 집기(`catch_ball.pickup_pad()`, 정정인 자리) → 대기 자세 → 공 놓은 뒤 0.16 s 예측점으로 amovel 한 번(TCP 자세 고정, 왼쪽 안 감, 오른쪽·위 15 cm, 아래 8 cm — 대기 자세 −9.4 cm 자기충돌). 예측 std > 10 cm·관측 < 4 면 안 움직임(`low_confidence`), 안전 SLOW 면 `slow_at_catch` 중단 → **비전 판정**: `/rally/perception/ball_on_pad` 가 3 s 연속이면 `caught` (힘 판정 없음, 10/12) → 판정 뒤 로직(`catch_ball.after_catch()`, 정정인 자리) → 복귀. 비행 중 `contact_expected`. servol 보정은 나중 |
 | `/rally/skill/move_target` | `rally_interfaces/MoveTarget` | 3 (Phase 2) | movec / movesx / moveb 궤적, 환자가 맞혀야 하는 후기 단계 |
 | `/rally/skill/detach_ball` | `rally_interfaces/DetachBall` | 3 | 힘 제어 당김, 힘 급락으로 떼어짐 판정 |
-| `/rally/skill/handover` | `rally_interfaces/Handover` | 5 | 기울여 제시, 당김 힘 감지 해제 / 받기: 후퇴 자리에서 열고 대기 → 밀어 넣는 힘 감지 → 잡기 → 제자리. `follow_hand` 는 쓰지 않음 (#134) |
+| `/rally/skill/handover` | `rally_interfaces/Handover` | 5 | 기울여 제시, 당김 힘 감지 해제 / 받기: 후퇴 자리에서 열고 대기(막대 화면 기울기에 손목만 맞춤) → 밀어 넣는 힘·그리퍼 사이 깊이 감지 또는 다가가기(툴 z 로만 ≤ 10 cm, 보라색 선 3 cm 앞까지, phase `approach`) → 잡기 → 제자리. `follow_hand` 는 쓰지 않음 (#134) |
 | `/rally/skill/resist_push` | `rally_interfaces/ResistPush` | 7 | 순응 강성으로 버티기, 목표 힘 유지 시 져주기(밀려남), 저속 복귀. 로봇은 절대 밀지 않음 |
 | `/rally/session/run` | `rally_interfaces/RunSession` | 전체 | brain 최상위 action |
 
