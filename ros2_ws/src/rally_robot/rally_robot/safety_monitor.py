@@ -37,9 +37,11 @@
   tcp_pose 가 robot_tf_tcp_cover_s 안에 있었을 때만 쓰고(교차 검사 기준), 그동안 tcp_pose 끊김은 tcp_stale 이 아니다.
   tf 로 구한 TCP 로도 작업 공간을 검사한다 (tcp_pose 만 멈춰도 작업 공간 STOP 이 빠지지 않게 — 리뷰 #104).
 - 개발용 손 STOP 스위치 (hand_stop_mode: stop | slow | off, 10/11 조정묵 요청 · 정정인 결정): 실기 동작 확인 중 손 근접 STOP 이 잦아서.
-  slow = 손 근접 STOP 을 SLOW 로 낮춤 · off = 손 판정 안 함. 둘 다 **지금 보이는 손만** 본다 — 손 놓침 STOP·SLOW 유지(#95),
+  slow = 손 근접 STOP 을 SLOW 로 낮춤 (단 hand_deep_intrusion — 선 너머 30 cm 넘게 — 은 STOP 유지, #160 10/13 정정인 결정)
+  · off = 손 판정 안 함. 둘 다 **지금 보이는 손만** 본다 — 손 놓침 STOP·SLOW 유지(#95),
   끊긴 손의 마지막 거리 사용, 손 입력 끊김 SLOW 를 하지 않는다. 힘 한계·nudge·작업 공간·estop·음성·필수 입력은 그대로.
-  개발 기간(10/11~) 기본은 safety.yaml·launch 의 off, 노드 자체 기본(설정 파일 없이 띄울 때)은 stop. 리허설(10/12)·시연 전 slow 또는 stop 으로 되돌림.
+  safety.yaml·launch 기본은 slow (#158 — 10/11~10/12 개발 기간 off 종료), 노드 자체 기본(설정 파일 없이 띄울 때)은 stop.
+  리허설 결과로 시연 값 slow/stop 확정. off 는 개발 시험 전용 (시연·환자 앞 금지).
   기동할 때 한 번 정하고 실행 중에는 못 바꾼다(read_only). stop 이 아니면 5 s 마다 경고 로그,
   reason 에 hand_stop_dev_off · hand_stop_dev_slow 를 붙인다 (NORMAL 이면 그것만, 다른 사유가 있으면 "사유,hand_stop_dev_…").
   YAML 은 따옴표 없는 off 를 거짓(false)으로 읽으므로 false 도 off 로 받는다 (-p hand_stop_mode:=off 그대로 기동되게).
@@ -193,11 +195,12 @@ def hand_mode_reason(reason, mode):
 
 
 def hand_mode_level(level_reason, mode):
-    """개발용 hand_stop_mode 적용 (순수 함수). stop = 그대로, slow = STOP → SLOW (사유 유지), off = NORMAL."""
+    """hand_stop_mode 적용 (순수 함수). stop = 그대로, slow = STOP → SLOW (사유 유지), off = NORMAL.
+    slow 라도 hand_deep_intrusion(선 너머 hand_deep_end_m 보다 깊이 — 손이 로봇 쪽 테이블 위)은 STOP 그대로 (#160)."""
     level, reason = level_reason
     if mode == "off":
         return SafetyStatus.LEVEL_NORMAL, ""
-    if mode == "slow" and level == SafetyStatus.LEVEL_STOP:
+    if mode == "slow" and level == SafetyStatus.LEVEL_STOP and reason != "hand_deep_intrusion":
         return SafetyStatus.LEVEL_SLOW, reason
     return level, reason
 
@@ -253,7 +256,7 @@ class SafetyMonitor(Node):
         self.declare_parameter("contact_timeout_s", 0.5)     # contact_expected 하트비트 유효 시간
         self.declare_parameter("hand_stop_mode", "stop", ParameterDescriptor(   # 개발용: stop | slow | off — 모듈 docstring
             read_only=True, dynamic_typing=True,                                # off 가 YAML 에서 false 로 와도 기동 (hand_mode_from_param)
-            description="개발용 손 근접 STOP: stop | slow | off. 실행 중 변경 불가. 시연·환자 앞에서는 slow 또는 stop"))
+            description="손 근접 STOP: stop | slow | off. 실행 중 변경 불가. 시연·환자 앞에서는 slow 또는 stop (off 는 개발 시험 전용)"))
         # 손 거리 완화 (#59) — 값은 safety.yaml
         self.declare_parameter("hand_deep_end_m", -0.30)             # 이보다 깊으면 사유 hand_deep_intrusion (세션 종료). STOP 기준은 아님
         self.declare_parameter("hand_deep_stop_m", -0.15)            # 이보다 로봇 구역 깊이 들어오면 환자 접촉 중이어도 STOP
@@ -324,9 +327,11 @@ class SafetyMonitor(Node):
         if self._hand_mode == "stop":
             self.get_logger().info("hand_stop_mode=stop (손 근접 STOP 켜짐)")
         else:
-            self.get_logger().warning(f"★ hand_stop_mode={self._hand_mode} — 개발용. 손 근접 STOP 꺼짐"
-                                      + (", 손 판정 전체 꺼짐" if self._hand_mode == "off" else ", 손 근접은 SLOW 만")
-                                      + ". 남는 STOP: 힘 한계·nudge·작업 공간·estop·음성·필수 입력. 시연·환자 앞에서는 slow 또는 stop")
+            self.get_logger().warning(f"★ hand_stop_mode={self._hand_mode} — "
+                                      + ("개발 시험 전용. 손 판정 전체 꺼짐" if self._hand_mode == "off"
+                                         else "손 근접은 SLOW 만 (선 너머 깊은 침입 hand_deep_intrusion 은 STOP)")
+                                      + ". 남는 STOP: 힘 한계·nudge·작업 공간·estop·음성·필수 입력"
+                                      + (". 시연·환자 앞 금지 — slow 또는 stop 으로" if self._hand_mode == "off" else ""))
         # 시뮬(RALLY_SIM=1)은 에뮬레이터 툴 힘이 0 이라 force_publisher 가 발행을 건너뛸 수 있다 → 필수·끊김 STOP 검사 안 함 (경고 로그만)
         sim = os.environ.get("RALLY_SIM") == "1"
         self.required = [] if sim else list(self.p("required_inputs"))
@@ -561,7 +566,8 @@ class SafetyMonitor(Node):
                 hand = self.hand_judge_visible(now, relax, self.cfg(), mode)
                 rx.pop("hand", None)                                    # 손 끊김 SLOW 도 안 함 (보이는 손만)
                 if now - self._mode_warn_t >= 5.0:
-                    self.get_logger().warning(f"손 근접 STOP 꺼짐 (hand_stop_mode={mode}) — 개발용. 시연·환자 전에는 stop 으로")
+                    self.get_logger().warning("손 판정 꺼짐 (hand_stop_mode=off) — 개발 시험 전용. 시연·환자 앞 금지" if mode == "off"
+                                              else "손 근접 STOP → SLOW (hand_stop_mode=slow, 깊은 침입만 STOP)")
                     self._mode_warn_t = now
             level, reason = worst(hand,
                                   input_level(rx, now, timeouts, self.required, now - self.t_start, self.p("required_grace_s"),

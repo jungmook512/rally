@@ -150,7 +150,7 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 
 - `hand_eye.yaml` — `tcp_T_camera_optical`(TCP ← camera_color_optical_frame, xyz m + 쿼터니언), `depth_scale`, `tcp_offset_from_flange_m`. 10/8 ArUco 터치 재맞춤 값(`scripts/fit_hand_eye.py`, 평균 6 mm·최대 9 mm). 재검증은 `scripts/aruco_detect.py --json` → `scripts/verify_calibration.py --depth-scale 0.971`
 - `table.yaml` — table_link 원점, 중앙선 위치, 작업 공간 한계(x,y,z min/max)
-- `safety.yaml` — 손 근접(손 ↔ 로봇 끝 선분 `hand_slow_robot_m` 0.35 m 안 → SLOW(`slow_override` 50 %), `hand_stop_robot_m` 0.20 m 안 → STOP, 중앙선 `slow_distance_m` 0.10 m 안 → SLOW. 개발용 `hand_stop_mode` stop·slow·off — #118), 힘 한계(기본 25 N, 항상 적용), nudge 임계(한 샘플 |Δ|F|| `nudge_dfdt_n` 5 N — 로봇 정지 중이고 `/rally/safety/contact_expected` 가 아닐 때만 판정), 작업 공간(x·y·z min/max → 밖이면 STOP. TCP 한 점 기준. 10/11: 환자 쪽 x_max 0.57 m(보라색 선)가 주된 제한, y ±0.60 은 테이블 옆으로 크게 나가지 않게 남김, x_min −2.0 · z 0~2.0 은 자세 전환 경로를 위해 사실상 열어 둠)
+- `safety.yaml` — 손 근접(손 ↔ 로봇 끝 선분 `hand_slow_robot_m` 0.35 m 안 → SLOW(`slow_override` 50 %), `hand_stop_robot_m` 0.20 m 안 → STOP, 중앙선 `slow_distance_m` 0.10 m 안 → SLOW. `hand_stop_mode` stop·slow·off — #118, 기본 slow #158. slow 는 근접 STOP 을 SLOW 로 낮추되 `hand_deep_intrusion` 은 STOP 유지 #160, off 는 개발 시험 전용), 힘 한계(기본 25 N, 항상 적용), nudge 임계(한 샘플 |Δ|F|| `nudge_dfdt_n` 5 N — 로봇 정지 중이고 `/rally/safety/contact_expected` 가 아닐 때만 판정), 작업 공간(x·y·z min/max → 밖이면 STOP. TCP 한 점 기준. 10/11: 환자 쪽 x_max 0.57 m(보라색 선)가 주된 제한, y ±0.60 은 테이블 옆으로 크게 나가지 않게 남김, x_min −2.0 · z 0~2.0 은 자세 전환 경로를 위해 사실상 열어 둠)
 - `skills.yaml` — 관측 자세, 모드별 기본 파라미터와 허용 범위(LLM 클램핑 범위와 동일), `gripper.<class>` 열림 폭·힘, `pick.*`, `handover.*`(제시 자세·당김 임계)
 - `table.yaml` — `table.z_m` 테이블 면 높이: 집기 Z 는 비전 깊이가 아니라 이 평면 + 물체 반지름으로 계산
 - `llm.yaml` — 모델, 타임아웃(3 s), 프롬프트 템플릿 경로, 전송 필드 화이트리스트(익명화)
@@ -250,7 +250,7 @@ STOP·취소는 기존 세션 중단 처리. 타격 action 실패 시에도 다�
 | `reason` | 래치 | Brain 처리 |
 |---|---|---|
 | `hand_near_robot` · `hand_near_centerline`(얕은 근접) · `hand_lost_near` | 아님 | **손 근접 대기** (모드 1·5, 아래 조건) |
-| `hand_deep_intrusion` (중앙선 너머 `hand_deep_end_m` 30 cm 보다 깊이, 10/12 분리. 15~30 cm 는 STOP 이지만 사유 `hand_near_centerline` → 대기) | 아님 | **자동 재진행 대상 아님** — 대기 목록에 넣지 않는다 (세션 종료) |
+| `hand_deep_intrusion` (중앙선 너머 `hand_deep_end_m` 30 cm 보다 깊이, 10/12 분리. 15~30 cm 는 STOP 이지만 사유 `hand_near_centerline` → 대기. `hand_stop_mode=slow` 에서도 STOP — #160 10/13) | 아님 | **자동 재진행 대상 아님** — 대기 목록에 넣지 않는다 (세션 종료) |
 | `wrench_missing` · `tcp_missing` · `wrench_lost` | 아님 | 손 대기 아님 — 세션 종료 (운영자 확인) |
 | `force_limit` · `nudge` · `workspace_limit` · `estop` · `voice_stop` · `fist_gesture` | 래치 | 세션 종료 (`reset_safety` 수동) |
 | SLOW 사유 (`hand_distance_unknown` · `hand_near_patient_contact` · `*_stale` 등) | — | STOP 아님, 대기 대상 아님 |

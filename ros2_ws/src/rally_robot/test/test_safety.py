@@ -207,6 +207,10 @@ def test_hand_mode_level():
     assert hand_mode_level((S.LEVEL_STOP, "hand_near_robot"), "slow") == (S.LEVEL_SLOW, "hand_near_robot")
     assert hand_mode_level((S.LEVEL_SLOW, "hand_near_centerline"), "slow") == (S.LEVEL_SLOW, "hand_near_centerline")
     assert hand_mode_level((S.LEVEL_STOP, "hand_near_centerline"), "off") == (S.LEVEL_NORMAL, "")
+    # #160: slow 라도 선 너머 30 cm 넘는 깊은 침입은 STOP 유지 (15~30 cm 는 SLOW)
+    assert hand_mode_level(hand_level(-0.35, False, CFG), "slow") == (S.LEVEL_STOP, "hand_deep_intrusion")
+    assert hand_mode_level(hand_level(-0.20, False, CFG), "slow") == (S.LEVEL_SLOW, "hand_near_centerline")
+    assert hand_mode_level(hand_level(-0.35, False, CFG), "off") == (S.LEVEL_NORMAL, "")
 
 
 def make_monitor(*extra):
