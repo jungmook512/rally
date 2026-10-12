@@ -93,12 +93,12 @@
   .mode-cards>.mode-card { flex:1 1 0; } .mode-cards>.mode-card.selected { flex:2.6 1 0; }
   .mode-card { border:1px solid var(--line); border-top:4px solid #d9cfb9; border-radius:12px; background:#fffdf7; padding:10px; cursor:pointer; min-width:0; }
   .mode-card:hover { border-color:#b9ad92; }
-  .mode-card.selected { border:2px solid var(--accent); border-top-width:4px; background:#e6edf5; cursor:default; }
+  .mode-card.selected { border:2px solid var(--accent); border-top-width:4px; background:#f3e7d4; cursor:default; }
   .mode-card .top { display:flex; justify-content:space-between; align-items:center; gap:6px; }
   .mode-card .num { display:grid; place-items:center; width:30px; height:30px; border-radius:50%; border:1.5px solid #b9ad92; background:#fff; font-weight:750; }
   .mode-card.selected .num { background:var(--accent); border-color:var(--accent); color:#fff; }
   .mode-card .state { font-size:12px; padding:2px 9px; border-radius:999px; border:1px solid var(--line); background:#f6f1e6; color:var(--muted); white-space:nowrap; }
-  .mode-card .state.running { background:#dbe7f3; border-color:#7f9fc3; color:#2c4f7c; }
+  .mode-card .state.running { background:#f1e2c9; border-color:#c9a473; color:#6b4421; }
   .mode-card .state.paused { background:#f7e9cc; border-color:#d0a95b; color:#7a5414; }
   .mode-card .state.off { opacity:.6; }
   .mode-card .name { font-family:"Noto Serif KR","Nanum Myeongjo",Georgia,serif; font-size:19px; word-break:keep-all; margin:6px 0 2px; color:var(--text); }
@@ -111,14 +111,14 @@
   #steps-panel h2 { display:none; }
   #steps-panel #steps { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 6px; }
   #steps-panel #steps li { flex:none; display:flex; align-items:center; gap:7px; text-align:left; padding:3px 5px; font-size:12.5px; white-space:nowrap; }
-  #steps-panel #steps li span { width:10px; height:10px; margin:0; flex:none; font-size:0; border:1.5px solid #9aa9b8; background:#fff; }
+  #steps-panel #steps li span { width:10px; height:10px; margin:0; flex:none; font-size:0; border:1.5px solid #b9a58a; background:#fff; }
   #steps-panel #steps li.active span { background:var(--accent); border-color:var(--accent); box-shadow:none; }
   #steps-panel #steps li.active { color:var(--accent); font-weight:700; }
-  #steps-panel #steps li.preview span { background:#6b4fa0; border-color:#6b4fa0; }
+  #steps-panel #steps li.preview span { background:#b07a43; border-color:#b07a43; }
   #steps-play { margin:6px 0 0; width:100%; padding:5px 10px; }
   .badges { display:flex; gap:12px; align-items:center; }
   .badges label { display:grid; justify-items:center; gap:2px; font-size:11px; color:var(--muted); }
-  .badges output { font-size:13px; font-weight:700; padding:3px 12px; border-radius:999px; border:1px solid #9fb6cf; background:#e3ecf5; color:#2c4f7c; white-space:nowrap; }
+  .badges output { font-size:13px; font-weight:700; padding:3px 12px; border-radius:999px; border:1px solid #d3b48b; background:#f4e9d7; color:#6b4421; white-space:nowrap; }
   .badges output.safe-normal { border-color:#9cc3a8; background:#e2f1e6; color:#2f6b45; }
   .badges output.safe-slow { border-color:#d6b56f; background:#f8ecd0; color:#7a5414; }
   .badges output.safe-stop { border-color:#d48b8b; background:#f8dede; color:#9a2525; }
@@ -132,10 +132,10 @@
   #steps li span { display:grid; place-items:center; width:34px; height:34px; margin:0 auto 8px; border:1px solid #aa9cbb; border-radius:50%; background:#fffdfb; font-size:16px; }
   #steps strong { font-weight:650; }
   #steps li { cursor:pointer; border-radius:10px; padding:6px 2px; }
-  #steps li:hover { background:#e7e0f3; }
-  #steps li.preview { color:#4f3a7f; } #steps li.preview span { background:#e4dbf6; border:2px solid #6b4fa0; }
+  #steps li:hover { background:#f1e6d4; }
+  #steps li.preview { color:#7a4d22; } #steps li.preview span { background:#f1e2c9; border:2px solid #b07a43; }
   #steps li.active { color:#725008; }
-  button.ghost { margin-left:auto; padding:6px 12px; font-size:13px; background:#fffdfb; color:#4f3a7f; border-color:#9c8bc0; }
+  button.ghost { margin-left:auto; padding:6px 12px; font-size:13px; background:#fffdfb; color:#7a4d22; border-color:#cfae84; }
   #steps li.active span { background:#ffe4a3; border:2px solid #a57617; box-shadow:0 0 0 3px #fff8dc; }
   .instruction { background:var(--cream); border-color:#c5ab72; }
   .instruction h2 { font-size:24px; line-height:1.35; margin:2px 0 12px; overflow-wrap:anywhere; }
@@ -179,13 +179,13 @@
   @media(max-width:700px) { #mode-diagram svg { min-width:0; } #mode-diagram svg text { display:none; } }
   @media(max-width:440px) { #mode-view { grid-template-columns:1fr; grid-template-areas:"control" "left" "right"; } .control-bar { grid-template-columns:1fr; } .control-bar small { grid-column:1/-1; } #resume { justify-self:start; } #proposal-panel button { display:block; width:100%; margin-top:8px; } }
   /* 테마 (10/12) — 크림색 바탕·연한 테두리·남색 강조 */
-  :root { --bg:#efebe1; --panel:#fbf8f0; --text:#3b3a33; --muted:#8a8371; --line:#e2dac8; --accent:#34588a; --mint:#fbf8f0; --lavender:#fbf8f0; --cream:#fbf8f0; }
+  :root { --bg:#efebe1; --panel:#fbf8f0; --text:#3b3a33; --muted:#8a8371; --line:#e2dac8; --accent:#8a5a2e; --mint:#fbf8f0; --lavender:#fbf8f0; --cream:#fbf8f0; }
   body { background:var(--bg); }
   header { border-color:var(--line); }
   .panel { border-color:var(--line); box-shadow:0 1px 2px #6b5d3a12; border-radius:14px; }
   .control-bar,.instruction,.stats,.steps-panel,#trials-view,#events-view { border-left-width:1px; border-left-color:var(--line)!important; }
   .control-bar, .instruction, .stats, .diagram-panel, .card, #events-view { background:var(--panel)!important; border-color:var(--line)!important; }
-  #mode-nav a[aria-current] { background:#e3ecf5; border-color:#9fb6cf; color:#2c4f7c; }
+  #mode-nav a[aria-current] { background:#f4e9d7; border-color:#d3b48b; color:#6b4421; }
   button { background:#fffdf7; color:var(--text); border-color:#cfc5ae; border-radius:999px; }
   button:not(:disabled):hover { border-color:var(--accent); }
   #resume:not(:disabled) { background:var(--accent); border-color:var(--accent); color:#fff; }

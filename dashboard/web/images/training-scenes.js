@@ -206,7 +206,7 @@ function renderTrainingScene(mode, stageIndex, status, opts = {}) {
   const s = TOP_BUILDERS[mode](stage);
   const body = `${topTable()}${s.back || ''}${s.patient || ''}${topArm(s.arm, {grip: s.grip, tool: s.tool || ''})}${s.front || ''}`;
   const label = active ? `${stage + 1}. ${stages[stage]}` : (SCENE_STATUS[status] || '');
-  const tone = status === 'stopped' && !preview ? '#a71d28' : preview ? '#6b4fa0' : '#2f6b5b';
+  const tone = status === 'stopped' && !preview ? '#a71d28' : preview ? '#8a5a2e' : '#6b4421';
   const pill = label ? `<g transform="translate(100 0)"><rect x="20" y="16" width="${40 + label.length * 16 + (preview ? 64 : 0)}" height="36" rx="18" fill="#fff" stroke="${tone}" stroke-width="2"/>
     <text x="36" y="40" class="pill" style="fill:${tone}">${preview ? '미리보기 · ' : ''}${sceneEscape(label)}</text></g>` : '';
   const frame = status === 'stopped' && !preview ? '<rect x="113" y="3" width="734" height="404" rx="10" fill="none" stroke="#a71d28" stroke-width="6"/>' : '';
