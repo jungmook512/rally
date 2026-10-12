@@ -23,6 +23,7 @@ const TOP_DEFS = `<defs>
   <radialGradient id="t-palm" gradientUnits="userSpaceOnUse" cx="0" cy="8" r="34"><stop stop-color="#f2ccb1"/><stop offset=".55" stop-color="#f7dac6"/><stop offset="1" stop-color="#efc6a6"/></radialGradient>
   <linearGradient id="t-pad" x2="0" y2="1"><stop stop-color="#9cc3ae"/><stop offset="1" stop-color="#6f9c86"/></linearGradient>
   <linearGradient id="t-rod" x2="1" y2="0"><stop stop-color="#b98b57"/><stop offset=".45" stop-color="#e2bf8a"/><stop offset="1" stop-color="#a87a48"/></linearGradient>
+  <linearGradient id="t-curl" x2="0" y2="1"><stop stop-color="#9a6446" stop-opacity=".45"/><stop offset="1" stop-color="#9a6446" stop-opacity="0"/></linearGradient>
   <linearGradient id="t-sleeve" x2="0" y2="1"><stop stop-color="#4f6f88"/><stop offset=".45" stop-color="#7896ad"/><stop offset="1" stop-color="#4a6880"/></linearGradient>
   <radialGradient id="t-shirt" cx=".5" cy=".2" r=".9"><stop stop-color="#87a3b8"/><stop offset="1" stop-color="#4c6a82"/></radialGradient>
   <radialGradient id="t-hair" cx=".45" cy=".4" r=".7"><stop stop-color="#5a4636"/><stop offset="1" stop-color="#271e17"/></radialGradient>
@@ -48,7 +49,7 @@ const HAND_PATH = 'M-18 40C-20 32-22 26-25 20C-33 12-41 1-45-9C-47-15-42-20-37-1
   + 'C14-18 14.5-28 15.5-35C16.5-42 23.5-42 24-35C24.5-23 25.5-10 25.5 0'
   + 'C25.5 14 22 28 19 40C21 80 24 140 26 210H-26C-24 140-21 80-18 40Z';
 // 손 모양 3가지 (모두 오른손, 손목 = (0, 40), 손가락 = 위)
-//   back: 손등 (쉬거나 비켜 있을 때) · palm: 손바닥이 위, 살짝 오므림 (공 받기·들기) · fist: 막대·손잡이를 쥠
+//   back: 손등 (쉬거나 비켜 있을 때) · palm: 손바닥이 위, 살짝 오므림 (공 받기·들기) · grip: 손등 쪽에서 본, 막대를 감싸 쥔 손 (막대는 y = -30 을 가로지름)
 function topHand([x, y], ang = -10, {pose = 'back', fade = false, holding = '', under = ''} = {}) {
   let body;
   if (pose === 'palm') {
@@ -57,17 +58,18 @@ function topHand([x, y], ang = -10, {pose = 'back', fade = false, holding = '', 
       <path d="M-22-4C-10 0 6-2 22-9M-21 7C-8 5 6 9 15 16M-15 0C-21 10-21 24-14 36" stroke="#c98a68" stroke-width="1.3" fill="none" opacity=".55"/>
       <path d="M-21-24h7M-21-36h7M-9-28h8M-9-42h8M3-25h8M3-38h8M15.5-16h7M15.5-27h7" stroke="#c98a68" stroke-width="1" opacity=".45"/>
       <ellipse cx="0" cy="8" rx="17" ry="15" fill="#a0603c" opacity=".03"/></g>`;
-  } else if (pose === 'fist') {
-    // 위에서 본 주먹: 손등 + 앞쪽에 접힌 손가락 마디 4개(둥근 혹) + 왼쪽에서 감싸는 엄지
-    const FIST = 'M-18 40C-21 28-25 14-26 0C-27-10-26-18-22-22C-20-30-10-31-8.5-24C-6-32 6-32 7-24C9-31 18-30 19.5-22'
-      + 'C22-28 27.5-23 26.5-13C26 2 24 22 19 40C21 80 24 140 26 210H-26C-24 140-21 80-18 40Z';
-    body = `<path d="${FIST}" fill="url(#t-skin)" stroke="#b97e5c" stroke-opacity=".55" stroke-width="1.2" stroke-linejoin="round" filter="url(#t-sh)"/>
-      <path d="M-8.5-24V-12M7-24V-12M19.5-22V-11" stroke="#c98d6b" stroke-width="1.1" opacity=".55"/>
-      <path d="M-24-11C-10-7 10-7 26-10" stroke="#c98d6b" stroke-width="1.1" fill="none" opacity=".45"/>
-      <g fill="#f8e0cf" opacity=".55"><ellipse cx="-15" cy="-25" rx="4" ry="2.5"/><ellipse cx="-1" cy="-28" rx="4" ry="2.5"/><ellipse cx="13" cy="-26" rx="4" ry="2.5"/><ellipse cx="23" cy="-20" rx="3" ry="2"/></g>
-      <path d="M-16 4L-10 30M-3 0L-1 30M8 1L5 30" stroke="#d9a685" stroke-width="1.4" opacity=".22"/>
-      <g transform="rotate(38 -22 2)"><rect x="-29" y="-16" width="14" height="34" rx="7" fill="url(#t-skin)" stroke="#b97e5c" stroke-opacity=".55" stroke-width="1.2"/>
-        <rect x="-26.5" y="-14" width="9" height="8" rx="3.5" fill="#f9e4d8" opacity=".45"/></g>`;
+  } else if (pose === 'grip') {
+    // 막대를 감싸 쥔 손: 손등 윤곽에서 손가락 끝을 잘라 막대 너머로 말려 들어간 것처럼 (끝으로 갈수록 어둡게). 엄지는 막대 아래라 안 보임
+    const cut = `grip-${Math.round(x)}-${Math.round(y)}`;
+    // 손가락마다 끝을 둥글게 (말려 내려가는 마디), 엄지 쪽 손바닥 가장자리는 곡선으로
+    const tips = [[-17.5, -36, 6], [-5, -38, 6.2], [7.5, -37, 6], [19.6, -32, 5.2]].map(([cx, cy, r]) => `<circle cx="${cx}" cy="${cy}" r="${r}"/>`).join('');
+    body = `<clipPath id="${cut}"><path d="M-25 220V36C-26 24-26 10-24-2V-36H26V220Z"/>${tips}</clipPath>
+      <g clip-path="url(#${cut})"><path d="${HAND_PATH}" fill="url(#t-skin)" stroke="#b97e5c" stroke-opacity=".55" stroke-width="1.2" stroke-linejoin="round"/>
+        <rect x="-27" y="-45" width="54" height="16" fill="url(#t-curl)"/></g>
+      <g fill="none" stroke="#b97e5c" stroke-opacity=".55" stroke-width="1.2">${[[-17.5, -36, 6], [-5, -38, 6.2], [7.5, -37, 6], [19.6, -32, 5.2]]
+        .map(([cx, cy, r]) => `<path d="M${cx - r} ${cy}A${r} ${r} 0 0 1 ${cx + r} ${cy}"/>`).join('')}<path d="M-25 36C-26 24-26 10-24-2"/></g>
+      <path d="M-20-4q3 2 6 0M-8-10q3 2 6 0M4-9q3 2 6 0M15.5-3q3 2 5.5 0" stroke="#c98d6b" stroke-width="1.1" fill="none" opacity=".55"/>
+      <path d="M-16 4L-9 30M-5 0L-2 30M6 1L4 30M17 6L9 30" stroke="#d9a685" stroke-width="1.4" opacity=".25"/>`;
   } else {
     const nails = [[-17.5, -47, -2], [-4.8, -55, 0], [8, -49, 2], [19.7, -35, 4]]
       .map(([nx, ny, r]) => `<rect x="${nx - 3.6}" y="${ny}" width="7.2" height="8" rx="3.4" transform="rotate(${r} ${nx} ${ny})" fill="#f9e4d8" opacity=".45"/>`).join('');
@@ -78,6 +80,13 @@ function topHand([x, y], ang = -10, {pose = 'back', fade = false, holding = '', 
   }
   return `<g transform="translate(${x} ${y}) rotate(${ang})" opacity="${fade ? .4 : 1}" class="hand hand-${pose}">${under}${body}${holding}</g>`;
 }
+// 그리퍼가 든 가로 막대(손목 기준 y = 24, 기울기 tilt°) 위 x = at 지점을 손이 쥔다 (손가락이 막대와 직각)
+function topRodGrip([wx, wy], tilt, at) {
+  const t = tilt * Math.PI / 180, c = Math.cos(t), sn = Math.sin(t);
+  const [px, py] = [wx + at * c - 24 * sn, wy + at * sn + 24 * c];   // 손목 좌표 (at, 24) 를 기울여 옮긴 점
+  return topHand([px - 30 * sn, py + 30 * c], tilt, {pose: 'grip'});  // 손 기준 (0, -30) 이 그 점에 오게
+}
+const topHeldRod = (from, to, tilt = 0) => `<g transform="rotate(${tilt} 0 24)"><rect x="${from}" y="16" width="${to - from}" height="16" rx="7" fill="url(#t-rod)" stroke="#8a6438" stroke-width="1" filter="url(#t-sh2)"/></g>`;
 function topPatient(hand, opts = {}) {
   // 사람은 그리지 않고 손만 (10/12)
   return `<g class="patient">${topHand(hand, opts.ang ?? -10, opts)}</g>`;
@@ -160,32 +169,28 @@ function topMode3(stage) {
   return s;
 }
 function topMode5(stage) {
-  // 막대: 책상 위 → 로봇이 집음 → 기울여 건넴(환자가 주먹으로 쥠) → 환자가 그리퍼 사이로 넣어 돌려줌
-  const rod = (len = 104) => `<rect x="-8" y="${-len / 2}" width="16" height="${len}" rx="7" fill="url(#t-rod)" stroke="#8a6438" stroke-width="1" filter="url(#t-sh2)"/>`;
-  const onTable = `<g transform="translate(430 236) rotate(90)">${rod()}</g>`;
-  const held = (rot = 0) => `<g transform="translate(0 24) rotate(${rot}) translate(0 40)">${rod()}</g>`;
+  // 막대: 책상 위 → 로봇이 집음 → 기울여 건넴(환자가 막대 끝을 감싸 쥠) → 환자가 막대 끝을 그리퍼 사이로 넣어 돌려줌
+  const onTable = `<g transform="translate(430 236)"><rect x="-56" y="-8" width="112" height="16" rx="7" fill="url(#t-rod)" stroke="#8a6438" stroke-width="1" filter="url(#t-sh2)"/></g>`;
   const s = {arm: [560, 124], back: onTable, patient: topPatient([600, 336])};
   if (stage === 0) Object.assign(s, {arm: [470, 150], back: topView([470, 150], [430, 236], 70) + onTable + topRing([430, 236], 62),
-    front: topNote([520, 290], '물체와 손 위치 확인')});
-  if (stage === 1) Object.assign(s, {arm: [430, 200], grip: 'closed', tool: held(), back: '',
-    front: topArrow('M380 262L380 214', 'flow-run') + topNote([360, 300], '물체를 집어 듦', 'end')});
-  if (stage === 2) Object.assign(s, {arm: [470, 214], grip: 'closed', tool: held(-25), back: '',
-    patient: topPatient([526, 330], {pose: 'fist', ang: -25}), front: topNote([600, 250], '기울여 건넴 → 주먹으로 쥠')});
-  if (stage === 3) Object.assign(s, {arm: [480, 200], grip: 'open', back: '',
-    patient: topPatient([486, 318], {pose: 'fist', ang: -6, under: `<g transform="translate(0 -46)">${rod(110)}</g>`}),
-    front: topArrow('M548 300L548 238', 'flow-run') + topNote([570, 270], '막대 끝을 그리퍼 사이로')});
+    front: topNote([520, 300], '물체와 손 위치 확인')});
+  if (stage === 1) Object.assign(s, {arm: [430, 196], grip: 'closed', tool: topHeldRod(-56, 56), back: '',
+    front: topArrow('M350 262L350 228', 'flow-run') + topNote([340, 296], '물체를 집어 듦', 'end')});
+  if (stage === 2) Object.assign(s, {arm: [440, 200], grip: 'closed', tool: topHeldRod(-24, 124, -15), back: '', patient: '',
+    front: topRodGrip([440, 200], -15, 98) + topNote([600, 320], '기울여 건넴 → 막대 끝을 쥠', 'middle')});
+  if (stage === 3) Object.assign(s, {arm: [440, 200], grip: 'open', tool: topHeldRod(-18, 124), back: '', patient: '',
+    front: topRodGrip([440, 200], 0, 98) + topArrow('M640 266L580 266', 'flow-run') + topNote([620, 320], '막대 끝을 그리퍼 사이로', 'middle')});
   if (stage === 4) Object.assign(s, {front: topRecord, patient: topPatient([600, 336], {fade: true})});
   return s;
 }
 function topMode7(stage) {
-  // 팔씨름형: 로봇이 든 손잡이를 환자가 주먹으로 쥐고 민다. 로봇은 버티다 물러날 뿐 환자 쪽으로 밀지 않음
-  const handle = '<circle cx="0" cy="40" r="12" fill="url(#t-rod)" stroke="#8a6438" stroke-width="1.2"/><circle cx="0" cy="40" r="5" fill="#a87a48"/>';
-  const s = {arm: [480, 212], grip: 'closed', tool: handle, patient: topPatient([480, 340], {ang: 0})};
-  if (stage === 0) Object.assign(s, {back: topView([480, 212], [480, 330], 46), front: topRing([480, 314], 44) + topNote([540, 300], '손이 보이는지 확인')});
-  if (stage === 1) Object.assign(s, {patient: topPatient([480, 284], {pose: 'fist', ang: 0}),
-    front: topArrow('M560 330L560 262', 'flow-run') + topNote([580, 300], '환자가 밀기')
-      + `<path d="M400 232L400 192" stroke="#8aa0ad" stroke-width="4" stroke-linecap="round" stroke-dasharray="6 6" marker-end="url(#scene-arrow-grey)"/>` + topNote([388, 214], '로봇은 버티다 물러남', 'end')});
-  if (stage === 2) Object.assign(s, {patient: topPatient([480, 340], {ang: 0, fade: true}), front: topRecord});
+  // 팔씨름형: 로봇이 든 손잡이를 환자가 감싸 쥐고 민다. 로봇은 버티다 물러날 뿐 환자 쪽으로 밀지 않음
+  const handle = topHeldRod(-46, 46);
+  const s = {arm: [480, 206], grip: 'closed', tool: handle, patient: topPatient([480, 344], {ang: 0})};
+  if (stage === 0) Object.assign(s, {back: topView([480, 206], [480, 330], 46), front: topRing([480, 318], 44) + topNote([540, 304], '손이 보이는지 확인')});
+  if (stage === 1) Object.assign(s, {patient: '', front: topRodGrip([480, 206], 0, 0) + topArrow('M570 330L570 262', 'flow-run') + topNote([590, 300], '환자가 밀기')
+    + `<path d="M390 232L390 192" stroke="#8aa0ad" stroke-width="4" stroke-linecap="round" stroke-dasharray="6 6" marker-end="url(#scene-arrow-grey)"/>` + topNote([378, 214], '로봇은 버티다 물러남', 'end')});
+  if (stage === 2) Object.assign(s, {patient: topPatient([480, 344], {ang: 0, fade: true}), front: topRecord});
   return s;
 }
 const TOP_BUILDERS = {1: topMode1, 3: topMode3, 5: topMode5, 7: topMode7};
