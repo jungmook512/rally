@@ -60,3 +60,11 @@ def test_ready_route_moves_arm_first_then_wrist():
     assert via[:3] == READY[:3] and via[3:] == U[3:]       # 팔만 먼저
     assert end == READY
     assert pr._near(READY, [v + 2.0 for v in READY]) and not pr._near(READY, U)
+
+
+def test_taught_needs_all_three_points():
+    from types import SimpleNamespace
+    full = {"pad_rack_grasp_posj": [1] * 6, "pad_rack_approach_posj": [2] * 6, "pad_rack_lift_posj": [3] * 6}
+    assert pr.taught(SimpleNamespace(cfg={"mode3": full}))
+    assert not pr.taught(SimpleNamespace(cfg={"mode3": {**full, "pad_rack_lift_posj": []}}))
+    assert not pr.taught(SimpleNamespace(cfg={}))

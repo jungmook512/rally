@@ -54,6 +54,7 @@ mode3:
   pad_rack_approach_posj: [87.4, -29.1, -112.6, -132.7, 119.8, -66.1]
   pad_rack_lift_posj: [91.7, -7.9, -103.8, -109.3, 132.7, -31.8]   # U: G 에서 패드를 쥔 채 거치대 홈 따라 20 cm 위 (10/12 교시, 수직에서 1.2° — 패드 기울기)
   pad_rack_back_m: 0.06
+  pad_place_after_catch: true     # ★ 10/12 정정인: 요격 판정 뒤 패드를 거치대에 꽂고 끝냄 (catch_ball.after_catch). 다음 시도는 pickup_pad 가 다시 집음
   decide_after_s: 0.16                                # 공 놓은 뒤 이 시각의 예측으로 출발 (오차 중앙 약 3 cm)
   right_max_m: 0.15                                   # 오른쪽(−y)만. 왼쪽은 안 감 (환자 투구 실패로 셈)
   updown_max_m: 0.15

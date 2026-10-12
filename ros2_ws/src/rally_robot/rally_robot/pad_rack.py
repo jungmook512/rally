@@ -40,6 +40,20 @@ DEFAULTS = dict(
 )
 
 
+def taught(node) -> bool:
+    """거치대 세 자리(A·G·U) 관절값이 skills.yaml mode3 에 다 있는지."""
+    m3 = (getattr(node, "cfg", None) or {}).get("mode3") or {}
+    return all(len(m3.get(k) or []) == 6 for k in ("pad_rack_grasp_posj", "pad_rack_approach_posj", "pad_rack_lift_posj"))
+
+
+def joint_speeds(node):
+    """패드 쥔 관절 이동 속도 (deg/s, deg/s²) — motion: 과 pad_joint_* 중 작은 쪽."""
+    m3 = (getattr(node, "cfg", None) or {}).get("mode3") or {}
+    _, _, _, _, jv, ja = motion_speeds(node)
+    return (min(float(jv), float(m3.get("pad_joint_vel_deg_s", DEFAULTS["pad_joint_vel_deg_s"]))),
+            min(float(ja), float(m3.get("pad_joint_acc_deg_s2", DEFAULTS["pad_joint_acc_deg_s2"]))))
+
+
 def config(node) -> dict:
     m3 = (getattr(node, "cfg", None) or {}).get("mode3") or {}
     cfg = {**DEFAULTS, **{k: v for k, v in m3.items() if k in DEFAULTS}}
