@@ -73,7 +73,7 @@
   #proposal-prompt { font-size:19px; font-weight:700; }
   #proposal-message { font-weight:650; }
   /* 모드 화면 배치 (10/12, 참고 화면 느낌): 위 상태 줄 / 왼쪽 그림 + 작은 카메라 / 오른쪽 현재 단계 + 모드별 진행 카드 (선택 모드 카드 안에 단계 목록) */
-  #mode-view { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); gap:14px; align-items:start;
+  #mode-view { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(0,1fr); gap:14px; align-items:start;
                grid-template-areas:"control control" "left right"; }
   #mode-view>* { min-width:0; }
   #mode-view .control-bar { grid-area:control; grid-template-columns:minmax(0,1fr) auto auto; align-items:center; padding:8px 16px; }
@@ -83,14 +83,14 @@
   #mode-right { grid-area:right; display:grid; gap:14px; min-width:0; }
   #mode-view .diagram-panel { padding:12px; }
   #mode-view #mode-diagram { margin-top:10px; }
-  #mode-view #mode-diagram svg { min-width:0; max-height:calc(100vh - 480px); min-height:200px; }
-  #camera-slot .camera .frame { max-height:130px; } #camera-slot .cameras { justify-content:start; }
+  #mode-view #mode-diagram svg { min-width:0; max-height:calc(100vh - 650px); min-height:200px; }
+  #camera-slot .camera .frame { max-height:calc(100vh - 440px); } #camera-slot .cameras { justify-content:start; }
   #camera-slot #camera-view { padding:12px; } #camera-slot #camera-view .section-heading { margin-bottom:8px; padding-bottom:6px; font-size:14px; }
-  #camera-slot .cameras { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+  #camera-slot .cameras { grid-template-columns:1fr; gap:8px; }
   #camera-slot .camera figcaption { font-size:12px; }
   .stat-line { color:var(--muted); font-size:14px; } .stat-line b { color:var(--text); font-size:16px; font-variant-numeric:tabular-nums; }
   .mode-cards { display:flex; gap:10px; align-items:flex-start; }
-  .mode-cards>.mode-card { flex:1 1 0; } .mode-cards>.mode-card.selected { flex:1.9 1 0; }
+  .mode-cards>.mode-card { flex:1 1 0; } .mode-cards>.mode-card.selected { flex:2.6 1 0; }
   .mode-card { border:1px solid var(--line); border-top:4px solid #d9cfb9; border-radius:12px; background:#fffdf7; padding:10px; cursor:pointer; min-width:0; }
   .mode-card:hover { border-color:#b9ad92; }
   .mode-card.selected { border:2px solid var(--accent); border-top-width:4px; background:#e6edf5; cursor:default; }
@@ -101,7 +101,7 @@
   .mode-card .state.running { background:#dbe7f3; border-color:#7f9fc3; color:#2c4f7c; }
   .mode-card .state.paused { background:#f7e9cc; border-color:#d0a95b; color:#7a5414; }
   .mode-card .state.off { opacity:.6; }
-  .mode-card .name { font-family:"Noto Serif KR","Nanum Myeongjo",Georgia,serif; font-size:19px; word-break:keep-all; margin:8px 0 2px; color:var(--text); }
+  .mode-card .name { font-family:"Noto Serif KR","Nanum Myeongjo",Georgia,serif; font-size:19px; word-break:keep-all; margin:6px 0 2px; color:var(--text); }
   .mode-card .sub { font-size:12px; color:var(--muted); }
   .mode-card .bar { height:6px; border-radius:3px; background:#ece5d5; margin:8px 0 2px; overflow:hidden; }
   .mode-card .bar i { display:block; height:100%; width:0; background:#7fae8c; }
@@ -109,13 +109,13 @@
   .card-slot { margin-top:8px; padding-top:8px; border-top:1px dashed var(--line); }
   #steps-panel { padding:0; border:0; background:none; box-shadow:none; }
   #steps-panel h2 { display:none; }
-  #steps-panel #steps { flex-direction:column; gap:2px; }
-  #steps-panel #steps li { flex:none; display:flex; align-items:center; gap:8px; text-align:left; padding:4px 6px; font-size:13px; }
+  #steps-panel #steps { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 6px; }
+  #steps-panel #steps li { flex:none; display:flex; align-items:center; gap:7px; text-align:left; padding:3px 5px; font-size:12.5px; white-space:nowrap; }
   #steps-panel #steps li span { width:10px; height:10px; margin:0; flex:none; font-size:0; border:1.5px solid #9aa9b8; background:#fff; }
   #steps-panel #steps li.active span { background:var(--accent); border-color:var(--accent); box-shadow:none; }
   #steps-panel #steps li.active { color:var(--accent); font-weight:700; }
   #steps-panel #steps li.preview span { background:#6b4fa0; border-color:#6b4fa0; }
-  #steps-play { margin:6px 0 0; width:100%; }
+  #steps-play { margin:6px 0 0; width:100%; padding:5px 10px; }
   .badges { display:flex; gap:12px; align-items:center; }
   .badges label { display:grid; justify-items:center; gap:2px; font-size:11px; color:var(--muted); }
   .badges output { font-size:13px; font-weight:700; padding:3px 12px; border-radius:999px; border:1px solid #9fb6cf; background:#e3ecf5; color:#2c4f7c; white-space:nowrap; }
@@ -231,11 +231,7 @@
   <section id="mode-view" hidden>
     <div id="mode-left">
       <div class="panel diagram-panel"><div class="panel-top"><h2 id="diagram-title">훈련 그림</h2><span class="badge">위에서 본 설명 그림</span></div><div id="mode-diagram" tabindex="0" role="region" aria-label="현재 실행 단계를 설명하는 훈련 그림"></div><p id="diagram-caption" class="caption" hidden></p></div>
-      <div id="camera-slot"></div>
-    </div>
-    <div id="mode-right">
-      <div class="panel instruction"><div class="panel-top"><div class="section-heading current-label">현재 단계</div><span class="stat-line">시도 <b id="mode-trials">—</b> · 난이도 <b id="mode-level">—</b></span></div>
-        <h2 id="step-title" role="status">대기 중</h2><p id="step-description"></p><span id="raw-stage" class="caption"></span><p id="mode-extra" class="caption"></p></div>
+
       <div class="panel progress-panel"><div class="panel-top"><h2>모드별 진행</h2><span class="stat-line">카드를 누르면 그 모드 화면</span></div>
       <div class="mode-cards">
         <div class="mode-card" id="card-1" role="link" tabindex="0"><div class="top"><span class="num">1</span><span class="state" id="card-state-1">대기</span></div>
@@ -247,6 +243,11 @@
         <div class="mode-card" id="card-7" role="link" tabindex="0"><div class="top"><span class="num">7</span><span class="state" id="card-state-7">대기</span></div>
           <div class="name">저항 밀기</div><div class="sub" id="card-sub-7">시도 0회</div><div class="bar"><i id="card-bar-7"></i></div><div class="card-slot" id="card-slot-7"></div></div>
       </div></div>
+    </div>
+    <div id="mode-right">
+      <div class="panel instruction"><div class="panel-top"><div class="section-heading current-label">현재 단계</div><span class="stat-line">시도 <b id="mode-trials">—</b> · 난이도 <b id="mode-level">—</b></span></div>
+        <h2 id="step-title" role="status">대기 중</h2><p id="step-description"></p><span id="raw-stage" class="caption"></span><p id="mode-extra" class="caption"></p></div>
+      <div id="camera-slot"></div>
     </div>
     <div class="panel steps-panel" id="steps-panel"><h2>단계</h2><ol id="steps"></ol><button id="steps-play" type="button" class="ghost">▶ 단계 미리보기</button></div>
   </section>
