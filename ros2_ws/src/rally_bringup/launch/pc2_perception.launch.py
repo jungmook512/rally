@@ -5,6 +5,7 @@ compose 서비스마다 part 를 하나씩 준다:
                 손목 /camera/color/image_raw + 정렬 깊이 — 노출 평소 자동, 모드 3 동안만 고정 (brain 이 바꿈)
                 측면 /side/side/color/image_raw (컬러만) — 노출 항상 고정 (set_camera_params 가 뜬 뒤 넣음). side_camera:=false 면 안 띄움
               + camera_tf · segmenter · tracker · flight_predictor
+              + web_video_server (포트 8080) — 대시보드 '카메라' 칸이 MJPEG 로 받아 본다 (video_server:=false 면 안 띄움)
   human     → usb_cam(/webcam/image_raw) + hand_pose · body_pose
   voice     → intent_node · tts_node
   all       → 셋 다 (컨테이너 없이 한 터미널에서 확인할 때)
@@ -89,6 +90,16 @@ def _realsense(context):
     return actions
 
 
+def _video_server(context):
+    """대시보드 카메라 화면용. 영상은 이 PC 안에서 압축돼 브라우저로만 간다 (DDS 로 원본을 서버 PC 에 보내지 않음, 저장 안 함)."""
+    if LaunchConfiguration("video_server").perform(context).lower() not in ("true", "1"):
+        return []
+    if not _has_package("web_video_server"):
+        return [LogInfo(msg="[pc2] web_video_server 패키지 없음 → 대시보드 카메라 화면 없음 (vision 컨테이너 다시 빌드)")]
+    return [Node(package="web_video_server", executable="web_video_server", name="rally_web_video", output="screen",
+                 parameters=[{"port": 8080, "address": "0.0.0.0", "server_threads": 2, "ros_threads": 2}])]
+
+
 def _webcam(context):
     if not _has_package("usb_cam"):
         return [LogInfo(msg="[pc2] usb_cam 패키지 없음 → 측면 웹캠 건너뜀 (hand_pose 컨테이너에서 실행하세요)")]
@@ -111,7 +122,7 @@ def _launch_part(context):
     actions = [LogInfo(msg=f"[pc2] part={part}")]
     for p in parts:
         if p == "vision":
-            actions += _realsense(context)
+            actions += _realsense(context) + _video_server(context)
         if p == "human":
             actions += _webcam(context)
         for package in {pkg for pkg, _ in PARTS[p]}:
@@ -123,6 +134,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("part", default_value="all", description="vision | human | voice | all"),
         DeclareLaunchArgument("side_camera", default_value="true", description="측면 RealSense (모드 3) 띄우기"),
+        DeclareLaunchArgument("video_server", default_value="true", description="대시보드 카메라 화면용 web_video_server (포트 8080)"),
         DeclareLaunchArgument("webcam_device", default_value="/dev/video0", description="측면 웹캠 장치"),
         DeclareLaunchArgument("body_arm", default_value="left", description="body_pose 뻗는 팔: left | right | auto (시연은 왼팔)"),
         OpaqueFunction(function=_launch_part),
