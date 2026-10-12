@@ -6,7 +6,7 @@
        ├─ 받기 (Sequence)
        │   ├─ 시작       throw_prompt 안내 ("공을 던져 주세요")
        │   └─ CatchBall  로봇이 패드를 들고 대기 자세 → 공을 놓은 뒤 예측점으로 한 번 이동 → 힘으로 명중 판정 → 복귀
-       └─ 끝             실패도 기록했으면 시도는 끝 (서버 없음이면 세션 실패)
+       └─ 끝             실패를 기록했거나 시도를 건너뛰었으면 시도는 끝 (받기 스킬 서버 없음도 건너뜀 — 세션 실패 아님)
   범위 (docs/mode3/MODE3_PLAN.md, 10/12): CatchBall 결과 기록까지. 패드에서 공 떼기·환자에게 돌려주기는 로봇 after_catch()
   보류 — 그동안 운영자가 공을 떼어 건넨다. 다음 시도의 timeout_s 에 그 시간이 들어간다.
   goal 은 catch_radius·timeout_s 만 쓴다 (스킬이 ready_pose·lead_time_s 를 쓰지 않음, #128). 난이도 레시피 없음 — 고정 값.
@@ -92,7 +92,7 @@ def build_trial(session: Session) -> py_trees.behaviour.Behaviour:
         return n
 
     def start() -> bool:
-        """False = 이 시도를 건너뜀 (연속으로 안 던짐). 기록 없이 끝."""
+        """False = 이 시도를 건너뜀 (받기 스킬 서버 없음, 또는 연속으로 안 던짐). 기록 없이 끝."""
         if not client.server_is_ready():
             # 챌린지 모드 — 받기 스킬이 안 떠 있으면 세션을 실패시키지 않고 모드 3 만 건너뜀 (readiness.yaml 의 세션 조건 밖)
             log.warn(f"[모드 3] {ACTION} 서버 없음 — 이 시도 건너뜀")
