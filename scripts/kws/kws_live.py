@@ -47,6 +47,44 @@ def wav_chunks(path: Path):
         yield data[i:i + FRAME]
 
 
+class Mic:
+    """마이크 80 ms 조각 읽기. 블로킹 read 는 장치가 소리를 안 보내면 영원히 멈춰서, 콜백 + 큐에 시간 제한을 둔다."""
+
+    def __init__(self, device) -> None:
+        import queue
+
+        import sounddevice as sd
+        self.q: queue.Queue = queue.Queue()
+        self.device = device
+        self.stream = sd.InputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=FRAME, device=device,
+                                     callback=self._cb)
+        self.overflows = 0
+
+    def _cb(self, data, frames, t, status) -> None:
+        if status.input_overflow:
+            self.overflows += 1
+        self.q.put(data[:, 0].copy())
+
+    def __enter__(self) -> "Mic":
+        self.stream.start()
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.stream.stop()
+        self.stream.close()
+
+    def read(self) -> np.ndarray:
+        import queue
+        try:
+            return self.q.get(timeout=3.0)
+        except queue.Empty:
+            raise SystemExit(
+                f"\n마이크(장치 {self.device if self.device is not None else '기본'})에서 3 초 동안 소리가 안 들어옴.\n"
+                "  · USB 마이크면 뽑았다 다시 꽂기\n"
+                "  · 다른 앱(디스코드·줌 등)이 마이크를 쓰고 있으면 끄기\n"
+                "  · --list 로 다른 장치 번호를 골라 --mic 번호") from None
+
+
 def speech_end(rms: list[float]) -> int | None:
     """조각별 음량에서 말소리가 끝난 조각 번호 (최고 음량의 20 % 를 넘는 마지막 조각)."""
     r = np.asarray(rms)
@@ -83,13 +121,11 @@ def run_free(r: Runner, a) -> float:
             for n, c in enumerate(wav_chunks(Path(a.wav)), start=1):
                 r.feed(c, n * CHUNK_S)
             return n * CHUNK_S
-        import sounddevice as sd
-        with sd.InputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=FRAME, device=a.mic) as s:
+        with Mic(a.mic) as m:
             while (elapsed := time.monotonic() - t0) < a.minutes * 60:
-                data, overflow = s.read(FRAME)
-                if overflow:
-                    print("  (입력 넘침 — 프레임 일부 놓침)", flush=True)
-                r.feed(data[:, 0].copy(), elapsed)
+                r.feed(m.read(), elapsed)
+            if m.overflows:
+                print(f"  (입력 넘침 {m.overflows} 번 — 처리가 밀려 프레임 일부 놓침)", flush=True)
     except KeyboardInterrupt:
         print()
     return time.monotonic() - t0 if not a.wav else elapsed
@@ -97,21 +133,20 @@ def run_free(r: Runner, a) -> float:
 
 def run_trial(r: Runner, a) -> None:
     """'지금!' 에 맞춰 a.n 번 말하게 하고, 매번 잡혔는지 · 말 끝에서 감지까지 걸린 시간을 잰다."""
-    import sounddevice as sd
     window = int(a.window / CHUNK_S)
     results: list[tuple[bool, float | None]] = []
     print(f"\n'{a.trial}' {a.n} 번. '지금!' 이 뜨면 한 번 말하세요. 매번 {a.window:g} 초 듣습니다.")
-    with sd.InputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=FRAME, device=a.mic) as s:
+    with Mic(a.mic) as s:
         t0 = time.monotonic()
         for _ in range(int(2.0 / CHUNK_S)):              # 특징이 차도록 2 s 그냥 흘림 (EmergencyKws warmup)
-            r.feed(s.read(FRAME)[0][:, 0].copy(), time.monotonic() - t0, quiet=True)
+            r.feed(s.read(), time.monotonic() - t0, quiet=True)
         for i in range(a.n):
             for _ in range(int(1.0 / CHUNK_S)):          # 앞 시도와 1 s 띄움 (같은 말로 두 번 안 세게)
-                r.feed(s.read(FRAME)[0][:, 0].copy(), time.monotonic() - t0, quiet=True)
+                r.feed(s.read(), time.monotonic() - t0, quiet=True)
             print(f"  {i + 1:2d}/{a.n}  지금!", end="", flush=True)
             rms, hit_at, word = [], None, None
             for j in range(window):
-                c = s.read(FRAME)[0][:, 0].copy()
+                c = s.read()
                 rms.append(float(np.sqrt(np.mean(c.astype(np.float64) ** 2))))
                 hit = r.feed(c, time.monotonic() - t0, quiet=True)
                 if hit is not None and hit_at is None:
