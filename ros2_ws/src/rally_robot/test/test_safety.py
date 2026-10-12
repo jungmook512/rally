@@ -5,7 +5,7 @@ import math
 import pytest
 
 from rally_interfaces.msg import SafetyStatus
-from rally_robot.safety_monitor import (hand_level, hand_lost_level, hand_robot_dist, hand_unknown_level, in_workspace,
+from rally_robot.safety_monitor import (force_limit_for, hand_level, hand_lost_level, hand_robot_dist, hand_unknown_level, in_workspace,
                                         input_level, point_segment_dist, robot_segment, worst)
 
 NORMAL, SLOW, STOP = SafetyStatus.LEVEL_NORMAL, SafetyStatus.LEVEL_SLOW, SafetyStatus.LEVEL_STOP
@@ -325,3 +325,20 @@ def test_reason_marks_dev_mode(monitor_with, mode, normal):
     assert msg.level == SafetyStatus.LEVEL_STOP
     assert msg.reason == ("force_limit" if mode == "stop" else f"force_limit,hand_stop_dev_{mode}")
     assert node.reason == "force_limit"                          # 내부 사유는 그대로
+
+
+def test_force_limit_only_raised_in_catch_window():
+    """#144: 받기 창에서만 130 N, 창 밖은 25 N. 창 값을 낮게 잘못 넣어도 평소보다 내려가지 않음."""
+    assert force_limit_for(25.0, 130.0, False) == 25.0
+    assert force_limit_for(25.0, 130.0, True) == 130.0
+    assert force_limit_for(25.0, 10.0, True) == 25.0
+
+
+def test_safety_yaml_force_limits_144():
+    """safety.yaml: 기본 25 N 은 그대로, 받기 창 전용 값만 130 N (#144 승인 조건)."""
+    import yaml
+    from pathlib import Path
+    path = Path(__file__).resolve().parents[2] / "rally_bringup/config/safety.yaml"
+    p = yaml.safe_load(path.read_text())["rally_safety_monitor"]["ros__parameters"]
+    assert p["force_limit_n"] == 25.0
+    assert p["catch_window_force_limit_n"] == 130.0

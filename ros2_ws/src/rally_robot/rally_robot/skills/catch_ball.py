@@ -235,6 +235,7 @@ def execute(node):
             """비전 판정 (catch_plan.judge_pad). 받기 창은 교차 + contact_window_after_cross_s 에 닫고(set_contact False), 판정은 계속."""
             def close():
                 node.set_contact(False)
+                node.set_catch_window(False)                   # 힘 한계 130 N → 25 N (#144)
                 log.info(f"[catch_ball] 받기 창 닫음 (교차 + {cfg['contact_window_after_cross_s']:.2f} s)")
             return judge_pad(landing.pad_obs, time.monotonic, ros_now, time.sleep, lambda: node.check_stop(goal_handle),
                              t_from_mono, t_cross_ros, cfg, contact_close=close)
@@ -253,6 +254,7 @@ def execute(node):
             pred = wait_release(t_goal, timeout_s)
             t_detect = time.monotonic()
             node.set_contact(True)                             # 받기 창 열기 — nudge 끔. 교차 + 0.5 s 에 judge 가 닫는다
+            node.set_catch_window(True)                        # 받기 창 동안만 힘 한계 catch_window_force_limit_n (130 N, #144)
             phase("tracking", pred)
             pred = wait_decide(pred, t_goal)
             plan = intercept(ready, pad0, cfg["pad_normal"], pred.point, cfg["right_max_m"], cfg["updown_max_m"], cfg["down_max_m"])
@@ -317,4 +319,5 @@ def execute(node):
             return res
         finally:
             node.set_contact(False)
+            node.set_catch_window(False)
     return _execute

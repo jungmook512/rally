@@ -11,6 +11,9 @@
   멈춘 뒤 nudge_settle_s 까지도 '움직이는 중'으로 본다 (감속 관성 힘이 풀리는 구간, 10/8 실로봇 오탐).
   (10/8 실로봇: 손끝은 거의 제자리에서 손목만 45° 도는 관절 이동 중 툴 힘이 출렁여 nudge STOP — 직선 속도만 봐서 '정지'로 오판)
 - 접촉 예정 플래그는 contact_timeout_s(0.5 s) 안에 갱신되지 않으면 꺼진 것으로 본다 (skill_server 가 죽어도 감시 복귀).
+- 힘 한계 (#144, 10/12 정정인 조건부 승인): 평소 force_limit_n(25 N). 모드 3 받기 창 — /rally/safety/catch_window 와
+  contact_expected 가 둘 다 켜진 동안(catch_ball 이 투구 감지 ~ 교차 + 0.5 s, 약 1.2 s)에만 catch_window_force_limit_n(130 N).
+  가속 2000 요격 이동 관성 59~73 N + 공 충격 15 N. 창 신호가 끊기면 contact_timeout_s 뒤 25 N. 두산 자체 충돌 감지는 그대로.
 - 손 거리 (hand_level, #59 · #98):
   손 없음 → NORMAL / 손은 보이는데 거리 NaN(깊이·tf 없음) → SLOW (hand_distance_unknown). 단 직전이 STOP 이었으면 놓침과 같이
   hand_lost_stop_s STOP 유지 (깊이는 카메라 30 cm 안에서 빠지므로 손이 로봇에 가까울수록 NaN — 리뷰 #104) /
@@ -225,6 +228,11 @@ def input_level(last_rx, now, timeouts, required=(), since_start=0.0, grace_s=ma
     return SafetyStatus.LEVEL_NORMAL, ""
 
 
+def force_limit_for(base_n, catch_n, catch_window_on):
+    """지금 힘 한계 [N] (순수 함수). 받기 창이면 catch_n — 단 base 보다 낮게는 안 함 (설정 실수로 한계가 내려가 STOP 이 잦아지지 않게만)."""
+    return max(float(base_n), float(catch_n)) if catch_window_on else float(base_n)
+
+
 def worst(*levels):
     """(레벨, 이유) 중 가장 심한 것. 같으면 앞의 것."""
     best = (SafetyStatus.LEVEL_NORMAL, "")
@@ -241,6 +249,7 @@ class SafetyMonitor(Node):
         self.declare_parameter("stop_distance_m", 0.15)
         self.declare_parameter("slow_override", 0.5)
         self.declare_parameter("force_limit_n", 25.0)
+        self.declare_parameter("catch_window_force_limit_n", 25.0)   # 모드 3 받기 창에서만 (#144). 기본은 평소와 같음 — safety.yaml 에서 정함
         self.declare_parameter("nudge_dfdt_n", 8.0)          # wrench 한 샘플(50 Hz = 20 ms) 사이 |F| 변화량 [N]. scripts/measure_wrench.py 로 확정
         self.declare_parameter("nudge_speed_max_mps", 0.02)  # 이보다 빨리 움직이는 중에는 nudge 판정 안 함 (가속 관성 오탐, CP7)
         self.declare_parameter("nudge_ang_speed_max_dps", 5.0)  # 툴이 이보다 빨리 도는 중에도 nudge 판정 안 함 (회전 중 힘 출렁임)
@@ -289,6 +298,7 @@ class SafetyMonitor(Node):
         self.create_subscription(VoiceIntent, "/rally/voice/intent", self.on_intent, reliable)
         self.create_subscription(Bool, "/rally/safety/estop", self.on_estop, latched)
         self.create_subscription(Bool, "/rally/safety/contact_expected", self.on_contact, reliable1)
+        self.create_subscription(Bool, "/rally/safety/catch_window", self.on_catch_window, reliable1)
         self.create_subscription(Bool, "/rally/safety/patient_contact", self.on_patient_contact, reliable1)
         self.create_subscription(WrenchStamped, "/rally/robot/wrench", self.on_wrench, qos_profile_sensor_data)
         self.create_subscription(PoseStamped, "/rally/robot/tcp_pose", self.on_tcp, qos_profile_sensor_data)
@@ -332,6 +342,8 @@ class SafetyMonitor(Node):
         self._last_log_t = 0.0
         self.latched_stop = False
         self.contact_until = 0.0
+        self.catch_until = 0.0
+        self._catch_limit_on = False                        # 로그용 — 130 N ↔ 25 N 바뀔 때만 (#144 ③ 25 N 복귀 확인)
         self.patient_contact_until = 0.0
         self.prev_fmag = None
         self.prev_tcp = None          # (t, x, y, z, qx, qy, qz, qw)
@@ -377,6 +389,20 @@ class SafetyMonitor(Node):
 
     def contact_expected(self):
         return time.monotonic() < self.contact_until
+
+    def on_catch_window(self, m):
+        self.catch_until = time.monotonic() + self.p("contact_timeout_s") if m.data else 0.0
+
+    def catch_window(self):
+        return time.monotonic() < self.catch_until and self.contact_expected()
+
+    def force_limit_now(self):
+        on = self.catch_window()
+        lim = force_limit_for(self.p("force_limit_n"), self.p("catch_window_force_limit_n"), on)
+        if on != self._catch_limit_on:
+            self._catch_limit_on = on
+            self.get_logger().warning(f"힘 한계 {lim:.0f} N ({'모드 3 받기 창 — #144' if on else '받기 창 끝 → 평소 값'})")
+        return lim
 
     def on_patient_contact(self, m):
         self.patient_contact_until = time.monotonic() + self.p("patient_contact_timeout_s") if m.data else 0.0
@@ -447,8 +473,8 @@ class SafetyMonitor(Node):
     def on_wrench(self, m):
         self.last_rx["wrench"] = time.monotonic()
         f = math.sqrt(m.wrench.force.x ** 2 + m.wrench.force.y ** 2 + m.wrench.force.z ** 2)
-        if f > self.p("force_limit_n"):
-            self._stop("force_limit")                       # 접촉 예정이어도 절대 한계는 항상
+        if f > self.force_limit_now():
+            self._stop("force_limit")                       # 접촉 예정이어도 절대 한계는 항상 (모드 3 받기 창만 130 N, #144)
         if self.prev_fmag is not None and not self.contact_expected() and not self.moving():
             if abs(f - self.prev_fmag) > self.p("nudge_dfdt_n"):
                 self._stop("nudge")
