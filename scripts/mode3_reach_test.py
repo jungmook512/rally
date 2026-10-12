@@ -6,6 +6,7 @@
 측정은 /dsr01/joint_states(100 Hz) + 순기구학 TCP (tcp_speed.py 와 같은 Chain·TCP 오프셋), 수신 시각 기준.
   t_start  = 명령 → TCP 가 출발점에서 2 mm 벗어남      t_arrive = 명령 → 목표 2 mm 안에 들어와 머묾
   overshoot = 이동 방향으로 목표를 지나친 최대 거리      peak = 최고 TCP 속도
+  force_peak_n = 이동~복귀 전 /rally/robot/wrench 힘 크기 최대, force_dpeak_n = 명령 직전 힘에서 바뀐 최대 (관성 가짜 힘 포함)
 
     source scripts/robot.sh env
     python3 scripts/mode3_reach_test.py                     # 계획만 (로봇 안 움직임): 목표점·관절 한계·필요 관절 속도·작업 공간
@@ -29,6 +30,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from scipy.optimize import least_squares
 from scipy.spatial.transform import Rotation
+from geometry_msgs.msg import WrenchStamped
 from sensor_msgs.msg import JointState
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -115,9 +117,11 @@ class Watch(Node):
         super().__init__("rally_mode3_reach_watch")
         self.kin, self.lock = kin, threading.Lock()
         self.samples = []          # (t, p)
+        self.forces = []           # (t, F xyz N)
         self.q = None
         self.safety = None
         self.create_subscription(JointState, "/dsr01/joint_states", self.on_js, qos_profile_sensor_data)
+        self.create_subscription(WrenchStamped, "/rally/robot/wrench", self.on_wrench, qos_profile_sensor_data)
         from rally_interfaces.msg import SafetyStatus
         self.create_subscription(SafetyStatus, "/rally/safety/status", lambda m: setattr(self, "safety", m),
                                  QoSProfile(reliability=ReliabilityPolicy.RELIABLE, depth=10))
@@ -131,6 +135,35 @@ class Watch(Node):
         with self.lock:
             self.q = q
             self.samples.append((time.monotonic(), p))
+
+    def on_wrench(self, m):
+        f = m.wrench.force
+        with self.lock:
+            self.forces.append((time.monotonic(), np.array([f.x, f.y, f.z])))
+            del self.forces[:-3000]
+
+    def force_stats(self, t_cmd, t_end):
+        """t_cmd ~ t_end 사이 힘 크기 최대와 명령 직전 힘에서 바뀐 최대 (N). 힘을 못 받았으면 빈 dict."""
+        with self.lock:
+            before = [f for t, f in self.forces if t < t_cmd]
+            during = [f for t, f in self.forces if t_cmd <= t <= t_end]
+        if not during:
+            return {}
+        F = np.array(during)
+        f0 = before[-1] if before else F[0]
+        return dict(force_peak_n=float(np.linalg.norm(F, axis=1).max()),
+                    force_dpeak_n=float(np.linalg.norm(F - f0, axis=1).max()), force_n_samples=len(during))
+
+    def wait_normal(self, timeout_s=2.0):
+        """로봇이 멈춰 있을 때 부른다. NORMAL 이 될 때까지 최대 timeout_s 기다려 안전 상태를 돌려줌 (아니면 마지막 상태).
+        이동 중 force_publisher 가 두산 서비스 응답을 0.5 s 못 받으면 wrench_stale SLOW 가 잠깐 뜬다 (10/11 실측) — 그것 때문에 시험 전체가 끝나지 않게."""
+        t = time.monotonic()
+        while time.monotonic() - t < timeout_s:
+            s = self.safety
+            if s is not None and s.level == 0:
+                return s
+            time.sleep(0.05)
+        return self.safety
 
     def take(self, since):
         with self.lock:
@@ -214,14 +247,14 @@ def main():
 
     from rally_robot.dsr_helpers import init_dsr
     dsr = init_dsr("rally_mode3_reach")
-    from DSR_ROBOT2 import amovel, check_motion, get_current_posx, movel, mwait  # noqa: E402  init_dsr 뒤
+    from DSR_ROBOT2 import amovel, check_motion, get_current_posx, get_robot_state, movel, mwait  # noqa: E402  init_dsr 뒤
     start6 = list(get_current_posx()[0])
-    out = ROOT / "data" / "measure" / f"mode3_reach_{datetime.now():%m%d_%H%M}.csv"
+    out = ROOT / "data" / "measure" / f"mode3_reach_{datetime.now():%m%d_%H%M%S}.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     rows = []
 
     def scale():
-        s = w.safety
+        s = w.wait_normal()
         if s is None:
             raise SystemExit("안전 상태(/rally/safety/status)를 못 받음 — 노드(robot.sh nodes) 확인")
         if s.level != 0:
@@ -249,11 +282,16 @@ def main():
                             raise SystemExit("10 s 안에 안 끝남 — 멈춤")
                     time.sleep(0.3)
                     r = analyse(w.take(t_cmd), t_cmd, p0, s["target"], d)
+                    r.update(w.force_stats(t_cmd, time.monotonic()))
+                    r["robot_state"] = get_robot_state()      # 1 STANDBY · 2 MOVING 아니면 두산 알람·정지 (10/11 −u 자기충돌)
                     row = dict(dir=s["dir"], dist_cm=s["dist_cm"], acc=acc, vel=opt.vel * k, rep=rep + 1, **r)
                     rows.append(row)
                     print(f"{s['dir']} {s['dist_cm']:.0f} cm acc {acc:.0f} #{rep + 1}: 시작 {r.get('t_start_ms') or float('nan'):.0f} ms · "
                           f"도착 {r.get('t_arrive_s') or float('nan'):.3f} s · 지나침 {r.get('overshoot_mm', 0):.1f} mm · "
-                          f"최고 {r.get('peak_mps', 0):.2f} m/s · 끝 오차 {r.get('final_err_mm', 0):.1f} mm")
+                          f"최고 {r.get('peak_mps', 0):.2f} m/s · 끝 오차 {r.get('final_err_mm', 0):.1f} mm · "
+                          f"힘 최대 {r.get('force_peak_n', float('nan')):.1f} N (변화 {r.get('force_dpeak_n', float('nan')):.1f})")
+                    if r["robot_state"] not in (1, 2):
+                        raise SystemExit(f"로봇 상태 {r['robot_state']} (알람·정지) — 펜던트에서 해제 후 대기 자세로")
                     scale()
                     movel(start6, vel=opt.return_vel * scale(), acc=opt.return_vel * 2 * scale())
                     mwait()
