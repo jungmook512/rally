@@ -24,9 +24,9 @@ webcam_link          측면 대각 웹캠, 높이 약 2 m (table_link 기준 sta
 
 | 토픽 | 타입 | 발행 | 주기 | QoS |
 |---|---|---|---|---|
-| `/camera/color/image_raw` | `sensor_msgs/Image` | realsense2_camera | 30 Hz | SensorData |
-| `/camera/aligned_depth_to_color/image_raw` | `sensor_msgs/Image` | realsense2_camera | 30 Hz | SensorData |
-| `/camera/color/camera_info` | `sensor_msgs/CameraInfo` | realsense2_camera | 30 Hz | SensorData |
+| `/camera/color/image_raw` | `sensor_msgs/Image` | realsense2_camera (손목, 시리얼 `cameras.yaml`) | 60 Hz (10/12~, 848×480) | SensorData |
+| `/camera/aligned_depth_to_color/image_raw` | `sensor_msgs/Image` | realsense2_camera (손목, 시리얼 `cameras.yaml`) | 60 Hz (10/12~, 848×480) | SensorData |
+| `/camera/color/camera_info` | `sensor_msgs/CameraInfo` | realsense2_camera (손목, 시리얼 `cameras.yaml`) | 60 Hz (10/12~, 848×480) | SensorData |
 | `/webcam/image_raw` | `sensor_msgs/Image` | usb_cam (측면) | 60 Hz | SensorData |
 | `/side/side/color/image_raw`, `/side/side/color/camera_info` | `sensor_msgs/Image`, `CameraInfo` | realsense2_camera (모드 3 측면 RealSense D435i, `camera_namespace:=side camera_name:=side`, 컬러 848×480 @60, 노출 20 · gain 128) | 60 Hz | SensorData |
 | `/rally/robot/wrench` | `geometry_msgs/WrenchStamped` | rally_robot/force_publisher | 50 Hz (두산 서비스 폴링 — 100 Hz 면 컨트롤러 서비스가 막힘) | SensorData |
@@ -34,6 +34,8 @@ webcam_link          측면 대각 웹캠, 높이 약 2 m (table_link 기준 sta
 | `/rally/gripper/state` | `sensor_msgs/JointState` — name `[rg2_width_mm, rg2_grip, rg2_target_mm]`, position `[폭 mm, grip 감지 0/1, 마지막 명령 폭 mm(-1 = 없음)]`, effort 미사용. 쥠 판단 = grip 비트 **또는** 명령 폭보다 5 mm 이상 벌어져 멈춤(공을 손가락 끝에 걸치면 grip 비트 0) | rally_robot/gripper_node | 20 Hz | SensorData |
 | `/joint_states` | `sensor_msgs/JointState` | dsr_bringup2 | 100 Hz | SensorData |
 | `/tf`, `/tf_static` | `tf2_msgs/TFMessage` | 여러 노드 | - | 표준 |
+
+- **RealSense 두 대 (10/12, `rally_bringup/config/cameras.yaml`)**: `pc2_perception.launch.py part:=vision` 이 시리얼로 구분해 둘 다 848×480 @60 으로 띄운다 (`side_camera:=false` 면 측면 안 띄움). 노출: 측면은 항상 고정(20 · gain 128, `set_camera_params` 가 뜬 뒤 넣음), **손목은 평소 자동이고 모드 3 동안만 고정** — brain(`camera_exposure.py`)이 모드 3 에 들어갈 때·나올 때·세션이 끝날 때 손목 드라이버 노드(`/camera`)의 `rgb_camera.enable_auto_exposure`·`exposure`·`gain` 파라미터를 바꾼다. 노출·gain 은 드라이버 launch 인자로 받지 않아(4.58.4) 파라미터로만 넣는다.
 
 ### 2.2 인식 (커스텀)
 

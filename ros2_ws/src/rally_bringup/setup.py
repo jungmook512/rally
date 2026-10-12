@@ -21,5 +21,6 @@ setup(
     license='MIT',
     entry_points={'console_scripts': [
         'wait_ready = rally_bringup.wait_ready:main',
+        'set_camera_params = rally_bringup.camera_params:main',
     ]},
 )

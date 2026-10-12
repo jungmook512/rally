@@ -116,6 +116,7 @@ class BtRunner(Node):
         self._proposal_cancelled = False
         self._rest_generation = 0
         self._rest_advisor = configured_advisor()
+        self._exposure = self._make_exposure()                       # 모드 3 동안만 손목 카메라 노출 고정 (camera_exposure.py)
         self.get_logger().info(f"휴식 LLM: {self._rest_advisor.status}")
         self._switch_lock = self.control.lock                         # 세션·전환·휴식의 공통 lock
         self._safety_abort = False                                    # STOP 한 번 수신하면 세션 종료까지 유지
@@ -576,6 +577,8 @@ class BtRunner(Node):
                     self._poll_rest()
                 tree = self._apply_switch(tree, session, n)
                 tree.tick()
+                if self._exposure is not None:
+                    self._exposure.want(session.current_mode == TrialResult.MODE_CATCH_PAD)
                 tip = tree.tip()
                 self._state_name = tip.name if tip is not None else "idle"
                 status = tree.root.status
@@ -592,6 +595,8 @@ class BtRunner(Node):
         finally:
             self._state_name = "idle"
             self._hand_wait = None
+            if self._exposure is not None:
+                self._exposure.want(False)                           # 정상·취소·중단 모두 자동 노출로
             with self._switch_lock:
                 self._invalidate_rest()
                 self.control.finish(outcome)
@@ -717,6 +722,16 @@ class BtRunner(Node):
         hold = float(self._hand_cfg["hand_stop_resume_hold_s"])
         return (self._hand_wait is None and self._normal_since is not None
                 and time.monotonic() - self._normal_since >= hold)
+
+    def _make_exposure(self):
+        """cameras.yaml 을 못 읽으면 None — 노출은 건드리지 않음 (카메라 기본 = 자동)."""
+        try:
+            from rally_bringup.camera_params import load
+            from rally_brain.camera_exposure import ExposureSwitch
+            return ExposureSwitch(self, load())
+        except Exception as e:  # noqa: BLE001
+            self.get_logger().warn(f"[카메라] cameras.yaml 읽기 실패 — 모드 3 노출 고정 안 함 ({type(e).__name__}: {e})")
+            return None
 
     def destroy_node(self):
         self._rest_advisor.close()
