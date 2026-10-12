@@ -91,3 +91,23 @@ def test_skills_yaml_mode3_keys():
     cfg = mode3_catch.mode3_config(load_skills())
     assert cfg["trial_timeout_s"] > 0 and cfg["timeout_end_after"] >= 1 and cfg["throw_prompt"]
     assert load_skills()["mode3"]["intro_prompt"] and load_skills()["mode3"]["done_prompt"]
+
+
+def test_waits_for_exposure_before_throw_prompt():
+    # 손목 노출 고정이 적용된 뒤 투구 안내 (#139 박성현) — 그 전엔 안내도 goal 도 안 보냄
+    client, session, published, said = arrange([HIT])
+    fixed = {"ok": False}
+    session.exposure_fixed = lambda: fixed["ok"]
+    tree = mode3_catch.build_trial(session)
+    for _ in range(5):
+        tree.tick_once()
+    assert said == [] and client.sent == 0
+    fixed["ok"] = True
+    assert run(tree) == Status.SUCCESS and client.sent == 1 and said[0] == mode3_catch.DEFAULTS["throw_prompt"]
+
+
+def test_exposure_wait_times_out_and_continues():
+    client, session, published, _ = arrange([HIT], {"mode3": {"exposure_wait_s": 0.05}})
+    session.exposure_fixed = lambda: False                         # 카메라가 거절 — 기다린 뒤 그냥 진행
+    assert run(mode3_catch.build_trial(session)) == Status.SUCCESS
+    assert client.sent == 1 and len(published) == 1

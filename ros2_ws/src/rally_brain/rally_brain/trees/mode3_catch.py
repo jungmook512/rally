@@ -4,6 +4,7 @@
   모드 3 시도 (Guard — 도중에 멈추면 interrupted 기록)
    └─ Selector
        ├─ 받기 (Sequence)
+       │   ├─ 노출 대기  손목 카메라 노출 고정이 적용될 때까지 (최대 exposure_wait_s, 넘으면 그냥 진행 — 공이 번질 수 있음, #139 박성현)
        │   ├─ 시작       throw_prompt 안내 ("공을 던져 주세요")
        │   └─ CatchBall  로봇이 패드를 들고 대기 자세 → 공을 놓은 뒤 예측점으로 한 번 이동 → 측면 카메라로 판정(패드 위 공 3 s, #147) → 복귀
        └─ 끝             실패를 기록했거나 시도를 건너뛰었으면 시도는 끝 (받기 스킬 서버 없음도 건너뜀 — 세션 실패 아님)
@@ -22,7 +23,7 @@ from typing import TYPE_CHECKING, Any
 import py_trees
 from geometry_msgs.msg import Point
 
-from rally_brain.behaviours import Do, Guard
+from rally_brain.behaviours import Do, Guard, WaitUntil
 from rally_brain.trees.steps import TrialState, reason_code, skill_step
 from rally_interfaces.action import CatchBall
 from rally_interfaces.msg import TrialResult
@@ -36,6 +37,7 @@ DEFAULTS: dict[str, Any] = {
     "trial_timeout_s": 30.0,       # 공을 던지기를 기다리는 시간 (운영자가 공을 떼어 건네는 시간 포함)
     "timeout_end_after": 2,        # 연속 이만큼 안 던지면(timeout) 모드 3 남은 시도 건너뜀
     "throw_prompt": "준비되면 패드를 향해 공을 던져 주세요",
+    "exposure_wait_s": 3.0,       # 투구 안내 전 손목 노출 고정 적용을 기다리는 최대 시간
 }
 # 결과별 TTS. 안전 정지·중단 때는 말하지 않는다 (안전 안내는 다른 곳에서)
 PROMPTS: dict[str, str] = {
@@ -131,11 +133,15 @@ def build_trial(session: Session) -> py_trees.behaviour.Behaviour:
                        on_interrupt=lambda reason: state.finish(trial_from_result(state.data["goal"], None,
                                                                                   reason_code(reason))))
 
+    # 자동 노출 첫 프레임은 공이 번져 검출이 흔들린다 — 고정이 적용된 뒤 투구 안내. 못 바꾸면(카메라 없음·거절) 기다린 뒤 그냥 진행
+    exposure_wait = py_trees.decorators.FailureIsSuccess(
+        "노출 대기", WaitUntil("노출 고정 대기", session.exposure_fixed, timeout_s=float(cfg["exposure_wait_s"])))
+
     def on_stop() -> None:
         if state.started and not state.recorded:
             state.finish(trial_from_result(state.data["goal"], None, "interrupted"))
 
     return Guard("모드 3 시도", py_trees.composites.Selector("모드 3", memory=True, children=[
-        py_trees.composites.Sequence("받기", memory=True, children=[Do("시작", start), catch]),
+        py_trees.composites.Sequence("받기", memory=True, children=[exposure_wait, Do("시작", start), catch]),
         Do("끝", lambda: not state.fatal),
     ]), on_stop)
