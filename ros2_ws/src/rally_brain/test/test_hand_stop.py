@@ -213,7 +213,7 @@ def test_hand_stop_outside_mode1_ends_session(node, monkeypatch):
         return [WaitUntil("대기", lambda: False)]
 
     try:
-        out = run_session(node, monkeypatch, children, mode=5)
+        out = run_session(node, monkeypatch, children, mode=7)   # 10/11: 모드 5 는 손 STOP 대기 대상에 들어감 (skills.yaml)
     finally:
         feed.close()
     assert out == ["abort"]

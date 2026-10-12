@@ -144,6 +144,14 @@ class SkillCall(py_trees.behaviour.Behaviour):
                 return Status.RUNNING
             self._goal_handle = self._send_future.result()
             if not self._goal_handle.accepted:
+                if self.hand_resume is not None and self._resends < self.max_resends:
+                    # 10/11 실로봇(모드 5): 손 STOP 대기에서 NORMAL 을 보고 다시 보낸 순간 손이 또 가까워져 skill_server 가 거절
+                    # (STOP 중 goal 거부) → 세션 종료됐다. 손 STOP 재전송이 붙은 단계면 거절도 같은 대기로 돌린다
+                    self._resends += 1
+                    self.node.get_logger().info(f"[{self.name}] goal 거절 (안전 STOP 중) — 다시 NORMAL 이 되면 다시 보냄 ({self._resends}회)")
+                    self._reset()
+                    self._resend_wait = True
+                    return Status.RUNNING
                 self._handled = True
                 self.feedback_message = "goal 거절"
                 self.node.get_logger().warn(f"[{self.name}] goal 거절")
