@@ -1,7 +1,7 @@
 # 모드 7: 저항 밀기 (팔씨름형 등척성 근력 훈련)
-# 로봇은 손잡이를 쥐고 환자 앞에 내민 뒤 순응 제어로 스프링처럼 버틴다. 환자 힘이 target_force_n 을 넘으면
+# 로봇은 손목을 환자 앞에 내밀고(환자가 손목을 직접 민다, 10/12) 순응 제어로 스프링처럼 버틴다. 환자 힘이 target_force_n 을 넘으면
 # yield_distance_m 만큼 천천히 "밀려나 준다"(져준다). 로봇은 절대 환자 쪽으로 능동적으로 밀지 않는다.
-geometry_msgs/PoseStamped handle_pose   # 손잡이 제시 자세 (중앙선 앞, 환자 팔 높이)
+geometry_msgs/PoseStamped handle_pose   # 사용 안 함 (10/12: 손잡이 없이 환자가 로봇 손목을 민다, 제시 자세는 로봇이 정함). 필드 삭제는 팀 합의 후
 float32 stiffness                       # 순응 강성 (낮을수록 쉽게 밀림) — 난이도
 float32 target_force_n                  # 이 힘을 넘으면 져줌 (예: 8 N)
 float32 hold_time_s                     # 목표 힘을 이 시간 이상 유지해야 성공 (예: 2 s)
