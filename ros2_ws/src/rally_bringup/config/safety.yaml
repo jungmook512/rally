@@ -12,7 +12,8 @@ rally_safety_monitor:
     #   ★ 10/12 정정인: 개발 기간 off 종료 → 기본 slow (시연 체크리스트 #145 — 리허설은 slow 로 띄우고 결과로 slow/stop 확정, off 금지).
     #     (10/11~10/12 개발 기간 기본 off 였음: 실기 동작 확인 중 손 근접 STOP 이 잦아서)
     #   off: 손 판정 통째로 꺼짐 (근접 STOP·SLOW, 손 놓침 STOP, 손 NaN·끊김 SLOW 모두). 남는 STOP: 힘 한계·nudge·작업 공간·estop·음성·필수 입력
-    #   slow: 손 근접 STOP → SLOW. 둘 다 보이는 손만 보고 놓침·끊김 유지(#95)를 안 함
+    #   slow: 손 근접 STOP → SLOW (단 선 너머 hand_deep_end_m 보다 깊은 hand_deep_intrusion 은 STOP 유지, #160 10/13 정정인).
+    #     둘 다 보이는 손만 보고 놓침·끊김 유지(#95)를 안 함
     #   실행 때 바꾸기: ros2 launch rally_bringup pc1_robot.launch.py hand_stop:=stop (또는 HAND_STOP=stop scripts/robot.sh nodes)
     #   따옴표 필수 — 따옴표 없는 off 는 YAML 에서 false 가 된다 (노드는 false 도 off 로 받지만 헷갈리지 않게)
     hand_stop_mode: "slow"
@@ -53,6 +54,8 @@ rally_safety_monitor:
     #   후퇴, 저항 밀기 — 환자 쪽 명령 이동 없음)에만 올리는 플래그로 한정. 치기·집기·놓기·ReturnBall 은 STOP 그대로.
     #   힘 한계 25 N·순응 상태는 그대로, 손이 로봇 구역 깊이 들어오거나 손 메시지가 끊기면 STOP.
     hand_deep_stop_m: -0.15            # distance_to_centerline 이 이보다 작으면(중앙선 너머 15 cm) 로봇 거리·환자 접촉과 관계없이 STOP
+    hand_deep_end_m: -0.30             # 10/12 정정인: 위 STOP 중 이보다 더 깊을(30 cm) 때만 사유 hand_deep_intrusion → brain 세션 종료.
+                                       #   15~30 cm 는 STOP 은 그대로, 사유 hand_near_centerline → 손 빼면 이어 감 (15 cm 에서 세션이 자주 끝날까 봐). 임계값 완화 아님
     patient_contact_timeout_s: 0.5     # skill_server 의 /rally/safety/patient_contact 하트비트(5 Hz) 유효 시간
     # 입력 끊김 (#14·#59) — 받다가 이 시간 넘게 끊기면 SLOW (*_stale). 한 번도 못 받은 입력은 경고 로그만
     hand_timeout_s: 0.5                # hand_pose 30 Hz
