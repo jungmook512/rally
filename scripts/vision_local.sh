@@ -13,7 +13,7 @@
 #   손목 자리 /camera 에 열릴 수 있음). 컨테이너 경로(pc2_perception.launch.py)와 같은 함수(camera_params.rs_launch_args)를 쓴다.
 #   측면 카메라는 기본으로 띄우지 않는다. CAM_CFG 로 다른 yaml 지정 가능.
 #   모드 3 (10/12): MODE3=1 → 이미지 rally/vision:mode3 (main 으로 빌드: docker build -f docker/vision/Dockerfile -t rally/vision:mode3 .)
-#     손목 + 측면 RealSense(측면 노출 고정) + camera_tf + segmenter + flight_predictor 를 로컬 모드로. compose pc2 와 같은 노드지만
+#     손목(컬러만) + 측면 RealSense(측면 노출 고정) + camera_tf + flight_predictor 를 로컬 모드로 (segmenter 없음 — 예측 노드 속도). compose pc2 와 같은 노드지만
 #     Discovery Server 없이 로봇 노드와 붙는다. 필요 파일: models/velcro_ball_yolo11n-seg_1024_rot_final.(engine|pt) · models/mode3_side_calib.json.
 #     FLIGHT_MODEL=velcro_ball_yolo11n-seg_1024_rot_final.pt 처럼 주면 예측 모델 지정 (.engine 이 컨테이너 TensorRT 와 안 맞을 때).
 #     설정(config/)은 이 저장소 것을 읽기 전용으로 끼운다 — skills.yaml mode3 패드 평면·cameras.yaml·hand_eye.yaml 을 이미지 다시 빌드 없이.
@@ -66,21 +66,23 @@ fi
 DOMAIN=$(grep -E '^ROS_DOMAIN_ID=' "$ROOT/docker/.env" 2>/dev/null | tail -1 | cut -d= -f2 | tr -d '[:space:]'); DOMAIN=${DOMAIN:-10}
 docker rm -f $NAME >/dev/null 2>&1
 if [ "$MODE3" = 1 ]; then
+  # 10/12 밤 실로봇: segmenter(CPU 77 %)·손목 깊이까지 띄우니 예측 노드 처리 22~38 Hz(카메라는 60) → 짝짓기 실패·예측 0, 손목 깊이 시작 Hardware Error.
+  #   모드 3 은 두 카메라 컬러만 쓰므로 segmenter 빼고 손목 깊이 끔
+  WRIST3_ARGS=$(echo "$WRIST_ARGS" | sed -e 's/enable_depth:=true/enable_depth:=false/' -e 's/ align_depth.enable:=true//' -e 's/ depth_module.depth_profile:=[^ ]*//')
   FLIGHT_ARG=""
   [ -n "$FLIGHT_MODEL" ] && FLIGHT_ARG="--ros-args -p model_path:=/models/$FLIGHT_MODEL"
   docker run -d --name $NAME --network host --ipc host --gpus all --privileged -v /dev:/dev \
     -v "$ROOT/models:/models:ro" -v "$ROOT/ros2_ws/src/rally_bringup/config:/ros2_ws/install/share/rally_bringup/config:ro" \
     -e ROS_DOMAIN_ID=$DOMAIN -e RMW_IMPLEMENTATION=rmw_fastrtps_cpp -e FASTDDS_BUILTIN_TRANSPORTS=UDPv4 -e YOLO_CONFIG_DIR=/tmp/yolo \
     "$IMAGE" bash -c "
-      ros2 launch realsense2_camera rs_launch.py $WRIST_ARGS &
+      ros2 launch realsense2_camera rs_launch.py $WRIST3_ARGS &
       ros2 launch realsense2_camera rs_launch.py $SIDE_ARGS &
       sleep 8
       ros2 run rally_bringup set_camera_params --node /side/side --fixed &
       ros2 run rally_vision camera_tf &
-      ros2 run rally_vision segmenter --ros-args -p model_path:=/models/$MODEL -p imgsz:=$IMGSZ -p conf:=$CONF ${HAND_EYE_ARG[*]} -p gripper2cam_path:=/models/T_gripper2camera.npy &
       ros2 run rally_vision flight_predictor $FLIGHT_ARG
     " >/dev/null
-  echo "[vision] ★ 모드 3: 손목 $WRIST_ARGS"
+  echo "[vision] ★ 모드 3: 손목 $WRIST3_ARGS (segmenter 없음)"
   echo "[vision] ★ 모드 3: 측면 $SIDE_ARGS (노출 고정) · flight_predictor ${FLIGHT_MODEL:-모델 자동(.engine 먼저)} — 로그: scripts/vision_local.sh logs"
   exit 0
 fi
