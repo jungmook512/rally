@@ -72,37 +72,56 @@
   #proposal-panel { background:var(--cream); border-color:#c5ab72; }
   #proposal-prompt { font-size:19px; font-weight:700; }
   #proposal-message { font-weight:650; }
-  /* 모드 화면 배치 (10/12 조정묵 스케치): 1줄 훈련 상태 · 현재 동작 · 진행 현황 / 2줄 환자 시점 그림(2칸) · 카메라 / 3줄 단계 순서 */
-  #mode-view { display:grid; grid-template-columns:190px minmax(0,2fr) minmax(0,1fr); gap:16px; align-items:stretch;
-               grid-template-areas:"control control control" "steps diagram cams"; }
-  #mode-view .instruction, #mode-view .stats { display:none; }
-  #mode-view .control-bar { grid-template-columns:minmax(0,1fr) auto; align-items:center; padding:10px 16px; }
-  #resume:disabled { display:none; }   /* 휴식 중이라 누를 수 있을 때만 보임 */
-  #mode-view .control-status { display:flex; align-items:center; gap:14px; }
-  #mode-view .control-status h2 { font-size:15px; color:var(--muted); }
-  #mode-view #phase { font-size:17px; }
-  #mode-view .diagram-panel>.panel-top { display:none; }
-  #mode-view .diagram-panel { padding:10px; }
-  #mode-view #mode-diagram { margin-top:0; }
-  #mode-view #mode-diagram svg { max-height:calc(100vh - 330px); min-height:260px; }
-  #mode-view #camera-view { padding:12px; } #mode-view #camera-view .section-heading { margin-bottom:8px; padding-bottom:6px; font-size:15px; }
-  #mode-view #camera-view .frame { max-height:calc((100vh - 400px) / 2); }
-  /* 단계 순서: 그림 왼쪽 세로 (10/12) */
-  #mode-view .steps-panel { padding:12px; display:flex; flex-direction:column; gap:10px; }
-  #mode-view .steps-panel h2 { margin:0; padding:0 0 8px; font-size:15px; flex-wrap:wrap; row-gap:8px; }
-  #mode-view .steps-panel h2 button { margin-left:0; width:100%; }
-  #mode-view #steps { flex-direction:column; gap:4px; }
-  #mode-view #steps li { flex:none; display:flex; align-items:center; gap:10px; text-align:left; padding:7px 8px; }
-  #mode-view #steps li span { width:28px; height:28px; margin:0; flex:none; font-size:14px; }
-  #mode-view .visual-column, #mode-view aside { display:contents; }
-  #mode-view .control-bar { grid-area:control; }
-  #mode-view .instruction { grid-area:instr; }
-  #mode-view .stats { grid-area:stats; }
-  #mode-view .diagram-panel { grid-area:diagram; }
-  #mode-view #camera-view { grid-area:cams; }
-  #mode-view #camera-view .cameras { grid-template-columns:1fr; }
-  #mode-view .steps-panel { grid-area:steps; }
-  #mode-view>*, #mode-view .visual-column>*, #mode-view aside>* { min-width:0; }
+  /* 모드 화면 배치 (10/12, 참고 화면 느낌): 위 상태 줄 / 왼쪽 그림 + 작은 카메라 / 오른쪽 현재 단계 + 모드별 진행 카드 (선택 모드 카드 안에 단계 목록) */
+  #mode-view { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); gap:14px; align-items:start;
+               grid-template-areas:"control control" "left right"; }
+  #mode-view>* { min-width:0; }
+  #mode-view .control-bar { grid-area:control; grid-template-columns:minmax(0,1fr) auto auto; align-items:center; padding:8px 16px; }
+  #mode-view .control-status { display:flex; align-items:center; gap:14px; } #mode-view .control-status h2 { font-size:14px; color:var(--muted); }
+  #resume:disabled { display:none; }   /* 휴식 중이라 누를 수 있을 때만 */
+  #mode-left { grid-area:left; display:grid; gap:14px; min-width:0; }
+  #mode-right { grid-area:right; display:grid; gap:14px; min-width:0; }
+  #mode-view .diagram-panel { padding:12px; }
+  #mode-view #mode-diagram { margin-top:10px; }
+  #mode-view #mode-diagram svg { min-width:0; max-height:calc(100vh - 480px); min-height:200px; }
+  #camera-slot .camera .frame { max-height:130px; } #camera-slot .cameras { justify-content:start; }
+  #camera-slot #camera-view { padding:12px; } #camera-slot #camera-view .section-heading { margin-bottom:8px; padding-bottom:6px; font-size:14px; }
+  #camera-slot .cameras { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+  #camera-slot .camera figcaption { font-size:12px; }
+  .stat-line { color:var(--muted); font-size:14px; } .stat-line b { color:var(--text); font-size:16px; font-variant-numeric:tabular-nums; }
+  .mode-cards { display:flex; gap:10px; align-items:flex-start; }
+  .mode-cards>.mode-card { flex:1 1 0; } .mode-cards>.mode-card.selected { flex:1.9 1 0; }
+  .mode-card { border:1px solid var(--line); border-top:4px solid #d9cfb9; border-radius:12px; background:#fffdf7; padding:10px; cursor:pointer; min-width:0; }
+  .mode-card:hover { border-color:#b9ad92; }
+  .mode-card.selected { border:2px solid var(--accent); border-top-width:4px; background:#e6edf5; cursor:default; }
+  .mode-card .top { display:flex; justify-content:space-between; align-items:center; gap:6px; }
+  .mode-card .num { display:grid; place-items:center; width:30px; height:30px; border-radius:50%; border:1.5px solid #b9ad92; background:#fff; font-weight:750; }
+  .mode-card.selected .num { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .mode-card .state { font-size:12px; padding:2px 9px; border-radius:999px; border:1px solid var(--line); background:#f6f1e6; color:var(--muted); white-space:nowrap; }
+  .mode-card .state.running { background:#dbe7f3; border-color:#7f9fc3; color:#2c4f7c; }
+  .mode-card .state.paused { background:#f7e9cc; border-color:#d0a95b; color:#7a5414; }
+  .mode-card .state.off { opacity:.6; }
+  .mode-card .name { font-family:"Noto Serif KR","Nanum Myeongjo",Georgia,serif; font-size:19px; word-break:keep-all; margin:8px 0 2px; color:var(--text); }
+  .mode-card .sub { font-size:12px; color:var(--muted); }
+  .mode-card .bar { height:6px; border-radius:3px; background:#ece5d5; margin:8px 0 2px; overflow:hidden; }
+  .mode-card .bar i { display:block; height:100%; width:0; background:#7fae8c; }
+  .card-slot:empty { display:none; }
+  .card-slot { margin-top:8px; padding-top:8px; border-top:1px dashed var(--line); }
+  #steps-panel { padding:0; border:0; background:none; box-shadow:none; }
+  #steps-panel h2 { display:none; }
+  #steps-panel #steps { flex-direction:column; gap:2px; }
+  #steps-panel #steps li { flex:none; display:flex; align-items:center; gap:8px; text-align:left; padding:4px 6px; font-size:13px; }
+  #steps-panel #steps li span { width:10px; height:10px; margin:0; flex:none; font-size:0; border:1.5px solid #9aa9b8; background:#fff; }
+  #steps-panel #steps li.active span { background:var(--accent); border-color:var(--accent); box-shadow:none; }
+  #steps-panel #steps li.active { color:var(--accent); font-weight:700; }
+  #steps-panel #steps li.preview span { background:#6b4fa0; border-color:#6b4fa0; }
+  #steps-play { margin:6px 0 0; width:100%; }
+  .badges { display:flex; gap:12px; align-items:center; }
+  .badges label { display:grid; justify-items:center; gap:2px; font-size:11px; color:var(--muted); }
+  .badges output { font-size:13px; font-weight:700; padding:3px 12px; border-radius:999px; border:1px solid #9fb6cf; background:#e3ecf5; color:#2c4f7c; white-space:nowrap; }
+  .badges output.safe-normal { border-color:#9cc3a8; background:#e2f1e6; color:#2f6b45; }
+  .badges output.safe-slow { border-color:#d6b56f; background:#f8ecd0; color:#7a5414; }
+  .badges output.safe-stop { border-color:#d48b8b; background:#f8dede; color:#9a2525; }
   .diagram-panel { background:#f9fcf8; border-color:#9eb8a8; }
   #mode-diagram { margin-top:12px; overflow-x:auto; border:1px solid #c2d3c7; border-radius:10px; background:#f1f7ef; }
   #mode-diagram svg { display:block; width:100%; min-width:600px; height:auto; max-height:420px; object-fit:contain; }
@@ -154,11 +173,27 @@
   .empty { color:var(--muted); padding:8px 0; font-size:14px; }
   .new { animation:flash 1.2s ease-out; }
   @keyframes flash { from { background:#d5eee2; } to { background:transparent; } }
-  @media(max-width:1000px) { #mode-view { grid-template-columns:repeat(2,minmax(0,1fr)); grid-template-areas:"control control" "steps steps" "diagram diagram" "cams cams"; }
+  @media(max-width:1000px) { #mode-view { grid-template-columns:1fr; grid-template-areas:"control" "left" "right"; } .mode-cards { flex-wrap:wrap; }
                              #mode-view #camera-view .cameras { grid-template-columns:repeat(auto-fill, minmax(260px, 560px)); } #page-heading { align-items:flex-start; flex-direction:column; } }
   @media(max-width:700px) { .cards { grid-template-columns:repeat(2,minmax(0,1fr)); } header { padding:14px 16px; } header small { display:none; } main { padding:16px 12px 28px; } .panel { padding:14px; } #mode-nav { padding-inline:12px; } #mode-nav a { padding:9px 12px; font-size:14px; } #page-heading h2 { font-size:25px; } .panel-top { align-items:flex-start; flex-direction:column; } #steps { flex-wrap:wrap; row-gap:16px; } #steps li { flex:0 0 calc(33.33% - 6px); } }
   @media(max-width:700px) { #mode-diagram svg { min-width:0; } #mode-diagram svg text { display:none; } }
-  @media(max-width:440px) { #mode-view { grid-template-columns:1fr; grid-template-areas:"control" "steps" "diagram" "cams"; } .control-bar { grid-template-columns:1fr; } .control-bar small { grid-column:1/-1; } #resume { justify-self:start; } #proposal-panel button { display:block; width:100%; margin-top:8px; } }
+  @media(max-width:440px) { #mode-view { grid-template-columns:1fr; grid-template-areas:"control" "left" "right"; } .control-bar { grid-template-columns:1fr; } .control-bar small { grid-column:1/-1; } #resume { justify-self:start; } #proposal-panel button { display:block; width:100%; margin-top:8px; } }
+  /* 테마 (10/12) — 크림색 바탕·연한 테두리·남색 강조 */
+  :root { --bg:#efebe1; --panel:#fbf8f0; --text:#3b3a33; --muted:#8a8371; --line:#e2dac8; --accent:#34588a; --mint:#fbf8f0; --lavender:#fbf8f0; --cream:#fbf8f0; }
+  body { background:var(--bg); }
+  header { border-color:var(--line); }
+  .panel { border-color:var(--line); box-shadow:0 1px 2px #6b5d3a12; border-radius:14px; }
+  .control-bar,.instruction,.stats,.steps-panel,#trials-view,#events-view { border-left-width:1px; border-left-color:var(--line)!important; }
+  .control-bar, .instruction, .stats, .diagram-panel, .card, #events-view { background:var(--panel)!important; border-color:var(--line)!important; }
+  #mode-nav a[aria-current] { background:#e3ecf5; border-color:#9fb6cf; color:#2c4f7c; }
+  button { background:#fffdf7; color:var(--text); border-color:#cfc5ae; border-radius:999px; }
+  button:not(:disabled):hover { border-color:var(--accent); }
+  #resume:not(:disabled) { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .instruction h2 { font-family:"Noto Serif KR","Nanum Myeongjo",Georgia,serif; font-size:30px; font-weight:600; margin:6px 0 4px; }
+  .current-label { color:var(--muted); font-size:14px; } .instruction .section-heading { border:0; padding:0; margin:0; }
+  #mode-diagram { border-color:var(--line); background:#f4f0e6; }
+  #safety { border-width:1px; border-left-width:1px; border-radius:10px; font-weight:650; }
+  #safety.normal { background:#eef7ef; color:#2f6b45; border-color:#b9dcc2; }
 </style>
 </head>
 <body>
@@ -183,6 +218,7 @@
     <div class="control-status"><h2><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4H19V20H5ZM9 8H15M9 12H15M9 16H12"/></svg>훈련 상태</h2>
     <p id="phase" role="status">연결 대기</p></div>
     <button id="resume" type="button" disabled>훈련 재개</button>
+    <div class="badges"><label>진행 단계<output id="badge-step">—</output></label><label>안전<output id="badge-safety">모름</output></label></div>
     <p id="control-message" role="status" aria-live="polite"></p>
   </section>
   <section id="proposal-panel" class="panel" hidden aria-label="휴식 제안">
@@ -193,10 +229,26 @@
     <p id="proposal-message" role="status" aria-live="polite"></p>
   </section>
   <section id="mode-view" hidden>
-    <div class="visual-column"><div class="panel diagram-panel"><div class="panel-top"><h2 id="diagram-title">훈련 공간</h2><span class="badge">환자 자리에서 본 설명 그림</span></div><div id="mode-diagram" tabindex="0" role="region" aria-label="환자 시점에서 현재 실행 단계를 설명하는 훈련 일러스트"></div><p id="diagram-caption" class="caption" hidden></p></div>
-    <div class="panel steps-panel"><h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5H8V9H4ZM12 7H20M4 15H8V19H4ZM12 17H20M6 9V15"/></svg>단계 순서<button id="steps-play" type="button" class="ghost">▶ 단계 미리보기</button></h2><ol id="steps"></ol></div></div>
-    <aside><div class="panel instruction"><div class="section-heading current-label"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5L18 12L8 19Z"/></svg>현재 동작</div><h2 id="step-title" role="status">상태 수신 대기</h2><p id="step-description"></p><span id="raw-stage" class="caption"></span></div>
-    <div class="panel stats"><h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19H20M7 15V10M12 15V5M17 15V8"/></svg>진행 현황</h2><dl><div><dt>완료한 시도</dt><dd id="mode-trials">—</dd></div><div><dt>현재 난이도</dt><dd id="mode-level">—</dd></div></dl><p id="mode-extra" class="caption"></p></div></aside>
+    <div id="mode-left">
+      <div class="panel diagram-panel"><div class="panel-top"><h2 id="diagram-title">훈련 그림</h2><span class="badge">위에서 본 설명 그림</span></div><div id="mode-diagram" tabindex="0" role="region" aria-label="현재 실행 단계를 설명하는 훈련 그림"></div><p id="diagram-caption" class="caption" hidden></p></div>
+      <div id="camera-slot"></div>
+    </div>
+    <div id="mode-right">
+      <div class="panel instruction"><div class="panel-top"><div class="section-heading current-label">현재 단계</div><span class="stat-line">시도 <b id="mode-trials">—</b> · 난이도 <b id="mode-level">—</b></span></div>
+        <h2 id="step-title" role="status">대기 중</h2><p id="step-description"></p><span id="raw-stage" class="caption"></span><p id="mode-extra" class="caption"></p></div>
+      <div class="panel progress-panel"><div class="panel-top"><h2>모드별 진행</h2><span class="stat-line">카드를 누르면 그 모드 화면</span></div>
+      <div class="mode-cards">
+        <div class="mode-card" id="card-1" role="link" tabindex="0"><div class="top"><span class="num">1</span><span class="state" id="card-state-1">대기</span></div>
+          <div class="name">공 굴리기</div><div class="sub" id="card-sub-1">시도 0회</div><div class="bar"><i id="card-bar-1"></i></div><div class="card-slot" id="card-slot-1"></div></div>
+        <div class="mode-card" id="card-3" role="link" tabindex="0"><div class="top"><span class="num">3</span><span class="state" id="card-state-3">대기</span></div>
+          <div class="name">캐치볼</div><div class="sub" id="card-sub-3">시도 0회</div><div class="bar"><i id="card-bar-3"></i></div><div class="card-slot" id="card-slot-3"></div></div>
+        <div class="mode-card" id="card-5" role="link" tabindex="0"><div class="top"><span class="num">5</span><span class="state" id="card-state-5">대기</span></div>
+          <div class="name">건네고 받기</div><div class="sub" id="card-sub-5">시도 0회</div><div class="bar"><i id="card-bar-5"></i></div><div class="card-slot" id="card-slot-5"></div></div>
+        <div class="mode-card" id="card-7" role="link" tabindex="0"><div class="top"><span class="num">7</span><span class="state" id="card-state-7">대기</span></div>
+          <div class="name">저항 밀기</div><div class="sub" id="card-sub-7">시도 0회</div><div class="bar"><i id="card-bar-7"></i></div><div class="card-slot" id="card-slot-7"></div></div>
+      </div></div>
+    </div>
+    <div class="panel steps-panel" id="steps-panel"><h2>단계</h2><ol id="steps"></ol><button id="steps-play" type="button" class="ghost">▶ 단계 미리보기</button></div>
   </section>
 
   <section class="cards" id="overview-cards">
@@ -243,6 +295,7 @@ const modeName = (m) => m ? `${m} ${MODES[m] ?? ""}`.trim() : "—";
 const clock = (iso) => iso ? new Date(iso).toLocaleTimeString("ko-KR", {hour12: false}) : "";
 const pct = (x) => x == null ? "—" : `${Math.round(x * 100)}%`;
 const seenTrials = new Set();
+const modeTally = {1: {n: 0, ok: 0}, 3: {n: 0, ok: 0}, 5: {n: 0, ok: 0}, 7: {n: 0, ok: 0}};   // 받은 시도 기록으로 카드에 표시
 let selectedMode = null, selectedPage = 'overview';
 let control = null, controlReceived = 0, resuming = false, stateTime = 0;
 let sceneSafety = null, sceneKey = null, previewStage = null, previewTimer = null;
@@ -296,6 +349,7 @@ setInterval(() => {
   if (!stateTime || Date.now() - stateTime > 2000) {
     $("safety").className = "unknown";
     $("safety").textContent = "안전 상태 모름";
+    $("badge-safety").textContent = "모름"; $("badge-safety").className = "";
   }
   renderModePage();
 }, 500);
@@ -307,6 +361,7 @@ function renderState(s) {
   const [cls, word] = LEVELS[s.safety?.level] ?? ["unknown", "모름"];
   $("safety").className = cls;
   $("safety").innerHTML = `안전: ${word}` + (s.safety?.reason ? ` <small>${esc(s.safety.reason)}</small>` : "");
+  $("badge-safety").textContent = word; $("badge-safety").className = `safe-${cls}`;
   $("mode").textContent = modeName(s.mode);
   $("robot").textContent = `로봇 ${ROBOT[s.robot_state] ?? s.robot_state ?? "—"}`;
   $("trial").textContent = s.trial_index ? `${s.trial_index}회째` : "—";
@@ -320,6 +375,7 @@ function renderState(s) {
 function addTrial(t, flash) {
   if (seenTrials.has(t.trial_id)) return;
   seenTrials.add(t.trial_id);
+  if (modeTally[t.mode]) { modeTally[t.mode].n++; if (t.success) modeTally[t.mode].ok++; }
   $("trials-empty").hidden = true;
   const tr = document.createElement("tr");
   tr.dataset.mode = t.mode;
@@ -506,11 +562,13 @@ function selectPage() {
   $('report-view').hidden=selectedPage!=='overview';
   $('camera-view').hidden=!(selectedPage==='overview'||selectedMode!==null);   // 전체 현황 + 모든 모드 화면 (기록 조회 화면엔 없음)
   // 모드 화면이면 훈련 상태·카메라 칸을 모드 격자 안으로, 아니면 원래 자리로 (요소를 옮길 뿐 새로 만들지 않음 — 버튼·영상 연결 유지)
-  for (const [id, home] of [['control-bar', 'control-home'], ['camera-view', 'camera-home']]) {
+  for (const [id, home, slot] of [['control-bar', 'control-home', 'mode-view'], ['camera-view', 'camera-home', 'camera-slot']]) {
     const el = $(id);
-    if (selectedMode !== null) { if (el.parentNode !== $('mode-view')) $('mode-view').append(el); }
+    if (selectedMode !== null) { if (el.parentNode !== $(slot)) $(slot).append(el); }
     else if (el.previousElementSibling !== $(home)) $(home).after(el);
   }
+  if (selectedMode !== null && $('steps-panel').parentNode !== $(`card-slot-${selectedMode}`)) $(`card-slot-${selectedMode}`).append($('steps-panel'));
+  for (const m of [1, 3, 5, 7]) $(`card-${m}`).className = `mode-card${m === selectedMode ? ' selected' : ''}`;
   showCameras();
   $('trials-view').hidden=selectedPage!=='trials';
   $('events-view').hidden=selectedPage!=='events';
@@ -527,6 +585,18 @@ function filterTrials(){
   for(const row of $('trials').children){row.hidden=selectedMode!==null&&Number(row.dataset.mode)!==selectedMode;if(!row.hidden)visible++;}
   $('trials-empty').hidden=visible>0;
   $('trials-empty').textContent=selectedMode===null?'아직 수신한 시도 기록이 없습니다.':'이 모드의 수신된 시도 기록이 없습니다.';
+}
+function renderModeCards(fresh){
+  for (const m of [1, 3, 5, 7]) {
+    const live = fresh && Number(control.mode) === m;
+    const off = m === 3 && fresh && control.mode3_enabled === false;
+    const [cls, word] = off ? ['off', '꺼짐'] : live && ['running', 'pause_pending'].includes(control.phase) ? ['running', '진행 중']
+      : live && control.phase === 'paused' ? ['paused', '휴식'] : ['', '대기'];
+    $(`card-state-${m}`).className = `state ${cls}`; $(`card-state-${m}`).textContent = word;
+    const t = modeTally[m];
+    $(`card-sub-${m}`).textContent = t.n ? `시도 ${t.n}회 · 성공 ${t.ok}` : '시도 0회';
+    $(`card-bar-${m}`).style.width = t.n ? `${Math.round(t.ok / t.n * 100)}%` : '0';
+  }
 }
 function renderModePage(){
   if(selectedMode===null){$('view-status').hidden=true;return;}
@@ -551,7 +621,8 @@ function renderModePage(){
     sceneKey=nextSceneKey;
   }
   $('view-status').hidden=!active;$('view-status').textContent='지금 진행 중';
-  $('mode-trials').textContent=active?`${control.trial_index ?? 0}회 (세션 전체)`:'—';
+  $('mode-trials').textContent=active?`${control.trial_index ?? 0}회`:'—';
+  renderModeCards(fresh); $('badge-step').textContent=index>=0?page.steps[index]:active?(PHASES[control.phase]||'—'):'—';
   $('mode-level').textContent=active&&control.difficulty!=null?`${control.difficulty}단계`:'—';
   $('mode-extra').textContent=selectedMode===3&&fresh&&!control.mode3_enabled?'챌린지 꺼짐 (skills.yaml mode3_challenge)':'';
   let title='이 모드는 진행 중이 아님',description='';
@@ -576,6 +647,10 @@ $('steps-play').onclick=()=>{
   showPreview(0);
   previewTimer=setInterval(()=>showPreview((previewStage+1)%PAGES[selectedMode].steps.length),3000);
 };
+for (const m of [1, 3, 5, 7]) {
+  const go = (e) => { if (e?.target?.closest?.('#steps-panel') || selectedMode === m) return; location.hash = `#mode${m}`; };
+  $(`card-${m}`).onclick = go; $(`card-${m}`).onkeydown = (e) => { if (e.key === 'Enter') go(e); };
+}
 window.addEventListener("hashchange", ()=>{ stopPreview(); selectPage(); });
 selectPage();
 load().then(connect);

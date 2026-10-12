@@ -6,7 +6,7 @@ const path = require('node:path');
 const html = fs.readFileSync(path.join(__dirname, '../web/index.html'), 'utf8');
 const elements = new Map();
 function element() {
-  return {dataset:{}, children:[], attributes:{}, hidden:false, textContent:'', htmlWrites:0,
+  return {dataset:{}, children:[], attributes:{}, hidden:false, textContent:'', htmlWrites:0, style:{}, className:'',
     get innerHTML(){return this.markup||'';}, set innerHTML(value){this.markup=value;this.htmlWrites++;},
     parentNode:null, previousElementSibling:null,
     prepend(row){this.children.unshift(row);}, append(row){this.children.push(row);if(row&&typeof row==='object'){row.parentNode=this;row.previousElementSibling=null;}},
@@ -108,7 +108,9 @@ visit('#mode1');
 assert.equal(run('previewStage'),null);
 visit('#mode5');
 assert.equal(get('control-bar').parentNode, get('mode-view'));
-assert.equal(get('camera-view').parentNode, get('mode-view'));
+assert.equal(get('camera-view').parentNode, get('camera-slot'));
+assert.equal(get('steps-panel').parentNode, get('card-slot-5'));
+assert.equal(get('card-5').className, 'mode-card selected');
 assert.equal(get('camera-view').hidden, false);
 visit('#overview');
 assert.equal(get('control-bar').previousElementSibling, get('control-home'));
