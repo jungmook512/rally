@@ -84,6 +84,7 @@ class SkillCall(py_trees.behaviour.Behaviour):
         self._t0 = time.monotonic()
         self.phases: list[str] = []    # 이번 goal 에서 받은 feedback.phase (순서대로)
         self._resend_wait = False      # 손 STOP 뒤 다시 보낼 때까지 대기
+        self._resuming = False         # 손 STOP 뒤 재전송 중 — can_send 건너뜀
 
     def initialise(self) -> None:
         self._reset()
@@ -123,6 +124,9 @@ class SkillCall(py_trees.behaviour.Behaviour):
                 self.feedback_message = "손 근접 STOP 뒤 재전송 대기"
                 return Status.RUNNING
             self._resend_wait = False
+            # 재전송은 resume_ok(NORMAL 유지)만 본다 — can_send(예: 모드 1 회수 전 '손이 20 cm 밖에 보임')는 처음 보낼 때만.
+            # 10/12 실로봇: 회수하러 가다 STOP 으로 선 자세에선 카메라에 손이 안 보여 '손 안 보임' 으로 영영 대기 (#115: 손이 보이는지는 재진행 조건 아님)
+            self._resuming = True
         if self._send_future is None:
             if not self.client.server_is_ready():
                 if time.monotonic() - self._t0 > self.server_timeout_s:
@@ -130,9 +134,10 @@ class SkillCall(py_trees.behaviour.Behaviour):
                     self.node.get_logger().error(f"[{self.name}] {self.feedback_message}")
                     return Status.FAILURE
                 return Status.RUNNING
-            if not self.can_send():
+            if not self._resuming and not self.can_send():
                 self.feedback_message = "precondition_failed"
                 return Status.RUNNING if self.wait_for_precondition else Status.FAILURE
+            self._resuming = False
             if self.on_feedback is not None or self.hand_resume is not None:   # 진행 단계가 필요할 때만 (feedback 구독)
                 self._send_future = self.client.send_goal_async(self.make_goal(), feedback_callback=self._feedback)
             else:
