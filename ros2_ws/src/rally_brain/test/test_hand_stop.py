@@ -317,6 +317,31 @@ def test_skillcall_after_place_fails_and_return_hand_view_is_done():
     assert b.status == Status.SUCCESS and client.sent == 1 and results[0].success
 
 
+def test_return_resend_skips_hand_clear_precondition():
+    # 10/12 실로봇: 회수하러 가다 손 STOP → 손 뺌 → NORMAL. 선 자세에선 손이 안 보여 can_send(손 이탈 확인)가 영영 거짓 → 재전송 안 됨.
+    # 재전송은 resume_ok 만 본다 (#115). 처음 보낼 때는 can_send 그대로
+    client = FakeClient(ReturnBall, [(False, {"failure_reason": "hand_near_robot"}), (True, {"success": True})],
+                        feedbacks=[[{"phase": "find"}]])
+    gate, clear = {"ok": False}, {"ok": True}
+    results = []
+    b = SkillCall("공 회수", fake_node(), client, ReturnBall.Goal, on_result=results.append,
+                  can_send=lambda: clear["ok"], wait_for_precondition=True,
+                  hand_resume=mode1_push.return_hand_resume(REASONS), resume_ok=lambda: gate["ok"])
+    b.tick_once(); b.tick_once()                    # 처음: 손 이탈 확인됨 → 보냄 → 손 STOP abort
+    assert client.sent == 1 and b.status == Status.RUNNING
+    clear["ok"] = False                             # 이제 손이 안 보임
+    b.tick_once()
+    assert client.sent == 1                         # NORMAL 전엔 안 보냄
+    gate["ok"] = True
+    b.tick_once(); b.tick_once()
+    assert client.sent == 2 and b.status == Status.SUCCESS and results[-1].success
+    b2 = SkillCall("공 회수", fake_node(), FakeClient(ReturnBall, [(True, {"success": True})]), ReturnBall.Goal,
+                   on_result=lambda _: None, can_send=lambda: False, wait_for_precondition=True)
+    for _ in range(3):
+        b2.tick_once()
+    assert b2.client.sent == 0 and b2.status == Status.RUNNING   # 처음 보낼 때는 손 이탈 확인을 기다림
+
+
 def test_skillcall_resend_limit():
     client = FakeClient(PushBall, [(False, {"failure_reason": "hand_near_robot"})] * 3)
     b = SkillCall("밀기", fake_node(), client, PushBall.Goal, on_result=lambda _: None,

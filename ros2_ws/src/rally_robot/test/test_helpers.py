@@ -277,3 +277,14 @@ def test_motion_speeds_profile_scale():
     assert motion_speeds(node)[4] == 60.0
     tv, ta, cv, _, jv, ja = motion_speeds(node, "mode5")
     assert (jv, tv[0], cv) == (30.0, 75.0, 36.0) and ja == 60.0
+
+
+def test_joint_path_max_x_samples_interpolated_path():
+    from rally_robot.dsr_helpers import joint_path_max_x
+    # 가짜 fk: x = 500 + 100·sin(J1 보간 비율·π) → 가운데서 600 (끝점만 보면 놓침)
+    import math
+
+    def fk(q):
+        return [500.0 + 100.0 * math.sin(math.pi * q[0] / 90.0), 0.0, 0.0, 0.0, 0.0, 0.0]
+    assert joint_path_max_x([0.0] * 6, [90.0] + [0.0] * 5, fk) == pytest.approx(600.0, abs=1.0)
+    assert joint_path_max_x([0.0] * 6, [90.0] + [0.0] * 5, lambda q: -1) is None    # fkin 실패

@@ -28,7 +28,8 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallb
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
-from sensor_msgs.msg import JointState
+from geometry_msgs.msg import PoseArray
+from sensor_msgs.msg import CameraInfo, Image, JointState
 from std_msgs.msg import Bool
 from std_srvs.srv import Trigger
 
@@ -80,6 +81,10 @@ class SkillServer(Node):
         self._cm_client = None
         self.last_pick = None                # PickCompliant 성공 자세 {pose(mm·deg), grip_force} — 모드 5 내려놓기 자리
         self.holding = False                 # 물체를 쥐고 있는지 — gripper() 가 닫힘+감지면 True, 열면 False
+        self.depth = None                    # (monotonic 수신 시각, uint16 mm 배열) — 모드 5 받기 대기 중에만 구독 (watch_depth)
+        self.cam_K = None                    # 컬러 camera_info K (정렬 깊이와 같은 화면)
+        self._depth_subs = []
+        self.cb_depth = MutuallyExclusiveCallbackGroup()   # 깊이 영상(1280x720 30 Hz)이 손·그리퍼 상태 콜백을 막지 않게 따로
 
         reliable = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=10)
         reliable1 = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=1)
@@ -89,6 +94,9 @@ class SkillServer(Node):
         self.create_subscription(JointState, "/rally/gripper/state", self._on_gripper_state, qos_profile_sensor_data, callback_group=self.cb_state)
         self.objects = None                  # (monotonic 수신 시각, TrackedObjectArray) — 비전 물체 (모드 1 공 집기)
         self.create_subscription(TrackedObjectArray, "/rally/perception/objects", self._on_objects, qos_profile_sensor_data, callback_group=self.cb_state)
+        self.image_axis = None               # 비전 물체 화면 주축 각도 (objects 와 같은 순서) — 모드 5 받기 기울기
+        self.create_subscription(PoseArray, "/rally/perception/objects/image_axis", self._on_image_axis, qos_profile_sensor_data,
+                                 callback_group=self.cb_state)
         self.pub_contact = self.create_publisher(Bool, "/rally/safety/contact_expected", reliable1)
         self.pub_patient_contact = self.create_publisher(Bool, "/rally/safety/patient_contact", reliable1)
         self.create_timer(1.0 / CONTACT_HZ, self._contact_tick, callback_group=self.cb_state)
@@ -131,6 +139,9 @@ class SkillServer(Node):
     def _on_objects(self, msg):
         self.objects = (time.monotonic(), msg)
 
+    def _on_image_axis(self, msg):
+        self.image_axis = msg
+
     def _on_gripper_state(self, msg):
         d = dict(zip(msg.name, msg.position))
         if "rg2_width_mm" in d:
@@ -154,6 +165,29 @@ class SkillServer(Node):
 
     def _on_hand(self, msg):
         self.last_hand = msg
+
+    def watch_depth(self, on: bool):
+        """손목 RealSense 정렬 깊이·camera_info 구독 켜기/끄기 — 큰 영상이라 받기 대기 동안만 (handover RECEIVE)."""
+        if on and not self._depth_subs:
+            self.depth = None
+            self._depth_subs = [
+                self.create_subscription(Image, "/camera/aligned_depth_to_color/image_raw", self._on_depth, qos_profile_sensor_data,
+                                         callback_group=self.cb_depth),
+                self.create_subscription(CameraInfo, "/camera/color/camera_info", self._on_cam_info, qos_profile_sensor_data,
+                                         callback_group=self.cb_depth)]
+        elif not on and self._depth_subs:
+            for sub in self._depth_subs:
+                self.destroy_subscription(sub)
+            self._depth_subs, self.depth = [], None
+
+    def _on_depth(self, msg):
+        import numpy as np
+        if msg.encoding not in ("16UC1", "mono16"):
+            return
+        self.depth = (time.monotonic(), np.frombuffer(msg.data, np.uint16).reshape(msg.height, msg.step // 2)[:, :msg.width])
+
+    def _on_cam_info(self, msg):
+        self.cam_K = [list(msg.k[0:3]), list(msg.k[3:6]), list(msg.k[6:9])]
 
     def stop_requested(self):
         """STOP 이거나 안전 상태가 끊겼으면 참 → 새 goal 거부, 실행 중 스킬은 check_stop 에서 abort (#14)."""
@@ -260,17 +294,21 @@ class SkillServer(Node):
     def _cancel(self, goal_handle):
         return CancelResponse.ACCEPT
 
+    def observe_x_max_mm(self) -> float:
+        """관측 자세로 가는 관절 경로의 TCP x 한계 mm — skills.yaml observe_pose.route_x_max_m (기본 0.54, 보라색 선 0.57 − 3 cm)."""
+        return float((self.cfg.get("observe_pose") or {}).get("route_x_max_m", 0.54)) * 1000.0
+
     def _go_observe(self, req, res):
         """관측 자세 (관절 이동). 10/11: 동기 movej+mwait 는 이동 내내 두산 서비스(get_tool_force)를 막아 힘이 끊기고
         wrench_lost STOP — 다른 이동과 같이 amovej + 폴링(movej_checked, STOP 이면 멈춤)으로."""
-        from rally_robot.dsr_helpers import movej_checked
+        from rally_robot.dsr_helpers import movej_safe
         if self.stop_requested():
             res.success, res.message = False, f"safety STOP ({self.safety_reason()})"
             return res
         posj = (self.cfg.get("observe_pose") or {}).get("posj") or OBSERVE_POS   # skills.yaml 티칭 값 우선
-        jv, ja = motion_speeds(self)[4:]                                          # skills.yaml motion: joint_vel_deg_s
+        tv, ta, _, _, jv, ja = motion_speeds(self)                                 # skills.yaml motion: joint_vel_deg_s
         try:
-            movej_checked(self, [float(v) for v in posj], jv, ja)
+            movej_safe(self, [float(v) for v in posj], jv, ja, tv, ta, self.observe_x_max_mm())
         except SkillAbort as e:
             res.success, res.message = False, e.reason
             return res
@@ -281,7 +319,7 @@ class SkillServer(Node):
     def _go_pick_view(self, req, res):
         """모드 5 물체 보기 자세 — 관측 자세(관절 이동) → mode5.pick_view_posx 로 직선 이동.
         10/11: 관측 자세에선 흰 배경(물체 놓는 자리, −y 쪽)이 카메라 화면 아래로 잘림. 관측 자세를 거쳐 가서 IK 해가 튀지 않게."""
-        from rally_robot.dsr_helpers import move_checked, movej_checked
+        from rally_robot.dsr_helpers import move_checked, movej_safe
         if self.stop_requested():
             res.success, res.message = False, f"safety STOP ({self.safety_reason()})"
             return res
@@ -289,7 +327,7 @@ class SkillServer(Node):
         posj = (self.cfg.get("observe_pose") or {}).get("posj") or OBSERVE_POS
         tv, ta, _, _, jv, ja = motion_speeds(self, "mode5")
         try:
-            movej_checked(self, [float(v) for v in posj], jv, ja)
+            movej_safe(self, [float(v) for v in posj], jv, ja, tv, ta, self.observe_x_max_mm())
             if pose:
                 move_checked(self, [float(v) for v in pose], tv, ta)
         except SkillAbort as e:
