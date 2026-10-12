@@ -54,32 +54,49 @@ class Intercept:
     clipped: bool
 
 
-def intercept(ready_tcp_posx, pad_center_m, normal, predicted_m, right_max_m, updown_max_m) -> Intercept:
+def intercept(ready_tcp_posx, pad_center_m, normal, predicted_m, right_max_m, updown_max_m,
+              down_max_m: float | None = None) -> Intercept:
     """예측점으로 패드 중심을 옮기는 TCP 목표. TCP 자세 고정·위치만 이동 (10/11 결정).
 
     - 패드 면 안 두 축으로 분해해 면 수직 성분은 버린다(예측점은 이미 면 위).
     - 왼쪽(u < 0)으로는 가지 않는다: 왼쪽 공은 '환자 투구 실패'로 성공률에서 뺀다 (10/11 결정).
-    - 오른쪽 right_max_m, 위아래 ±updown_max_m 로 자른다 (어깨 특이점·작업 공간 여유).
+    - 오른쪽 right_max_m, 위 updown_max_m, 아래(+w, 투구자 쪽) down_max_m(없으면 updown_max_m) 로 자른다 (어깨 특이점·작업 공간 여유).
+      아래는 대기 자세에서 약 9.4 cm 에 두산 자기충돌 정지 (10/11 실측) → skills.yaml mode3.down_max_m 0.08.
     """
     _, u, w = plane_axes(normal)
     d = np.asarray(predicted_m, float) - np.asarray(pad_center_m, float)
     du0, dw0 = float(d @ u), float(d @ w)
     du = min(max(du0, 0.0), right_max_m)
-    dw = min(max(dw0, -updown_max_m), updown_max_m)
+    dw = min(max(dw0, -updown_max_m), updown_max_m if down_max_m is None else down_max_m)
     move_mm = (du * u + dw * w) * 1000.0
     tcp = [float(ready_tcp_posx[i]) + float(move_mm[i]) for i in range(3)] + [float(v) for v in ready_tcp_posx[3:6]]
     return Intercept(tcp_posx=tcp, du=du, dw=dw, offset_m=float(np.hypot(du0, dw0)),
                      clipped=(abs(du - du0) > 1e-9 or abs(dw - dw0) > 1e-9))
 
 
-def impact_detected(samples, baseline_n: float, t_from: float, t_to: float, threshold_n: float) -> tuple[bool, float]:
-    """힘 기록 [(t, |F|), ...] 에서 [t_from, t_to] 안에 |F| − baseline 이 threshold 를 넘는 샘플이 있는지 → (맞음, 최대 증가 N).
+def quality_ok(std: tuple[float, float], n_obs: int, std_max_m: float, n_obs_min: int) -> bool:
+    """출발 시점 예측을 믿을 수 있나 (정정인 #128 후속 2). 표준편차 두 축 모두 std_max_m 안 · 관측 수 n_obs_min 이상."""
+    return max(float(std[0]), float(std[1])) <= std_max_m and int(n_obs) >= n_obs_min
 
-    10/11 정지 시험: 공이 맞을 때 |F| 4.9~15.3 N (정지 중 0.9 N). 툴 힘은 실제 10 Hz 갱신이라 충격 1~2 샘플.
-    한계: 로봇이 감속하는 동안의 관성 힘도 커서, 도착 전 구간은 넘겨주지 말 것. 붙음/튕김은 힘으로 구분 못 함 → 비전 판정 예정.
-    """
-    peak = 0.0
-    for t, f in samples:
-        if t_from <= t <= t_to:
-            peak = max(peak, float(f) - baseline_n)
-    return peak >= threshold_n, peak
+
+def clamp_cross(t_cross: float, t_ref: float, max_after_s: float) -> float:
+    """이상한 교차 시각(예: 10 s 뒤)으로 그 자리에서 오래 기다리지 않게 t_ref + max_after_s 로 자른다 (정정인 #128 후속 1)."""
+    return min(float(t_cross), float(t_ref) + float(max_after_s))
+
+
+def hold_run(times, gap_s: float) -> tuple[float, int]:
+    """패드 위 공 관측 시각 목록(오름차순)에서 **마지막 관측으로 끝나는 연속 구간**(관측 사이 틈 ≤ gap_s) 의 (길이 s, 관측 수).
+    비전 판정용: 측면 카메라가 패드 위 공을 몇 초 연속 봤나. 관측이 없으면 (0, 0)."""
+    if not len(times):
+        return 0.0, 0
+    j = len(times) - 1
+    while j > 0 and times[j] - times[j - 1] <= gap_s:
+        j -= 1
+    return float(times[-1] - times[j]), len(times) - j
+
+
+def pad_caught(times, now: float, hold_s: float, gap_s: float) -> bool:
+    """now 기준으로 '잡음': 마지막 관측이 gap_s 안이고 그 연속 구간이 hold_s 이상."""
+    if not len(times) or now - times[-1] > gap_s:
+        return False
+    return hold_run(times, gap_s)[0] >= hold_s

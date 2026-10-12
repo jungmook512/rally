@@ -4,7 +4,8 @@ import pytest
 np = pytest.importorskip("numpy")
 pytest.importorskip("scipy")
 
-from rally_robot.skills.catch_plan import impact_detected, intercept, pad_center, parse_info, plane_axes  # noqa: E402
+from rally_robot.skills.catch_plan import (  # noqa: E402
+    clamp_cross, hold_run, intercept, pad_caught, pad_center, parse_info, plane_axes, quality_ok)
 
 N45 = [0.7071, 0.0, 0.7071]
 READY = [335.0, -224.0, 478.0, 90.0, 90.0, 0.0]           # posx (mm, ZYZ deg) — 자세 값은 계산에 영향 없음(위치만 옮김)
@@ -46,14 +47,43 @@ def test_intercept_ignores_normal_component():
     assert np.allclose(plan.tcp_posx[:3], READY[:3])
 
 
-def test_impact_window():
-    samples = [(0.00, 1.0), (0.10, 1.2), (0.20, 9.0), (0.30, 1.1)]
-    assert impact_detected(samples, 1.0, 0.15, 0.40, 4.0) == (True, pytest.approx(8.0))
-    hit, peak = impact_detected(samples, 1.0, 0.25, 0.40, 4.0)   # 창 밖의 충격은 안 셈
-    assert not hit and peak == pytest.approx(0.1)
-
-
 def test_parse_info():
     d = parse_info([100.5, 0.4, 0.02, 0.03, 7.0, 0.2])
     assert d["t_cross"] == 100.5 and d["n_obs"] == 7.0 and d["since_release"] == 0.2
     assert parse_info([1.0, 2.0]) is None
+
+
+def test_down_limited_separately():
+    """아래(+w, 투구자 쪽)는 down_max_m 로 따로 자름 — 대기 자세 −9.4 cm 자기충돌 (10/11)."""
+    _, u, w = plane_axes(N45)
+    down = intercept(READY, PAD, N45, PAD + 0.20 * w, 0.15, 0.15, down_max_m=0.08)
+    assert abs(down.dw - 0.08) < 1e-9 and down.clipped
+    up = intercept(READY, PAD, N45, PAD - 0.20 * w, 0.15, 0.15, down_max_m=0.08)
+    assert abs(up.dw + 0.15) < 1e-9
+    same = intercept(READY, PAD, N45, PAD + 0.20 * w, 0.15, 0.15)
+    assert abs(same.dw - 0.15) < 1e-9
+
+
+def test_quality_gate():
+    assert quality_ok((0.03, 0.05), 6, 0.10, 4)
+    assert not quality_ok((0.03, 0.12), 6, 0.10, 4)        # 한 축이라도 크면 미달
+    assert not quality_ok((0.03, 0.05), 3, 0.10, 4)
+
+
+def test_clamp_cross():
+    assert clamp_cross(100.3, 100.0, 1.5) == 100.3
+    assert clamp_cross(110.0, 100.0, 1.5) == 101.5           # 이상한 교차 시각은 1.5 s 로
+
+
+def test_hold_run_and_pad_caught():
+    """패드 위 공 관측(60 Hz 흉내, 틈 0.3 s 허용): 마지막으로 끝나는 연속 구간만 센다."""
+    t = [0.0, 0.02, 0.04, 1.0, 1.02, 1.04, 1.06]              # 0.04 → 1.0 틈 0.96 s 로 끊김
+    run, n = hold_run(t, 0.3)
+    assert run == pytest.approx(0.06) and n == 4
+    assert hold_run([], 0.3) == (0.0, 0)
+    long = [i * 0.02 for i in range(160)]                     # 3.18 s 연속
+    assert pad_caught(long, long[-1] + 0.1, 3.0, 0.3)
+    assert not pad_caught(long, long[-1] + 0.5, 3.0, 0.3)     # 마지막 관측이 0.3 s 보다 오래됨 → 지금은 안 보임
+    assert not pad_caught(long[:100], long[99], 3.0, 0.3)     # 1.98 s 뿐
+    gappy = long[:80] + [v + 0.2 for v in long[80:]]          # 가운데 0.22 s 틈 하나 (허용)
+    assert pad_caught(gappy, gappy[-1], 3.0, 0.3)
