@@ -73,8 +73,8 @@
   #proposal-prompt { font-size:19px; font-weight:700; }
   #proposal-message { font-weight:650; }
   /* 모드 화면 배치 (10/12 조정묵 스케치): 1줄 훈련 상태 · 현재 동작 · 진행 현황 / 2줄 환자 시점 그림(2칸) · 카메라 / 3줄 단계 순서 */
-  #mode-view { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; align-items:stretch;
-               grid-template-areas:"control control control" "diagram diagram cams" "steps steps steps"; }
+  #mode-view { display:grid; grid-template-columns:190px minmax(0,2fr) minmax(0,1fr); gap:16px; align-items:stretch;
+               grid-template-areas:"control control control" "steps diagram cams"; }
   #mode-view .instruction, #mode-view .stats { display:none; }
   #mode-view .control-bar { grid-template-columns:minmax(0,1fr) auto; align-items:center; padding:10px 16px; }
   #resume:disabled { display:none; }   /* 휴식 중이라 누를 수 있을 때만 보임 */
@@ -87,9 +87,13 @@
   #mode-view #mode-diagram svg { max-height:calc(100vh - 330px); min-height:260px; }
   #mode-view #camera-view { padding:12px; } #mode-view #camera-view .section-heading { margin-bottom:8px; padding-bottom:6px; font-size:15px; }
   #mode-view #camera-view .frame { max-height:calc((100vh - 400px) / 2); }
-  #mode-view .steps-panel { padding:10px 16px; display:flex; align-items:center; gap:18px; }
-  #mode-view .steps-panel h2 { margin:0; padding:0; border:0; white-space:nowrap; font-size:15px; }
-  #mode-view #steps { flex:1; } #mode-view #steps li span { width:28px; height:28px; margin-bottom:4px; font-size:14px; }
+  /* 단계 순서: 그림 왼쪽 세로 (10/12) */
+  #mode-view .steps-panel { padding:12px; display:flex; flex-direction:column; gap:10px; }
+  #mode-view .steps-panel h2 { margin:0; padding:0 0 8px; font-size:15px; flex-wrap:wrap; row-gap:8px; }
+  #mode-view .steps-panel h2 button { margin-left:0; width:100%; }
+  #mode-view #steps { flex-direction:column; gap:4px; }
+  #mode-view #steps li { flex:none; display:flex; align-items:center; gap:10px; text-align:left; padding:7px 8px; }
+  #mode-view #steps li span { width:28px; height:28px; margin:0; flex:none; font-size:14px; }
   #mode-view .visual-column, #mode-view aside { display:contents; }
   #mode-view .control-bar { grid-area:control; }
   #mode-view .instruction { grid-area:instr; }
@@ -150,11 +154,11 @@
   .empty { color:var(--muted); padding:8px 0; font-size:14px; }
   .new { animation:flash 1.2s ease-out; }
   @keyframes flash { from { background:#d5eee2; } to { background:transparent; } }
-  @media(max-width:1000px) { #mode-view { grid-template-columns:repeat(2,minmax(0,1fr)); grid-template-areas:"control control" "instr stats" "diagram diagram" "cams cams" "steps steps"; }
+  @media(max-width:1000px) { #mode-view { grid-template-columns:repeat(2,minmax(0,1fr)); grid-template-areas:"control control" "steps steps" "diagram diagram" "cams cams"; }
                              #mode-view #camera-view .cameras { grid-template-columns:repeat(auto-fill, minmax(260px, 560px)); } #page-heading { align-items:flex-start; flex-direction:column; } }
   @media(max-width:700px) { .cards { grid-template-columns:repeat(2,minmax(0,1fr)); } header { padding:14px 16px; } header small { display:none; } main { padding:16px 12px 28px; } .panel { padding:14px; } #mode-nav { padding-inline:12px; } #mode-nav a { padding:9px 12px; font-size:14px; } #page-heading h2 { font-size:25px; } .panel-top { align-items:flex-start; flex-direction:column; } #steps { flex-wrap:wrap; row-gap:16px; } #steps li { flex:0 0 calc(33.33% - 6px); } }
   @media(max-width:700px) { #mode-diagram svg { min-width:0; } #mode-diagram svg text { display:none; } }
-  @media(max-width:440px) { #mode-view { grid-template-columns:1fr; grid-template-areas:"control" "instr" "stats" "diagram" "cams" "steps"; } .control-bar { grid-template-columns:1fr; } .control-bar small { grid-column:1/-1; } #resume { justify-self:start; } #proposal-panel button { display:block; width:100%; margin-top:8px; } }
+  @media(max-width:440px) { #mode-view { grid-template-columns:1fr; grid-template-areas:"control" "steps" "diagram" "cams"; } .control-bar { grid-template-columns:1fr; } .control-bar small { grid-column:1/-1; } #resume { justify-self:start; } #proposal-panel button { display:block; width:100%; margin-top:8px; } }
 </style>
 </head>
 <body>
