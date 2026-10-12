@@ -87,6 +87,7 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 | `/rally/gripper/command` | `rally_interfaces/GripperCommand` | rally_robot/gripper_node | RG2 폭·힘 명령 |
 | `/rally/robot/go_observe_pose` | `std_srvs/Trigger` | rally_robot/skill_server | 관측 자세로 이동 (카메라가 테이블 전체를 보는 자세) |
 | `/rally/robot/go_hand_view` | `std_srvs/Trigger` | rally_robot/skill_server | 손 보기 자세로 이동 — 툴을 환자 쪽으로 기울여 그리퍼 위 RealSense 가 환자 손을 본다 (모드 1 시도 전 레인 고르기). `skills.yaml mode1.hand_view_*`. 이미 그 자세면 바로 성공 |
+| `/rally/robot/go_pick_view` | `std_srvs/Trigger` | rally_robot/skill_server | 모드 5 물체 보기 자세로 이동 — 관측 자세(관절 이동) → `skills.yaml mode5.pick_view_posx`(직선). 흰 배경(물체 놓는 자리)이 화면에 다 들어오는 자세. 세션 5 가 집기 전에 부른다 (10/11) |
 | `/rally/robot/reset_safety` | `std_srvs/Trigger` | rally_robot/safety_monitor | 정지 해제 (운영자만) |
 | `/rally/perception/body/reset_baseline` | `std_srvs/Trigger` | rally_human/body_pose | 몸 자세 기준(평소 자세) 다시 잡기 — 부른 뒤 약 2 s 바르게. 환자가 자리를 잡은 뒤 운영자(확인 창 `b`)·brain(세션 시작)이 부름 |
 | `/rally/db/start_session` | `std_srvs/Trigger` → 추후 커스텀 | rally_db | 세션 레코드 생성 |

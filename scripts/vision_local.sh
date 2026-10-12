@@ -4,6 +4,8 @@
 #   scripts/vision_local.sh stop
 #   scripts/vision_local.sh logs
 # 환경 변수: IMAGE(기본 rally/vision:pr18) · SEG_SRC(#66 의 rally_vision 파이썬 패키지 폴더, 비우면 이미지 안 코드 그대로)
+#   MODEL(models/ 안 파일 이름, 기본 yolov8n-seg_ball.pt) · IMGSZ(추론 크기, 기본 640)
+#   모드 5 (컵·막대, 10/11 박성현 모델):  MODEL=yolov8n-seg_864.pt IMGSZ=864 scripts/robot.sh nodes   (stick → rod 로 발행)
 # models/ 에 yolov8n-seg_ball.pt · T_gripper2camera.npy 가 있어야 한다 (segmenter 가 /models 에서 찾음, git 제외).
 # 확인: RALLY_LOCAL=1 source scripts/env_robot_pc.sh && ros2 topic echo /rally/perception/objects --once
 #   header.frame_id 가 base_link 여야 로봇이 집을 수 있다 — force_publisher(/rally/robot/tcp_pose) 가 떠 있어야 함.
@@ -11,11 +13,13 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE=${IMAGE:-rally/vision:pr18}
 SEG_SRC=${SEG_SRC-/home/ms-01/rally_seg66/ros2_ws/src/rally_vision/rally_vision}
 NAME=rally_vision_local
+MODEL=${MODEL:-yolov8n-seg_ball.pt}
+IMGSZ=${IMGSZ:-640}
 case "$1" in
   stop) docker rm -f $NAME >/dev/null 2>&1; echo "[vision] 종료"; exit 0 ;;
   logs) exec docker logs -f $NAME ;;
 esac
-for f in yolov8n-seg_ball.pt T_gripper2camera.npy; do
+for f in "$MODEL" T_gripper2camera.npy; do
   [ -f "$ROOT/models/$f" ] || { echo "[vision] models/$f 없음"; exit 1; }
 done
 OVERLAY=()
@@ -31,6 +35,6 @@ docker run -d --name $NAME --network host --ipc host --gpus all --privileged -v 
   "$IMAGE" bash -c "
     ros2 launch realsense2_camera rs_launch.py camera_namespace:=/ camera_name:=camera align_depth.enable:=true &
     sleep 6
-    ros2 run rally_vision segmenter --ros-args -p model_path:=/models/yolov8n-seg_ball.pt -p gripper2cam_path:=/models/T_gripper2camera.npy
+    ros2 run rally_vision segmenter --ros-args -p model_path:=/models/$MODEL -p imgsz:=$IMGSZ -p gripper2cam_path:=/models/T_gripper2camera.npy
   " >/dev/null
-echo "[vision] $IMAGE 기동 (도메인 $DOMAIN, segmenter 코드 ${SEG_SRC:-이미지 기본}) — 로그: scripts/vision_local.sh logs"
+echo "[vision] $IMAGE 기동 (도메인 $DOMAIN, 모델 $MODEL imgsz $IMGSZ, segmenter 코드 ${SEG_SRC:-이미지 기본}) — 로그: scripts/vision_local.sh logs"
