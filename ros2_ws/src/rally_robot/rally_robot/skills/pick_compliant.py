@@ -112,7 +112,7 @@ def execute(node):
             move_checked(node, lift, tv, ta)
             res.success, res.grip_width_mm = bool(ok and detected), float(width)
             if res.success:                      # 모드 5: 건네받은 물체를 이 자리에 다시 내려놓는다 (handover RECEIVE 후)
-                node.last_pick = dict(pose=[x, y, z, *orient], grip_force=grip_force)
+                node.last_pick = dict(pose=[x, y, z, *orient], grip_force=grip_force, grasp_z=float(z_now))   # grasp_z: 실제 쥔 TCP 높이 mm
             fb.phase, fb.progress = "lift", 1.0
             goal_handle.publish_feedback(fb)
             if res.success:

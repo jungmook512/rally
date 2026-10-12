@@ -64,7 +64,7 @@ def test_nearest_lane_and_positive_recipe_speed():
 
 def test_fixed_goal_and_hand_start_increase_with_level():
     c = m.mode1_config(cfg())
-    for lane in range(3):
+    for lane in range(len(c['lanes'])):          # 10/12 레인 3 제거 → 2개
         a = m.plan_push(hand(.86), lane, 0, c, {'centerline_x_m': .568})
         b = m.plan_push(hand(.86), lane, 2, c, {'centerline_x_m': .568})
         near = m.plan_push(hand(.80), lane, 0, c, {'centerline_x_m': .568})
