@@ -14,7 +14,7 @@
 - 손 거리 (hand_level, #59 · #98):
   손 없음 → NORMAL / 손은 보이는데 거리 NaN(깊이·tf 없음) → SLOW (hand_distance_unknown). 단 직전이 STOP 이었으면 놓침과 같이
   hand_lost_stop_s STOP 유지 (깊이는 카메라 30 cm 안에서 빠지므로 손이 로봇에 가까울수록 NaN — 리뷰 #104) /
-  손이 중앙선 너머 hand_deep_stop_m 보다 깊이 → STOP (hand_near_centerline, 접촉 중이어도) /
+  손이 중앙선 너머 hand_deep_stop_m 보다 깊이 → STOP (hand_deep_intrusion, 접촉 중이어도 — 10/12 분리: brain 손 STOP 대기 목록에 없는 이름이라 세션 종료) /
   손 관절 21점 ↔ 로봇 끝 선분(TCP → 플랜지, robot_segment_m) 최소 거리가 hand_stop_robot_m 안 → STOP (hand_near_robot),
   hand_slow_robot_m 안 → SLOW / 중앙선에서 slow_distance_m 안 → SLOW.
   로봇 위치(tf·tcp_pose 둘 다)를 모르거나 손 관절이 base_link 가 아니면 예전 선 기준(stop_distance_m 안 → STOP).
@@ -133,7 +133,7 @@ def hand_level(dist, patient_contact, cfg, robot_dist=None, on_table=True):
             return SafetyStatus.LEVEL_SLOW, "hand_near_robot"
         return SafetyStatus.LEVEL_NORMAL, ""
     if dist < cfg["hand_deep_stop_m"]:
-        return SafetyStatus.LEVEL_STOP, "hand_near_centerline"         # 로봇 구역 깊이 — 접촉 중이어도
+        return SafetyStatus.LEVEL_STOP, "hand_deep_intrusion"          # 로봇 구역 깊이 — 접촉 중이어도. 자동 재진행 안 함 (INTERFACES 9절)
     if robot_dist is None:
         near, reason = dist < cfg["stop_distance_m"], "hand_near_centerline"
     else:

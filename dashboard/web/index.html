@@ -389,7 +389,7 @@
 <script>
 const MODES = {1: "공 굴리기", 3: "캐치볼", 5: "건네고 받기", 7: "저항 밀기"};
 const LEVELS = {normal: ["normal", "정상"], slow: ["slow", "느리게"], stop: ["stop", "정지"]};   // rally_db convert.SAFETY_LEVELS
-const REASONS = {hand_near_robot: "손이 로봇 가까이", hand_lost_near: "가까이서 손이 사라짐", hand_near_centerline: "손이 중앙선을 넘음",
+const REASONS = {hand_near_robot: "손이 로봇 가까이", hand_lost_near: "가까이서 손이 사라짐", hand_near_centerline: "손이 중앙선을 넘음", hand_deep_intrusion: "손이 로봇 구역 깊이 들어옴",
   hand_near_patient_contact: "손 근접(접촉 구간)", hand_distance_unknown: "손 거리 모름", hand_deep_intrusion: "손이 깊이 들어옴",
   force_limit: "힘 한계 초과", nudge: "로봇이 밀림", wrench_lost: "힘 센서 끊김", workspace_limit: "작업 공간 밖",
   estop: "비상정지", voice_stop: "음성 정지", slow_override: "느리게 고정"};
