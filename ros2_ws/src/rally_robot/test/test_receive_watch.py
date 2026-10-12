@@ -73,3 +73,94 @@ def test_object_seen_needs_class_and_confidence():
     assert object_seen(objs, "rod", min_conf=0.1)
     assert not object_seen(NS(objects=[]), "rod")       # 아무것도 없음 (손가락만) → 깊이로 안 닫음
     assert not object_seen(None, "rod")                 # 비전 없음
+
+
+def test_wrap90_and_axis_mean_handle_horizontal_rod():
+    from rally_robot.receive_watch import axis_mean, wrap90
+    assert wrap90(100.0) == pytest.approx(-80.0) and wrap90(-95.0) == pytest.approx(85.0) and wrap90(90.0) == 90.0
+    assert wrap90(-90.0) == 90.0
+    flips = [(0.0, -89.0), (0.1, 88.0), (0.2, -87.0), (0.3, 89.0)]      # 가로 막대: −90·+90 이 섞여 들어옴
+    m = axis_mean(flips, 0.4, 1.0, 2)
+    assert abs(abs(m) - 90.0) < 3.0                                        # 0 이 아니라 ±90 근처
+    assert axis_mean([(0.0, 20.0), (0.1, 30.0)], 0.2, 1.0, 2) == pytest.approx(25.0, abs=0.5)
+    assert axis_mean([(0.0, 20.0)], 0.2, 1.0, 2) is None
+
+
+def test_approach_plan_moves_only_along_tool_z_and_respects_limits():
+    from rally_robot.receive_watch import approach_plan
+
+    tcp = [479.0, -150.0, 400.0, 0.0, 90.0, 90.0]      # 받기 자리: 툴 z = +x, 손가락 닫힘 = y, 막대(기울기 0) = z
+    args = dict(jaw_depth_m=0.02, max_m=0.10, min_m=0.01, finger_max_m=0.03, along_rod_max_m=0.10, x_limit_m=0.538)
+    adv, _, side = approach_plan(tcp, (0.510, -0.150, 0.40), **args)
+    assert adv == pytest.approx(0.051, abs=1e-6)       # 3.1 cm 앞 + 2 cm 지나가게
+    assert side == pytest.approx((0.0, 0.0), abs=1e-6)
+    assert approach_plan(tcp, (0.510, -0.130, 0.45), **args)[2] == pytest.approx((0.02, 0.05), abs=1e-6)   # 옆 2 cm · 위 5 cm 도 옮김
+    assert approach_plan(tcp, (0.510, -0.150, 0.48), **args)[0] == pytest.approx(0.051, abs=1e-6)   # 막대 방향(위)으로 8 cm 는 괜찮음
+    assert approach_plan(tcp, (0.520, -0.150, 0.40), **args)[0] is None      # 다가가면 보라색 선 − 3 cm 넘음
+    assert approach_plan(tcp, (0.510, -0.110, 0.40), **args)[0] is None      # 손가락 닫히는 방향으로 4 cm 벗어남
+    assert approach_plan(tcp, (0.510, -0.150, 0.52), **args)[0] is None      # 막대 방향으로 12 cm 벗어남
+    assert approach_plan(tcp, (0.465, -0.150, 0.40), **args)[0] == 0.0       # 이미 그리퍼 사이
+    adv, _, side = approach_plan(tcp, (0.465, -0.150, 0.44), **args)         # 앞은 충분, 위로 4 cm 어긋남 → 위로만
+    assert adv == 0.0 and side == pytest.approx((0.0, 0.04), abs=1e-6)
+    far = dict(args, x_limit_m=1.0)
+    assert approach_plan(tcp, (0.600, -0.150, 0.40), **far)[0] is None       # 12 cm 앞 — 한계 10 cm 보다 멂
+
+
+def test_recent_position_and_median_xyz():
+    from geometry_msgs.msg import Point
+
+    from rally_interfaces.msg import TrackedObject, TrackedObjectArray
+    from rally_robot.receive_watch import median_xyz, recent_position
+
+    arr = TrackedObjectArray()
+    arr.header.frame_id = "base_link"
+    arr.objects = [TrackedObject(class_name="rod", confidence=0.5, position=Point(x=0.5, y=-0.1, z=0.4)),
+                   TrackedObject(class_name="rod", confidence=0.9, position=Point(x=0.0, y=0.0, z=0.0)),   # 깊이 못 잼
+                   TrackedObject(class_name="cup", confidence=0.95, position=Point(x=0.3, y=0.0, z=0.1))]
+    assert recent_position(arr, "rod") == pytest.approx((0.5, -0.1, 0.4))
+    arr.header.frame_id = "camera_color_optical_frame"
+    assert recent_position(arr, "rod") is None                                 # base 좌표가 아니면 안 씀
+    s = [(0.0, (0.5, 0.0, 0.4)), (0.1, (0.6, 0.0, 0.4)), (0.2, (0.52, 0.0, 0.4)), (-5.0, (9.0, 9.0, 9.0))]
+    assert median_xyz(s, 0.3, 0.6, 3) == pytest.approx((0.52, 0.0, 0.4))
+    assert median_xyz(s, 0.3, 0.6, 4) is None
+
+
+def test_cup_rim_point_and_class_near():
+    from geometry_msgs.msg import Point
+
+    from rally_interfaces.msg import TrackedObject, TrackedObjectArray
+    from rally_robot.skills.pick_compliant import class_near, rim_point
+
+    assert rim_point(487.0, -261.0, 42.0, 0.0) == pytest.approx((445.0, -261.0))   # 손가락 x 방향, 로봇 쪽 벽
+    assert rim_point(487.0, -261.0, 42.0, 90.0) == pytest.approx((487.0, -219.0))  # 손가락 y 방향이면 원점에 가까운 쪽
+    arr = TrackedObjectArray()
+    arr.header.frame_id = "base_link"
+    arr.objects = [TrackedObject(class_name="rod", position=Point(x=0.38, y=-0.16)),
+                   TrackedObject(class_name="cup", position=Point(x=0.49, y=-0.26))]
+    assert class_near(arr, 0.487, -0.261, 0.06) == "cup"
+    assert class_near(arr, 0.2, 0.2, 0.06) == ""
+
+
+# ---------- 받기 다가가기 조건 (#164 리뷰, 10/13 정정인) ----------
+def test_approach_guard():
+    from rally_robot.receive_watch import approach_guard
+    assert approach_guard(0.1, "hand_stop_dev_slow", False, 1.0) == (True, "")
+    assert approach_guard(0.1, "", False, 1.0) == (True, "")
+    assert not approach_guard(0.1, "hand_stop_dev_off", False, 1.0)[0]            # off → 손 근접 판정 없음
+    assert not approach_guard(0.1, "hand_near_robot,hand_stop_dev_off", False, 1.0)[0]
+    assert not approach_guard(None, "", False, 1.0)[0]                             # 손 입력 한 번도 없음 (HAND=0)
+    assert not approach_guard(2.0, "", False, 1.0)[0]                              # 끊김
+    assert not approach_guard(0.1, "", True, 1.0)[0]                               # 안전 상태 끊김
+    assert approach_guard(None, "hand_stop_dev_off", True, 1.0, allow_without_guard=True)[0]   # 장갑 시험 명시
+
+
+def test_jaw_filled_and_after_approach():
+    from rally_robot.receive_watch import after_approach, jaw_filled
+    assert jaw_filled([0.10, 0.50, 0.55], 0.05, 0.30) == (True, 0.50)
+    assert jaw_filled([0.10, 0.12, 0.30], 0.05, 0.30)[0] is False                 # 손가락만 걸침 → 안 닫음
+    assert jaw_filled([], 0.05, 0.30) == (False, None)                             # 깊이 없음 → 비전만으로 안 닫음
+    assert jaw_filled([0.9], None, 0.30) == (False, None)
+    assert after_approach("done", True) == "close"
+    assert after_approach("interrupted", True) == "back"                           # 12 N 접촉 정지 → 닫지 않고 물러남
+    assert after_approach("done", False) == "back"
+    assert after_approach("stalled", True) == "back"

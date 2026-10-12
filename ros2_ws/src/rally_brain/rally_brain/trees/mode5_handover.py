@@ -55,7 +55,7 @@ DEFAULTS: dict[str, Any] = {
     "object_class": "rod", "object_wait_s": 5.0, "object_min_confidence": 0.5, "pick_x_range_m": [0.15, 0.55],
     "pick_retry_reasons": ["pick_failed"], "receive_prompt": "물체를 로봇 손 사이로 다시 넣어 주세요",
     # 물체별 파지 높이 (테이블 면 위, m) — PickCompliant goal Z = table.z_m + 이 값. 없는 클래스는 로봇 기본(공 반지름)
-    "grasp_height_m": {"rod": 0.007, "cup": 0.035},
+    "grasp_height_m": {"rod": 0.007, "cup": 0.080},   # 컵은 세워 두고 입구 벽 (10/12)
     # 10/11 정정인: 집기 전에 손을 기다리지 않는다 — 훈련 목적은 '기울여 건넸을 때 잡는가'이고, 건네기 스킬이 환자가 잡아 당길 때까지
     # 기다린다(timeout 뒤 안내·재시도). 집는 동안 카메라는 테이블을 봐서 손이 보일 수 없음. True 면 예전처럼 관측 자세에서 손 확인 뒤 집기
     "require_hand": False,
