@@ -100,3 +100,40 @@ def pad_caught(times, now: float, hold_s: float, gap_s: float) -> bool:
     if not len(times) or now - times[-1] > gap_s:
         return False
     return hold_run(times, gap_s)[0] >= hold_s
+
+
+def contact_window_closed(now_ros: float, t_cross_ros: float, after_s: float) -> bool:
+    """받기 창(contact_expected, 힘 한계 130 N 자리)을 닫을 때인가: 교차 시각 + after_s 가 지나면 참 (#144 조건 "창 약 1 s")."""
+    return float(now_ros) >= float(t_cross_ros) + float(after_s)
+
+
+def judge_pad(pad_obs, now_mono, now_ros, sleep, tick, t_from_mono: float, t_cross_ros: float, cfg: dict,
+              contact_close=None) -> tuple[bool, float, list[float]]:
+    """비전 판정 루프 (ROS·로봇 없이 돌릴 수 있게 시계·관측·콜백을 주입).
+    pad_obs(t_from_mono) → (관측 시각 목록 오름차순(monotonic), 위치 목록) · now_mono()/now_ros() 시계 · sleep(s) · tick() 은 매 바퀴 (check_stop 자리).
+    contact_close() 는 받기 창이 닫히는 시각(교차 + contact_window_after_cross_s)에 **한 번** 부른다 — 판정이 끝나기 전에도 끈다.
+    판정: t_from_mono 뒤 관측이 pad_hold_s 연속(틈 ≤ pad_gap_s)이면 caught. 교차 + judge_timeout_s 안에 못 채우면 missed.
+    → (caught, 연속 관측 시간 s, 패드 위 공 위치 평균 또는 nan)"""
+    deadline = max(t_cross_ros, now_ros()) + cfg["judge_timeout_s"]
+    t_close = t_cross_ros + cfg["contact_window_after_cross_s"]
+    period, best, closed = 1.0 / cfg["judge_poll_hz"], 0.0, contact_close is None
+    nan3 = [float("nan")] * 3
+    try:
+        while True:
+            tick()
+            if not closed and contact_window_closed(now_ros(), t_cross_ros, cfg["contact_window_after_cross_s"]):
+                contact_close()
+                closed = True
+            now = now_mono()
+            times, pts = pad_obs(t_from_mono)
+            run_s, n = hold_run(times, cfg["pad_gap_s"])
+            best = max(best, run_s)
+            if pad_caught(times, now, cfg["pad_hold_s"], cfg["pad_gap_s"]):
+                return True, run_s, np.mean(np.array(pts[-n:]), axis=0).tolist()
+            if now_ros() > deadline:
+                actual = np.mean(np.array(pts[-n:]), axis=0).tolist() if n else nan3
+                return False, best, actual
+            sleep(min(period, max(0.0, t_close - now_ros())) if not closed else period)
+    finally:
+        if not closed:
+            contact_close()          # 중단(STOP·취소)으로 빠져나가도 창은 닫힌다 (catch_ball 의 finally 가 한 번 더 끈다)
