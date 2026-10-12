@@ -131,8 +131,13 @@
 - [x] `trees/mode7_resist.py`: ResistPush(지난 peak_force 60 % 에서 시작) → 성공 3연속 +10 % / 실패 2회 -10 % → TrialResult(peak, hold, smoothness) → TTS → (10/8) 목표 = 5 N × 1.1^난이도(rule_layer), 3~12 N, 강성 700 고정, 손 대기, 결과별 TTS. LLM 안 씀. **시작값 '지난 세션 60 %'는 brain → DB 읽기가 생길 때(Day 6 Graph RAG)**. `handle_pose` 비워 보냄 → 로봇이 정하는지 정정인 확인. 실로봇 확인은 `resist_push.py` 구현 후
 - [x] 세션 트리 순서 1 → (3 조건부) → 5 → 7, 모드 3 은 `skills.yaml mode3_challenge.enabled` 플래그로 on/off → `bt_runner.default_modes`, 모드 전환(#51)도 꺼진 모드 3 거절
 - [ ] `trees/mode3_catch.py`: CatchBall(catch_radius=0.35, lead_time, 타임아웃) → caught 면 패드 거치 → DetachBall → Handover GIVE / missed 면 TTS 격려 후 재시도. 떼어내기 실패 시 각도 변경 재시도
+  - 10/12 (정동휘, `docs/mode3/MODE3_PLAN.md`): `catch_radius 0.35`·`lead_time_s` 는 #128 스킬이 안 씀. goal 은 `catch_radius`(유효 범위)·`timeout_s` 만. 패드 거치·DetachBall·Handover 는 `after_catch()` 보류 상태라 트리는 CatchBall 결과 기록까지 먼저
+- [ ] (10/12 MODE3_PLAN 8절) `/rally/perception/landing_info` 를 전용 msg 로 바꿀지 결정 → rally_interfaces PR (지금 `Float64MultiArray` 순서 해석, #128 성현 요청)
+- [ ] (10/12 MODE3_PLAN 8절) `CatchBall.action` 필드 정리 PR — `ready_pose`·`lead_time_s` 삭제 여부, 패드 중심·유효 범위·단계 ①~④ 선택, 결과에 붙음/튕김/빗나감·범위 안 여부 (내용은 박성현)
+- [ ] (10/12 MODE3_PLAN 8절) pc2 launch 에 측면 RealSense (시리얼 147122075430, 컬러 848×480@60, 노출 20·gain 128 param set) + tf 값은 박성현
+- [ ] (10/12 MODE3_PLAN 8절) `skills.yaml mode3` 키 추가 — 패드 TCP·유효 범위·방향별 속도(옆 730·위아래 600)·받기 창 힘 한계 130 N, 옛 `catch_radius_m 0.35`·`lead_time_s`·`max_ball_speed_mps 3.0` 정리 (값은 정동휘·박성현)
 - [ ] `skills.yaml` mode3 단계값(0.35 / 0.15 / 0), Phase 1은 0.35 고정. `rule_layer` 에 단계 전환 자리만
-- [ ] `scripts/measure_latency.py` 로 웹캠→landing→skill_server 지연 측정 → lead_time 결정 (정정인·박성현과)
+- [x] ~~`scripts/measure_latency.py` 로 웹캠→landing→skill_server 지연 측정 → lead_time 결정~~ — 10/12: 웹캠 아님(RealSense 2대), `lead_time_s` 안 씀. 촬영→수신 20 ms·명령→출발 107~243 ms 는 #107·#130 에 실측됨
 - [ ] 떼어내기 힘 곡선 `ts_wrench` 저장 → 임계 결정 데이터 정정인에게
 - [x] `llm_advisor.py` 골격: OpenAI function calling, 3 s 타임아웃, pydantic 스키마 검증, 범위 클램핑, 폴백 → `/rally/llm/suggest_params`, 가짜 LLM 테스트 14개(시간 초과·형식 오류·범위 밖·전송 화이트리스트), `prompts/suggest_params.md`, `llm.yaml send_fields`
 - [ ] **HMI** 모드 7 실시간 힘 게이지 + 목표선, 회차별 최대 힘 추이 / `/rally/robot/wrench` 실시간 힘 그래프 (Timescale 최근 10 s)
