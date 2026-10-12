@@ -25,11 +25,9 @@
   #mode-nav a[aria-current] { background:var(--mint); border-color:#7cae99; color:#164e3f; }
   #mode-nav small { font-size:11px; padding:2px 6px; background:var(--lavender); border-radius:6px; }
   a:focus-visible,button:focus-visible,[tabindex]:focus-visible { outline:3px solid #9b6400; outline-offset:3px; }
-  main { max-width:1500px; margin:auto; padding:20px 28px 40px; display:grid; gap:16px; }
-  #page-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:4px 0; }
-  #page-heading h2 { margin:3px 0 6px; font-size:28px; line-height:1.3; }
-  #page-heading p { margin:0; color:var(--muted); }
-  .eyebrow { color:var(--accent)!important; font-size:11px; letter-spacing:.12em; font-weight:800; }
+  main { max-width:1500px; margin:auto; padding:14px 28px 32px; display:grid; gap:14px; }
+  #page-heading { display:flex; align-items:center; gap:12px; padding:0; }
+  #page-heading h2 { margin:0; font-size:24px; line-height:1.3; }
   .badge { display:inline-block; border:1px solid var(--line); border-radius:8px; background:#fafcf9; padding:5px 9px; color:var(--muted); font-size:12px; }
   .panel { min-width:0; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:18px; box-shadow:0 3px 0 #244c3510; }
   .panel h2 { margin:0 0 12px; color:var(--text); font-size:18px; font-weight:750; }
@@ -57,7 +55,7 @@
   button:disabled { background:#e3e8e4; color:#53635c; border-color:#b8c3bd; cursor:not-allowed; }
   #proposal-reject { background:#fffdf6; color:var(--text); border-color:#8c9e93; }
   #proposal-reject:disabled { background:#e3e8e4; color:#53635c; }
-  #safety { display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; border:1px solid currentColor; border-left:6px solid currentColor; border-radius:10px; padding:10px 14px; font-weight:750; }
+  #safety { display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; border:1px solid currentColor; border-left:6px solid currentColor; border-radius:10px; padding:6px 14px; font-weight:750; }
   #safety.normal { background:var(--ok-bg); color:var(--ok); }
   #safety.slow { background:var(--warn-bg); color:var(--warn); }
   #safety.stop { background:var(--stop-bg); color:var(--stop); }
@@ -94,7 +92,11 @@
   #steps li { flex:1; text-align:center; color:var(--muted); font-size:13px; }
   #steps li span { display:grid; place-items:center; width:34px; height:34px; margin:0 auto 8px; border:1px solid #aa9cbb; border-radius:50%; background:#fffdfb; font-size:16px; }
   #steps strong { font-weight:650; }
+  #steps li { cursor:pointer; border-radius:10px; padding:6px 2px; }
+  #steps li:hover { background:#e7e0f3; }
+  #steps li.preview { color:#4f3a7f; } #steps li.preview span { background:#e4dbf6; border:2px solid #6b4fa0; }
   #steps li.active { color:#725008; }
+  button.ghost { margin-left:auto; padding:6px 12px; font-size:13px; background:#fffdfb; color:#4f3a7f; border-color:#9c8bc0; }
   #steps li.active span { background:#ffe4a3; border:2px solid #a57617; box-shadow:0 0 0 3px #fff8dc; }
   .instruction { background:var(--cream); border-color:#c5ab72; }
   .instruction h2 { font-size:24px; line-height:1.35; margin:2px 0 12px; overflow-wrap:anywhere; }
@@ -105,9 +107,10 @@
   dt { color:var(--muted); font-size:14px; } dd { margin:0; font-weight:750; text-align:right; }
   .cards { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; }
   .card:nth-child(odd) { background:var(--mint); } .card:nth-child(even) { background:var(--lavender); }
-  .card .label { font-size:14px; color:var(--text); font-weight:750; padding-bottom:10px; border-bottom:1px solid var(--line); }
+  .card .label { font-size:14px; color:var(--muted); font-weight:700; }
+  .panel.card { padding:14px 16px; }
   .card .sub { font-size:12px; color:var(--muted); margin-top:5px; overflow-wrap:anywhere; }
-  .card .value { font-size:30px; line-height:1.35; margin-top:13px; font-weight:800; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+  .card .value { font-size:24px; line-height:1.3; margin-top:8px; font-weight:800; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
   #events-view { background:#f5f0fb; border-color:#b6a6cd; }
   #trials-view .scroll,#events-view .scroll { max-height:520px; }
   .cameras { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 560px)); gap:12px; }   /* 한 대만 보일 때 너무 커지지 않게 */
@@ -153,15 +156,14 @@
 <a href="#events" data-page="events">사건 기록</a>
 </nav>
 <main>
-  <section id="page-heading"><div><p class="eyebrow">훈련 모니터</p><h2 id="page-title">전체 현황</h2><p id="page-subtitle">연결된 훈련의 상태와 기록을 확인합니다.</p></div><span id="view-status" class="badge">전체 보기</span></section>
-  <div id="safety" class="unknown">안전 상태 모름 <small>상황판 수신 전</small></div>
+  <section id="page-heading"><h2 id="page-title">전체 현황</h2><span id="view-status" class="badge" hidden></span></section>
+  <div id="safety" class="unknown">안전 상태 모름</div>
   <div id="control-home" hidden></div>
   <section id="control-bar" class="panel control-bar" aria-label="훈련 휴식과 재개">
     <div class="control-status"><h2><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4H19V20H5ZM9 8H15M9 12H15M9 16H12"/></svg>훈련 상태</h2>
-    <p id="phase" role="status">세션 상태 수신 대기</p></div>
+    <p id="phase" role="status">연결 대기</p></div>
     <button id="resume" type="button" disabled>훈련 재개</button>
     <p id="control-message" role="status" aria-live="polite"></p>
-    <small>휴식 후 같은 난이도로 이어갑니다. 안전 정지 해제는 운영자의 별도 절차가 필요합니다.</small>
   </section>
   <section id="proposal-panel" class="panel" hidden aria-label="휴식 제안">
     <div class="panel-top"><h2><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5V19M16 5V19"/></svg>휴식 제안 <small id="proposal-source" class="section-tag"></small></h2><span id="proposal-time" class="badge"></span></div>
@@ -171,10 +173,10 @@
     <p id="proposal-message" role="status" aria-live="polite"></p>
   </section>
   <section id="mode-view" hidden>
-    <div class="visual-column"><div class="panel diagram-panel"><div class="panel-top"><h2 id="diagram-title">훈련 공간</h2><span class="badge">환자 시점 · 실행 단계 설명</span></div><div id="mode-diagram" tabindex="0" role="region" aria-label="환자 시점에서 현재 실행 단계를 설명하는 훈련 일러스트"></div><p id="diagram-caption" class="caption"></p></div>
-    <div class="panel steps-panel"><h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5H8V9H4ZM12 7H20M4 15H8V19H4ZM12 17H20M6 9V15"/></svg>단계 순서</h2><ol id="steps"></ol><p class="caption">현재 강조는 수신된 실행 단계입니다. 이전 단계의 성공을 뜻하지 않습니다.</p></div></div>
+    <div class="visual-column"><div class="panel diagram-panel"><div class="panel-top"><h2 id="diagram-title">훈련 공간</h2><span class="badge">환자 자리에서 본 설명 그림</span></div><div id="mode-diagram" tabindex="0" role="region" aria-label="환자 시점에서 현재 실행 단계를 설명하는 훈련 일러스트"></div><p id="diagram-caption" class="caption" hidden></p></div>
+    <div class="panel steps-panel"><h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5H8V9H4ZM12 7H20M4 15H8V19H4ZM12 17H20M6 9V15"/></svg>단계 순서<button id="steps-play" type="button" class="ghost">▶ 단계 미리보기</button></h2><ol id="steps"></ol></div></div>
     <aside><div class="panel instruction"><div class="section-heading current-label"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5L18 12L8 19Z"/></svg>현재 동작</div><h2 id="step-title" role="status">상태 수신 대기</h2><p id="step-description"></p><span id="raw-stage" class="caption"></span></div>
-    <div class="panel stats"><h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19H20M7 15V10M12 15V5M17 15V8"/></svg>진행 현황</h2><dl><div><dt>완료한 시도</dt><dd id="mode-trials">—</dd></div><div><dt>현재 난이도</dt><dd id="mode-level">—</dd></div><div><dt>세션 상태</dt><dd id="mode-phase">미수신</dd></div></dl><p id="mode-extra" class="caption"></p></div></aside>
+    <div class="panel stats"><h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19H20M7 15V10M12 15V5M17 15V8"/></svg>진행 현황</h2><dl><div><dt>완료한 시도</dt><dd id="mode-trials">—</dd></div><div><dt>현재 난이도</dt><dd id="mode-level">—</dd></div></dl><p id="mode-extra" class="caption"></p></div></aside>
   </section>
 
   <section class="cards" id="overview-cards">
@@ -186,15 +188,15 @@
 
   <div id="camera-home" hidden></div>
   <section id="camera-view" class="panel" aria-label="카메라 화면">
-      <h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7H16V17H3ZM16 10L21 7V17L16 14"/></svg>카메라</h2><p class="section-help" id="camera-help">로봇·인식 PC 카메라 실시간 화면 (작게 압축 · 저장하지 않음)</p>
+      <h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7H16V17H3ZM16 10L21 7V17L16 14"/></svg>카메라</h2>
       <div class="cameras" id="cameras"></div><div class="empty" id="cameras-empty" hidden></div>
   </section>
   <section id="report-view" class="panel" aria-label="세션 리포트">
-      <h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3H18V21H6ZM9 8H15M9 12H15M9 16H12"/></svg>세션 리포트</h2><p class="section-help" id="report-meta">가장 최근에 끝난 세션의 요약 · 표의 수치가 기준이고 해석은 참고용입니다</p>
-      <div id="report"></div><div class="empty" id="report-empty">아직 리포트 없음 — 세션이 끝나면 표시됩니다</div>
+      <h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3H18V21H6ZM9 8H15M9 12H15M9 16H12"/></svg>세션 리포트</h2><p class="section-help" id="report-meta"></p>
+      <div id="report"></div><div class="empty" id="report-empty">세션이 끝나면 표시됩니다</div>
   </section>
   <section id="trials-view" class="panel" hidden>
-      <h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3H15L19 7V21H6ZM15 3V7H19M9 11H16M9 15H16M9 18H13"/></svg>최근 시도</h2><p class="section-help">수신된 시도별 결과 · 오차 · 소요 시간</p>
+      <h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3H15L19 7V21H6ZM15 3V7H19M9 11H16M9 15H16M9 18H13"/></svg>최근 시도</h2>
       <div class="scroll">
         <table>
           <thead><tr><th>#</th><th>모드</th><th>결과</th><th>오차</th><th>시간</th><th>메모</th></tr></thead>
@@ -204,7 +206,7 @@
       </div>
   </section>
   <section id="events-view" class="panel" hidden>
-      <h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4A8 8 0 1 1 4 12M4 4V9H9M12 7V12L16 14"/></svg>사건 기록</h2><p class="section-help">수신된 안전 상태 · 음성 · 모드 변경 기록</p>
+      <h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4A8 8 0 1 1 4 12M4 4V9H9M12 7V12L16 14"/></svg>사건 기록</h2>
       <div class="scroll"><ul id="events"></ul><div class="empty" id="events-empty">아직 사건 없음</div></div>
   </section>
 
@@ -223,7 +225,7 @@ const pct = (x) => x == null ? "—" : `${Math.round(x * 100)}%`;
 const seenTrials = new Set();
 let selectedMode = null, selectedPage = 'overview';
 let control = null, controlReceived = 0, resuming = false, stateTime = 0;
-let sceneSafety = null, sceneKey = null;
+let sceneSafety = null, sceneKey = null, previewStage = null, previewTimer = null;
 let lastProposalId = null, lastProposalSessionId = null;
 const PHASES = {idle: "대기", running: "진행 중", pause_pending: "현재 시도 완료 후 휴식 예정",
                 paused: "휴식 중", ended: "세션 종료"};
@@ -245,7 +247,7 @@ function renderControl(s) {
   renderProposal();
   $("phase").textContent = s ? `${PHASES[s.phase] ?? s.phase} · ${modeName(s.mode)} · 난이도 ${s.difficulty ?? "—"}`
     + (s.phase === "paused" && s.blocked_reason ? ` · ${s.blocked_reason}` : "")
-    + (s.hand_wait ? ` · 손 근접 정지 대기(${s.hand_wait}) — 손이 빠지면 이어감` : "") : "세션 상태 연결 끊김";
+    + (s.hand_wait ? ` · 손 근접 정지 대기(${s.hand_wait}) — 손이 빠지면 이어감` : "") : "연결 대기";
   $("resume").disabled = resuming || !s?.can_resume || s.phase !== "paused";
 }
 
@@ -273,7 +275,7 @@ setInterval(() => {
   renderProposal();
   if (!stateTime || Date.now() - stateTime > 2000) {
     $("safety").className = "unknown";
-    $("safety").textContent = "안전 상태 모름 — 최신 상황판 수신 대기";
+    $("safety").textContent = "안전 상태 모름";
   }
   renderModePage();
 }, 500);
@@ -394,7 +396,7 @@ async function loadReport() {
     const rep = await r.json();
     $("report-empty").hidden = !!rep;
     $("report").textContent = rep ? rep.report_md : "";     // 글자 그대로 (HTML 해석 안 함)
-    if (rep) $("report-meta").textContent = `세션 ${rep.session_id.slice(0, 8)} · 끝난 시각 ${rep.ended_at ? clock(rep.ended_at) : "—"} · 표의 수치가 기준이고 해석은 참고용입니다`;
+    if (rep) $("report-meta").textContent = `세션 ${rep.session_id.slice(0, 8)} · 끝난 시각 ${rep.ended_at ? clock(rep.ended_at) : "—"}`;
   } catch (e) { console.warn(e); }
 }
 
@@ -462,7 +464,8 @@ const PAGES = {
       help:['손 시작 위치와 안전 NORMAL을 확인합니다.','로봇이 공을 준비하고 보냅니다.','손동작으로 받기 후보를 관측합니다.','손 이탈을 확인할 때까지 회수를 시작하지 않습니다.','레인 위 공을 거치대로 돌려놓습니다.','받기 후보와 회수 결과를 기록합니다.']},
   3: {title:'캐치볼', subtitle:'관측한 공 궤적과 예상 착지점, 패드의 역할을 살펴봅니다.',diagram:'공 궤적과 요격',
       caption:'환자 자리에서 로봇의 패드를 바라봅니다. 점선은 던지는 방향의 예시이며 실제 궤적·착지점 데이터는 아직 연결되지 않았습니다.',
-      steps:['준비','던지기 관측','착지점 예측','패드 이동','받기 확인','결과 기록'],match:[],help:[]},
+      steps:['준비','던지기·받기','결과 기록'],match:[/관측 자세|모드 3 시작|^시작$/,/공 받기/,/^끝$|기록/],
+      help:['로봇이 패드를 들고 대기 자세로 갑니다.','공이 날아오면 예측 지점으로 패드를 옮기고, 측면 카메라로 받았는지 봅니다.','받기 결과를 기록합니다.']},
   5: {title:'건네고 받기', subtitle:'물체 집기부터 건네기, 돌려받기까지 전달 방향을 확인합니다.',diagram:'물체 전달',
       caption:'환자 자리에서 물체를 건네받고 돌려주는 방향을 보여줍니다. 위치·움직임은 단계 설명용이며 실측이 아닙니다.',
       steps:['손·물체 확인','집기','건네기','돌려받기','시도 기록'],
@@ -493,12 +496,9 @@ function selectPage() {
   $('events-view').hidden=selectedPage!=='events';
   if(selectedMode!==null) {
     $('page-title').textContent=`모드 ${selectedMode} · ${PAGES[selectedMode].title}`;
-    $('page-subtitle').textContent=PAGES[selectedMode].subtitle;
     $('diagram-title').textContent=PAGES[selectedMode].diagram;
-    $('diagram-caption').textContent=PAGES[selectedMode].caption;
   } else {
-    const pages={overview:['전체 현황','현재 훈련과 안전 상태를 한눈에 확인합니다.'],trials:['최근 시도','수신된 전체 모드의 시도 결과를 확인합니다.'],events:['사건 기록','안전·음성·모드 변경 등 수신된 사건을 확인합니다.']};
-    [$('page-title').textContent,$('page-subtitle').textContent]=pages[selectedPage];
+    $('page-title').textContent={overview:'전체 현황',trials:'최근 시도',events:'사건 기록'}[selectedPage];
   }
   filterTrials(); renderModePage();
 }
@@ -509,7 +509,7 @@ function filterTrials(){
   $('trials-empty').textContent=selectedMode===null?'아직 수신한 시도 기록이 없습니다.':'이 모드의 수신된 시도 기록이 없습니다.';
 }
 function renderModePage(){
-  if(selectedMode===null){$('view-status').textContent=selectedPage==='overview'?'전체 보기':'기록 조회';return;}
+  if(selectedMode===null){$('view-status').hidden=true;return;}
   const page=PAGES[selectedMode];
   const fresh=control&&Number.isFinite(control.updated_at)&&Date.now()/1000-control.updated_at>=0&&Date.now()/1000-control.updated_at<2;
   const active=fresh&&Number(control.mode)===selectedMode;
@@ -524,29 +524,39 @@ function renderModePage(){
     else if (running&&index<0) sceneStatus='waiting';
   }
   if (!['running','pause_pending','paused','ended','stopped','stale','inactive','waiting'].includes(sceneStatus)) sceneStatus='waiting';
-  const nextSceneKey=`${selectedMode}:${index}:${sceneStatus}`;
+  const preview=previewStage!==null&&previewStage<page.steps.length;
+  const nextSceneKey=preview?`${selectedMode}:preview:${previewStage}`:`${selectedMode}:${index}:${sceneStatus}`;
   if (sceneKey!==nextSceneKey) {
-    $('mode-diagram').innerHTML=renderTrainingScene(selectedMode,index,sceneStatus);
+    $('mode-diagram').innerHTML=preview?renderTrainingScene(selectedMode,previewStage,'running',{preview:true}):renderTrainingScene(selectedMode,index,sceneStatus);
     sceneKey=nextSceneKey;
   }
-  $('view-status').textContent=active?'현재 훈련 모드':'둘러보는 페이지 · 훈련 모드는 바뀌지 않습니다';
+  $('view-status').hidden=!active;$('view-status').textContent='지금 진행 중';
   $('mode-trials').textContent=active?`${control.trial_index ?? 0}회 (세션 전체)`:'—';
   $('mode-level').textContent=active&&control.difficulty!=null?`${control.difficulty}단계`:'—';
-  $('mode-phase').textContent=active?(PHASES[control.phase]||'미수신'):'현재 실행 중 아님';
-  $('mode-extra').textContent=selectedMode===3?(fresh?(control.mode3_enabled?'챌린지 설정 켜짐 · 상세 단계 연결 대기':'챌린지 비활성'):'챌린지 설정 미수신'):selectedMode===7?'실시간 힘·목표 힘 데이터 연결 대기':'실제 위치·목표 좌표는 아직 표시하지 않습니다.';
-  let title='현재 모드 실행 대기',description='탭은 조회용입니다. 이 페이지를 열어도 로봇 동작은 시작되지 않습니다.';
-  if(!fresh){title='상태 수신 대기';description='연결이 복구되면 현재 단계를 표시합니다.';}
+  $('mode-extra').textContent=selectedMode===3&&fresh&&!control.mode3_enabled?'챌린지 꺼짐 (skills.yaml mode3_challenge)':'';
+  let title='이 모드는 진행 중이 아님',description='';
+  if(!fresh){title='대기 중';description='';}
   else if(active&&control.phase==='paused'){title='휴식 중';description='준비되면 상단 훈련 재개 버튼으로 같은 난이도에서 이어갑니다.';}
   else if(active&&control.phase==='ended'){title='세션 종료';description='완료된 시도 기록을 확인할 수 있습니다.';}
   else if(index>=0){title=page.steps[index];description=page.help[index];}
   else if(running){title='세부 단계 확인 중';description='수신한 상태에 대응하는 단계가 아직 연결되지 않았습니다.';}
   if(active&&control.phase==='pause_pending')description+=' 현재 시도와 회수 완료 후 휴식합니다.';
   if(active&&control.hand_wait){title='손 근접 정지 대기';description=`안전 감시 ${control.hand_wait} — 로봇은 멈춰 있고, 손이 빠져 정상 상태가 1초 이어지면 같은 시도를 이어갑니다.`;}
-  $('step-title').textContent=title;$('step-description').textContent=description;$('raw-stage').textContent=node?`수신 상태 · ${node}`:'';
-  $('steps').innerHTML=page.steps.map((step,i)=>`<li class="${i===index?'active':''}" ${i===index?'aria-current="step"':''}><span>${i+1}</span><strong>${esc(step)}</strong></li>`).join('');
+  $('step-title').textContent=title;$('step-description').textContent=description;$('raw-stage').textContent=node?`BT · ${node}`:'';
+  $('steps').innerHTML=page.steps.map((step,i)=>`<li data-i="${i}" title="눌러서 이 단계 그림 보기" class="${i===index?'active':''}${preview&&i===previewStage?' preview':''}" ${i===index?'aria-current="step"':''}><span>${i+1}</span><strong>${esc(step)}</strong></li>`).join('');
+  $('steps-play').textContent=preview?'■ 실시간 보기':'▶ 단계 미리보기';
 }
 
-window.addEventListener("hashchange", selectPage);
+// 단계 미리보기 — 실제 상태와 상관없이 단계별 그림을 보여 준다 (그림 칸에 '미리보기' 표시). 로봇에는 아무것도 보내지 않음
+function stopPreview(){ clearInterval(previewTimer); previewTimer=null; previewStage=null; }
+function showPreview(i){ previewStage=i; renderModePage(); }
+$('steps').onclick=(e)=>{ const li=e.target.closest?.('li[data-i]'); if(!li) return; clearInterval(previewTimer); previewTimer=null; showPreview(Number(li.dataset.i)); };
+$('steps-play').onclick=()=>{
+  if(previewStage!==null){ stopPreview(); renderModePage(); return; }
+  showPreview(0);
+  previewTimer=setInterval(()=>showPreview((previewStage+1)%PAGES[selectedMode].steps.length),3000);
+};
+window.addEventListener("hashchange", ()=>{ stopPreview(); selectPage(); });
 selectPage();
 load().then(connect);
 </script>

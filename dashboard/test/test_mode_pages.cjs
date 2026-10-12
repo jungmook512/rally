@@ -22,7 +22,7 @@ const context = vm.createContext({
   document:{getElementById(id){assert(elements.has(id), id);return elements.get(id);},
     querySelectorAll(selector){assert.equal(selector,'#mode-nav a');return nav;}, createElement:element},
   location:{hash:'#mode1'}, addEventListener(name,callback){listeners[name]=callback;},
-  Date, performance, AbortSignal, setInterval(callback){intervals.push(callback);}, setTimeout(){}, console,
+  Date, performance, AbortSignal, setInterval(callback){intervals.push(callback);return intervals.length;}, clearInterval(){}, setTimeout(){}, console,
 });
 context.window = context;
 assert(html.includes('src="/images/training-scenes.js"'), 'scene engine must load before page logic');
@@ -50,7 +50,7 @@ assert.equal(get('resume').disabled,false);
 assert.doesNotMatch(get('steps').innerHTML,/aria-current="step"/);
 run("renderControl(null);");
 assert.equal(get('resume').disabled,true);
-assert.equal(get('step-title').textContent,'상태 수신 대기');
+assert.equal(get('step-title').textContent,'대기 중');
 run("renderControl({mode:1,phase:'running',bt_node:'밀기 1',updated_at:Date.now()/1000-5});");
 assert.doesNotMatch(get('steps').innerHTML,/aria-current="step"/);
 // Scene changes follow observed stages; stale or stopped states must never animate.
@@ -93,6 +93,19 @@ const firstTrial = get('trials').children[1];
 const firstEvent = get('events').children[0];
 function visit(hash) { context.location.hash=hash; listeners.hashchange(); }
 // 스케치 배치 (10/12): 모드 화면이면 훈련 상태·카메라 칸이 모드 격자 안으로, 전체 현황이면 원래 자리로
+// 단계 미리보기 (10/12): 단계를 누르면 그 단계 그림, 실시간 상태와 별개. 페이지를 옮기면 끝
+visit('#mode5');
+run("$('steps').onclick({target:{closest:()=>({dataset:{i:'2'}})}});");
+assert.match(get('mode-diagram').innerHTML,/data-scene-stage="2"/);
+assert.match(get('mode-diagram').innerHTML,/미리보기/);
+assert.match(get('steps').innerHTML,/class="[^"]*preview/);
+run("$('steps-play').onclick();");                  // 미리보기 중이면 실시간으로
+assert.equal(run('previewStage'),null);
+assert.doesNotMatch(get('mode-diagram').innerHTML,/미리보기/);
+run("$('steps-play').onclick();");                  // 처음부터 자동 재생
+assert.match(get('mode-diagram').innerHTML,/data-scene-stage="0"/);
+visit('#mode1');
+assert.equal(run('previewStage'),null);
 visit('#mode5');
 assert.equal(get('control-bar').parentNode, get('mode-view'));
 assert.equal(get('camera-view').parentNode, get('mode-view'));
