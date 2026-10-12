@@ -1,6 +1,6 @@
 # RALLY — 코딩 에이전트 가이드
 
-이 파일은 Claude Code · Codex 등 코딩 에이전트가 이 저장소에서 일할 때 먼저 읽는 규칙이다. 사람도 같은 규칙을 따른다. Codex 등 `AGENTS.md`를 읽는 도구를 위해 같은 내용의 `AGENTS.md`가 있다. 둘 중 하나를 고치면 다른 쪽도 같이 고친다.
+이 파일은 Claude Code · Codex 등 코딩 에이전트가 이 저장소에서 일할 때 먼저 읽는 규칙이다. 사람도 같은 규칙을 따른다. Codex 등 `AGENTS.md`를 읽는 도구를 위해 공통 규칙과 작업 절차를 정리한 [AGENTS.md](AGENTS.md)가 있다. 공통 규칙은 동일하게 유지하며 둘 중 하나를 고치면 다른 쪽도 같이 고친다. 작업 진입·근거 문서·격리 빌드·LLM 연결 확인 절차는 AGENTS.md도 함께 따른다.
 
 ## 1. 프로젝트 한 줄
 
@@ -12,7 +12,7 @@
 
 1. `README.md` — 빠른 시작, 선생님 코드 매핑 표
 2. `docs/INTERFACES.md` — 토픽·서비스·액션·tf·QoS. **인터페이스를 바꾸면 이 파일도 같이 바꾼다.**
-3. 담당 패키지의 `README.md` — 어떤 파일이 선생님 코드이고 어떤 게 신규인지
+3. 담당 경로의 하위 `AGENTS.md`·`CLAUDE.md`와 패키지 `README.md` — 어떤 파일이 선생님 코드이고 어떤 게 신규인지
 4. `todo/<담당자>.md` — 오늘 할 일
 5. 필요할 때만 `docs/RALLY_기획서.md` (BRD/SRD, 결정 근거)
 
@@ -39,7 +39,7 @@ docs/ todo/ scripts/
 - **`_reference/`는 읽기 전용.** 선생님 원본 비교용. 수정하거나 import 하지 않는다.
 - **모드 7(ResistPush)에서 로봇이 환자 쪽으로 능동 이동하는 코드를 추가하지 않는다.** 허용되는 이동은 져주기(환자에게서 멀어짐)와 저속 복귀뿐.
 - **안전 코드는 임의로 완화하지 않는다.** `rally_robot/safety_monitor.py`의 임계값(손 거리, 힘 한계), 작업 공간 제한, STOP → 수동 reset 흐름은 `safety.yaml`에서만 바꾸고 커밋 메시지에 이유를 적는다. 안전 레벨 STOP 상태에서 로봇을 움직이는 코드를 추가하지 않는다.
-- **LLM 출력은 로봇에 직접 가지 않는다.** `rally_brain/llm_advisor.py` 결과는 pydantic 스키마 검증 → 범위 클램핑(`skills.yaml`) → 규칙 폴백을 거쳐야 action goal이 된다. 이 경로를 우회하는 코드를 쓰지 않는다.
+- **규칙 우선·LLM 격리 (#78)**: 제어값은 레시피·규칙으로 계산하며 기존 범위 제한을 유지한다. LLM은 애매한 상황의 행동 선택·설명·리포트에 사용한다. 상황 판단은 비동기 호출·3 s 타임아웃·pydantic 스키마·행동 허용 목록·현재 안전 상태 검증 후 BT가 적용하고 실패하면 규칙으로 폴백한다. STOP을 해제하거나 로봇에 직접 명령하지 않는다. 기존 `SuggestParams`·`llm_tunable`은 대체 구현 전까지 검증·클램핑·폴백을 유지하며 새 숫자 조절 경로를 연결하지 않는다.
 - **영상 원본은 외부로 보내지 않는다.** 외부 LLM API에는 `llm.yaml` 화이트리스트의 수치 특징값만. DB에도 영상은 저장하지 않는다.
 - **인터페이스 변경 = PR + `docs/INTERFACES.md` 동시 수정.** 필드 추가는 뒤에 붙이고, 이름 변경·삭제는 팀 합의 후.
 - **`docker/`를 고치기 전에 `docker/README.md`를 읽는다.** Dockerfile 규칙 3개(패키지별 COPY, `--symlink-install` 금지, Ubuntu 24.04 런타임 베이스)가 거기 있다.
@@ -73,9 +73,13 @@ docs/ todo/ scripts/
 
 ## 6. 빌드·실행·테스트
 
+아래 예시는 각각 저장소 루트에서 시작한다. 서버 담당 패키지에는 두산 SDK가 필요하지 않으며, 로봇 패키지 빌드·실행에는 두산 환경을 추가로 준비한다.
+
 ```bash
-# 빌드 (Ubuntu 24.04, ROS 2 Jazzy, 두산 dsr_common2 설치된 PC)
-cd ros2_ws && colcon build --symlink-install --packages-up-to rally_bringup && source install/setup.bash
+# 서버 담당 패키지 빌드 (Ubuntu 24.04, ROS 2 Jazzy)
+source /opt/ros/jazzy/setup.bash
+cd ros2_ws && colcon build --symlink-install --packages-up-to rally_brain rally_db && source install/setup.bash
+# 위는 서버 담당 패키지 범위. 로봇·인식 패키지 변경 시 해당 패키지도 대상으로 넣는다.
 
 # 문법 검사 (어느 OS든, 로봇 없이)
 python3 -m py_compile $(find ros2_ws/src -name "*.py" -not -path "*/_reference/*")
@@ -93,7 +97,7 @@ cd docker && docker compose --profile pc2 up --build     # 로봇·인식 PC (�
 cd docker && docker compose --profile pc3 up --build     # 서버 PC
 ```
 
-에이전트가 할 수 있는 검증의 한계: **로봇·카메라·마이크가 없는 환경에서는 `py_compile`과 `colcon build`(인터페이스 생성 포함)까지만 가능하다.** 하드웨어가 필요한 변경은 "로봇·인식 PC에서 확인 필요"라고 명시하고, 가짜 발행기(fake publisher)나 bag 재생으로 검증 방법을 적어둔다.
+에이전트가 할 수 있는 검증의 한계: **로봇·카메라·마이크가 없어도 `py_compile`, `colcon build`(인터페이스 생성 포함), 순수 Python·가짜 객체 기반 단위 테스트는 가능하다. 실제 하드웨어 동작·2 PC 통신은 별도 확인한다.** `rally_bringup`만 빌드하면 brain·db는 검증되지 않는다. 기존 빌드 산출물이 충돌하면 AGENTS.md의 별도 경로 빌드를 사용한다. 하드웨어가 필요한 변경은 "로봇·인식 PC에서 확인 필요"라고 명시하고, 가짜 발행기(fake publisher)나 bag 재생으로 검증 방법을 적어둔다.
 
 ## 7. 작업 흐름
 

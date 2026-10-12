@@ -28,6 +28,16 @@ mode3:
   catch_radius_m: 0.35
   lead_time_s: 0.12
   max_ball_speed_mps: 3.0
+  # catch_ball 스킬 (10/11, 근거 docs/mode3/MODE3_OVERVIEW.md). 없으면 catch_ball.DEFAULTS
+  ready_posj: [89.8, 30.0, -121.7, 90.2, -80.2, 88.3]   # 대기 자세 (정정인 결정, 패드 면 45°)
+  pad_offset_tool_m: [-0.053, -0.048, 0.001]          # TCP → 패드 중심, 공구 좌표 (줄자)
+  pad_normal: [0.7071, 0.0, 0.7071]                   # 패드 면 법선 (base, 투구자 쪽 45° 위)
+  decide_after_s: 0.16                                # 공 놓은 뒤 이 시각의 예측으로 출발 (오차 중앙 약 3 cm)
+  right_max_m: 0.15                                   # 오른쪽(−y)만. 왼쪽은 안 감 (환자 투구 실패로 셈)
+  updown_max_m: 0.15
+  catch_vel_mm_s: 450.0                               # 위아래 730 은 관절 속도 121 % 로 불가
+  catch_acc_mm_s2: 1000.0
+  impact_force_n: 4.0                                 # 명중 판정 힘 증가 (맞을 때 4.9~15.3 N, 정지 0.9 N)
 
 # mode1 (공 굴려주기) — 가이드 길 3개 (폭 10~12 cm, 높이 ≤ 공 반지름)
 #   start: 공을 놓는 자리 (base, m). 공 위에 TCP 를 대고 scripts/print_pose.py 로 읽는다. z 는 안 쓴다(table.yaml 사용)
@@ -201,6 +211,7 @@ mode7:
   hand_wait_s: 10.0                 # 손잡이를 내밀기 전 손 대기 (mode5 와 같은 방식)
   hand_wait_tries: 2
   hand_prompt: "손을 앞으로 내밀어 주세요"
+  push_prompt: "손잡이를 앞으로 밀어 보세요"     # 저항 밀기 goal 보내기 전 (#119). 결과 문구는 mode7_resist.PROMPTS 그대로
 # brain 규칙 레이어 (rally_brain/rule_layer.py) — 시도가 끝날 때마다 행동 하나를 고른다. 행동은 actions 목록 안에서만
 #   difficulty: 모드별 난이도 단계 (0 = 시작). 단계 → 실제 값(목표 거리·힘 등) 변환은 각 모드 서브트리가 한다
 brain:
@@ -211,6 +222,12 @@ brain:
   success_drop_rate: 0.4            # 최근 시도 성공률이 이 이하면 '성공률 하락' 신호 (최소 3회)
   slowing_ratio: 1.5                # 마지막 시도 시간이 앞선 시도 평균의 이 배 이상이면 '시도 시간 증가' 신호
   difficulty_range: [-3, 3]
+  # 음성 피드백 (#119, 10/11) — 난이도가 실제로 바뀐 때만, 보상 동작은 연속 posture_repeat 시도면 한 번 (posture_coach.py)
+  harder_prompt: "잘하고 계세요. 조금 더 어렵게 해 볼게요"
+  easier_prompt: "조금 쉽게 바꿔 볼게요"
+  posture_repeat: 2
+  posture_prompt: "몸은 세우고 팔로만 뻗어 보세요"       # trunk_lean
+  shoulder_prompt: "어깨에 힘을 빼고 팔을 뻗어 보세요"    # shoulder_hike
   # 세션 시작 때 몸 자세 기준(평소 자세) 잡기 — /rally/perception/body/reset_baseline (#83, INTERFACES 3절)
   #   안내 → 말이 끝날 즈음 호출 → body_pose 가 약 2 s 바른 자세를 기준으로. body_pose 가 없으면 경고만 남기고 세션은 계속
   body_baseline_prompt: "기준 자세를 잡을게요. 바르게 서서 잠깐 가만히 있어 주세요."
@@ -235,6 +252,7 @@ mode3_challenge:
 gripper:
   ball:        {open_mm: 90,  force_n: 12}
   velcro_ball: {open_mm: 110, force_n: 12}
+  pad:         {open_mm: 60,  force_n: 38}     # 모드 3 패드 브래킷 (10/11: 38 N 으로 쥐면 폭 31.2 mm, grip 감지 1)
   rod:         {open_mm: 110, force_n: 20}
   cup:         {open_mm: 110, force_n: 20}
   handle:      {open_mm: 110, force_n: 38}   # 모드 7
@@ -308,6 +326,13 @@ mode5:
   pick_x_range_m: [0.15, 0.55]    # 이 x 범위의 물체만 집는다 — 환자 손에 든 물체(중앙선 근처)를 집으러 가지 않게
   pick_retry_reasons: [pick_failed]   # 집기 재시도 (max_retries 공용). 이유 없는 abort(안전 정지일 수 있음)는 재시도 안 함
   receive_prompt: "물체를 로봇 손 사이로 다시 넣어 주세요"   # 받기 timeout 때 안내 후 1회 재시도
+  # 음성 피드백 (#119 정동휘 문구, 10/11). 모두 phrase_problem 통과. 빈 문자열이면 말하지 않음
+  intro_prompt: "이번에는 물건을 주고받아 볼게요"                  # 모드 5 시작 (session_tree)
+  present_prompt: "로봇이 내미는 물건을 손목을 돌려서 잡아 보세요"  # GIVE 내민 뒤 당김 대기(feedback wait)
+  grasp_ok_prompt: "잘 잡으셨어요. 천천히 당겨 가져가세요"         # GIVE 당김 감지 → 놓기(feedback release)
+  give_back_prompt: "이제 그 물건을 로봇에게 다시 건네주세요"       # RECEIVE 보내기 전
+  receive_ok_prompt: "잘 건네주셨어요"                            # RECEIVE 성공
+  done_prompt: "주고받기를 모두 마쳤어요. 수고하셨어요"             # 모드 5 시도를 모두 마침 (session_tree)
 
 # llm_tunable — LLM(llm_advisor)이 제안해도 되는 값과 그 범위. 범위는 여기서만 정한다 (요청에 온 범위는 이 안으로 좁히기만).
 # 여기 없는 모드·값을 요청하면 거부한다 (예: 모드 3 catch_radius·lead_time_s — 조절 금지). default_ref: 이력 없을 때 대체값

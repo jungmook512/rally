@@ -44,10 +44,10 @@ from rclpy.action import ActionClient, ActionServer, CancelResponse, GoalRespons
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
-from std_msgs.msg import String
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
+from std_msgs.msg import Bool, String
 
-from rally_brain import graph_rag, hand_stop, rule_layer, metrics, session_report
+from rally_brain import graph_rag, hand_stop, rule_layer, metrics, posture_coach, session_report
 from rally_brain.config import config_path, load_skills
 from rally_brain.behaviours import SkillCall
 from rally_brain.knowledge import ontology
@@ -111,6 +111,7 @@ class BtRunner(Node):
         self._session: Session | None = None
         self._pending_switch: tuple[int | None, str] | None = None   # (목표 모드 또는 None=다음, 요청한 곳)
         self.control = SessionControl()
+        self._posture = posture_coach.PostureCoach(posture_coach.config(self._skills_cfg))   # 보상 동작 교정 안내 (#119)
         self.proposals = ProposalControl()
         self._proposal_cancelled = False
         self._rest_generation = 0
@@ -127,6 +128,9 @@ class BtRunner(Node):
         reliable = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, depth=10)
         self.create_subscription(SceneContext, "/rally/brain/context", self._on_context, qos_profile_sensor_data)
         self.create_subscription(VoiceIntent, "/rally/voice/intent", self._on_intent, reliable)
+        speaking_qos = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL, depth=1)
+        self._speaking = False                                        # TTS 발화 중 (자세 교정 안내는 건너뜀, #119)
+        self.create_subscription(Bool, "/rally/voice/speaking", lambda m: setattr(self, "_speaking", bool(m.data)), speaking_qos)
         self._trial_pub = self.create_publisher(TrialResult, "/rally/brain/trial_result", reliable)
         self._report_pub = self.create_publisher(String, "/rally/brain/session_report", reliable)
         self._state_pub = self.create_publisher(String, "/rally/brain/state", reliable)
@@ -160,6 +164,8 @@ class BtRunner(Node):
                 self._invalidate_rest()  # 끊겼다 복구된 입력도 이전 판단을 되살리지 않는다.
             self._context = msg
             self._context_rx = time.monotonic()
+            if self._session is not None:
+                self._posture.observe(msg.body.compensation_detected, msg.body.compensation_type)
             if self._session is not None and msg.safety.level == SafetyStatus.LEVEL_STOP:
                 if hand_stop.waitable(msg.safety.reason, self._session.current_mode, self._hand_cfg):
                     self._hand_stop_seen = msg.safety.reason   # 로봇이 움직이는지는 tick 이 보고 대기·종료를 정한다
@@ -277,6 +283,9 @@ class BtRunner(Node):
 
     def _after_trial(self, session: Session, trial: TrialResult) -> None:
         with self._switch_lock:
+            if not self._safety_abort and (text := self._posture.end_trial(self._speaking)):
+                self.get_logger().info(f"[자세] 보상 동작 연속 — 안내: {text}")
+                self._say(text)
             self._invalidate_rest(proposal=False)  # 새로운 완료 시도의 이전 LLM 결과 폐기
             if self.control.phase in ("pause_pending", "paused", "ended") or self._safety_abort:
                 self._pending_intent = None
@@ -303,6 +312,8 @@ class BtRunner(Node):
             if old != new:
                 self._invalidate_rest()
             session.set_difficulty(trial.mode, new)
+            if new != old and (text := (self._skills_cfg.get("brain") or {}).get(f"{d.action}_prompt")):
+                self._say(text)   # 난이도가 실제로 바뀐 때만 (#119)
             log.info(f"[규칙] {d.reason} — 모드 {trial.mode} 난이도 {old} → {new}"
                      + ("" if new != old else " (한계)"))
         elif d.action == "ask_llm":
@@ -528,6 +539,7 @@ class BtRunner(Node):
             self._session, self._pending_switch = session, None
             self._pending_intent = None
             self._safety_abort = False
+            self._posture = posture_coach.PostureCoach(posture_coach.config(self._skills_cfg))
             self._hand_stop_seen = self._hand_wait = self._normal_since = None
             self._proposal_cancelled = False
             self._invalidate_rest()

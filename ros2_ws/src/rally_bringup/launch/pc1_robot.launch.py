@@ -16,6 +16,7 @@ from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -23,7 +24,8 @@ def generate_launch_description():
     safety_wait_s = LaunchConfiguration("safety_wait_s")
 
     safety_monitor = Node(package="rally_robot", executable="safety_monitor", output="screen",
-                          parameters=[os.path.join(config, "safety.yaml")])
+                          parameters=[os.path.join(config, "safety.yaml"),
+                                      {"hand_stop_mode": ParameterValue(LaunchConfiguration("hand_stop"), value_type=str)}])
     wait_safety = Node(package="rally_bringup", executable="wait_ready", output="screen",
                        arguments=["--group", "safety", "--timeout", safety_wait_s])
     robot_nodes = [
@@ -41,6 +43,9 @@ def generate_launch_description():
                 EmitEvent(event=Shutdown(reason="safety_monitor not ready"))]
 
     return LaunchDescription([
+        DeclareLaunchArgument("hand_stop", default_value="off",
+                              description="개발용 손 근접 STOP: off(개발 기간 기본, 10/11~) | slow(SLOW 로 낮춤) | stop. "
+                                          "리허설·시연·환자 앞에서는 slow 또는 stop"),
         DeclareLaunchArgument("safety_wait_s", default_value="10.0",
                               description="safety_monitor 발행을 기다리는 최대 시간 [s]"),
         safety_monitor,

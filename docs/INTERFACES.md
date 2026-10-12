@@ -28,6 +28,7 @@ webcam_link          측면 대각 웹캠, 높이 약 2 m (table_link 기준 sta
 | `/camera/aligned_depth_to_color/image_raw` | `sensor_msgs/Image` | realsense2_camera | 30 Hz | SensorData |
 | `/camera/color/camera_info` | `sensor_msgs/CameraInfo` | realsense2_camera | 30 Hz | SensorData |
 | `/webcam/image_raw` | `sensor_msgs/Image` | usb_cam (측면) | 60 Hz | SensorData |
+| `/side/side/color/image_raw`, `/side/side/color/camera_info` | `sensor_msgs/Image`, `CameraInfo` | realsense2_camera (모드 3 측면 RealSense D435i, `camera_namespace:=side camera_name:=side`, 컬러 848×480 @60, 노출 20 · gain 128) | 60 Hz | SensorData |
 | `/rally/robot/wrench` | `geometry_msgs/WrenchStamped` | rally_robot/force_publisher | 50 Hz (두산 서비스 폴링 — 100 Hz 면 컨트롤러 서비스가 막힘) | SensorData |
 | `/rally/robot/tcp_pose` | `geometry_msgs/PoseStamped` | rally_robot/force_publisher | 10 Hz | SensorData |
 | `/rally/gripper/state` | `sensor_msgs/JointState` — name `[rg2_width_mm, rg2_grip, rg2_target_mm]`, position `[폭 mm, grip 감지 0/1, 마지막 명령 폭 mm(-1 = 없음)]`, effort 미사용. 쥠 판단 = grip 비트 **또는** 명령 폭보다 5 mm 이상 벌어져 멈춤(공을 손가락 끝에 걸치면 grip 비트 0) | rally_robot/gripper_node | 20 Hz | SensorData |
@@ -39,13 +40,14 @@ webcam_link          측면 대각 웹캠, 높이 약 2 m (table_link 기준 sta
 | 토픽 | 타입 | 발행 | 구독 | 주기 | QoS |
 |---|---|---|---|---|---|
 | `/rally/perception/objects` | `rally_interfaces/TrackedObjectArray` | rally_vision/segmenter (ByteTrack tracker 전까지) | brain, robot | 30 Hz (웹캠 비행 추적은 60 Hz) | BestEffort, depth 1 |
-| `/rally/perception/landing` | `geometry_msgs/PointStamped` (+ confidence는 objects에) | rally_vision/flight_predictor | robot(catch_ball) | 60 Hz, 비행 중만 | BestEffort, depth 1 |
+| `/rally/perception/landing` | `geometry_msgs/PointStamped` — 패드 평면 교차 예측점 (`base_link`). `header.stamp` = 마지막 관측의 센서 시각(손목 카메라 시계) | rally_vision/flight_predictor | robot(catch_ball) | 60 Hz, 비행 중만 | BestEffort, depth 1 |
+| `/rally/perception/landing_info` | `std_msgs/Float64MultiArray` — `[교차 시각 s(ROS 시각), 교차까지 남은 시간 s(landing stamp 기준), 평면 위 표준편차 u·w m, 관측 수, 릴리스 이후 s]`. landing 과 같은 순서로 하나씩 발행 (전용 msg 는 팀 합의 후) | rally_vision/flight_predictor | robot(catch_ball) | landing 과 같음 | BestEffort, depth 1 |
 | `/rally/perception/objects/debug_image` | `sensor_msgs/Image` | rally_vision/segmenter (ByteTrack tracker 전까지) | dashboard | 10 Hz | BestEffort |
 | `/rally/perception/hand` | `rally_interfaces/HandState` | rally_human/hand_pose_node | brain, robot(safety), robot(handover) | 30 Hz | BestEffort, depth 1 |
 | `/rally/perception/body` | `rally_interfaces/BodyPose` | rally_human/body_pose_node | brain | 15 Hz | BestEffort |
 | `/rally/voice/intent` | `rally_interfaces/VoiceIntent` | rally_voice/intent_node | brain, safety | 이벤트 | Reliable |
 | `/rally/voice/transcript` | `std_msgs/String` | rally_voice/intent_node | dashboard | 이벤트 | Reliable |
-| `/rally/voice/speaking` | `std_msgs/Bool` | rally_voice/tts_node | rally_voice/intent_node (dashboard 선택) | 발화 시작·끝 이벤트 | **Reliable, TransientLocal**, depth 1 |
+| `/rally/voice/speaking` | `std_msgs/Bool` | rally_voice/tts_node | rally_voice/intent_node, rally_brain/bt_runner (말하는 중 자세 교정 안내 건너뜀, #119), dashboard 선택 | 발화 시작·끝 이벤트 | **Reliable, TransientLocal**, depth 1 |
 
 **objects 좌표 프레임** (#66): `/rally/perception/objects` 의 `header.frame_id` 가 `base_link` 가 아니면(카메라 프레임 `camera_color_optical_frame`) 카메라→base 변환을 못 구한 것이다 — 그 좌표로 로봇을 움직이지 않는다(abort 또는 대기). segmenter 는 파라미터 `transform_source` 로 변환을 고른다: `tcp_npy`(기본, `/rally/robot/tcp_pose` × hand_eye) · `tf` · `auto`(tf 우선). **로봇 PC bringup URDF(`m0609_with_rg2_camera`)가 `tool0 → bracket_link → camera_bottom_screw_frame → camera_link → … → camera_color_optical_frame` 을 설계값으로 발행**(10/8 정정인 view_frames)하므로, 그 체인이 있는 동안 `tf`/`auto` 는 설계값을 집어 1 cm·2.5° 치우친다(PR #42 원인). URDF 에서 카메라 체인을 빼고 `camera_tf` 가 유일한 `camera_link` 부모가 되면 기본을 `auto` 로 바꾼다. `tcp_npy` 는 영상 시각이 아니라 마지막 `tcp_pose`(10 Hz) 를 쓰므로 **로봇이 멈춰 있을 때의 좌표만 정확**하다 — 이동 중 좌표로 로봇을 보내지 않는다. `camera_tf` 가 떠 있으면 `auto`(tf 는 영상 시각으로 보간) 가 낫다.
 
@@ -101,7 +103,7 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 | `/rally/skill/push_ball` | `rally_interfaces/PushBall` | 1 | 거치대 공 비전 집기 → 레인 입구 → 퍼터식 치기 → **손 보기 자세에서 끝남**(`mode1.end_at_hand_view`, 환자가 받는 모습). 훈련 Brain은 `target` + 계산한 양수 `push_speed` 전달. 속도 0의 로봇 계산 경로는 단독 시험용. 결과 `stop_position`·`error_mm` 은 `mode1.stop_measure: true`(단독 시험)일 때만 채움 — 세션에선 brain 이 받기 관측과 동시에 손 보기 자세 카메라(`SceneContext.objects`)로 재서 `TrialResult.error_mm`·`stop_d_m` 에 기록 |
 | `/rally/skill/return_ball` | `rally_interfaces/ReturnBall` | 1 | 시도 뒤 레인 안 공을 비전으로 찾아 집고 거치대 맨 윗부분(`mode1.rack_drop_posx`, 직접교시)에 넣기 → 손 보기 자세. 로봇이 닿는 곳(중앙선 앞)에 올 때까지 기다림 (feedback `out_of_reach` → brain 이 안내) |
 | `/rally/skill/pick_compliant` | `rally_interfaces/PickCompliant` | 1·3·5 공통 | task_compliance_ctrl(Z 저강성), 접촉 감지 후 파지 |
-| `/rally/skill/catch_ball` | `rally_interfaces/CatchBall` | 3 (챌린지) | 예측 착지점으로 amovel 선행 이동 + servol 보정, 패드 면 정렬 |
+| `/rally/skill/catch_ball` | `rally_interfaces/CatchBall` | 3 (챌린지) | 대기 자세 → 공 놓은 뒤 0.16 s 예측점으로 amovel 한 번(TCP 자세 고정, 왼쪽 안 감, 오른쪽·위아래 15 cm) → 힘으로 명중 판정 → 판정 뒤 로직(`catch_ball_after.py`) → 복귀. 비행 중 `contact_expected`. servol 보정은 나중 |
 | `/rally/skill/move_target` | `rally_interfaces/MoveTarget` | 3 (Phase 2) | movec / movesx / moveb 궤적, 환자가 맞혀야 하는 후기 단계 |
 | `/rally/skill/detach_ball` | `rally_interfaces/DetachBall` | 3 | 힘 제어 당김, 힘 급락으로 떼어짐 판정 |
 | `/rally/skill/handover` | `rally_interfaces/Handover` | 5 | 기울여 제시, 당김 힘 감지 해제, servol 손 추종 |
@@ -109,6 +111,8 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 | `/rally/session/run` | `rally_interfaces/RunSession` | 전체 | brain 최상위 action |
 
 ## 4.1 모드 3 요격 타이밍
+
+**10/11 구현 (`flight_predictor`)**: 손목·측면 RealSense 컬러 60 Hz → velcro_ball YOLO(두 장 묶음) → 측면 시각에 손목 픽셀 보간 + 삼각측량(측면 자세·시각 차는 `mode3_side_calib.json`) → 투구 시작 판정(로봇 쪽 1.5 m/s 이상 3점, 시작점 x ≥ 1.2 m) → EKF(중력 + 공기 저항) → 패드 평면 교차점이 패드 중심 0.6 m 안일 때만 발행. 10/10 bag 재생 오차 0.16 s 중앙 약 3 cm. 아래는 처음 계획(웹캠 기준):
 
 릴리스 검출(손·공 마스크 분리, 웹캠 60 Hz) → 3~5 프레임 후 첫 착지 예측 발행 → `catch_ball`이 `lead_time_s`만큼 앞선 시각의 예측점으로 amovel → 매 프레임 갱신되는 예측으로 servol 보정 → 착지 → 패드 위 공 판정. 공 비행 시간이 보통 0.5~0.8 s(살살 토스)이므로 카메라→로봇 전체 지연을 100 ms 안쪽으로 맞추는 것이 핵심(`scripts/measure_latency.py`).
 
@@ -185,16 +189,9 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 
 음성 재개는 발화 timestamp가 현재 휴식 시작 이후인 경우만 허용한다. zero stamp·오래된/중복 발화는 재개하지 않는다. 대시보드 요청은 화면에 표시된 세션·휴식 ID를 보내므로 이전 세션/휴식에서 누른 버튼은 거절된다. 안전 여부는 화면의 표시가 아니라 brain이 결정한다.
 
-### 모드 1 손 근접 STOP 대기 (#98 4번, 1단계 — 2026-10-11)
+### 모드 1 손 근접 STOP 대기
 
-- 대상: 모드 1에서 걸린 STOP 중 사유가 `skills.yaml brain.hand_stop_wait_reasons`(`hand_near_robot`·`hand_near_centerline`·`hand_lost_near`, 정확한 문자열)인 것. safety_monitor 에서 비래치(손이 빠지면 스스로 풀림)인 사유다.
-- 동작: 세션을 끝내지 않고 BT tick 을 멈춘 채 기다린다(새 명령 없음). 안내 TTS `hand_stop_prompt`(10 s 간격). 안전 레벨이 **NORMAL** 로 `hand_stop_resume_hold_s`(1 s) 이어지면 같은 시도를 이어 간다. SLOW 는 재진행 조건이 아니다. 기다린 시간은 대기 블록의 timeout 계산에서 뺀다. Brain 은 STOP 을 낮추거나 reset 하지 않는다.
-- 로봇이 서 있을 때(스킬 goal 전·받기 관측·손 이탈 대기·시도 사이)는 그대로 기다린다. **로봇이 움직이는 중**이면 그 명령이 받은 진행 단계(`feedback.phase`)로 판단한다:
-  `go_hand_view` → 손이 빠지면 다시 요청 / PushBall `place` 전(관측 자세·집기) → 같은 goal 다시 보냄(쥐고 있으면 스킬이 집기를 건너뜀) / ReturnBall `find`·`out_of_reach` → 다시 보냄, `hand_view` → 회수 끝난 것으로.
-  PushBall `place` 이후(놓기~치기~복귀)·ReturnBall `pickup`~`drop` 은 공·그리퍼 상태가 애매해 세션 종료(2단계: 로봇 스킬에 '입구 공 바로 치기'·'쥔 공 거치대로' 옵션 필요). 재전송은 NORMAL 1 s 유지 뒤, 명령당 최대 5회.
-- 그대로 세션 종료: 위 표에서 이어 갈 수 없는 단계의 STOP, 그 밖의 모든 STOP 사유(래치·`*_missing`·`wrench_lost`·모르는 사유), 모드 1 이 아닌 모드, 대기 중 다른 STOP·context 끊김·세션 취소.
-- 대기 중 모드 전환·난이도 변경은 거절, LLM 제안은 무효화, 휴식 요청은 보존한다. TrialResult 는 만들지 않는다(로그만).
-- 깊은 침입과 선 기준 근접의 구분, 위 세션 종료 단계의 이어 가기는 2단계(로봇 쪽 계약 필요).
+모드 1 에서 손 근접 STOP 이 걸리면 세션을 끝내지 않고 기다렸다가 이어 간다 (#115). 대상·조건·단계별 처리는 **9절**. 이 절의 상태 표시는 `/rally/brain/state` 의 `hand_stop_wait`, Redis `rally:session_control.hand_wait`(대기 사유) 두 가지다.
 
 ### 모드 1 손 시작 위치 대기 (PR #87 PM 정정·사용자 합의)
 
@@ -202,6 +199,94 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 난이도별 reach는 기존 RMSE×2 간격이며 손의 레인 축 투영 거리 ≥ 목표 거리 + reach일 때만 타격한다.
 부족하거나 유효 손/NORMAL이 없으면 안내하며 대기한다. 대기 중에는 손 표본을 갱신하고 전송 직전에 조건을 재검증한다.
 STOP·취소는 기존 세션 중단 처리. 타격 action 실패 시에도 다음 타격을 시작하지 않고 기록 후 종료하여 운영자가 공·그리퍼 상태를 확인한다.
+
+## 8. LLM 선제 제안 확인 정책 — 확정 정책 (2026-10-08, 휴식 제안은 #103 에서 구현 — 아래 「휴식 제안」 절)
+
+사용자 결정: **직접 요청은 처리하고, LLM의 선제 제안은 확인받는다.** 이 절은 목표 동작이며 7절의 기존 구현에 확인 기능이 이미 연결됐다는 뜻이 아니다. 새 서비스/토픽/HTTP 경로와 메시지 필드는 후속 구현 계획에서 정하고 명세와 함께 반영한다.
+
+| 입력 | 목표 동작 |
+|---|---|
+| 명시적 휴식 요청 | 재확인 없이 현재 시도·회수 완료 후 휴식 |
+| 명시적 쉽게/어렵게 요청 | 지원하는 모드의 허용 레시피를 다음 시도에 적용. 휴식 중 변경 거절 및 기존 범위 제한 유지 |
+| 명시적 재개 요청 | 기존 휴식 상태·안전·준비 검사 후 같은 모드·난이도로 재개 |
+| LLM의 휴식/쉽게 제안 | 환자 음성 또는 운영자 대시보드의 수락을 기다림. 수락 전에는 제안으로 제어 상태를 변경하지 않음 |
+| 거절·무응답·만료 | 제안으로 상태를 바꾸지 않고 기존 규칙을 따름. 무응답을 수락으로 간주하지 않음 |
+| 안전 STOP·세션 취소 | 확인을 기다리지 않고 기존 중단 처리. 대기 제안 무효화, 수락으로 STOP 해제·세션 부활 금지 |
+
+- LLM은 허용 행동과 짧은 이유만 제안한다. 속도·힘·좌표는 출력하지 않는다. `continue`는 상태 변경 제안이 아니므로 수락을 요구하지 않는다.
+- 수락 시에도 현재 세션·모드·난이도·안전·준비 상태와 제안의 유효성을 다시 확인한다. 적용은 현재 시도·회수 완료 후 경계에서만 한다. 모드 1 자동 난이도 차단을 우회하지 않으며 수락된 명시적 변경 경로만 검토한다.
+- 세션별 대기 제안은 한 개로 제한한다. 제안 ID는 brain이 생성하고 한 번만 소비한다. 세션 종료·모드/난이도 변경·명시적 제어 요청으로 충돌하는 제안은 무효화한다. 제안 유효 시간은 20초다. 무응답이면 만료시키고 적용하지 않는다.
+- 오래된/중복 음성, 다른 세션의 버튼, 이미 소비·거절·만료된 제안은 적용하지 않는다. 화면 클릭만으로 성공 처리하지 않고 brain의 적용 예약/거절 응답을 표시한다.
+- LLM 호출은 비동기·3 s 제한·스키마/허용 목록 검증·규칙 폴백을 유지한다. 수락 대기는 LLM 호출 시간 제한과 별개이며 BT·안전 감시를 막지 않는다.
+
+### 제안 안내·대기 동작 — 사용자 확정 (2026-10-08)
+
+- 휴식 제안 발화는 **“혹시 피곤하진 않으세요? 조금 쉬었다 할까요?”**로 고정한다. LLM이 생성한 이유와 실제 환자에게 말하는 확인 문구를 구분하며, 이 발화는 피로를 확정하는 표현으로 바꾸지 않는다.
+- 제안 후 **20초** 동안 응답을 기다린다. 기다리는 동안에는 기존 훈련을 계속하며, 제안 때문에 다음 시도를 막거나 휴식 상태로 바꾸지 않는다. 기존 안전 감시·직접 제어 요청은 그대로 우선한다.
+- 유효한 제안에 대한 “아니요” 등 명시적 거절은 **즉시 제안을 종료**한다. 남은 시간을 기다리지 않고 이후 수락도 거절한다. 적용 효과는 무응답 만료와 같지만 기록에서는 거절과 시간 만료를 구분한다.
+- 유효 시간 안에 수락되면 제안을 한 번 소비하여 적용을 예약한다. 현재 진행 중인 시도·회수 완료 후 휴식하며, 수락 후 시도 완료를 기다리는 시간에는 응답 만료 타이머를 다시 적용하지 않는다. 예약 뒤에도 STOP·취소·세션 종료 등 무효화 조건은 유지한다.
+- 무응답 만료 또는 거절 뒤에는 기존 훈련을 계속한다. 다른 대화의 “아니요”를 무조건 제안 응답으로 취급하지 않고, 현재 유효한 제안과 음성 응답의 연결은 아래 음성 계약에서 확정한다.
+
+### 음성 계약에서 정리할 부분
+
+현재 `intent_rules.py`의 tired는 상태 표현(힘들다/피곤하다)과 휴식 요청(쉬자)을 함께 포함하고, `intent_llm.py`의 easier도 불편 표현을 포함한다. 기존 brain은 tired를 바로 휴식 요청으로 처리한다. 따라서 현 구현만으로 위 정책을 충족했다고 볼 수 없다.
+
+후속 구현에서는 명시적 휴식 요청을 pause, 명시적 난이도 요청을 harder/easier로 분류하고 상태 표현은 직접 제어와 분리한다. 상태 표현은 규칙에 따라 의사를 확인하거나 애매한 경우 LLM 제안의 근거로 사용할 수 있다. VoiceIntent에는 현재 수락/거절 의도가 없으므로 정동휘 담당 음성 분류와 제안 ID·발화 시각 연계 계약을 맞춰야 한다. 임의의 모든 “네” 또는 resume을 제안 수락으로 해석하지 않는다.
+
+## 9. 모드 1 손 근접 STOP 대기·재진행 — #98, 1단계 구현 (#115, 2026-10-11)
+
+모드 1 에서 **비래치 손 근접 STOP** 만 세션을 유지하고 기다린다. 그 밖의 STOP 은 7절대로 세션 종료. 안전 감시의 거리 계산·임계값·정지 실행은 로봇 파트(safety_monitor)가 맡고, **Brain 은 STOP 을 낮추거나 reset 하지 않는다.** 코드: `rally_brain/hand_stop.py`, `bt_runner._handle_hand_stop`, `trees/mode1_push.py`.
+
+### SafetyStatus.reason 별 Brain 처리 (#104 최종 · 정정인 확정 계약)
+
+| `reason` | 래치 | Brain 처리 |
+|---|---|---|
+| `hand_near_robot` · `hand_near_centerline`(얕은 근접) · `hand_lost_near` | 아님 | **모드 1 손 근접 대기** (아래 조건) |
+| `hand_deep_intrusion` (로봇 쪽 분리 예정) | 아님 | **자동 재진행 대상 아님** — 대기 목록에 넣지 않는다 (세션 종료) |
+| `wrench_missing` · `tcp_missing` · `wrench_lost` | 아님 | 손 대기 아님 — 세션 종료 (운영자 확인) |
+| `force_limit` · `nudge` · `workspace_limit` · `estop` · `voice_stop` · `fist_gesture` | 래치 | 세션 종료 (`reset_safety` 수동) |
+| SLOW 사유 (`hand_distance_unknown` · `hand_near_patient_contact` · `*_stale` 등) | — | STOP 아님, 대기 대상 아님 |
+
+- 대기 목록은 `skills.yaml brain.hand_stop_wait_reasons` 의 **정확한 문자열**만 (`hand_*` 접두사 허용 없음), 대상 모드는 `hand_stop_wait_modes: [1]`.
+- 복수 원인이면 safety_monitor 는 가장 심한 레벨의 첫 사유 하나만 낸다. 래치 STOP 중에는 손 판정을 하지 않으므로 손 사유가 래치 STOP 을 가리지 않는다.
+- **주의**: 지금 main 의 safety_monitor 는 중앙선 너머 깊은 침입도 `hand_near_centerline` 으로 낸다. `hand_deep_intrusion` 분리(정정인)가 들어가기 전까지는 깊은 침입도 대기 대상이 된다. 분리 PR 이 들어오면 대기 목록은 그대로 두면 된다 (새 이름은 목록에 없으므로 세션 종료).
+
+### 대기·재진행 조건 (구현된 동작)
+
+- 대기 중에는 BT tick 을 멈춘다(새 명령 없음). 안내 TTS `hand_stop_prompt` 를 `hand_stop_prompt_s`(10 s) 간격으로.
+- **재진행 = 안전 레벨 NORMAL 이 `hand_stop_resume_hold_s`(1 s) 이어짐.** 손 좌표·손이 보이는지는 조건이 아니다 — 카메라가 그리퍼 위(eye-in-hand)라 자세에 따라 손이 영원히 안 보일 수 있고, 손이 보이는 위치 자체가 안전거리 안일 수 있기 때문이다 (조정묵 결정, #115 리뷰). SLOW 는 재진행 조건이 아니다.
+- 기다린 시간은 대기 블록의 timeout 계산에서 뺀다 (멈춘 시간 때문에 바로 timeout 나지 않게).
+- **후속 이슈** (#115 리뷰, 정정인): `hand_stop_mode=stop` 에서 `hand_lost_near` 로 들어간 대기만 재진행 조건 하나 추가 (손이 다시 보이거나 운영자 확인). 지금은 `hand_lost_near` STOP 1 s → SLOW 3 s → NORMAL 1 s 로 최소 약 5 s 뒤 재진행.
+
+### 중단 단계별 처리
+
+로봇이 서 있을 때(스킬 goal 전·받기 관측·손 이탈 대기·시도 사이)는 그대로 기다린다. **로봇이 움직이는 중**이면 그 명령이 받은 진행 단계(`feedback.phase`)로 정한다.
+
+| 중단 시점 | 해제 뒤 처리 |
+|---|---|
+| 관측 자세 이동 `go_hand_view` | 손이 빠지면 다시 요청 |
+| PushBall `place` 전 (관측 자세·집기) | 같은 goal 다시 보냄 (쥐고 있으면 스킬이 집기를 건너뜀) |
+| ReturnBall `find` · `out_of_reach` | 다시 보냄 |
+| ReturnBall `hand_view` | 회수 끝난 것으로 |
+| PushBall `place` 이후 (놓기~치기~복귀) · ReturnBall `pickup`~`drop` | 공·그리퍼 상태가 애매해 **세션 종료** (2단계: 로봇 스킬에 '입구 공 바로 치기'·'쥔 공 거치대로' 옵션 필요, #117) |
+
+재전송은 NORMAL 1 s 유지 뒤, 명령당 최대 5회. 공 회수 전 손 이탈 확인은 별도 조건이다: 최신 검출 손의 중앙선 거리 ≥ `skills.yaml mode1.hand_clear_m`(0.20 m, `safety.yaml slow_distance_m` 과 별개 — #113).
+
+### 그대로 세션 종료
+
+위 표에서 이어 갈 수 없는 단계의 STOP, 대기 목록에 없는 모든 STOP 사유(래치·`*_missing`·`wrench_lost`·`hand_deep_intrusion`·모르는 사유), 모드 1 이 아닌 모드, 대기 중 다른 STOP·context 끊김·세션 취소. 일단 종료된 세션은 나중에 NORMAL 이 와도 되살리지 않는다.
+
+### 휴식·표시·기록
+
+- 대기 중 모드 전환·난이도 변경은 거절, LLM 제안은 무효화, 휴식 요청은 보존한다. 음성/대시보드 `resume` 은 손 근접 대기를 우회하지 않는다.
+- 표시: `/rally/brain/state` = `hand_stop_wait`, Redis `rally:session_control.hand_wait` = 대기 사유 (7절 표).
+- 대기 진입·해제는 로그로 남기고, 대기 때문에 TrialResult 를 따로 만들지 않는다 (논리적 시도당 결과 한 번).
+
+### 남은 것
+
+1. 로봇 쪽: `hand_deep_intrusion` 분리 (정정인), action 취소·정지 확인 계약 (9절 계약 2번, 정정인 별도 정리)
+2. 2단계: 위 '세션 종료' 단계의 이어 가기 — 로봇 스킬 옵션 (#117)
+3. 로봇·인식 PC 실기 확인: 움직이는 중 손 STOP → 손 빼기 → 같은 시도 이어 감. 문서 갱신을 실물 검증 완료로 보지 않는다.
 
 ## 휴식 제안 — LLM 판단·대시보드 응답
 
