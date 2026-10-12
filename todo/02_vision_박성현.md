@@ -39,14 +39,19 @@
 - [ ] 막대·컵 주축으로 파지 각도 → 정정인 `PickCompliant.yaw`로 전달 테스트 (cup·stick 모델 있음 → 로봇 10분)
 - [ ] 손 마스크·물체 마스크 접촉/분리 판정 함수 (릴리스 검출 기초) — 그리퍼에 쥔 cup·stick 사진(cup_grip 31·stick_grip 40)은 이미 학습됨. 사람 손에 쥔 사진은 아직 — 필요하면 추가
 
-## Day 4 — 모드 3 착수 (챌린지, Day 6 까지)
-- [ ] `flight_predictor.py`: 손목 RealSense 60 fps 주 센서(YOLO + ROI 추적) + 웹캠(C270 약 20 fps) 보조 → 릴리스 검출 → 항력 있는 칼만 필터 → `predicted_landing`·시각·confidence(불확실도), `/rally/perception/landing` 발행. (10/7 이슈 #38: 웹캠 60 fps 불가, 색 검출 오검출 → 계획 수정. INTERFACES 4.1 수정 필요)
-- [ ] 단안 거리: 공 지름(기지) + webcam_link tf + 테이블 평면 교차. RealSense가 보이는 구간은 깊이로 보정
-- [ ] 살살 토스 20회 기록 → 최종 예측 vs 실제 착지 오차(목표 ≤ 50 mm), 첫 예측까지 시간(≤ 100 ms)
-- [ ] `pad_hit_judge.py`: 패드 마스크 안에서 `velcro_ball` 마스크 분리 → 받았는지, 패드 중심 대비 오차(mm)
-- [ ] 패드 위 공 3D 위치 → 정정인 `DetachBall.ball_pose`
-- [ ] (정동휘와) 릴리스 순간 검출 통합: 손 마스크·공 마스크 분리 프레임 + HandState
-- [ ] 명중 판정 정확도 테스트 20회 (≥ 95 %)
+## Day 4 — 모드 3 (10/12 정동휘가 `docs/mode3/MODE3_PLAN.md` 기준으로 갱신. 10/7 항목은 #128 로 대체돼 지움)
+- [x] `flight_predictor` 노드 (두 RealSense YOLO → 삼각측량 → EKF → `/rally/perception/landing`·`landing_info`) — PR #128 (10/11)
+- [x] `catch_ball` ② amovel 1회 구현·fake 확인 — PR #128. 실로봇은 아직
+- [ ] **② 전 코드 수정 (MODE3_PLAN 4.1)**: ① 명중 판정 창(도착 뒤 0.4 s 안정 대기 때문에 공 도착 0.74 s 를 놓침 → 출발 직후부터 힘 기록, 관성 구간만 제외) ② 아래 이동 상한 8 cm 로 `updown_max_m` 위/아래 분리 ③ 패드 평면을 동휘 패드 TCP 한 값에서 노드·스킬 둘 다 읽게 ④ 힘 영점 자세 차이·임계 4 N 재검토 ⑤ 정정인 #128 코멘트 1~4 ⑥ 반경 밖이면 힘 판정 안 함 ⑦ INTERFACES catch_ball 행 `catch_ball_after.py` 오기 ⑧ 방향별 속도(옆 730 · 위아래 600, 가속 2000)
+- [ ] ③ 비행 중 갱신 구현 (예측 3 cm 넘게 바뀌면 amovel 재전송. #130: 0.15 s 뒤 재전송은 최고 속도 0.52 > 0.45 → 간격·속도 대책)
+- [ ] ④ servol 연속 보정 구현 (목표 변화량 제한 + `get_robot_state` 알람 감지 + speed_scale 직접 적용. #130: 0.16~0.26 m/s 포화, 1 Hz 이하만)
+- [ ] 측면 RealSense tf 프레임 이름·static tf 값 → 조정묵 pc2 launch 에, INTERFACES 1절
+- [ ] INTERFACES 4.1 옛 웹캠 설명 삭제, 실측 타이밍으로
+- [ ] Isaac 트윈 2~3단계(패드·공·측면 카메라) + 액추에이터 게인을 #130 응답에 맞춤 → sim-real 검증(투구 10회 재현, 요격점 ≤ 3 cm) — **10/12 시작** (정동휘 결정, 시연 이후에서 당김)
+- [ ] 강화학습 1단계(대기 위치·출발 시점) → 2단계(패드 평면 안 보정) → 같은 투구로 기준선 vs 1·2단계 비교. 성공 = 벨크로 면 접촉(입사각 조건 없음, 10/12 동휘 확인)
+- [ ] 오프라인 도구 PR (`mode3_traj.py`·`mode3_success.py`·`export_frames.py`·`training/mode3_sweep.py`·`mode3_eval.py`)
+- [ ] 기준선 ①~④ 성공률 계산 (유효 범위 = 동휘 실측 도달 거리 타원, 왼쪽은 패드 끝. 보고: 유효 투구 성공률·전체 성공률·범위 밖 비율)
+- [ ] (보류, 정정인 자리) `after_catch()` 패드 거치·떼어내기·건네기 — 모드 1·5 끝난 뒤 배정
 
 ## Day 5 — 모드 1 예측
 - [ ] `predictor.py`: 칼만 필터(위치·속도) + 마찰 감속 모델 → `predicted_stop`, `predicted_stop_time` — **정동휘가 맡음** (10/7, `todo/03` Day 5). `tracker_node` 연결은 박성현 — **보류 (#69, 10/7)**: 모드 1 은 밀기 전 레시피 예측으로, 칼만은 모드 3 에 먼저

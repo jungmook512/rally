@@ -5,7 +5,7 @@ uint8 DIR_RECEIVE=1
 uint8 direction
 string object_class                   # rod | cup | velcro_ball | ball
 float32 tilt_deg                      # 제시 각도 (손목 회전 훈련)
-bool follow_hand                      # RECEIVE 시 손 추종(servol) 여부
+bool follow_hand                      # 사용 안 함 (#134: 손 추종 받기 제외). true 여도 고정 자세에서 받는다. 필드 삭제는 팀 합의 후
 float32 release_force_threshold_n     # GIVE: 환자가 당기는 힘 감지 임계값
 float32 timeout_s
 ---

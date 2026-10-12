@@ -99,6 +99,7 @@ DEFAULTS = dict(
     hand_view_tilt_deg=45.0,       # 수직에서 진행 방향으로 기울이는 각
     hand_view_back_m=0.10,         # 레인 입구(공 놓는 자리)에서 로봇 쪽으로 이만큼 뒤 (TCP)
     hand_view_height_m=0.30,       # 테이블 위 TCP 높이
+    hand_view_center=None,         # [x m, y m, 방향 deg] — 있으면 레인 평균 대신 이 점 기준 (10/12 레인 3 제거 뒤 자세 고정)
     hand_view_hold_s=2.0,          # (end_at_hand_view 가 아닐 때) 이 자세에서 기다렸다 관측 자세로
     hand_view_joint_vel_deg_s=30.0,   # 손 보기 자세 관절 이동 상한 (motion: 의 절반). 10/8 실로봇: 손목 45° 기울이는 이 이동에서
     hand_view_joint_acc_deg_s2=60.0,  #   관절 토크 추정 툴 힘이 19 N(도착 감속)·25 N 초과(force_limit STOP) — 접촉 없음
@@ -120,9 +121,13 @@ def hand_view_pose(cfg, lanes, table):
     카메라 넓은 화각(69°)이 좌우로 놓여 레인 3개 끝을 다 본다. lanes 가 없으면 None."""
     if not lanes:
         return None
-    bx = sum(float(ln["start"][0]) for ln in lanes) / len(lanes)
-    by = sum(float(ln["start"][1]) for ln in lanes) / len(lanes)
-    dd = math.radians(sum(float(ln.get("dir_deg", 0.0)) for ln in lanes) / len(lanes))
+    center = cfg.get("hand_view_center")
+    if center:          # 10/12: 레인 3 을 빼도 손 보기 자세는 그대로 (레인 3개 평균 고정값 — 남은 2개 평균이면 J1 −7° → 39° 로 크게 바뀜)
+        bx, by, dd = float(center[0]), float(center[1]), math.radians(float(center[2]))
+    else:
+        bx = sum(float(ln["start"][0]) for ln in lanes) / len(lanes)
+        by = sum(float(ln["start"][1]) for ln in lanes) / len(lanes)
+        dd = math.radians(sum(float(ln.get("dir_deg", 0.0)) for ln in lanes) / len(lanes))
     d = (math.cos(dd), math.sin(dd))
     return _hand_view_pose(cfg, (bx, by), d, float(table.get("z_m") or 0.0), math.degrees(dd) + cfg["push_yaw_deg"])
 

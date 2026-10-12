@@ -163,3 +163,17 @@ def test_default_model_paths(tmp_path, monkeypatch):
     assert [p.split("/")[-1] for p in sn.default_model_paths()] == ["yolov8n-seg_ball.pt", "yolov8n-seg_cupstick.pt"]
     (tmp_path / "yolov8n-seg_rally.pt").write_bytes(b"")
     assert [p.split("/")[-1] for p in sn.default_model_paths()] == ["yolov8n-seg_rally.pt"]
+
+
+def test_image_axis_angle_from_up_clockwise_positive():
+    # 화면 위쪽 0°, 오른쪽으로 기울면 +, 방향 없는 막대라 (−90, 90]
+    def bar(du, dv):
+        m = np.zeros((200, 200), bool)
+        for t in np.linspace(-60, 60, 400):
+            m[int(100 + t * dv), int(100 + t * du)] = True
+        return pj.mask_principal_axis(m)
+    assert math.degrees(pj.image_axis_angle(bar(0.0, 1.0))) == pytest.approx(0.0, abs=1.0)
+    s = math.sqrt(0.5)
+    assert math.degrees(pj.image_axis_angle(bar(s, -s))) == pytest.approx(45.0, abs=1.5)    # 위로 갈수록 오른쪽
+    assert math.degrees(pj.image_axis_angle(bar(s, s))) == pytest.approx(-45.0, abs=1.5)    # 아래로 갈수록 오른쪽 = 위는 왼쪽
+    assert math.degrees(pj.image_axis_angle(bar(1.0, 0.0))) == pytest.approx(90.0, abs=1.0)
