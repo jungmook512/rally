@@ -116,6 +116,9 @@ class BtRunner(Node):
         self._proposal_cancelled = False
         self._rest_generation = 0
         self._rest_advisor = configured_advisor()
+        self._exposure = self._make_exposure()                       # 모드 3 동안만 손목 카메라 노출 고정 (camera_exposure.py)
+        if self._exposure is not None:
+            self._exposure.want(False)                               # 켜질 때 자동 노출 한 번 (모드 3 도중 재시작 대비, #139 리뷰)
         self.get_logger().info(f"휴식 LLM: {self._rest_advisor.status}")
         self._switch_lock = self.control.lock                         # 세션·전환·휴식의 공통 lock
         self._safety_abort = False                                    # STOP 한 번 수신하면 세션 종료까지 유지
@@ -533,7 +536,7 @@ class BtRunner(Node):
                           publish=self._trial_pub.publish, action_client=self._action_client,
                           skills_cfg=self._skills_cfg, say=self._say, after_trial=self._after_trial,
                           service_client=self._service_client, allow_trial=self._allow_trial,
-                          robot_resume_ok=self._robot_resume_ok)
+                          robot_resume_ok=self._robot_resume_ok, exposure_fixed=self._exposure_fixed)
         tree = py_trees.trees.BehaviourTree(build_session_tree(session, modes, n))
         with self._switch_lock:
             self._session, self._pending_switch = session, None
@@ -576,6 +579,8 @@ class BtRunner(Node):
                     self._poll_rest()
                 tree = self._apply_switch(tree, session, n)
                 tree.tick()
+                if self._exposure is not None:
+                    self._exposure.want(session.current_mode == TrialResult.MODE_CATCH_PAD)
                 tip = tree.tip()
                 self._state_name = tip.name if tip is not None else "idle"
                 status = tree.root.status
@@ -592,6 +597,8 @@ class BtRunner(Node):
         finally:
             self._state_name = "idle"
             self._hand_wait = None
+            if self._exposure is not None:
+                self._exposure.want(False)                           # 정상·취소·중단 모두 자동 노출로
             with self._switch_lock:
                 self._invalidate_rest()
                 self.control.finish(outcome)
@@ -717,6 +724,20 @@ class BtRunner(Node):
         hold = float(self._hand_cfg["hand_stop_resume_hold_s"])
         return (self._hand_wait is None and self._normal_since is not None
                 and time.monotonic() - self._normal_since >= hold)
+
+    def _exposure_fixed(self) -> bool:
+        """모드 3 투구 안내 전 — 손목 노출 고정이 적용됐는가. cameras.yaml 이 없어 노출을 안 다루면 참."""
+        return self._exposure is None or self._exposure.state is True
+
+    def _make_exposure(self):
+        """cameras.yaml 을 못 읽으면 None — 노출은 건드리지 않음 (카메라 기본 = 자동)."""
+        try:
+            from rally_bringup.camera_params import load
+            from rally_brain.camera_exposure import ExposureSwitch
+            return ExposureSwitch(self, load())
+        except Exception as e:  # noqa: BLE001
+            self.get_logger().warn(f"[카메라] cameras.yaml 읽기 실패 — 모드 3 노출 고정 안 함 ({type(e).__name__}: {e})")
+            return None
 
     def destroy_node(self):
         self._rest_advisor.close()

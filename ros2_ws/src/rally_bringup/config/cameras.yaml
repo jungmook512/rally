@@ -1,0 +1,24 @@
+# config/cameras.yaml — 로봇·인식 PC RealSense 두 대 (pc2_perception.launch.py 와 brain 이 같이 읽는다)
+# 10/12 조정묵 결정: 두 카메라 모두 항상 60 fps. 노출은 손목 = 평소 자동, 모드 3 동안만 고정 (brain 이 바꾼다) / 측면 = 항상 고정.
+# 값 근거: docs/mode3/MODE3_RESULTS.md 10/10 (박성현 실측 — 두 대 동시 60 fps 끊김 없음, 노출 20 · gain 128 에서 날아가는 공 번짐 없음)
+# 시리얼은 따옴표 필수 (숫자로 읽히지 않게). launch 는 드라이버 관례대로 앞에 _ 를 붙여 넘긴다.
+
+wrist:                                  # 그리퍼 위 (eye-in-hand). 토픽 /camera/color/... (INTERFACES 2.1)
+  serial: "140122076335"
+  namespace: ""
+  name: camera
+  node: /camera                         # 노출을 바꿀 때 쓰는 드라이버 노드 이름 (namespace + name)
+  color_profile: "848,480,60"
+  depth_profile: "848,480,60"           # 정렬 깊이 (손·물체 3D)
+
+side:                                   # 측면 (모드 3 투구 삼각측량 전용). 토픽 /side/side/color/...
+  enabled: true                         # 없거나 안 꽂혀 있으면 launch 인자 side_camera:=false (꽂혀 있지 않아도 드라이버가 기다리기만 함)
+  serial: "147122075430"
+  namespace: side
+  name: side
+  node: /side/side
+  color_profile: "848,480,60"           # 깊이는 안 씀 (예측기는 컬러 두 장으로 삼각측량)
+
+fixed_exposure:                         # 모드 3: 손목은 모드 3 동안, 측면은 항상
+  exposure: 20
+  gain: 128
