@@ -77,6 +77,7 @@ mode3:
   resend_until_release_s: 0.45                        #   놓은 뒤 이 시각까지만 (결정 0.25~0.40 s 바로 뒤. 교차 0.74 s, 15 cm 도착 0.52 s → 더 늦으면 못 감)
   resend_max: 1
   contact_window_after_cross_s: 0.5                   # 받기 창(contact_expected) 닫는 시각 = 교차 + 0.5 s (#144: 힘 한계 130 N 은 이 창에만. 비전 판정은 창이 닫힌 뒤에도 계속)
+  contact_window_max_s: 1.5                           # 받기 창 절대 상한 — 연 뒤 1.5 s 면 교차 예측과 무관하게 닫음 (#171 리뷰 10/13. safety.yaml catch_window_max_s 2 s 보다 짧게)
 
 # mode1 (공 굴려주기) — 가이드 길 2개 (10/12: 3개 → 2개) (폭 10~12 cm, 높이 ≤ 공 반지름)
 #   start: 공을 놓는 자리 (base, m). 공 위에 TCP 를 대고 scripts/print_pose.py 로 읽는다. z 는 안 쓴다(table.yaml 사용)

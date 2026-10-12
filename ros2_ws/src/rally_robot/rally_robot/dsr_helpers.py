@@ -196,7 +196,7 @@ def move_checked(node, pose6, vel, acc, timeout_s=None, poll_s=0.02, on_poll=Non
     - retarget() 이 새 posx 를 돌려주면 **멈추지 않고** 그 목표로 amovel 을 다시 보내고 도착 판정도 새 목표로 (모드 3 비행 중 갱신, 직선 amovel 만).
       실측(10/12 #130): 출발 직후 다시 보내면 첫 동작 위에 얹혀 실속도가 명령값을 넘을 수 있다 — 부르는 쪽이 횟수·시각을 제한할 것
     - timeout_s 가 None 이면 현재 자세 → 목표 거리와 속도로 계산(motion_timeout_s)"""
-    from DSR_ROBOT2 import amovel, check_motion, get_current_posx, posx
+    from DSR_ROBOT2 import DR_MV_RA_OVERRIDE, amovel, check_motion, get_current_posx, posx
     if via is not None:
         from DSR_ROBOT2 import amovec
     if path:
@@ -245,9 +245,11 @@ def move_checked(node, pose6, vel, acc, timeout_s=None, poll_s=0.02, on_poll=Non
                 return "interrupted"
             if retarget is not None and via is None and not path:
                 new6 = retarget()
-                if new6 is not None:
+                # 감속 배율이 바뀌었으면 재전송하지 않는다 — 아래에서 멈추고 다시 명령 (원래 속도로 보낸 직후 정지 방지, #166 리뷰)
+                if new6 is not None and (node.speed_scale() < 1.0) == slowed:
                     new6 = [float(v) for v in new6]
-                    ret = amovel(posx(*new6), vel=v_cmd, acc=a_cmd)
+                    # ra=OVERRIDE: 진행 중 동작을 새 목표로 바꿈. 기본 DUPLICATE 는 앞 동작에 겹쳐 속도가 명령값을 넘는다 (#130 실측 0.52 > 0.45 m/s 의심, #166 리뷰)
+                    ret = amovel(posx(*new6), vel=v_cmd, acc=a_cmd, ra=DR_MV_RA_OVERRIDE)
                     if ret not in (None, 0):
                         raise SkillAbort(f"amovel_rejected_{ret}", stopped=stop_robot(node.dsr, logger, "재전송 거부"))
                     cur_rt = get_current_posx()[0]

@@ -27,9 +27,7 @@ import time
 
 import numpy as np
 import rclpy
-from cv_bridge import CvBridge
 from geometry_msgs.msg import PointStamped, PoseStamped
-from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.time import Time
@@ -52,6 +50,53 @@ def find_file(names, dirs=MODEL_DIRS) -> str:
             if os.path.isfile(p):
                 return p
     return ""
+
+
+def parse_image_cdr(buf: bytes):
+    """직렬화된(CDR, little endian) sensor_msgs/Image → (stamp_s, height, width, encoding, step, data memoryview). 복사 없음.
+    10/12 밤 실로봇: 1 MB 영상을 받을 때마다 rclpy 메시지로 풀고 bgr 로 바꾸니(초당 120장) 단일 스레드 노드가 18~20 Hz 밖에 못 돌아
+    손목 프레임 간격(53 ms)이 짝짓기 상한(40 ms)을 넘어 예측 0. → raw 로 받아 시각만 읽고, 추론에 쓰는 최신 두 장만 배열로."""
+    mv = memoryview(buf)
+    if len(mv) < 4 or mv[1] not in (0x01, 0x03):            # 캡슐화 헤더: CDR_LE(0x0001) / PL_CDR_LE
+        raise ValueError("little endian CDR 아님")
+    o = 4
+
+    def u32(off):
+        return int.from_bytes(mv[off:off + 4], "little")
+
+    def align(off, n):
+        r = (off - 4) % n
+        return off + (n - r if r else 0)
+
+    sec = int.from_bytes(mv[o:o + 4], "little", signed=True)
+    nsec = u32(o + 4)
+    o += 8
+    n = u32(o)
+    o += 4 + n                                               # frame_id (끝 NUL 포함 길이)
+    o = align(o, 4)
+    h, w = u32(o), u32(o + 4)
+    o += 8
+    n = u32(o)
+    enc = bytes(mv[o + 4:o + 4 + n]).rstrip(b"\0").decode()
+    o += 4 + n
+    o += 1                                                   # is_bigendian
+    o = align(o, 4)
+    step = u32(o)
+    o += 4
+    n = u32(o)
+    o += 4
+    return sec + nsec * 1e-9, h, w, enc, step, mv[o:o + n]
+
+
+def image_from_cdr(buf: bytes) -> np.ndarray:
+    """parse_image_cdr → BGR uint8 (h, w, 3) 연속 배열. rgb8·bgr8 만."""
+    _, h, w, enc, step, data = parse_image_cdr(buf)
+    a = np.frombuffer(data, np.uint8).reshape(h, step)[:, :w * 3].reshape(h, w, 3)
+    if enc == "rgb8":
+        return np.ascontiguousarray(a[:, :, ::-1])
+    if enc == "bgr8":
+        return np.ascontiguousarray(a)
+    raise ValueError(f"인코딩 {enc} 은 안 받음 (rgb8·bgr8)")
 
 
 def stamp_s(st) -> float:
@@ -105,7 +150,6 @@ class FlightPredictorNode(Node):
         d("static_frac", 0.5)                      #   그중 이 비율 넘게 같은 칸이면 고정 물체
         g = lambda k: self.get_parameter(k).value  # noqa: E731
 
-        self.bridge = CvBridge()
         self.imgsz, self.conf, self.device = int(g("imgsz")), float(g("conf")), str(g("device"))
         self.base_frame, self.flange_frame = g("base_frame"), g("flange_frame")
         self.transform_source = str(g("transform_source"))
@@ -164,13 +208,13 @@ class FlightPredictorNode(Node):
         self.max_pair_gap = float(g("max_pair_gap_s"))
         self.assoc: StereoAssociator | None = None          # 측면 camera_info 를 받으면 만든다
 
-        self.wrist = self.side = None                         # (bgr, stamp_s)
+        self.wrist = self.side = None                         # (직렬화된 Image 바이트, stamp_s) — 10/12 raw 수신
         self.K_wrist = None
         self.tcp = None
         self._done_side = None
         self._last_wrist_t = None
-        self.create_subscription(Image, g("wrist_color_topic"), self._on_wrist, qos_profile_sensor_data)
-        self.create_subscription(Image, g("side_color_topic"), self._on_side, qos_profile_sensor_data)
+        self.create_subscription(Image, g("wrist_color_topic"), self._on_wrist, qos_profile_sensor_data, raw=True)
+        self.create_subscription(Image, g("side_color_topic"), self._on_side, qos_profile_sensor_data, raw=True)
         self.create_subscription(CameraInfo, g("wrist_info_topic"), self._on_wrist_info, qos_profile_sensor_data)
         self.create_subscription(CameraInfo, g("side_info_topic"), self._on_side_info, qos_profile_sensor_data)
         self.create_subscription(PoseStamped, g("tcp_pose_topic"), self._on_tcp, qos_profile_sensor_data)
@@ -185,6 +229,7 @@ class FlightPredictorNode(Node):
         self._t_infer = 0.0
         self._n_pub = 0
         self._rx = [0, 0]
+        self._dbg = [0, 0, 0]
         self.create_timer(1.0 / max(float(g("rate_hz")), 1.0), self._tick)
         self.create_timer(5.0, self._stats)
 
@@ -233,12 +278,12 @@ class FlightPredictorNode(Node):
         return c, n / np.linalg.norm(n), path
 
     # --- 구독 ---
-    def _on_wrist(self, msg: Image):
-        self.wrist = (self.bridge.imgmsg_to_cv2(msg, "bgr8"), stamp_s(msg.header.stamp))
+    def _on_wrist(self, buf: bytes):
+        self.wrist = (buf, parse_image_cdr(buf)[0])                # raw — 배열은 _tick 에서 최신 것만
         self._rx[0] += 1
 
-    def _on_side(self, msg: Image):
-        self.side = (self.bridge.imgmsg_to_cv2(msg, "bgr8"), stamp_s(msg.header.stamp))
+    def _on_side(self, buf: bytes):
+        self.side = (buf, parse_image_cdr(buf)[0])
         self._rx[1] += 1
 
     def _on_wrist_info(self, msg: CameraInfo):
@@ -261,8 +306,9 @@ class FlightPredictorNode(Node):
         T_base_tcp = None
         if self.transform_source in ("auto", "tf"):
             try:
-                tf = self.tf_buffer.lookup_transform(self.base_frame, self.flange_frame, Time(nanoseconds=int(t * 1e9)),
-                                                     timeout=Duration(seconds=0.005))
+                # 기다리지 않음 (10/12 밤 py-spy: 단일 스레드라 기다리는 동안 tf 를 못 받아 시간의 63 % 를 여기서 씀 → 수신 18 Hz.
+                # 영상 시각 tf 가 아직 없으면 아래 tcp_pose — 예측하는 동안 로봇은 대기 자세에 서 있다)
+                tf = self.tf_buffer.lookup_transform(self.base_frame, self.flange_frame, Time(nanoseconds=int(t * 1e9)))
                 tr, q = tf.transform.translation, tf.transform.rotation
                 T_base_tcp = pj.pose_to_matrix(tr.x, tr.y, tr.z, q.x, q.y, q.z, q.w) @ self.T_flange_tcp
             except Exception:  # noqa: BLE001
@@ -282,11 +328,12 @@ class FlightPredictorNode(Node):
     def _tick(self):
         if self.assoc is None or self.K_wrist is None or self.side is None or self.wrist is None:
             return
-        (img_s, ts), (img_w, tw) = self.side, self.wrist
+        (buf_s, ts), (buf_w, tw) = self.side, self.wrist
         if ts == self._done_side:
             self.session.tick(ts + self.dt_side)
             return
         self._done_side = ts
+        img_s, img_w = image_from_cdr(buf_s), image_from_cdr(buf_w)
         t0 = time.monotonic()
         res = self.model.predict([img_s, img_w], imgsz=self.imgsz, conf=self.conf, half=True,
                                  device=self.device or None, verbose=False)
@@ -297,6 +344,8 @@ class FlightPredictorNode(Node):
             self.get_logger().warn(f"추론 {dt_inf:.1f} s (첫 호출 워밍업이면 정상)")
         cands_s, cands_w = (self._cands(r) for r in res)
         uv_s, uv_w = self.static["side"].pick(cands_s), self.static["wrist"].pick(cands_w)
+        self._dbg[0] += uv_s is not None
+        self._dbg[1] += uv_w is not None
         self._judge_pad(ts, cands_s)
 
         pts = []
@@ -308,6 +357,7 @@ class FlightPredictorNode(Node):
             else:
                 pts += self.assoc.add_wrist(WristDet(t=tw, uv=uv_w, P=projection_matrix(self.K_wrist, T)))
         pts += self.assoc.add_side(ts, uv_s)
+        self._dbg[2] += len(pts)
         for t, X in sorted(pts, key=lambda a: a[0]):
             c = self.session.add(t, X)
             if c is not None and c.time_to_go > 0:
@@ -356,9 +406,10 @@ class FlightPredictorNode(Node):
     def _stats(self):
         if self._n:
             self.get_logger().info(f"수신 손목 {self._rx[0] / 5.0:.0f} · 측면 {self._rx[1] / 5.0:.0f} Hz · 추론 {self._n / 5.0:.0f} Hz · 평균 {self._t_infer / self._n * 1000:.1f} ms · "
-                                   f"발행 {self._n_pub} · 패드 위 공 {self._n_pad} · 재투영 탈락 누적 {self.assoc.n_rejected if self.assoc else 0} · "
+                                   f"공 검출 프레임 측면 {self._dbg[0]} 손목 {self._dbg[1]} · 3D 점 {self._dbg[2]} · 발행 {self._n_pub} · 패드 위 공 {self._n_pad} · 재투영 탈락 누적 {self.assoc.n_rejected if self.assoc else 0} · "
                                    f"고정 오검출 칸 측면 {len(self.static['side'].static_cells())} 손목 {len(self.static['wrist'].static_cells())}")
         self._n, self._t_infer, self._n_pub, self._n_pad, self._rx = 0, 0.0, 0, 0, [0, 0]
+        self._dbg = [0, 0, 0]          # 10/12 밤 진단: 5 s 동안 공 검출 프레임 측면·손목, 짝지어진 3D 점
 
 
 def main(args=None):
