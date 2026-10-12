@@ -68,6 +68,7 @@ mode3:
   pad_hold_s: 3.0                                     # 패드 위 공이 이 시간 연속 보이면 caught
   pad_gap_s: 0.3                                      #   연속으로 치는 관측 틈 상한
   judge_timeout_s: 5.0                                #   교차 시각 뒤 이 시간 안에 못 채우면 missed
+  contact_window_after_cross_s: 0.5                   # 받기 창(contact_expected) 닫는 시각 = 교차 + 0.5 s (#144: 힘 한계 130 N 은 이 창에만. 비전 판정은 창이 닫힌 뒤에도 계속)
 
 # mode1 (공 굴려주기) — 가이드 길 2개 (10/12: 3개 → 2개) (폭 10~12 cm, 높이 ≤ 공 반지름)
 #   start: 공을 놓는 자리 (base, m). 공 위에 TCP 를 대고 scripts/print_pose.py 로 읽는다. z 는 안 쓴다(table.yaml 사용)
