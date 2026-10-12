@@ -167,3 +167,22 @@ def test_pad_ball_judge_radius():
     assert hit is not None and abs(hit[1] - 0.05) < 1e-3 and np.allclose(hit[0], on_pad, atol=1e-3)
     assert j.check([px(off_pad)], PLANE_P, PLANE_N) is None
     assert j.check([], PLANE_P, PLANE_N) is None
+
+
+def test_parse_image_cdr_matches_rclpy_serialization():
+    """10/12 raw 수신: 직렬화된 Image 를 직접 풀어도 rclpy 와 같은 시각·픽셀 (rgb8 → bgr, frame_id 길이별 정렬)."""
+    import numpy as np
+    from rclpy.serialization import serialize_message
+    from sensor_msgs.msg import Image
+
+    from rally_vision.flight_predictor_node import image_from_cdr, parse_image_cdr
+
+    rgb = np.random.default_rng(0).integers(0, 255, (5, 7, 3), dtype=np.uint8)
+    for fid in ("", "a", "camera_color_optical_frame", "side_color_optical"):
+        m = Image(height=5, width=7, encoding="rgb8", step=21, data=rgb.tobytes())
+        m.header.frame_id = fid
+        m.header.stamp.sec, m.header.stamp.nanosec = 1791803000, 250_000_000
+        buf = serialize_message(m)
+        t, h, w, enc, step, _ = parse_image_cdr(buf)
+        assert (t, h, w, enc, step) == (1791803000.25, 5, 7, "rgb8", 21)
+        assert np.array_equal(image_from_cdr(buf), rgb[:, :, ::-1])
