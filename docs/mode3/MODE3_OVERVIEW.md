@@ -123,7 +123,7 @@ flowchart LR
 | 단계 | 내용 |
 |---|---|
 | ready | 패드 쥐기 확인(`gripper.pad` 38 N) → 대기 자세 `mode3.ready_posj` 로 관절 이동 → 힘 영점 |
-| tracking | 이 goal 뒤 첫 예측이 오면 투구 시작, `contact_expected` ON. 공 놓은 뒤 0.16 s 까지 최신 예측 대기 |
+| tracking | 이 goal 뒤 첫 예측이 오면 투구 시작, `contact_expected` ON (받기 창 열림). 공 놓은 뒤 0.16 s 까지 최신 예측 대기 |
 | intercept | 예측점 − 대기 패드 중심을 패드 면 두 축으로 나눠 왼쪽은 0, 오른쪽 ≤ 15 cm, 위아래 ±15 cm 로 잘라 TCP 를 그만큼 amovel (자세 그대로, 450 mm/s · 1000 mm/s²). catch_radius 밖이면 안 움직임 |
 | judge | 도착 뒤 ~ 교차 시각 + 0.3 s 의 툴 힘 증가 ≥ 4 N 이면 명중. 붙음/튕김 구분은 비전 판정 생기면 |
 | **after** | **`after_catch(node, goal_handle, ctx)` (catch_ball.py 안, 요격 코드와 떨어진 함수) — 정정인 담당**. ctx: 명중 여부·힘·대기 posj·요격 위치·예측점·설정. `ctx.skip_return = True` 면 복귀 생략 |
@@ -138,7 +138,7 @@ flowchart LR
 2. **왼쪽으로는 잡으러 가지 않는다.** 패드 왼쪽 끝 밖으로 온 공은 "환자 투구 실패"로 로봇 성공률 분모에서 뺀다. 판정은 측면 카메라의 실제 궤적으로 사후에. 보고는 유효 투구 성공률 · 전체 성공률 · 왼쪽 투구 비율 세 개를 같이.
 3. 이동은 오른쪽·위·아래 약 15 cm. 현재 `safety.yaml` 작업 공간 그대로(모드 3 전용 작업 공간·힘 한계는 필요하면 정정인·팀 합의 후).
 4. 기준선은 **amovel 만**(예측이 3 cm 넘게 바뀌면 한 번 다시). servol 보정은 나중.
-5. 받는 동안 `contact_expected` 를 켜서 nudge 만 끄고 25 N 힘 한계는 유지.
+5. 받기 창(투구 감지 ~ 교차 + 0.5 s, `contact_window_after_cross_s`) 동안만 `contact_expected` 를 켜서 nudge 를 끈다. 창이 닫히면 비전 판정(3 s)은 창 밖에서 기다린다. 25 N 힘 한계는 그대로 — 130 N 은 이 창에만 걸 예정 (#144, 10/12 창 닫기 구현).
 6. 실시간 추론은 TensorRT.
 
 ## 6. 수치 요약 (10/10 투구 61회, 최종 모델)

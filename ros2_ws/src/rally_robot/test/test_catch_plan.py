@@ -87,3 +87,80 @@ def test_hold_run_and_pad_caught():
     assert not pad_caught(long[:100], long[99], 3.0, 0.3)     # 1.98 s 뿐
     gappy = long[:80] + [v + 0.2 for v in long[80:]]          # 가운데 0.22 s 틈 하나 (허용)
     assert pad_caught(gappy, gappy[-1], 3.0, 0.3)
+
+
+class FakeClock:
+    """monotonic·ROS 시계를 같이 돌린다. sleep 이 시간을 흘린다."""
+
+    def __init__(self, t0=100.0):
+        self.t = t0
+        self.obs = []                                        # (monotonic 시각, 위치)
+
+    def sleep(self, s):
+        self.t += s
+
+    def pad_obs(self, t_from):
+        rows = [(t, p) for t, p in self.obs if t >= t_from and t <= self.t]
+        return [t for t, _ in rows], [p for _, p in rows]
+
+
+def _cfg(**kw):
+    return dict(pad_hold_s=3.0, pad_gap_s=0.3, judge_timeout_s=5.0, judge_poll_hz=20.0, contact_window_after_cross_s=0.5, **kw)
+
+
+def _run_judge(clk, t_cross, cfg=None, closes=None, ticks=None):
+    closes = [] if closes is None else closes
+    ticks = [] if ticks is None else ticks
+    from rally_robot.skills.catch_plan import judge_pad
+    return judge_pad(clk.pad_obs, lambda: clk.t, lambda: clk.t, clk.sleep, lambda: ticks.append(clk.t),
+                     t_from_mono=clk.t, t_cross_ros=t_cross, cfg=cfg or _cfg(), contact_close=lambda: closes.append(clk.t))
+
+
+def test_contact_window_closed():
+    from rally_robot.skills.catch_plan import contact_window_closed
+    assert not contact_window_closed(100.4, 100.0, 0.5)
+    assert contact_window_closed(100.5, 100.0, 0.5)
+
+
+def test_judge_closes_contact_at_cross_plus_half_second_then_keeps_judging():
+    """받기 창은 교차 + 0.5 s 에 한 번 닫히고, 3 s 비전 판정은 그 뒤에도 계속 돌아 caught 가 된다."""
+    clk = FakeClock(100.0)
+    t_cross = 100.6                                        # 교차 0.6 s 뒤
+    clk.obs = [(100.65 + i * 0.02, [0.3, -0.3, 0.5]) for i in range(200)]   # 교차 직후부터 4 s 연속 패드 위
+    closes = []
+    caught, held, actual = _run_judge(clk, t_cross, closes=closes)
+    assert caught and held >= 3.0 and actual == pytest.approx([0.3, -0.3, 0.5])
+    assert len(closes) == 1 and closes[0] == pytest.approx(101.1, abs=0.06)   # 교차 + 0.5 s (폴링 50 ms 안)
+    assert clk.t > closes[0] + 2.0                         # 창이 닫힌 뒤에도 판정이 이어졌다
+
+
+def test_judge_missed_still_closes_window_before_timeout():
+    """공이 안 오면 창은 교차 + 0.5 s 에 닫히고, 판정은 교차 + 5 s 에 missed 로 끝난다."""
+    clk = FakeClock(100.0)
+    closes = []
+    caught, held, actual = _run_judge(clk, 100.6, closes=closes)
+    assert not caught and held == 0.0 and all(np.isnan(actual))
+    assert closes == [pytest.approx(101.1, abs=0.06)]
+    assert clk.t == pytest.approx(105.6, abs=0.06)
+
+
+def test_judge_closes_window_on_interrupt():
+    """판정 중 STOP(tick 이 예외) 으로 빠져나가도 창은 닫힌다 (finally)."""
+    clk = FakeClock(100.0)
+    closes = []
+    from rally_robot.skills.catch_plan import judge_pad
+
+    def tick():
+        if clk.t >= 100.2:
+            raise RuntimeError("stop")
+    with pytest.raises(RuntimeError):
+        judge_pad(clk.pad_obs, lambda: clk.t, lambda: clk.t, clk.sleep, tick, 100.0, 100.6, _cfg(), contact_close=lambda: closes.append(clk.t))
+    assert len(closes) == 1 and closes[0] < 100.6
+
+
+def test_judge_late_cross_clamped_window_is_short():
+    """교차 시각이 이미 지난 뒤 판정에 들어오면(이동이 늦음) 창은 첫 바퀴에 바로 닫힌다."""
+    clk = FakeClock(102.0)
+    closes = []
+    _run_judge(clk, 100.6, closes=closes)
+    assert closes == [102.0]
