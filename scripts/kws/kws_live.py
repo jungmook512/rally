@@ -161,7 +161,8 @@ def run_trial(r: Runner, a) -> None:
                 save_wav(REVIEW / f"trial_{stamp}_{a.trial}_{i + 1:02d}.wav", np.concatenate(audio))
             span = speech_span(rms)
             if span is None:
-                print("  (말소리 없음 — 셈에서 뺌)")
+                fired = f", 모델은 {(hit_at + 1) * CHUNK_S:.2f} s 에 울림 — '지금!' 전에 말했을 수 있음" if hit_at is not None else ""
+                print(f"  (2.5 초 안에 말소리 없음 — 셈에서 뺌{fired})")
                 results.append(("무음", None))
                 continue
             st, en = span
