@@ -8,7 +8,7 @@ mode3_reach_test.py(박성현, PR #130 판 — force_peak_n 열이 있는 것) �
                  python3 scripts/mode3_speed_measure.py plan --go-ready            # 먼저 대기 자세로 이동(⚠ 20 °/s) 후 계획. 기본 후보 730 600 550 500 480 450
                  python3 scripts/mode3_speed_measure.py plan --vels 600 500 450 --dirs +u -u
   2. run      고른 속도로 실제 이동. 힘 한계 파라미터를 시험값으로 올렸다가 끝나면(오류·Ctrl+C 포함) 25 N 으로 되돌리고 확인한다 ⚠ 로봇 움직임
-                 python3 scripts/mode3_speed_measure.py run --vel-y 730 --vel-u 480 --force-limit 130
+                 python3 scripts/mode3_speed_measure.py run --vel-y 730 --vel-u 480            # 힘 한계 기본 80 N (130 N 은 #144 ② 확인 전용, 명시할 때만)
   3. analyze  CSV 들을 읽어 방향별 "명령 뒤 --window s 안에 도착하는 거리"(보간) 와 관성 힘 최대를 뽑아 유효 범위·힘 한계 판정 요약을 쓴다
                  python3 scripts/mode3_speed_measure.py analyze data/measure/mode3_reach_1012_*.csv
               run 은 끝나면 analyze 를 자동으로 부른다.
@@ -35,6 +35,7 @@ MEASURE = ROOT / "data" / "measure"
 SAFETY_NODE = "/rally_safety_monitor"
 FORCE_PARAM = "force_limit_n"
 FORCE_DEFAULT = 25.0
+FORCE_TEST_DEFAULT = 80.0  # 시험 기본 (10/13 정정인 #148): 실측 관성 최대 55 N + 여유. 130 N 은 받기 창(#165) 전용 값이라 시험 전체에는 명시할 때만
 DOWN_MAX_CM = 8.0          # 10/11 −u 9.4 cm 자기충돌
 PAD_R_CM = 7.5
 WINDOW_S = 0.58
@@ -158,7 +159,11 @@ def run_reach(dirs, dists, vel, acc, reps):
 def cmd_run(opt):
     check_down(opt.dist_down)
     before = ros2_param("get")
-    print(f"안전 노드 {SAFETY_NODE} {FORCE_PARAM} 현재 {before} N → 시험값 {opt.force_limit} N (끝나면 {FORCE_DEFAULT} N 으로 되돌림)")
+    restore = before if before is not None else FORCE_DEFAULT
+    if restore > FORCE_DEFAULT:
+        print(f"!! 시작 전 값 {restore} N 이 평소 {FORCE_DEFAULT} N 보다 큼 — 지난 시험이 원복 안 됐을 수 있음. 끝나면 {FORCE_DEFAULT} N 으로 되돌림")
+        restore = FORCE_DEFAULT
+    print(f"안전 노드 {SAFETY_NODE} {FORCE_PARAM} 현재 {before} N → 시험값 {opt.force_limit} N (끝나면 {restore} N 으로 되돌림)")
     batches = [("-y", opt.dist, opt.vel_y), ("+u", opt.dist, opt.vel_u), ("-u", opt.dist_down, opt.vel_u)]
     batches = [b for b in batches if b[0] in opt.dirs]
     print("실행 묶음 (가속 %.0f, 각 %d회):" % (opt.acc, opt.reps))
@@ -166,13 +171,17 @@ def cmd_run(opt):
         print(f"  {d:>3}  {ds} cm  vel {v:.0f}")
     if input("\n로봇이 움직인다. 사람이 로봇 옆에 있고 비상정지에 손이 닿으며, 힘 한계 시험값은 정정인 승인을 받았나? [y/N] ").strip().lower() != "y":
         print("취소"); return 1
-    ros2_param("set", opt.force_limit)
-    now = ros2_param("get")
-    if now is None or abs(now - opt.force_limit) > 1e-6:
-        raise SystemExit(f"힘 한계 설정 확인 실패 (읽은 값 {now})")
-    print(f"힘 한계 {now} N 설정 확인")
+    if opt.force_limit > FORCE_TEST_DEFAULT and input(
+            f"\n힘 한계 {opt.force_limit:.0f} N 은 #144 ② (두산 충돌 감도가 먼저 걸리는지) 확인 전용이다. 팔 닿는 거리 안에 사람이 없고 "
+            "운영자가 비상정지에 손을 올렸나? 결과는 #144 에 남긴다. [y/N] ").strip().lower() != "y":
+        print("취소"); return 1
     csvs, notes = [], []
-    try:
+    try:                                          # set 직전부터 — 확인 get 실패·불일치·Ctrl+C 에도 finally 가 원복 (#148 리뷰)
+        ros2_param("set", opt.force_limit)
+        now = ros2_param("get")
+        if now is None or abs(now - opt.force_limit) > 1e-6:
+            raise SystemExit(f"힘 한계 설정 확인 실패 (읽은 값 {now})")
+        print(f"힘 한계 {now} N 설정 확인")
         for d, ds, v in batches:
             path, ok = run_reach([d], ds, v, opt.acc, opt.reps)
             if path:
@@ -182,11 +191,13 @@ def cmd_run(opt):
                 break
     finally:
         try:
-            ros2_param("set", FORCE_DEFAULT)
+            ros2_param("set", restore)
             back = ros2_param("get")
-            print(f"\n힘 한계 원복: {back} N {'OK' if back is not None and abs(back - FORCE_DEFAULT) < 1e-6 else '!! 확인 필요'}")
-        except SystemExit as e:
-            print(f"!! 힘 한계 원복 실패 — 직접 ros2 param set {SAFETY_NODE} {FORCE_PARAM} {FORCE_DEFAULT}\n{e}")
+            print(f"\n힘 한계 원복: {back} N {'OK' if back is not None and abs(back - restore) < 1e-6 else '!! 확인 필요'}")
+        except BaseException as e:  # noqa: BLE001 — SystemExit·TimeoutExpired·Ctrl+C 모두 수동 원복 안내 (#148 리뷰)
+            print(f"!! 힘 한계 원복 실패 ({type(e).__name__}) — 직접: ros2 param set {SAFETY_NODE} {FORCE_PARAM} {restore}\n{e}")
+            if isinstance(e, KeyboardInterrupt):
+                raise
     print("\n묶음 결과: " + " · ".join(notes))
     if csvs:
         summarize(csvs, opt.window, opt.force_limit, stat="median", extra=f"힘 한계 시험값 {opt.force_limit} N · 가속 {opt.acc:.0f} · " + " · ".join(notes))
@@ -302,13 +313,14 @@ def main() -> int:
     r.add_argument("--dirs", nargs="+", type=str.strip, default=["-y", "+u", "-u"], choices=["-y", "+u", "-u"])
     r.add_argument("--dist", type=float, nargs="+", default=[5, 10, 15])
     r.add_argument("--dist-down", type=float, nargs="+", default=[5, 8])
-    r.add_argument("--force-limit", type=float, default=130.0, help="시험 동안 힘 한계 N (정정인 승인값)")
+    r.add_argument("--force-limit", type=float, default=FORCE_TEST_DEFAULT,
+                   help="시험 동안 힘 한계 N. 기본 80 (10/13 정정인). 130 은 #144 ② 확인 전용 — 받기 창 전용 값이라 전체 시험에는 명시할 때만")
     r.add_argument("--window", type=float, default=WINDOW_S)
     r.add_argument("--go-ready", action="store_true", help="먼저 대기 자세로 관절 이동 ⚠")
     a = sub.add_parser("analyze", help="CSV → 도달 거리·유효 범위·힘 요약")
     a.add_argument("csv", nargs="+")
     a.add_argument("--window", type=float, default=WINDOW_S)
-    a.add_argument("--force-limit", type=float, default=130.0)
+    a.add_argument("--force-limit", type=float, default=FORCE_TEST_DEFAULT, help="판정에 쓸 힘 한계 N (기본 80)")
     a.add_argument("--stat", choices=list(STATS), default="median", help="회차별 도착 시간의 대표값 (표본 끊김 의심 회차가 있으면 min 도 같이 볼 것)")
     # "-y"·"-u" 를 값으로 넘기기 위한 처리 (mode3_reach_test 와 같은 이유)
     opt = ap.parse_args([x + " " if x in ("-y", "-u") else x for x in sys.argv[1:]])
