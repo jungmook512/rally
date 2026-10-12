@@ -116,6 +116,7 @@ START_GRACE_S = 3.0          # amovel 직후 움직임이 시작되기까지 기
 START_MOVE_MM = 1.0          # 시작 판정: check_motion != 0 이거나 자세가 이만큼 변하면 '출발'
 START_MOVE_DEG = 0.5
 ARRIVE_TOL_MM = 3.0          # 도착 검증: 목표와 위치 차이 허용
+NEAR_DONE_MM = 8.0           # 다시 보낸 명령이 출발하지 않아도 목표와 이만큼 안이면 도착으로 본다 (10/12)
 ARRIVE_TOL_DEG = 2.0         # 도착 검증: 자세 차이 허용
 SETTLE_STABLE_S = 0.4        # check_motion 이 0 이 된 뒤 자세가 이 시간 동안 안 변하면 '멈춤'으로 본다
 
@@ -255,6 +256,16 @@ def move_checked(node, pose6, vel, acc, timeout_s=None, poll_s=0.02, on_poll=Non
             if not started:
                 if now - t0 > START_GRACE_S:
                     stopped = stop_robot(node.dsr, logger, "출발 없음")      # 늦게 출발할 모션이 있으면 취소
+                    dpos, dang = pose_error(cur, pose6)
+                    # 10/12 실로봇: 공 회수 순응 하강이 바닥 근처(목표 5 mm 앞)까지 왔을 때 손 때문에 SLOW↔NORMAL 이 바뀌어 같은 목표를
+                    # 다시 보냈는데 움직이지 않음 (공에 닿지 않았음 — 순응 상태에선 명령점과 실제 TCP 사이에 몇 mm 차이가 남아
+                    # 컨트롤러는 이미 도착한 것으로 봄) → not_started 로 회수 포기. 접촉 하강(stall_ok)은 멈춘 자리에서 이어 간다
+                    if stopped and stall_ok:
+                        logger.info(f"출발 없이 목표 {dpos:.1f} mm 앞 — 순응 하강 끝자리로 보고 여기서 이어 감")
+                        return "stalled"
+                    if stopped and dpos <= NEAR_DONE_MM and dang <= ARRIVE_TOL_DEG:
+                        logger.warning(f"출발 없이 목표 {dpos:.1f} mm 안 — 도착으로 봄")
+                        return "done"
                     if not resent and stopped:                            # 10/8 실로봇: 순응 해제 직후 명령 유실 → 한 번은 다시 보낸다
                         resent = True
                         logger.warning(f"{START_GRACE_S:.0f} s 안에 움직임 없음 — 명령 유실로 보고 한 번 다시 보냄 (목표와 {pose_error(cur, pose6)[0]:.1f} mm)")
@@ -359,6 +370,41 @@ def move_chain(node, vias, final_pose, final_vel, final_acc, on_poll=None, stall
         raise
 
 
+def joint_path_max_x(q0, q1, fk, samples=20):
+    """관절 직선 보간(movej 경로) 위 TCP x 최댓값 mm. fk(posj deg) → posx. 순수 함수 (테스트용)."""
+    xs = []
+    for i in range(samples + 1):
+        t = i / samples
+        p = fk([a + (b - a) * t for a, b in zip(q0, q1)])
+        if p is None or isinstance(p, (int, float)):
+            return None
+        xs.append(float(p[0]))
+    return max(xs)
+
+
+def movej_safe(node, posj6, jv, ja, tv, ta, x_max_mm, via_x_mm=300.0, via_z_mm=450.0):
+    """관절 이동 전에 경로(관절 직선 보간)를 두산 fkin 으로 미리 재서 TCP 가 x_max_mm 를 넘으면
+    먼저 지금 자세 그대로 곧게 뒤·위(x ≤ via_x, z ≥ via_z)로 빠진 뒤 관절 이동.
+    10/12 실로봇: 모드 5 내려놓기 자리(손목 J4 −154°·J6 −257°)에서 관측 자세로 바로 가면 손목이 풀리며 TCP 가 x 0.58~0.78 m
+    (보라색 선 0.57 너머)로 휘어 workspace_limit STOP. 경유하면 계산상 최대 x 0.53~0.55 m. fkin 이 없으면(fake) 바로 이동."""
+    import DSR_ROBOT2
+    from DSR_ROBOT2 import get_current_posj, get_current_posx
+    fk = getattr(DSR_ROBOT2, "fkin", None)
+    worst = None
+    if fk is not None:
+        try:
+            worst = joint_path_max_x([float(v) for v in get_current_posj()], [float(v) for v in posj6], fk)
+        except Exception as e:  # noqa: BLE001
+            node.get_logger().warning(f"[movej_safe] fkin 실패 ({e}) — 경로 확인 없이 이동")
+    if worst is not None and worst > x_max_mm:
+        cur = [float(v) for v in get_current_posx()[0]]
+        via = [min(cur[0], via_x_mm), cur[1], max(cur[2], via_z_mm), *cur[3:]]
+        node.get_logger().info(f"[movej_safe] 관절 경로가 x {worst:.0f} mm 까지 나감 (한계 {x_max_mm:.0f}) → 먼저 곧게 "
+                               f"({via[0]:.0f}, {via[1]:.0f}, {via[2]:.0f}) 로 빠짐")
+        move_checked(node, via, tv, ta)
+    return movej_checked(node, posj6, jv, ja)
+
+
 def movej_checked(node, posj6, vel, acc, timeout_s=30.0, poll_s=0.02):
     """amovej + 폴링 (관절 이동판 move_checked). 관측 자세 복귀처럼 팔 형태를 바꿔야 하는 이동에 쓴다.
     STOP → stop_robot → SkillAbort. 출발 못 하면(이미 그 자세가 아닌데 3 s 동안 check_motion 0) 'not_started'.
@@ -459,9 +505,17 @@ MOTION_DEFAULTS = dict(move_vel_mm_s=150.0, move_acc_mm_s2=150.0, move_ang_vel_d
                        contact_vel_mm_s=36.0, contact_acc_mm_s2=72.0, joint_vel_deg_s=60.0, joint_acc_deg_s2=120.0)
 
 
-def motion_speeds(node):
-    """skills.yaml motion: → (공중 이동 vel, acc, 접촉 하강 vel, acc, 관절 vel, acc). 공중 이동은 [직선 mm/s, 회전 deg/s] 짝."""
-    m = {**MOTION_DEFAULTS, **((getattr(node, "cfg", None) or {}).get("motion") or {})}
+def motion_speeds(node, profile=None):
+    """skills.yaml motion: → (공중 이동 vel, acc, 접촉 하강 vel, acc, 관절 vel, acc). 공중 이동은 [직선 mm/s, 회전 deg/s] 짝.
+    profile="mode5" 면 skills.yaml mode5.speed_scale(0~1) 을 직선·회전·관절 속도·가속에 한꺼번에 곱한다 (10/11 정정인: 모드 5 는
+    movel·movej 전부 한 값으로 조절). 접촉 하강(contact_*)은 접촉 감지 기준이라 곱하지 않는다."""
+    cfg = getattr(node, "cfg", None) or {}
+    m = {**MOTION_DEFAULTS, **(cfg.get("motion") or {})}
+    if profile:
+        s = min(1.0, max(0.05, float((cfg.get(profile) or {}).get("speed_scale", 1.0))))
+        for k in m:
+            if not k.startswith("contact_"):
+                m[k] = float(m[k]) * s
     return ([m["move_vel_mm_s"], m["move_ang_vel_deg_s"]], [m["move_acc_mm_s2"], m["move_ang_acc_deg_s2"]],
             m["contact_vel_mm_s"], m["contact_acc_mm_s2"], m["joint_vel_deg_s"], m["joint_acc_deg_s2"])
 
