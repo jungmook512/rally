@@ -5,8 +5,9 @@
     python3 scripts/print_pose.py           # 한 번 출력
     python3 scripts/print_pose.py --watch   # 2 Hz 로 계속 출력 (직접교시로 움직이며 보기, Ctrl+C 로 종료)
 
-/dsr01/joint_states(수동 모드·직접교시 중에도 나옴) + URDF 순기구학으로 계산한다. 두산 get_current_posx 서비스는
-수동 모드에서 응답하지 않아 쓰지 않는다 (2026-10-07). TCP 는 플랜지에서 TCP_OFFSET_MM (실로봇 2FG_TCP 와 비교해 맞춘 값).
+/dsr01/joint_states(수동 모드·직접교시 중에도 나옴)의 관절값을 두산 fkin 서비스로 posx 로 바꾼다 (펜던트와 같은 값, 10/12).
+fkin 이 응답하지 않으면 URDF 순기구학 + TCP_OFFSET_MM 으로 계산 — 10/12 실측 컨트롤러와 z 4.4 mm·x 2.7 mm 차이.
+두산 get_current_posx 서비스는 수동 모드에서 응답하지 않아 쓰지 않는다 (2026-10-07). 교시값은 posj 를 같이 저장한다.
 """
 import argparse
 import math
@@ -74,12 +75,32 @@ def main():
         ex.shutdown(timeout_sec=1.0)
         rclpy.try_shutdown()
         return 1
+    from dsr_msgs2.srv import Fkin
+    fk_cli = node.create_client(Fkin, "/dsr01/dsr_controller2/motion/fkin")
+
+    def ctrl_posx(pj_deg):
+        """두산 컨트롤러 순기구학 posx. 10/12: URDF 계산은 컨트롤러와 z 4.4 mm·x 2.7 mm 차이 → 교시값이 어긋남. 안 되면 None."""
+        if not fk_cli.service_is_ready():
+            return None
+        fut = fk_cli.call_async(Fkin.Request(pos=[float(v) for v in pj_deg], ref=0))
+        t = time.monotonic()
+        while not fut.done() and time.monotonic() - t < 0.5:
+            time.sleep(0.01)
+        r = fut.result() if fut.done() else None
+        return [float(v) for v in r.conv_posx] if r is not None and r.success else None
+
+    fk_cli.wait_for_service(timeout_sec=1.0)
     try:
         while True:
             q = latest["q"].copy()
             px = tcp_posx(chain, q)
             pj = np.degrees(q)
-            print(f"posx (mm, deg): [{', '.join(f'{v:.1f}' for v in px)}]")
+            cx = ctrl_posx(pj)
+            if cx is not None:
+                px = cx
+                print(f"posx (mm, deg): [{', '.join(f'{v:.1f}' for v in px)}]   ← 두산 컨트롤러 fkin (펜던트와 같은 값)")
+            else:
+                print(f"posx (mm, deg): [{', '.join(f'{v:.1f}' for v in px)}]   ← URDF 계산 (컨트롤러 fkin 응답 없음 — z 가 4 mm 쯤 다를 수 있음, posj 를 기준으로)")
             print(f"posj (deg)    : [{', '.join(f'{v:.1f}' for v in pj)}]")
             print(f"xyz (m)       : [{px[0]/1000:.4f}, {px[1]/1000:.4f}, {px[2]/1000:.4f}]")
             if not opt.watch:
