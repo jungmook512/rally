@@ -45,7 +45,7 @@ BALL_ON_PAD_TOPIC = "/rally/perception/ball_on_pad"
 
 DEFAULTS = dict(
     ready_posj=[89.8, 30.0, -121.7, 90.2, -80.2, 88.3],   # 10/11 정정인 결정 (패드 면 45°)
-    pad_offset_tool_m=[-0.0175, -0.1043, 0.0065],       # TCP → 패드 중심, 공구 좌표 (10/12 정동휘 실측, #138. yaml 이 있으면 yaml 이 이김)
+    pad_offset_tool_m=[-0.0175, -0.1043, 0.0285],       # TCP → 패드 중심, 공구 좌표 (10/12 정동휘 실측 #138, z 는 #155 보정값 0.0285 — skills.yaml 과 같게. yaml 이 있으면 yaml 이 이김)
     pad_normal=[0.697, -0.123, 0.706],                  # 패드 면 법선 base (위로 45° + 그리퍼 −10° 회전, #138)
     decide_after_s=0.16,
     right_max_m=0.15,

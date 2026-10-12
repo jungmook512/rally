@@ -3,6 +3,34 @@
 패키지: `ros2_ws/src/rally_robot` · 책임 모드: **모드 1 (공 굴려주기)**
 참고: `docs/INTERFACES.md` 2.1 / 3 / 4, `rally_bringup/config/safety.yaml`, `skills.yaml`
 
+## 오늘 (10/12) — PM 세션 정리 반영
+리허설 전 🔴
+- [x] 손 STOP 기본값 off → slow (safety.yaml · pc1_robot.launch.py · robot.sh 세 곳) — #158. 리허설 결과로 slow/stop 확정
+- [ ] 리허설에서: 모드 5 받기를 힘 4 N 만으로 (`receive_depth.require_object: true` — 손에 든 막대 모델 전까지 깊이로는 안 닫음).
+      안 되면 모델 전까지 `require_object: false` + 받기 닫는 힘 rod 20 → 10 N
+- [ ] 리허설에서: `movej_safe` 첫 실행 옆에서 지켜보기 (관측 자세로 갈 때 x 0.54 넘을 것 같으면 뒤·위로 먼저 — 계산으로만 확인, #142)
+- [ ] 리허설에서(stop 모드면): 모드 5 건네기가 손 STOP 뒤 다시 내밀어지는지, 가려진 손 hand_lost_near 경우 (#154)
+안전 코드 🟠
+- [x] 깊은 침입 사유 분리: 선 너머 15 cm 부터 STOP 그대로, 30 cm 넘으면 `hand_deep_intrusion`(세션 종료) — #160 (`hand_deep_end_m`)
+- [ ] 힘 한계 개발용 스위치 (기본 25 N, 끄기 없음, 상한 약 60 N 기동 거부, read_only, stop 아니면 경고) — **힘 한계 상향이라 정정인 명시 허락 뒤**.
+      값은 '접촉 없이 이동할 때 힘 최댓값'을 재서 (관성 ±20~30 N, #144 가속 2000 에서 최대 55 N)
+- [ ] #144 받기 창 130 N — `contact_expected` 에 걸면 안 됨(PushBall·PickCompliant·Handover 도 켬) → 모드 3 전용 신호 `/rally/safety/catch_window`
+      (인터페이스 PR). 전제: 박성현 catch_ball 이 창을 '교차 시각 + 약 0.5 s' 에 닫기 (#147). 확인: 창 끝나면 25 N 로그, 예외 경로 (#144 ③)
+- [ ] (선택) 작업 공간을 패드 끝까지 검사 — 지금 TCP 한 점만, 패드 끝은 −y 로 약 17.6 cm 더 나감
+모드 3 🟡
+- [x] 패드 거치대 교시 G·A·U (관절값 기준) + `/rally/robot/pad_pick`·`pad_place` (순응 꽂기, 대기 자세 경유) — #157, 시뮬 확인
+- [x] `catch_ball.pickup_pad()` → 거치대에서 집기, `after_catch()` → 대기 자세 → 패드 꽂기 — #157. 실로봇 확인 전
+- [ ] `after_catch()` 나머지: 벨크로 자리 → YOLO 로 공 집어 떼기(힘 25 N 안, 안 되면 비스듬히 벗기기) → 공 거치대
+- [ ] 실로봇: 순응 꽂기, 대기 자세로 손목 크게 돌 때 패드가 팔·테이블에 닿는지 (천천히)
+- [x] `mode3_reach_test.py` 후속: 이동 중 STOP 이면 정지, 복귀도 amovel+폴링(막는 movel 동안 wrench_stale), 작업 공간 safety.yaml 에서, 시작 때 안전 구독 대기
+- [x] `catch_ball.DEFAULTS` pad_offset_tool_m z 0.0065 → 0.0285 (skills.yaml #155 와 같게, 동작 영향 없음)
+모드 7
+- [x] ResistPush 구현 — 손잡이 없이 환자가 손목(J5·J6)을 민다 (정정인 결정). x 고정·y 만 손에 맞춤, −x 져주기 — #157, 시뮬 확인
+- [ ] 실로봇: 손목 밀 때 힘 방향(−x) 잡히는지, 제시 높이·거리, 강성 700 느낌
+정리 🟢
+- [ ] 로컬 `~/rally_test` worktree: #157 머지 뒤 지우기 (지금 #157 브랜치, 커밋 안 된 변경 없음 — data/*.mp4·models 만)
+- [x] `~/rally` 를 main 으로 (10/12) — 실로봇도 이제 `~/rally` 에서
+
 ## 오늘 (10/8) — 모드 1 밀기 레시피 실험 (#69 결정: 레시피 먼저, 칼만 보류)
 - [ ] 준비: `skill_server`·`safety_monitor`·`gripper_node`·segmenter 기동, segmenter 로그 `카메라→base 변환: tcp_npy` 확인 (#73)
 - [ ] 레인별 실험: `python3 scripts/push_recipe.py --lane N --speeds 0.2 0.3 0.4 0.5 --repeats 3` (레인 0/1/2 = 현장 1/2/3)
@@ -21,8 +49,8 @@
 - [x] `ReturnBall` 액션 + `return_ball.py` (관측 자세 → 레인 안 공 → 거치대 맨 윗부분 → 손 보기), `/rally/robot/go_hand_view` 서비스, PushBall 이 손 보기 자세에서 끝남 — 시뮬 세션 4회 통과
 - [x] 정지 위치·목표 오차: brain 이 받기 확인과 동시에 손 보기 자세 카메라로 (로봇이 기다리면 그동안 환자가 공을 잡는 걸 brain 이 못 봄 — 시뮬에서 확인). 로봇 쪽 측정은 `stop_measure`(단독 시험용, 기본 끔). 시뮬 세션 4회 정지 위치·오차 기록
 - [ ] 실로봇: 치고 손 보기 자세 도착까지 ≈ 4.6 s (시뮬) — 그 전에 환자가 공을 잡으면 정지 위치를 못 잼(NaN). 안내 문구 타이밍 확인
-- [ ] **거치대 맨 윗부분 직접교시**: 공을 쥐고 손끝을 레일 위쪽 끝 위에 대고 `python3 scripts/print_pose.py` → `skills.yaml mode1.rack_drop_posx` (없으면 ReturnBall 이 `no_rack_drop_posx` 로 시작 전에 중단)
-- [ ] 실로봇: `scripts/robot.sh brain` + `session 1` 로 한 세션 (손 인식 컨테이너 필요 — 정동휘) · 손 보기 자세에서 레인 3개 끝·환자 손이 화면에 다 들어오는지
+- [x] **거치대 맨 윗부분 직접교시** (10/11 #116, 대각선 접근): 공을 쥐고 손끝을 레일 위쪽 끝 위에 대고 `python3 scripts/print_pose.py` → `skills.yaml mode1.rack_drop_posx` (없으면 ReturnBall 이 `no_rack_drop_posx` 로 시작 전에 중단)
+- [x] 실로봇: `scripts/robot.sh brain` + `session 1` 로 한 세션 (10/11·10/12 전체 사이클 성공, 10/12 레인 3 제거) (손 인식 컨테이너 필요 — 정동휘) · 손 보기 자세에서 레인 3개 끝·환자 손이 화면에 다 들어오는지
 - [ ] 공 회수 실측: 로봇이 닿는 한계 `return_reach_x_max_m` 0.55 가 맞는지, 레인 벽 0.5 cm 에서 집기·놓기 손가락 간섭
 - [ ] (안전, 팀 결정) 목표 거리를 27 cm 보다 짧게(환자에게서 더 멀리) 하려면 손 거리 STOP(15 cm) 규칙 조정 필요 — 아래 #59 3번 결정과 같이 보기
 
