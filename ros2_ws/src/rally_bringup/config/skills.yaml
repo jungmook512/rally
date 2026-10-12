@@ -28,6 +28,12 @@ mode3:
   catch_radius_m: 0.35
   lead_time_s: 0.12
   max_ball_speed_mps: 3.0
+  # brain 모드 3 트리 (10/12, rally_brain/trees/mode3_catch.py). catch_radius_m 은 goal.catch_radius 로 간다
+  trial_timeout_s: 30.0             # 공을 던지기를 기다리는 시간 — 운영자가 패드에서 공을 떼어 건네는 시간 포함 (after_catch 보류)
+  timeout_end_after: 2              # 연속 이만큼 안 던지면 모드 3 남은 시도 건너뜀
+  intro_prompt: "이번에는 공을 던져서 로봇 패드에 붙여 볼게요"      # 모드 3 시작 (session_tree)
+  throw_prompt: "준비되면 패드를 향해 공을 던져 주세요"             # 시도마다
+  done_prompt: "캐치볼을 마쳤어요. 수고하셨어요"                   # 모드 3 시도를 모두 마침 (session_tree)
   # catch_ball 스킬 (10/11, 근거 docs/mode3/MODE3_OVERVIEW.md). 없으면 catch_ball.DEFAULTS
   ready_posj: [89.8, 30.0, -121.7, 90.2, -80.2, 88.3]   # 대기 자세 (정정인 결정, 패드 면 45°)
   # 패드 TCP 10/12 정동휘 실측: 공구 좌표 (−17.5, −104.3, 6.5) mm, Ry −45°. 대기 자세에서 base 패드 중심 (0.323, −0.328, 0.496) m,

@@ -39,6 +39,6 @@ voice:
   services:
     - {name: /rally/voice/speak, type: rally_interfaces/srv/Speak}
 
-# 세션 시작 조건. 모드 3 스킬(catch_ball, detach_ball)은 mode3_challenge.enabled 일 때 bt_runner 가 따로 확인한다
+# 세션 시작 조건. 모드 3 받기 스킬(catch_ball)은 세션 조건에 넣지 않는다 — 챌린지라 없으면 모드 3 시도만 건너뜀 (trees/mode3_catch.py)
 session:
   include: [robot, perception, voice]
