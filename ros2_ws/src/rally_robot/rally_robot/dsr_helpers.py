@@ -181,7 +181,7 @@ def pose_error(cur6, target6):
     return dpos, float(np.degrees(np.linalg.norm(d.as_rotvec())))
 
 
-def move_checked(node, pose6, vel, acc, timeout_s=None, poll_s=0.02, on_poll=None, via=None, stall_ok=False, path=None):
+def move_checked(node, pose6, vel, acc, timeout_s=None, poll_s=0.02, on_poll=None, via=None, stall_ok=False, path=None, retarget=None):
     """amovel(via 가 있으면 amovec: 현재 → via → pose6 원호) + 폴링.
     path=[posx, ...]: 경유점을 지나 pose6 까지 멈추지 않고 이어 가는 스플라인(amovesx) — 그리퍼를 쓰지 않는 구간을 부드럽게.
       도중 감속 배율이 바뀌면 원호처럼 정지 확인 후 SkillAbort('speed_changed_during_arc').
@@ -193,6 +193,8 @@ def move_checked(node, pose6, vel, acc, timeout_s=None, poll_s=0.02, on_poll=Non
     - 종료 판정: check_motion == 0 이고 자세가 0.4 s 동안 안정. 그 뒤 목표와 3 mm·2° 안이어야 'done', 아니면 정지 명령 후 SkillAbort('not_arrived')
     - STOP → 정지 확인 후 SkillAbort(stopped=확인 여부). 감속 배율 변화 → 정지 확인 후 같은 자세로 재명령
     - on_poll() 이 True 를 돌려주면(예: 접촉 감지) 정지하고 'interrupted'
+    - retarget() 이 새 posx 를 돌려주면 **멈추지 않고** 그 목표로 amovel 을 다시 보내고 도착 판정도 새 목표로 (모드 3 비행 중 갱신, 직선 amovel 만).
+      실측(10/12 #130): 출발 직후 다시 보내면 첫 동작 위에 얹혀 실속도가 명령값을 넘을 수 있다 — 부르는 쪽이 횟수·시각을 제한할 것
     - timeout_s 가 None 이면 현재 자세 → 목표 거리와 속도로 계산(motion_timeout_s)"""
     from DSR_ROBOT2 import amovel, check_motion, get_current_posx, posx
     if via is not None:
@@ -241,6 +243,17 @@ def move_checked(node, pose6, vel, acc, timeout_s=None, poll_s=0.02, on_poll=Non
                 if not stop_robot(node.dsr, logger, "조건 충족(접촉)"):
                     raise SkillAbort("stop_failed_on_contact", stopped=False)
                 return "interrupted"
+            if retarget is not None and via is None and not path:
+                new6 = retarget()
+                if new6 is not None:
+                    new6 = [float(v) for v in new6]
+                    ret = amovel(posx(*new6), vel=v_cmd, acc=a_cmd)
+                    if ret not in (None, 0):
+                        raise SkillAbort(f"amovel_rejected_{ret}", stopped=stop_robot(node.dsr, logger, "재전송 거부"))
+                    cur_rt = get_current_posx()[0]
+                    logger.info(f"이동 중 목표 변경 — 새 목표로 다시 보냄 (이전 목표와 {pose_error(new6, pose6)[0]:.1f} mm, 지금 자세에서 {pose_error(cur_rt, new6)[0]:.1f} mm)")
+                    pose6 = new6
+                    timeout_s = max(timeout_s, (now - t0) + motion_timeout_s(cur_rt, pose6, v_lin))
             if (node.speed_scale() < 1.0) != slowed:
                 if not stop_robot(node.dsr, logger, "감속 배율 변경"):
                     raise SkillAbort("stop_failed_on_slow", stopped=False)

@@ -42,6 +42,7 @@
 ## Day 4 — 모드 3 (10/12 정동휘가 `docs/mode3/MODE3_PLAN.md` 기준으로 갱신. 10/7 항목은 #128 로 대체돼 지움)
 - [x] `flight_predictor` 노드 (두 RealSense YOLO → 삼각측량 → EKF → `/rally/perception/landing`·`landing_info`) — PR #128 (10/11)
 - [x] `catch_ball` ② amovel 1회 구현·fake 확인 — PR #128. 실로봇은 아직
+- [x] (10/12) `catch_ball` 비행 중 갱신 ③ — 이동 중 예측이 3 cm 넘게 바뀌면 amovel 한 번 더 (`resend_*`, **기본 꺼짐**; 켜기는 #130 속도 초과 안전 확인 뒤 정정인)
 - [x] (10/12) `catch_ball` 받기 창 닫기 — `contact_expected` 를 교차 + 0.5 s 에 끄고 비전 판정은 창 밖에서 계속 (`contact_window_after_cross_s`, #144 전제. 130 N 은 이 창에만 — safety_monitor 쪽은 별도 PR, 정정인 리뷰)
 - [ ] **② 전 코드 수정 (MODE3_PLAN 4.1)**: ① 명중 판정 창(도착 뒤 0.4 s 안정 대기 때문에 공 도착 0.74 s 를 놓침 → 출발 직후부터 힘 기록, 관성 구간만 제외) ② 아래 이동 상한 8 cm 로 `updown_max_m` 위/아래 분리 ③ 패드 평면을 동휘 패드 TCP 한 값에서 노드·스킬 둘 다 읽게 ④ 힘 영점 자세 차이·임계 4 N 재검토 ⑤ 정정인 #128 코멘트 1~4 ⑥ 반경 밖이면 힘 판정 안 함 ⑦ INTERFACES catch_ball 행 `catch_ball_after.py` 오기 ⑧ 방향별 속도(옆 730 · 위아래 600, 가속 2000)
 - [ ] ③ 비행 중 갱신 구현 (예측 3 cm 넘게 바뀌면 amovel 재전송. #130: 0.15 s 뒤 재전송은 최고 속도 0.52 > 0.45 → 간격·속도 대책)

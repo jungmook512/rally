@@ -12,6 +12,10 @@
                이 창에만 걸릴 예정 — #144). 공 놓은 뒤 decide_after_s(0.16 s, 오차 중앙 약 3 cm) 까지 최신 예측을 기다림
 3. intercept : 예측 품질(std·n_obs)이 기준 안이고 안전이 NORMAL 이면, 예측점으로 패드 중심을 옮기는 TCP 위치로 amovel 한 번
                (자세 고정, 왼쪽 안 감, 오른쪽·위 15 cm·아래 8 cm 까지 — catch_plan.intercept).
+               **비행 중 갱신 (MODE3_PLAN ③, 기본 꺼짐 resend_enabled)**: 이동 중 새 예측이 처음 예측점에서 resend_threshold_m(3 cm) 넘게
+               벗어나면 놓은 뒤 resend_until_release_s(0.45 s) 안에 한 번(resend_max) 새 요격점으로 amovel 을 다시 보낸다 (멈추지 않음,
+               catch_plan.should_resend · dsr_helpers.move_checked retarget). 실측 #130: 재전송은 첫 동작 위에 얹혀 속도가 명령값을 넘을 수
+               있어(0.52 > 0.45 m/s) 정정인 안전 확인 전엔 켜지 않는다.
                대기 패드 중심에서 catch_radius 밖이면 움직이지 않음 (out_of_radius) · 품질 미달이면 low_confidence · SLOW 면 slow_at_catch 중단
 4. judge     : 받기 창은 **교차 시각 + contact_window_after_cross_s(0.5 s) 에 닫는다** (투구 감지 ~ 교차 + 0.5 s ≈ 1.2 s, #144 "창 약 1 s").
                판정은 창이 닫힌 뒤에도 계속 기다린다 — **비전 판정**: 측면 카메라의 ball_on_pad 가 pad_hold_s(3 s) 연속(틈 ≤ pad_gap_s) 들어오면 caught.
@@ -38,7 +42,7 @@ from std_msgs.msg import Float64MultiArray
 
 from rally_interfaces.action import CatchBall
 from rally_robot.dsr_helpers import SkillAbort, move_checked, movej_checked, stop_robot
-from rally_robot.skills.catch_plan import Prediction, clamp_cross, intercept, judge_pad, pad_center, parse_info, quality_ok
+from rally_robot.skills.catch_plan import Prediction, clamp_cross, intercept, judge_pad, pad_center, parse_info, quality_ok, should_resend
 
 LANDING_TOPIC = "/rally/perception/landing"
 LANDING_INFO_TOPIC = "/rally/perception/landing_info"
@@ -68,6 +72,10 @@ DEFAULTS = dict(
     pad_gap_s=0.3,                                      #   연속으로 치는 관측 틈 상한 (측면 60 Hz, 가림·검출 실패 여유)
     judge_timeout_s=5.0,                                #   교차 시각 뒤 이 시간 안에 못 채우면 missed
     judge_poll_hz=20.0,
+    resend_enabled=False,                               # 비행 중 갱신 ③: 이동 중 예측이 바뀌면 amovel 한 번 더 (#130 속도 초과 안전 확인 뒤 켬)
+    resend_threshold_m=0.03,                            #   처음 예측점에서 이만큼 넘게 벗어나면
+    resend_until_release_s=0.45,                        #   놓은 뒤 이 시각까지만 (결정 0.25~0.40 s 직후만 의미, 그 뒤는 가도 늦음)
+    resend_max=1,                                       #   최대 횟수
     contact_window_after_cross_s=0.5,                   # 받기 창(contact_expected) 닫는 시각 = 교차 + 이 값 (#144: 130 N 은 이 창에만. 판정은 창 뒤에도 계속)
 )
 
@@ -290,7 +298,28 @@ def execute(node):
                 res.reaction_time_s = float(time.monotonic() - t_detect)
                 log.info(f"[catch_ball] 요격 오른쪽 {plan.du * 100:.1f} · 아래 {plan.dw * 100:.1f} cm"
                          f"{' (잘림)' if plan.clipped else ''}, 놓은 뒤 {pred.since_release:.2f} s, 교차까지 {pred.t_cross - ros_now():.2f} s")
-                move_checked(node, plan.tcp_posx, cfg["catch_vel_mm_s"], cfg["catch_acc_mm_s2"])
+                sent = {"n": 0, "plan": plan, "pred": pred}
+
+                def retarget():
+                    """비행 중 갱신 ③ (기본 꺼짐): 새 예측이 처음 예측점에서 3 cm 넘게 벗어나면 새 요격점으로 한 번 더."""
+                    newer = landing.latest(newer_than=t_goal, max_age_s=cfg["landing_max_age_s"])
+                    if newer is None or not should_resend(pred.point, newer.point, newer.since_release, sent["n"], cfg):
+                        return None
+                    if not quality_ok(newer.std, newer.n_obs, cfg["gate_std_max_m"], cfg["gate_n_obs_min"]):
+                        return None
+                    new_plan = intercept(ready, pad0, cfg["pad_normal"], newer.point, cfg["right_max_m"], cfg["updown_max_m"], cfg["down_max_m"])
+                    if goal.catch_radius > 0 and new_plan.offset_m > goal.catch_radius:
+                        return None
+                    sent["n"] += 1
+                    sent["plan"], sent["pred"] = new_plan, newer
+                    log.info(f"[catch_ball] 비행 중 갱신 {sent['n']}회 — 예측 {np.linalg.norm(newer.point - pred.point) * 100:.1f} cm 이동, "
+                             f"놓은 뒤 {newer.since_release:.2f} s, 새 요격 오른쪽 {new_plan.du * 100:.1f} · 아래 {new_plan.dw * 100:.1f} cm")
+                    return new_plan.tcp_posx
+
+                move_checked(node, plan.tcp_posx, cfg["catch_vel_mm_s"], cfg["catch_acc_mm_s2"],
+                             retarget=retarget if cfg["resend_enabled"] else None)
+                plan, pred = sent["plan"], sent["pred"]
+                res.landing_predicted = _point(pred.point)
                 res.robot_travel_mm = float(np.hypot(plan.du, plan.dw) * 1000.0)
 
             # 판정 (비전): 투구 감지 뒤의 패드 위 공 관측. 교차 시각은 지금 기준 cross_max_after_s 로 자름

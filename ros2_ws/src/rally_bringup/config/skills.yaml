@@ -70,6 +70,12 @@ mode3:
   pad_hold_s: 1.0                                     # 패드 위 공이 이 시간 연속 보이면 caught. 10/12 밤 3.0 → 1.0 (정정인): 받았는데 공을 3 s 전에 떼서 놓침 2회(2.7·3.0 s). 벨크로에 붙은 공은 1 s 면 충분
   pad_gap_s: 0.3                                      #   연속으로 치는 관측 틈 상한
   judge_timeout_s: 5.0                                #   교차 시각 뒤 이 시간 안에 못 채우면 missed
+  # 비행 중 갱신 (MODE3_PLAN ③, 10/12): 이동 중 예측이 처음 예측점에서 resend_threshold_m 넘게 바뀌면 amovel 한 번 더 (멈추지 않음)
+  #   기본 꺼짐 — #130 실측: 출발 직후 재전송은 첫 동작 위에 얹혀 실속도 0.52 > 명령 0.45 m/s. 정정인 안전 확인 뒤 true
+  resend_enabled: false
+  resend_threshold_m: 0.03
+  resend_until_release_s: 0.45                        #   놓은 뒤 이 시각까지만 (결정 0.25~0.40 s 바로 뒤. 교차 0.74 s, 15 cm 도착 0.52 s → 더 늦으면 못 감)
+  resend_max: 1
   contact_window_after_cross_s: 0.5                   # 받기 창(contact_expected) 닫는 시각 = 교차 + 0.5 s (#144: 힘 한계 130 N 은 이 창에만. 비전 판정은 창이 닫힌 뒤에도 계속)
 
 # mode1 (공 굴려주기) — 가이드 길 2개 (10/12: 3개 → 2개) (폭 10~12 cm, 높이 ≤ 공 반지름)

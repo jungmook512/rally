@@ -164,3 +164,14 @@ def test_judge_late_cross_clamped_window_is_short():
     closes = []
     _run_judge(clk, 100.6, closes=closes)
     assert closes == [102.0]
+
+
+def test_should_resend_default_off_and_rules():
+    from rally_robot.skills.catch_plan import should_resend
+    p0, p1 = [0.3, -0.3, 0.5], [0.3, -0.34, 0.5]                # 4 cm 벗어남
+    on = dict(resend_enabled=True, resend_threshold_m=0.03, resend_until_release_s=0.30, resend_max=1)
+    assert not should_resend(p0, p1, 0.25, 0, {})                # 기본 꺼짐
+    assert should_resend(p0, p1, 0.25, 0, on)
+    assert not should_resend(p0, [0.3, -0.32, 0.5], 0.25, 0, on)  # 2 cm 는 그대로
+    assert not should_resend(p0, p1, 0.35, 0, on)                # 너무 늦음
+    assert not should_resend(p0, p1, 0.25, 1, on)                # 이미 한 번 보냄
