@@ -196,7 +196,10 @@
   .diagram-panel>.panel-top { border:0; padding:0; }
   .panel { border:1px solid #dde6df; box-shadow:0 1px 2px #2a40300d, 0 6px 18px #2a40300a; }
   /* 안전 띠: 정상·모름이면 숨김 (상태 줄 배지로 충분), 느리게·정지일 때만 경고 띠 */
-  #safety.normal, #safety.unknown { display:none; }
+  #safety { display:none!important; }   /* 안전은 상태 줄 배지·색으로 (띠가 화면을 밀지 않게) */
+  .control-bar[data-safety=stop] { background:#fbe3e3!important; border-color:#d98c8c!important; }
+  .control-bar[data-safety=slow] { background:#fbf0d6!important; border-color:#dcb767!important; }
+  .control-bar[data-safety=stop] #phase { color:#9a2525; }
   #safety.slow, #safety.stop { font-size:16px; padding:10px 16px; border-width:1px; border-left-width:6px; }
   /* 그림: 회색 상자·안쪽 테두리 없이 칸에 바로 */
   #mode-diagram { border:0!important; background:none!important; margin-top:0!important; }
@@ -302,6 +305,11 @@
 <script>
 const MODES = {1: "공 굴리기", 3: "캐치볼", 5: "건네고 받기", 7: "저항 밀기"};
 const LEVELS = {normal: ["normal", "정상"], slow: ["slow", "느리게"], stop: ["stop", "정지"]};   // rally_db convert.SAFETY_LEVELS
+const REASONS = {hand_near_robot: "손이 로봇 가까이", hand_lost_near: "가까이서 손이 사라짐", hand_near_centerline: "손이 중앙선을 넘음",
+  hand_near_patient_contact: "손 근접(접촉 구간)", hand_distance_unknown: "손 거리 모름", hand_deep_intrusion: "손이 깊이 들어옴",
+  force_limit: "힘 한계 초과", nudge: "로봇이 밀림", wrench_lost: "힘 센서 끊김", workspace_limit: "작업 공간 밖",
+  estop: "비상정지", voice_stop: "음성 정지", slow_override: "느리게 고정"};
+const reasonText = (r) => String(r || "").split(/[ ,]+/).filter(Boolean).map((c) => REASONS[c.replace(/^hand_stop_dev_\w+$/, "")] ?? REASONS[c] ?? c).join(", ");
 const ROBOT = {idle: "대기", moving: "움직이는 중", holding: "잡고 있음", stopped: "멈춤"};
 const KINDS = {safety_change: "안전", voice_intent: "음성", mode_change: "모드", trial: "시도", session_report: "리포트"};
 const $ = (id) => document.getElementById(id);
@@ -334,9 +342,9 @@ function renderControl(s) {
   renderModePage();
   controlReceived = performance.now();
   renderProposal();
-  $("phase").textContent = s ? `${PHASES[s.phase] ?? s.phase} · ${modeName(s.mode)} · 난이도 ${s.difficulty ?? "—"}` + (s.trial_index ? ` · ${s.trial_index}회째` : "")
+  $("phase").textContent = s ? `${PHASES[s.phase] ?? s.phase} · 모드 ${modeName(s.mode)}`
     + (s.phase === "paused" && s.blocked_reason ? ` · ${s.blocked_reason}` : "")
-    + (s.hand_wait ? ` · 손 근접 정지 대기(${s.hand_wait}) — 손이 빠지면 이어감` : "") : "연결 대기";
+    + (s.hand_wait ? " · 손 근접 정지 대기" : "") : "연결 대기";
   $("resume").disabled = resuming || !s?.can_resume || s.phase !== "paused";
 }
 
@@ -365,7 +373,7 @@ setInterval(() => {
   if (!stateTime || Date.now() - stateTime > 2000) {
     $("safety").className = "unknown";
     $("safety").textContent = "안전 상태 모름";
-    $("badge-safety").textContent = "모름"; $("badge-safety").className = "";
+    $("badge-safety").textContent = "모름"; $("badge-safety").className = ""; $("control-bar").dataset.safety = "unknown";
   }
   renderModePage();
 }, 500);
@@ -376,8 +384,9 @@ function renderState(s) {
   if (!stateTime || Date.now() - stateTime < 0 || Date.now() - stateTime > 2000) { renderModePage(); return; }
   const [cls, word] = LEVELS[s.safety?.level] ?? ["unknown", "모름"];
   $("safety").className = cls;
-  $("safety").innerHTML = `안전: ${word}` + (s.safety?.reason ? ` <small>${esc(s.safety.reason)}</small>` : "");
-  $("badge-safety").textContent = word; $("badge-safety").className = `safe-${cls}`;
+  $("safety").innerHTML = `안전: ${word}` + (s.safety?.reason ? ` <small>${esc(reasonText(s.safety.reason))}</small>` : "");
+  $("badge-safety").textContent = cls === "normal" || !s.safety?.reason ? word : `${word} · ${reasonText(s.safety.reason)}`;
+  $("badge-safety").className = `safe-${cls}`; $("control-bar").dataset.safety = cls;
   $("mode").textContent = modeName(s.mode);
   $("robot").textContent = `로봇 ${ROBOT[s.robot_state] ?? s.robot_state ?? "—"}`;
   $("trial").textContent = s.trial_index ? `${s.trial_index}회째` : "—";
@@ -649,7 +658,7 @@ function renderModePage(){
   else if(index>=0){title=page.steps[index];description=page.help[index];}
   else if(running){title='세부 단계 확인 중';description='수신한 상태에 대응하는 단계가 아직 연결되지 않았습니다.';}
   if(active&&control.phase==='pause_pending')description+=' 현재 시도와 회수 완료 후 휴식합니다.';
-  if(active&&control.hand_wait){title='손 근접 정지 대기';description=`안전 감시 ${control.hand_wait} — 로봇은 멈춰 있고, 손이 빠져 정상 상태가 1초 이어지면 같은 시도를 이어갑니다.`;}
+  if(active&&control.hand_wait){title='손 근접 정지 대기';description=`${reasonText(control.hand_wait)} — 로봇은 멈춰 있고, 손이 빠져 정상 상태가 1초 이어지면 같은 시도를 이어갑니다.`;}
   $('step-title').textContent=title;$('step-description').textContent=description;$('raw-stage').textContent=node?`BT · ${node}`:'';
   $('steps').innerHTML=page.steps.map((step,i)=>`<li data-i="${i}" title="눌러서 이 단계 그림 보기" class="${i===index?'active':''}${preview&&i===previewStage?' preview':''}" ${i===index?'aria-current="step"':''}><span>${i+1}</span><strong>${esc(step)}</strong></li>`).join('');
   $('steps-play').textContent=preview?'■ 실시간 보기':'▶ 단계 미리보기';
