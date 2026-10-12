@@ -459,9 +459,17 @@ MOTION_DEFAULTS = dict(move_vel_mm_s=150.0, move_acc_mm_s2=150.0, move_ang_vel_d
                        contact_vel_mm_s=36.0, contact_acc_mm_s2=72.0, joint_vel_deg_s=60.0, joint_acc_deg_s2=120.0)
 
 
-def motion_speeds(node):
-    """skills.yaml motion: → (공중 이동 vel, acc, 접촉 하강 vel, acc, 관절 vel, acc). 공중 이동은 [직선 mm/s, 회전 deg/s] 짝."""
-    m = {**MOTION_DEFAULTS, **((getattr(node, "cfg", None) or {}).get("motion") or {})}
+def motion_speeds(node, profile=None):
+    """skills.yaml motion: → (공중 이동 vel, acc, 접촉 하강 vel, acc, 관절 vel, acc). 공중 이동은 [직선 mm/s, 회전 deg/s] 짝.
+    profile="mode5" 면 skills.yaml mode5.speed_scale(0~1) 을 직선·회전·관절 속도·가속에 한꺼번에 곱한다 (10/11 정정인: 모드 5 는
+    movel·movej 전부 한 값으로 조절). 접촉 하강(contact_*)은 접촉 감지 기준이라 곱하지 않는다."""
+    cfg = getattr(node, "cfg", None) or {}
+    m = {**MOTION_DEFAULTS, **(cfg.get("motion") or {})}
+    if profile:
+        s = min(1.0, max(0.05, float((cfg.get(profile) or {}).get("speed_scale", 1.0))))
+        for k in m:
+            if not k.startswith("contact_"):
+                m[k] = float(m[k]) * s
     return ([m["move_vel_mm_s"], m["move_ang_vel_deg_s"]], [m["move_acc_mm_s2"], m["move_ang_acc_deg_s2"]],
             m["contact_vel_mm_s"], m["contact_acc_mm_s2"], m["joint_vel_deg_s"], m["joint_acc_deg_s2"])
 

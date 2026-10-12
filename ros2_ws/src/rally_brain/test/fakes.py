@@ -48,7 +48,10 @@ class FakeClient:
         if feedback_callback is not None:
             for fields in (self.feedbacks.pop(0) if self.feedbacks else []):
                 feedback_callback(NS(feedback=self.result_type.Feedback(**fields)))
-        succeeded, fields = self.outcomes.pop(0)
+        outcome = self.outcomes.pop(0)
+        if outcome == "reject":                       # skill_server 가 goal 거절 (STOP 중)
+            return Done(NS(accepted=False))
+        succeeded, fields = outcome
         status = GoalStatus.STATUS_SUCCEEDED if succeeded else GoalStatus.STATUS_ABORTED
         result = self.result_type.Result(**fields)
         handle = NS(accepted=True, get_result_async=lambda: Done(NS(status=status, result=result)),

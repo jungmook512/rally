@@ -254,3 +254,26 @@ def test_rack_drop_approach_is_up_and_back():
     drop = [462.5, 289.8, 76.3, -171.6, -157.3, -92.0]
     assert rack_drop_approach(drop, 0.06, 0.06) == pytest.approx([402.5, 289.8, 136.3, -171.6, -157.3, -92.0])
     assert rack_drop_approach(drop, 0.06, 0.0) == pytest.approx([462.5, 289.8, 136.3, -171.6, -157.3, -92.0])   # 예전 (수직)
+
+
+def test_grip_rotation_perpendicular_to_mask_axis():
+    # 10/11: 손가락(기준 자세에서 베이스 x 로 닫힘)이 물체 주축에 수직이 되게 베이스 Z 회전, −90~90
+    import math
+    from rally_robot.skills.pick_compliant import grip_rotation_deg
+    assert grip_rotation_deg(math.radians(90)) == pytest.approx(0)      # 막대 y 방향 → 그대로 (10/8 수동과 같음)
+    assert grip_rotation_deg(math.radians(-90)) == pytest.approx(0)     # 주축 ±π 모호해도 같음
+    assert abs(grip_rotation_deg(math.radians(0))) == pytest.approx(90)  # 막대 x 방향 → 90° 돌림
+    assert grip_rotation_deg(math.radians(45)) == pytest.approx(-45)    # 손가락 방향 = 0 − 45 = −45° ⟂ 45°
+    assert grip_rotation_deg(math.radians(45 + 180)) == pytest.approx(-45)
+    assert grip_rotation_deg(math.radians(30), finger_axis_deg=90) == pytest.approx(30)   # 손가락이 y 로 닫히는 그리퍼면
+
+
+def test_motion_speeds_profile_scale():
+    # 10/11: 모드 5 는 mode5.speed_scale 하나로 직선·회전·관절 속도·가속을 한꺼번에, 접촉 하강은 그대로
+    from types import SimpleNamespace as NS
+    from rally_robot.dsr_helpers import motion_speeds
+    node = NS(cfg={"motion": {"joint_vel_deg_s": 60.0, "move_vel_mm_s": 150.0, "contact_vel_mm_s": 36.0},
+                   "mode5": {"speed_scale": 0.5}})
+    assert motion_speeds(node)[4] == 60.0
+    tv, ta, cv, _, jv, ja = motion_speeds(node, "mode5")
+    assert (jv, tv[0], cv) == (30.0, 75.0, 36.0) and ja == 60.0
