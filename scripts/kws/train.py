@@ -9,7 +9,7 @@
 평가:
   - 키워드 인식률: 일부를 떼어 두고(학습에 안 씀) 맞히는 비율. "랠리야" 가 정지로, "그만" 이 호출로 잘못 잡히는지도
   - 오탐: 주변 소리(ambient)를 80 ms 씩 밀며 흘려 봤을 때 비상·호출 각각 시간당 몇 번 울리나 (학습에 안 쓴 구간)
-  - 지연: 비상어가 끝난 뒤 판별까지 걸리는 시간 (프레임 단위 추정)
+  - 지연: 비상어 말이 끝난 뒤(녹음 음량으로 잡음, 클립 끝 아님) 판별까지 걸리는 시간 (80 ms 단위)
 
 사용:
     python3 scripts/kws/train.py                  # 학습 + 평가 + models/kws/emergency_kws.joblib 저장
@@ -29,6 +29,7 @@ OUT = ROOT / "models" / "kws"
 RATE = 16000
 WIN = 16                      # 판별에 쓰는 임베딩 프레임 수 (16 × 80 ms = 1.28 s)
 CLIP = int(2.0 * RATE)        # 특징을 뽑을 때 쓰는 길이 (앞에 0.5 s 여유를 붙여 1.28 s 창이 꽉 차게)
+FRAME_S = 1280 / RATE         # 판정 한 번 = 80 ms
 KEYWORDS = ["geuman", "meomchwo", "rally"]   # 라벨 번호 1, 2, 3 (0 = 아님)
 EMERGENCY = ("geuman", "meomchwo")
 WAKE = ("rally",)
@@ -49,6 +50,12 @@ def is_truncated(p: Path, edge_s: float = 0.03) -> bool:
     env = np.convolve(np.abs(x), np.ones(win) / win, mode="same")
     above = np.where(env > peak * 0.15)[0]
     return len(above) > 0 and above[0] < edge_s * RATE
+
+
+def word_end_s(x: np.ndarray) -> float:
+    """녹음 안에서 말이 끝난 시각 (10 ms 음량이 최고의 20 % 를 넘는 마지막 지점). 클립 끝이 아니라 이걸 지연 기준으로."""
+    env = np.convolve(np.abs(x), np.ones(160) / 160, mode="same")
+    return float(np.where(env >= 0.2 * env.max())[0][-1]) / RATE
 
 
 def fit_len(x: np.ndarray, n: int, offset: int = 0) -> np.ndarray:
@@ -127,6 +134,7 @@ def main() -> None:
     ap.add_argument("--mine", type=int, default=3, help="오탐 구간 재학습 반복 수 (학습용 주변 소리만 씀, 0 = 끔)")
     ap.add_argument("--consec", type=int, default=1, help="몇 프레임(80 ms) 연속 임계를 넘어야 울릴지. 모델에 저장돼 kws.py 가 씀")
     ap.add_argument("--out", default="emergency_kws.joblib", help="models/kws/ 아래 저장 이름")
+    ap.add_argument("--hidden", type=int, default=64, help="판별기 은닉층 크기")
     a = ap.parse_args()
     rng = random.Random(a.seed)
     from openwakeword.utils import AudioFeatures
@@ -186,7 +194,7 @@ def main() -> None:
     Xe, Y = embed(feat, X), np.array(y)
 
     def fit(Xe: np.ndarray, Y: np.ndarray):
-        c = make_pipeline(StandardScaler(), MLPClassifier(hidden_layer_sizes=(64,), alpha=1e-3, max_iter=300,
+        c = make_pipeline(StandardScaler(), MLPClassifier(hidden_layer_sizes=(a.hidden,), alpha=1e-3, max_iter=300,
                                                           early_stopping=True, random_state=a.seed))
         return c.fit(Xe, Y)
     clf = fit(Xe, Y)
@@ -227,7 +235,7 @@ def main() -> None:
         print(f"  {name} {hits}회 → 시간당 {hits / hours:.0f}회")
 
     # 3) 떼어 둔 키워드를 주변 소리 사이에 넣고 흘려 봄 → 실제 상시 감지처럼 잡히는지·녹음 끝에서 몇 프레임 뒤에 넘는지
-    streams = []                                         # (라벨, 비상 점수, 호출 점수, 키워드 끝 프레임)
+    streams = []                                         # (라벨, 비상 점수, 호출 점수, 말 끝 시각 s, 파일)
     for k in kws:
         for p in te[k]:
             x = read_wav(p)
@@ -236,21 +244,26 @@ def main() -> None:
             audio = np.concatenate([bg[:RATE], x, bg[RATE:2 * RATE]])
             sp = stream_proba(feat, clf, audio)
             streams.append((k, group_score(sp, labels, EMERGENCY), group_score(sp, labels, WAKE),
-                            (RATE + len(x)) // 1280))
+                            1.0 + word_end_s(x), p))
 
     def stream_eval(group: tuple[str, ...], col: int, thr: float, consec: int) -> tuple[int, int, list[float]]:
+        """감지 수 · 전체 · 말 끝 → 감지 지연(s). 점수는 그 80 ms 조각을 다 들은 뒤 나오므로 (프레임+1)×0.08."""
         rows = [r for r in streams if r[0] in group]
         found = [(first_hit(r[col], thr, consec), r[3]) for r in rows]
-        delays = [(f - end) * 0.08 for f, end in found if f is not None]
+        delays = [(f + 1) * FRAME_S - end for f, end in found if f is not None]
         return len(delays), len(rows), delays
 
     n, total, delays = stream_eval(EMERGENCY, 1, a.threshold, a.consec)
     if delays:
-        print(f"\n[비상어 지연] 녹음 클립 끝 기준 {np.median(delays):+.2f} s (중간값, 음수 = 클립 안에서 이미 감지). "
-              f"감지 {n}/{total}")
+        print(f"\n[비상어 지연] 말 끝 → 감지 중간값 {np.median(delays):+.2f} s · 90 % {np.percentile(delays, 90):+.2f} s "
+              f"(목표 0.3 s, 정지 명령·로봇 정지 시간은 별도). 감지 {n}/{total}")
+    missed = [(r[4], r[1 if r[0] in EMERGENCY else 2]) for r in streams
+              if first_hit(r[1 if r[0] in EMERGENCY else 2], a.threshold, a.consec) is None]
+    for p, sc in missed:
+        print(f"  놓침: {p.parent.name}/{p.name}  최고 점수 {sc.max():.2f}  임계 넘은 프레임 {int((sc >= a.threshold).sum())}개")
 
     # 4) 임계·연속 프레임은 학습에 안 쓰여서 한 번 학습한 모델로 조합을 다 비교할 수 있다
-    print("\n[임계 × 연속 프레임]  흘려 넣은 키워드 감지 · 주변 소리 오탐(시간당) · 비상 지연 중간값")
+    print("\n[임계 × 연속 프레임]  흘려 넣은 키워드 감지 · 주변 소리 오탐(시간당) · 비상어 말 끝 → 감지 중간값")
     print("  임계  연속 |  비상 감지  오탐  지연  |  호출 감지  오탐")
     for thr in (0.7, 0.8, 0.9, 0.95):
         for c in (1, 2, 3):
