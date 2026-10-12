@@ -14,6 +14,7 @@
                (자세 고정, 왼쪽 안 감, 오른쪽·위 15 cm·아래 8 cm 까지 — catch_plan.intercept).
                대기 패드 중심에서 catch_radius 밖이면 움직이지 않음 (out_of_radius) · 품질 미달이면 low_confidence · SLOW 면 slow_at_catch 중단
 4. judge     : 받기 창은 **교차 시각 + contact_window_after_cross_s(0.5 s) 에 닫는다** (투구 감지 ~ 교차 + 0.5 s ≈ 1.2 s, #144 "창 약 1 s").
+               닫기는 결정 시점에 건 **타이머**(catch_plan.ContactWindow)가 한다 — 요격 이동이 길어도 창은 제때 닫힌다 (10/12 밤 실측 1.3~2.4 s 결함 수정).
                판정은 창이 닫힌 뒤에도 계속 기다린다 — **비전 판정**: 측면 카메라의 ball_on_pad 가 pad_hold_s(3 s) 연속(틈 ≤ pad_gap_s) 들어오면 caught.
                교차 시각 + judge_timeout_s 안에 없으면 missed. 힘 판정은 쓰지 않는다 (10/12 결정: 패드 끝 튕김·이동 관성과 구분 불가)
 5. after     : after_catch() — 정정인 자리. 지금은 대기 자세 → 패드를 거치대에 꽂고 빠짐 (공 떼기·공 거치대는 아직)
@@ -38,7 +39,7 @@ from std_msgs.msg import Float64MultiArray
 
 from rally_interfaces.action import CatchBall
 from rally_robot.dsr_helpers import SkillAbort, move_checked, movej_checked, stop_robot
-from rally_robot.skills.catch_plan import Prediction, clamp_cross, intercept, judge_pad, pad_center, parse_info, quality_ok
+from rally_robot.skills.catch_plan import ContactWindow, Prediction, clamp_cross, intercept, judge_pad, pad_center, parse_info, quality_ok
 
 LANDING_TOPIC = "/rally/perception/landing"
 LANDING_INFO_TOPIC = "/rally/perception/landing_info"
@@ -244,14 +245,21 @@ def execute(node):
                 log.info(f"[catch_ball] 예측 품질 기다림 → 놓은 뒤 {pred.since_release:.2f} s 에 결정 (std {pred.std[0] * 100:.1f}·{pred.std[1] * 100:.1f} cm, 관측 {pred.n_obs})")
             return pred
 
+        t_open = {"mono": None}
+
+        def close_window():
+            node.set_contact(False)
+            node.set_catch_window(False)                       # 힘 한계 130 N → 25 N (#144)
+            opened = f"{time.monotonic() - t_open['mono']:.2f} s" if t_open["mono"] is not None else "-"
+            log.info(f"[catch_ball] 받기 창 닫음 ({window.closed_by or '?'}, 열린 뒤 {opened}; 설계 = 교차 + {cfg['contact_window_after_cross_s']:.2f} s)")
+
+        window = ContactWindow(close_window)
+
         def judge(t_from_mono: float, t_cross_ros: float) -> tuple[bool, float, list[float]]:
-            """비전 판정 (catch_plan.judge_pad). 받기 창은 교차 + contact_window_after_cross_s 에 닫고(set_contact False), 판정은 계속."""
-            def close():
-                node.set_contact(False)
-                node.set_catch_window(False)                   # 힘 한계 130 N → 25 N (#144)
-                log.info(f"[catch_ball] 받기 창 닫음 (교차 + {cfg['contact_window_after_cross_s']:.2f} s)")
+            """비전 판정 (catch_plan.judge_pad). 받기 창은 타이머가 교차 + contact_window_after_cross_s 에 닫는다 — 여기서는 타이머가
+            아직이면(이동이 빨리 끝남) 같은 시각에 닫고, 이미 닫혔으면 아무것도 안 한다. 판정은 창과 무관하게 계속."""
             return judge_pad(landing.pad_obs, time.monotonic, ros_now, time.sleep, lambda: node.check_stop(goal_handle),
-                             t_from_mono, t_cross_ros, cfg, contact_close=close)
+                             t_from_mono, t_cross_ros, cfg, contact_close=lambda: window.close("judge"))
 
         try:
             node.check_controller()
@@ -266,10 +274,14 @@ def execute(node):
 
             pred = wait_release(t_goal, timeout_s)
             t_detect = time.monotonic()
-            node.set_contact(True)                             # 받기 창 열기 — nudge 끔. 교차 + 0.5 s 에 judge 가 닫는다
+            node.set_contact(True)                             # 받기 창 열기 — nudge 끔. 교차 + 0.5 s 에 타이머가 닫는다
             node.set_catch_window(True)                        # 받기 창 동안만 힘 한계 catch_window_force_limit_n (130 N, #144)
+            t_open["mono"] = time.monotonic()
             phase("tracking", pred)
             pred = wait_decide(pred, t_goal)
+            # 받기 창 닫기 타이머: 결정 시점 예측의 교차 시각 + 0.5 s. 요격 이동(move_checked, 0.5~0.8 s)이 끝나기를 기다리지 않는다
+            t_close = clamp_cross(pred.t_cross, ros_now(), cfg["cross_max_after_s"]) + cfg["contact_window_after_cross_s"]
+            window.schedule_close(t_close - ros_now())
             plan = intercept(ready, pad0, cfg["pad_normal"], pred.point, cfg["right_max_m"], cfg["updown_max_m"], cfg["down_max_m"])
             res.landing_predicted = _point(pred.point)
 
@@ -334,6 +346,8 @@ def execute(node):
             log.error(f"[catch_ball] 예외: {e}")
             return res
         finally:
+            window.close("finally")                            # 아직 안 닫혔으면 여기서 (중단·예외 포함). 닫혔으면 아무것도 안 함
+            window.cancel()
             node.set_contact(False)
             node.set_catch_window(False)
     return _execute

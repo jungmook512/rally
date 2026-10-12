@@ -137,3 +137,44 @@ def judge_pad(pad_obs, now_mono, now_ros, sleep, tick, t_from_mono: float, t_cro
     finally:
         if not closed:
             contact_close()          # 중단(STOP·취소)으로 빠져나가도 창은 닫힌다 (catch_ball 의 finally 가 한 번 더 끈다)
+
+
+class ContactWindow:
+    """받기 창(contact_expected · catch_window 130 N)을 **이동과 무관한 타이머**로 닫는다 (10/12 밤 실측 #163 결함: 닫는 코드가
+    판정 루프 안에 있어 요격 이동(0.5~0.8 s)이 끝나야 돌았고, 창이 1.3~2.4 s 로 #144 조건 "약 1 s" 를 넘었다).
+    on_close 는 한 번만 불린다 — 타이머·판정 루프·finally 가 각각 불러도 처음 것만 실행."""
+
+    def __init__(self, on_close, timer_factory=None):
+        import threading
+        self._on_close, self._timer_factory = on_close, (timer_factory or threading.Timer)
+        self._lock = threading.Lock()
+        self._timer = None
+        self.closed = False
+        self.closed_by: str | None = None
+
+    def schedule_close(self, delay_s: float) -> None:
+        """delay_s 뒤(0 이하면 바로)에 닫는다. 다시 부르면 이전 타이머를 취소하고 새로 잰다."""
+        with self._lock:
+            if self.closed:
+                return
+            if self._timer is not None:
+                self._timer.cancel()
+            self._timer = self._timer_factory(max(0.0, float(delay_s)), lambda: self.close("timer"))
+            self._timer.daemon = True
+            self._timer.start()
+
+    def close(self, who: str = "") -> bool:
+        """닫는다. 처음 부른 쪽만 on_close 를 실행하고 True."""
+        with self._lock:
+            if self.closed:
+                return False
+            self.closed, self.closed_by = True, who
+            if self._timer is not None:
+                self._timer.cancel()
+        self._on_close()
+        return True
+
+    def cancel(self) -> None:
+        with self._lock:
+            if self._timer is not None:
+                self._timer.cancel()

@@ -164,3 +164,30 @@ def test_judge_late_cross_clamped_window_is_short():
     closes = []
     _run_judge(clk, 100.6, closes=closes)
     assert closes == [102.0]
+
+
+def test_contact_window_timer_closes_once():
+    """받기 창: 타이머가 제때 닫고, 판정 루프·finally 가 다시 불러도 한 번만 실행 (10/12 밤 창 1.3~2.4 s 결함 수정)."""
+    import time
+    from rally_robot.skills.catch_plan import ContactWindow
+    calls = []
+    w = ContactWindow(lambda: calls.append(time.monotonic()))
+    t0 = time.monotonic()
+    w.schedule_close(0.05)
+    time.sleep(0.15)                                        # 이동이 길어도(여기선 sleep) 타이머가 닫는다
+    assert len(calls) == 1 and 0.03 <= calls[0] - t0 <= 0.12 and w.closed_by == "timer"
+    assert not w.close("judge") and not w.close("finally") and len(calls) == 1
+
+
+def test_contact_window_judge_closes_first_and_cancels_timer():
+    import time
+    from rally_robot.skills.catch_plan import ContactWindow
+    calls = []
+    w = ContactWindow(lambda: calls.append("x"))
+    w.schedule_close(0.2)
+    assert w.close("judge") and w.closed_by == "judge"
+    time.sleep(0.3)
+    assert calls == ["x"]                                    # 타이머는 취소됨
+    w.schedule_close(0.0)                                    # 닫힌 뒤 다시 걸어도 무시
+    time.sleep(0.05)
+    assert calls == ["x"]
