@@ -6,9 +6,11 @@ const path = require('node:path');
 const html = fs.readFileSync(path.join(__dirname, '../web/index.html'), 'utf8');
 const elements = new Map();
 function element() {
-  return {dataset:{}, children:[], attributes:{}, hidden:false, textContent:'', htmlWrites:0,
+  return {dataset:{}, children:[], attributes:{}, hidden:false, textContent:'', htmlWrites:0, style:{}, className:'',
     get innerHTML(){return this.markup||'';}, set innerHTML(value){this.markup=value;this.htmlWrites++;},
-    prepend(row){this.children.unshift(row);}, append(row){this.children.push(row);},
+    parentNode:null, previousElementSibling:null,
+    prepend(row){this.children.unshift(row);}, append(row){this.children.push(row);if(row&&typeof row==='object'){row.parentNode=this;row.previousElementSibling=null;}},
+    after(node){node.parentNode=this.parentNode;node.previousElementSibling=this;},
     setAttribute(name,value){this.attributes[name]=value;}, removeAttribute(name){delete this.attributes[name];}};
 }
 const ids = [...html.matchAll(/id="([^"]+)"/g)].map(m => m[1]);
@@ -20,7 +22,7 @@ const context = vm.createContext({
   document:{getElementById(id){assert(elements.has(id), id);return elements.get(id);},
     querySelectorAll(selector){assert.equal(selector,'#mode-nav a');return nav;}, createElement:element},
   location:{hash:'#mode1'}, addEventListener(name,callback){listeners[name]=callback;},
-  Date, performance, AbortSignal, setInterval(callback){intervals.push(callback);}, setTimeout(){}, console,
+  Date, performance, AbortSignal, setInterval(callback){intervals.push(callback);return intervals.length;}, clearInterval(){}, setTimeout(){}, console,
 });
 context.window = context;
 assert(html.includes('src="/images/training-scenes.js"'), 'scene engine must load before page logic');
@@ -37,7 +39,7 @@ for(const mode of [1,3,5,7]) {
   assert.match(picture, /aria-label=["'][^"']+["']/);
   assert.equal(get('trials-view').hidden,true);
   assert.equal(get('events-view').hidden,true);
-  assert.equal(nav.find(a=>a.attributes['aria-current']==='page').dataset.page,String(mode));
+  assert.equal(nav.find(a=>a.attributes['aria-current']==='page').dataset.page,'mode');
 }
 run("location.hash='#mode1';selectPage();renderControl({mode:1,phase:'running',bt_node:'손 이탈 확인 대기',updated_at:Date.now()/1000,trial_index:2,difficulty:1});");
 assert.equal(get('step-title').textContent,'손 이탈 대기');
@@ -48,7 +50,7 @@ assert.equal(get('resume').disabled,false);
 assert.doesNotMatch(get('steps').innerHTML,/aria-current="step"/);
 run("renderControl(null);");
 assert.equal(get('resume').disabled,true);
-assert.equal(get('step-title').textContent,'상태 수신 대기');
+assert.equal(get('step-title').textContent,'대기 중');
 run("renderControl({mode:1,phase:'running',bt_node:'밀기 1',updated_at:Date.now()/1000-5});");
 assert.doesNotMatch(get('steps').innerHTML,/aria-current="step"/);
 // Scene changes follow observed stages; stale or stopped states must never animate.
@@ -90,6 +92,31 @@ run("addTrial({trial_id:'one',mode:1},false);addTrial({trial_id:'five',mode:5},f
 const firstTrial = get('trials').children[1];
 const firstEvent = get('events').children[0];
 function visit(hash) { context.location.hash=hash; listeners.hashchange(); }
+// 스케치 배치 (10/12): 모드 화면이면 훈련 상태·카메라 칸이 모드 격자 안으로, 전체 현황이면 원래 자리로
+// 단계 미리보기 (10/12): 단계를 누르면 그 단계 그림, 실시간 상태와 별개. 페이지를 옮기면 끝
+visit('#mode5');
+run("$('steps').onclick({target:{closest:()=>({dataset:{i:'2'}})}});");
+assert.match(get('mode-diagram').innerHTML,/data-scene-stage="2"/);
+assert.match(get('mode-diagram').innerHTML,/미리보기/);
+assert.match(get('steps').innerHTML,/class="[^"]*preview/);
+run("$('steps-play').onclick();");                  // 미리보기 중이면 실시간으로
+assert.equal(run('previewStage'),null);
+assert.doesNotMatch(get('mode-diagram').innerHTML,/미리보기/);
+run("$('steps-play').onclick();");                  // 처음부터 자동 재생
+assert.match(get('mode-diagram').innerHTML,/data-scene-stage="0"/);
+visit('#mode1');
+assert.equal(run('previewStage'),null);
+visit('#mode5');
+assert.equal(get('control-bar').parentNode, get('mode-view'));
+assert.equal(get('camera-view').parentNode, get('camera-slot'));
+assert.equal(get('steps-panel').parentNode, get('card-slot-5'));
+assert.equal(get('card-5').className, 'mode-card selected');
+assert.equal(get('camera-view').hidden, false);
+visit('#overview');
+assert.equal(get('control-bar').previousElementSibling, get('control-home'));
+assert.equal(get('camera-view').previousElementSibling, get('camera-home'));
+visit('#trials');
+assert.equal(get('camera-view').hidden, true);
 for (const [hash,title,trialVisible,eventVisible] of [
   ['#trials','최근 시도',true,false], ['#events','사건 기록',false,true], ['#overview','전체 현황',false,false],
 ]) {

@@ -19,6 +19,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl gnupg lsb-
  && apt-get update && apt-get install -y --no-install-recommends ros-jazzy-ros-base ros-jazzy-realsense2-camera ros-jazzy-cv-bridge ros-jazzy-tf2-ros ros-jazzy-image-transport python3-pip \
  && rm -rf /var/lib/apt/lists/*
 
+# 대시보드 카메라 화면 (web_video_server, 포트 8080). 위 큰 apt 층의 캐시를 깨지 않게 따로
+RUN apt-get update && apt-get install -y --no-install-recommends ros-jazzy-web-video-server && rm -rf /var/lib/apt/lists/*
+
 COPY --from=build /ros2_ws/install /ros2_ws/install
 COPY docker/vision/requirements.txt /tmp/requirements.txt
 RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt

@@ -108,6 +108,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://rally:${POSTGRES_PASSWORD:-rally}@127.0.0.1:5432/rally
       - REDIS_URL=redis://127.0.0.1:6379/0
+      - ROBOT_VIDEO_URL=${ROBOT_VIDEO_URL:-}       # 카메라 화면 — 로봇·인식 PC web_video_server (docker/.env 에 http://로봇PC주소:8080)
     depends_on:
       db: { condition: service_healthy }
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000

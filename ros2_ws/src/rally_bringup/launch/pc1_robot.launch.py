@@ -43,9 +43,9 @@ def generate_launch_description():
                 EmitEvent(event=Shutdown(reason="safety_monitor not ready"))]
 
     return LaunchDescription([
-        DeclareLaunchArgument("hand_stop", default_value="off",
-                              description="개발용 손 근접 STOP: off(개발 기간 기본, 10/11~) | slow(SLOW 로 낮춤) | stop. "
-                                          "리허설·시연·환자 앞에서는 slow 또는 stop"),
+        DeclareLaunchArgument("hand_stop", default_value="slow",
+                              description="손 근접 STOP: slow(기본, 10/12~ — SLOW 로 낮춤) | stop | off(개발 시험 전용, 시연 금지). "
+                                          "리허설 결과로 slow/stop 확정 (#145)"),
         DeclareLaunchArgument("safety_wait_s", default_value="10.0",
                               description="safety_monitor 발행을 기다리는 최대 시간 [s]"),
         safety_monitor,

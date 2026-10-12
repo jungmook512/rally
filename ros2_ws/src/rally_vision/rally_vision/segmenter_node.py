@@ -21,7 +21,7 @@ import time
 import numpy as np
 import rclpy
 from cv_bridge import CvBridge
-from geometry_msgs.msg import Point, PoseStamped, Vector3
+from geometry_msgs.msg import Point, Pose, PoseArray, PoseStamped, Quaternion, Vector3
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
@@ -175,9 +175,10 @@ def extract_objects(res, depth_mm: np.ndarray, K, T_cam_to_frame: np.ndarray | N
         p_cam = pj.pixel_to_camera(cx, cy, z, K)
         center = pj.transform_points(T, p_cam)[0]
         yaw = pj.yaw_in_frame(T, p_cam, axis, z, K) if axis[3] > 1.3 else 0.0   # 둥근 물체는 yaw 의미 없음 → 0
+        img_axis = pj.image_axis_angle(axis) if axis[3] > 1.3 else None          # 화면 각도 (모드 5 받기: 손에 든 막대 기울기)
         x0, y0, x1, y1 = res.boxes.xyxy[i].tolist()
         out.append(dict(class_name=cname, confidence=conf, center=center, yaw=yaw, mask_area=float(m.sum()),
-                        bbox=(int(x0), int(y0), int(x1 - x0), int(y1 - y0)), uv=(cx, cy), z_m=z, mask=m))
+                        bbox=(int(x0), int(y0), int(x1 - x0), int(y1 - y0)), uv=(cx, cy), z_m=z, mask=m, image_axis=img_axis))
     return out
 
 
@@ -304,6 +305,8 @@ class SegmenterNode(Node):
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
         self.pub = self.create_publisher(TrackedObjectArray, "/rally/perception/objects", qos_profile_sensor_data)
+        # objects 와 같은 header·순서. orientation = 화면 주축 각도(z 축 회전), 둥근 물체는 (0,0,0,0) — INTERFACES 2.1
+        self.pub_axis = self.create_publisher(PoseArray, "/rally/perception/objects/image_axis", qos_profile_sensor_data)
         self.pub_dbg = self.create_publisher(Image, "/rally/perception/objects/debug_image", qos_profile_sensor_data)
         self.tracks = SimpleTracks(moving_mps=float(g("moving_mps")))
         self._last_dbg = 0.0
@@ -403,6 +406,12 @@ class SegmenterNode(Node):
             x, y, w, h = o["bbox"]; m.bbox = RegionOfInterest(x_offset=max(x, 0), y_offset=max(y, 0), width=max(w, 0), height=max(h, 0))
             arr.objects.append(m)
         self.pub.publish(arr)
+        axes = PoseArray(header=arr.header)
+        for o, m in zip(objs, arr.objects):
+            a = o.get("image_axis")
+            q = Quaternion(x=0.0, y=0.0, z=0.0, w=0.0) if a is None else Quaternion(x=0.0, y=0.0, z=float(np.sin(a / 2)), w=float(np.cos(a / 2)))
+            axes.poses.append(Pose(position=m.position, orientation=q))
+        self.pub_axis.publish(axes)
 
         now = time.monotonic()
         if now - self._last_dbg >= self._dbg_period and self.pub_dbg.get_subscription_count() > 0:
@@ -423,7 +432,8 @@ def draw_debug(img, objs, frame):
         x, y, w, h = o["bbox"]
         cv2.rectangle(vis, (x, y), (x + w, y + h), (0, 200, 255), 1)
         c = o["center"]
-        cv2.putText(vis, f"{o['class_name']}#{o.get('track_id', 0)} {o['confidence']:.2f} ({c[0]:.2f},{c[1]:.2f},{c[2]:.2f}) yaw{np.degrees(o['yaw']):.0f}",
+        cv2.putText(vis, f"{o['class_name']}#{o.get('track_id', 0)} {o['confidence']:.2f} ({c[0]:.2f},{c[1]:.2f},{c[2]:.2f}) yaw{np.degrees(o['yaw']):.0f}"
+                    + (f" img{np.degrees(o['image_axis']):+.0f}" if o.get("image_axis") is not None else ""),
                     (x, max(y - 6, 12)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
     cv2.putText(vis, f"frame: {frame}", (8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
     return vis

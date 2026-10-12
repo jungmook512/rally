@@ -11,7 +11,8 @@ from rally_brain.trees import mode5_handover
 from rally_interfaces.action import Handover, PickCompliant
 from rally_interfaces.msg import TrackedObject
 
-FAST = {"mode5": {"hand_wait_s": 0.05, "hand_wait_tries": 2, "object_wait_s": 0.05}}
+FAST = {"mode5": {"hand_wait_s": 0.05, "hand_wait_tries": 2, "object_wait_s": 0.05, "require_hand": True}}   # 손 확인 경로
+NO_HAND_GATE = {"mode5": {**FAST["mode5"], "require_hand": False}}   # 10/11 기본
 OK = (True, {"success": True})
 GIVE_OK = (True, {"success": True, "wrist_angle_at_grasp_deg": 12.0, "handover_time_s": 1.5})
 
@@ -224,3 +225,94 @@ def test_abort_before_stop_keeps_real_reason():
         tree.tick_once()
     tree.stop(Status.INVALID)
     assert [(t.success, t.notes) for t in published] == [(False, "safety_stop")]
+
+
+def test_goes_to_pick_view_before_pick_and_grasp_height_by_class():
+    # 10/11: 집기 전에 물체 보기 자세(/rally/robot/go_pick_view), 파지 높이 = table.z_m + grasp_height_m[클래스]
+    from fakes import Done
+    clients, session, published, _, _ = arrange(pick=[OK], handover=[GIVE_OK, OK])
+    calls = []
+    session.service_client = lambda _t, name: NS(service_is_ready=lambda: True,
+                                                 call_async=lambda _r: (calls.append(name), Done(NS(success=True)))[1])
+    session.table_cfg = {"z_m": 0.0144}
+    assert run(build(session)) == Status.SUCCESS
+    assert calls == [mode5_handover.OBSERVE_SERVICE, mode5_handover.PICK_VIEW_SERVICE]   # 관측 자세(손 확인) → 물체 보기
+    assert clients[PickCompliant].goals[0].target.pose.position.z == pytest.approx(0.0144 + 0.007)
+
+
+@pytest.mark.parametrize("fail, notes", [(mode5_handover.OBSERVE_SERVICE, "observe_failed"),
+                                         (mode5_handover.PICK_VIEW_SERVICE, "view_failed")])
+def test_pose_failure_records_and_does_not_pick(fail, notes):
+    from fakes import Done
+    clients, session, published, _, _ = arrange(pick=[OK], handover=[GIVE_OK, OK])
+    session.service_client = lambda _t, name: NS(service_is_ready=lambda: True,
+                                                 call_async=lambda _r: Done(NS(success=name != fail, message="x")))
+    run(build(session))
+    assert clients[PickCompliant].sent == 0 and [t.notes for t in published] == [notes]
+
+
+def test_default_does_not_wait_for_hand_before_pick():
+    # 10/11: 손이 안 보여도 집고 건넨다 (건네기 스킬이 잡을 때까지 기다림). 관측 자세(손 확인)도 안 감
+    from fakes import Done
+    clients, session, published, _, ctx = arrange(pick=[OK], handover=[GIVE_OK, OK], cfg=NO_HAND_GATE)
+    ctx.hand.detected = False
+    calls = []
+    session.service_client = lambda _t, name: NS(service_is_ready=lambda: True,
+                                                 call_async=lambda _r: (calls.append(name), Done(NS(success=True)))[1])
+    assert run(build(session)) == Status.SUCCESS
+    assert calls == [mode5_handover.PICK_VIEW_SERVICE] and published[0].notes == ""
+
+
+def cup(x=0.35, y=-0.20):
+    return TrackedObject(class_name="cup", confidence=0.9, position=Point(x=x, y=y), yaw=0.0)
+
+
+@pytest.mark.parametrize("seed", range(6))
+def test_random_class_when_both_seen_and_handover_uses_held_class(seed):
+    # 10/11: 막대·컵 둘 다 보이면 시도마다 무작위, 건네기·받기 object_class 는 집은 물체
+    cfg = {"mode5": {**NO_HAND_GATE["mode5"], "object_classes": ["rod", "cup"]}}
+    clients, session, published, _, _ = arrange(pick=[OK], handover=[GIVE_OK, OK], cfg=cfg, objects=[rod(), cup()])
+    assert run(build(session, seed)) == Status.SUCCESS
+    picked = clients[PickCompliant].goals[0].target.pose.position
+    cls = "rod" if picked.x == pytest.approx(0.30) else "cup"
+    assert [g.object_class for g in clients[Handover].goals] == [cls, cls]
+
+
+def test_both_classes_are_chosen_over_seeds():
+    cfg = {"mode5": {**NO_HAND_GATE["mode5"], "object_classes": ["rod", "cup"]}}
+    got = set()
+    for seed in range(12):
+        clients, session, _, _, _ = arrange(pick=[OK], handover=[GIVE_OK, OK], cfg=cfg, objects=[rod(), cup()])
+        run(build(session, seed))
+        got.add(clients[Handover].goals[0].object_class)
+    assert got == {"rod", "cup"}
+
+
+def test_released_then_retreat_failed_robot_is_empty_handed():
+    # 10/11 실로봇: 놓은 뒤 후퇴 not_arrived — 다음 시도는 '이미 쥐고 있음'으로 집기를 건너뛰면 안 됨
+    clients, session, published, _, _ = arrange(pick=[OK, OK], handover=[(False, {"success": True}), GIVE_OK, OK],
+                                                 cfg=NO_HAND_GATE)
+    tree = build(session)
+    run(tree)
+    run(tree)
+    assert clients[PickCompliant].sent == 2
+
+
+def test_hand_stop_resume_decisions():
+    # 10/11: 손 근접 STOP 뒤 이어 가도 되는 단계 — 자세로 가는 중이면 다시 보냄, 건네기 놓은 뒤면 끝, 나머지는 세션 종료
+    r = ["hand_near_robot", "hand_lost_near"]
+    pick, give, recv = (mode5_handover.hand_resume(k, r) for k in ("pick", "give", "receive"))
+    assert pick("hand_near_robot", ["approach"]) == "resend" and pick("hand_near_robot", ["approach", "descend"]) is None
+    assert give("hand_lost_near", ["present"]) == "resend"
+    assert give("hand_near_robot", ["present", "wait", "release", "retreat"]) == "done"
+    assert recv("hand_near_robot", ["present"]) == "resend" and recv("hand_near_robot", ["present", "wait", "grasp"]) is None
+    assert give("force_limit", ["present"]) is None
+
+
+def test_receive_goal_rejected_during_hand_stop_is_resent():
+    # 10/11 실로봇: 손 STOP 대기 뒤 받기 goal 이 거절(그 순간 다시 STOP) → 세션 종료됐다. 손 재전송 단계면 다시 기다렸다 보냄
+    clients, session, published, _, _ = arrange(pick=[OK], handover=[GIVE_OK, "reject", OK], cfg=NO_HAND_GATE)
+    assert run(build(session)) == Status.SUCCESS
+    assert [g.direction for g in clients[Handover].goals] == [Handover.Goal.DIR_GIVE, Handover.Goal.DIR_RECEIVE,
+                                                               Handover.Goal.DIR_RECEIVE]
+    assert metric(published[0], "received") == 1

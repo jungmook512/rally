@@ -76,6 +76,18 @@ def mask_principal_axis(mask: np.ndarray):
     return cx, cy, (float(d[0]), float(d[1])), ratio
 
 
+def image_axis_angle(axis_px) -> float:
+    """영상 주축의 화면 각도 [rad] — 화면 위쪽(−v)에서 오른쪽(+u)으로 돌면 +, (−π/2, π/2] (막대는 방향이 없음).
+    카메라가 앞을 볼 때(모드 5 받기 자세) 손에 든 막대의 기울기. yaw_in_frame 은 base 평면 투영이라 이때 늘 ±90° 로 뭉개진다."""
+    _, _, (du, dv), _ = axis_px
+    a = float(np.arctan2(du, -dv))
+    if a > np.pi / 2:
+        a -= np.pi
+    elif a <= -np.pi / 2:
+        a += np.pi
+    return a
+
+
 def yaw_in_frame(T_cam_to_frame: np.ndarray, center_cam: np.ndarray, axis_px, z_m: float, K) -> float:
     """영상 주축 → 목표 프레임(base_link) 평면(x, y)에서의 yaw [rad].
     중심에서 주축 방향으로 1 px 떨어진 점을 같은 깊이로 3D 화해 두 점의 차이로 각을 낸다 (방향 부호는 ±π 모호)."""

@@ -1,7 +1,11 @@
 """rally_bringup/launch/pc2_perception.launch.py — 로봇·인식 PC 추론 컨테이너 (역할 pc2)
 
 compose 서비스마다 part 를 하나씩 준다:
-  vision    → realsense2_camera(/camera/color/image_raw, 정렬 깊이) + camera_tf · segmenter · tracker · flight_predictor
+  vision    → RealSense 두 대 (config/cameras.yaml, 둘 다 848×480 @60 fps, 시리얼로 구분)
+                손목 /camera/color/image_raw + 정렬 깊이 — 노출 평소 자동, 모드 3 동안만 고정 (brain 이 바꿈)
+                측면 /side/side/color/image_raw (컬러만) — 노출 항상 고정 (set_camera_params 가 뜬 뒤 넣음). side_camera:=false 면 안 띄움
+              + camera_tf · segmenter · tracker · flight_predictor
+              + web_video_server (포트 8080) — 대시보드 '카메라' 칸이 MJPEG 로 받아 본다 (video_server:=false 면 안 띄움)
   human     → usb_cam(/webcam/image_raw) + hand_pose · body_pose
   voice     → intent_node · tts_node
   all       → 셋 다 (컨테이너 없이 한 터미널에서 확인할 때)
@@ -17,6 +21,8 @@ from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogI
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+
+from rally_bringup import camera_params
 
 PARTS = {
     "vision": [("rally_vision", "camera_tf"),                 # hand_eye.yaml → base_link→camera_link tf (손 노드·segmenter 가 조회)
@@ -66,12 +72,32 @@ def _realsense(context):
     if not _has_package("realsense2_camera"):
         return [LogInfo(msg="[pc2] realsense2_camera 패키지 없음 → 카메라 건너뜀 (vision 컨테이너에서 실행하세요)")]
     rs_launch = os.path.join(get_package_share_directory("realsense2_camera"), "launch", "rs_launch.py")
-    return [IncludeLaunchDescription(PythonLaunchDescriptionSource(rs_launch), launch_arguments={
-        # 토픽을 /camera/color/image_raw 로 (선생님 코드·INTERFACES 2.1). 드라이버 기본값은 /camera/camera/...
-        "camera_namespace": "",
-        "camera_name": "camera",
-        "align_depth.enable": "true",
-    }.items())]
+    cfg = camera_params.load()
+
+    def include(cam: dict, depth: bool):
+        return IncludeLaunchDescription(PythonLaunchDescriptionSource(rs_launch),
+                                        launch_arguments=camera_params.rs_launch_args(cam, depth).items())
+
+    # 손목: 토픽 /camera/color/image_raw (선생님 코드·INTERFACES 2.1). 두 대가 꽂혀 있으므로 시리얼 필수 — 없으면 아무 쪽이나 열린다
+    actions = [include(cfg["wrist"], depth=True)]
+    side = cfg.get("side") or {}
+    if side.get("enabled", True) and LaunchConfiguration("side_camera").perform(context).lower() in ("true", "1"):
+        actions += [include(side, depth=False),
+                    Node(package="rally_bringup", executable="set_camera_params", output="screen",
+                         arguments=["--node", side["node"], "--fixed"])]
+    else:
+        actions.append(LogInfo(msg="[pc2] 측면 RealSense 끔 (side_camera:=false 또는 cameras.yaml side.enabled) — 모드 3 예측 안 됨"))
+    return actions
+
+
+def _video_server(context):
+    """대시보드 카메라 화면용. 영상은 이 PC 안에서 압축돼 브라우저로만 간다 (DDS 로 원본을 서버 PC 에 보내지 않음, 저장 안 함)."""
+    if LaunchConfiguration("video_server").perform(context).lower() not in ("true", "1"):
+        return []
+    if not _has_package("web_video_server"):
+        return [LogInfo(msg="[pc2] web_video_server 패키지 없음 → 대시보드 카메라 화면 없음 (vision 컨테이너 다시 빌드)")]
+    return [Node(package="web_video_server", executable="web_video_server", name="rally_web_video", output="screen",
+                 parameters=[{"port": 8080, "address": "0.0.0.0", "server_threads": 2, "ros_threads": 2}])]
 
 
 def _webcam(context):
@@ -96,7 +122,7 @@ def _launch_part(context):
     actions = [LogInfo(msg=f"[pc2] part={part}")]
     for p in parts:
         if p == "vision":
-            actions += _realsense(context)
+            actions += _realsense(context) + _video_server(context)
         if p == "human":
             actions += _webcam(context)
         for package in {pkg for pkg, _ in PARTS[p]}:
@@ -107,6 +133,8 @@ def _launch_part(context):
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("part", default_value="all", description="vision | human | voice | all"),
+        DeclareLaunchArgument("side_camera", default_value="true", description="측면 RealSense (모드 3) 띄우기"),
+        DeclareLaunchArgument("video_server", default_value="true", description="대시보드 카메라 화면용 web_video_server (포트 8080)"),
         DeclareLaunchArgument("webcam_device", default_value="/dev/video0", description="측면 웹캠 장치"),
         DeclareLaunchArgument("body_arm", default_value="left", description="body_pose 뻗는 팔: left | right | auto (시연은 왼팔)"),
         OpaqueFunction(function=_launch_part),

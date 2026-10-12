@@ -13,7 +13,8 @@
     python3 scripts/mode3_reach_test.py --run --dist 5 10 --acc 1000 --vel 500 --reps 3 --dirs +y -y
 결과 CSV: data/measure/mode3_reach_MMDD_HHMM.csv (한 줄 = 한 번 이동).
 안전: 대기 자세는 지금 로봇 자세. 매 이동 전 /rally/safety/status 가 NORMAL 이 아니면 멈춤. 매 이동 뒤 대기 자세로 천천히(--return-vel) 돌아감.
-      safety.yaml 작업 공간(x 0.20~0.57, y ±0.45, z 0~0.60) 밖 목표는 계획에서 빼고 알림. 속도는 --vel × 안전 speed_override.
+      safety.yaml 작업 공간(실행 때 읽음) 밖 목표는 계획에서 빼고 알림. 속도는 --vel × 안전 speed_override.
+      이동 중(시험 이동·대기 자세 복귀 모두) STOP 이 오면 바로 정지 명령 → 정지 확인 후 끝냄 (10/12).
 DSR_ROBOT2 는 rally_robot.dsr_helpers.init_dsr() 뒤에 import (CLAUDE.md).
 """
 import argparse
@@ -40,7 +41,28 @@ from print_pose import TCP_OFFSET_MM  # noqa: E402
 ROOT = Path(__file__).resolve().parents[1]
 JOINT_VMAX = np.array([150, 150, 180, 225, 225, 225.0])   # M0609 관절 속도 한계 deg/s
 J3_MAX = 148.0
-WORKSPACE = dict(x=(0.20, 0.57), y=(-0.45, 0.45), z=(0.0, 0.60))   # safety.yaml (모드 1 기준)
+WORKSPACE_FALLBACK = dict(x=(-2.00, 0.57), y=(-0.60, 0.60), z=(0.0, 2.00))   # safety.yaml 을 못 읽을 때만 (10/11 값)
+
+
+def load_workspace():
+    """safety.yaml 작업 공간 (m) — 설치본 우선, 없으면 소스 트리. 상수로 두면 safety.yaml 이 바뀔 때 어긋난다 (#141, PM 정리 10/12)."""
+    import yaml
+    cands = []
+    try:
+        from ament_index_python.packages import get_package_share_directory
+        cands.append(Path(get_package_share_directory("rally_bringup")) / "config" / "safety.yaml")
+    except Exception:  # noqa: BLE001
+        pass
+    cands.append(ROOT / "ros2_ws" / "src" / "rally_bringup" / "config" / "safety.yaml")
+    for p in cands:
+        if p.is_file():
+            c = yaml.safe_load(p.read_text(encoding="utf-8"))["rally_safety_monitor"]["ros__parameters"]
+            return {a: (float(c[f"workspace_{a}_min_m"]), float(c[f"workspace_{a}_max_m"])) for a in "xyz"}
+    print("safety.yaml 을 못 찾음 — 작업 공간 기본값 사용")
+    return dict(WORKSPACE_FALLBACK)
+
+
+WORKSPACE = load_workspace()                 # 실행 중엔 안전 노드가 safety.yaml 로 따로 감시
 PAD_TILT_DEG = 45.0
 
 
@@ -247,11 +269,33 @@ def main():
 
     from rally_robot.dsr_helpers import init_dsr
     dsr = init_dsr("rally_mode3_reach")
-    from DSR_ROBOT2 import amovel, check_motion, get_current_posx, get_robot_state, movel, mwait  # noqa: E402  init_dsr 뒤
+    from DSR_ROBOT2 import amovel, check_motion, get_current_posx, get_robot_state  # noqa: E402  init_dsr 뒤
+    from rally_robot.dsr_helpers import stop_robot
     start6 = list(get_current_posx()[0])
     out = ROOT / "data" / "measure" / f"mode3_reach_{datetime.now():%m%d_%H%M%S}.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     rows = []
+
+    t1 = time.monotonic()                         # 안전 상태 구독이 들어올 때까지 (시작하자마자 첫 scale() 이 None 으로 끝나지 않게)
+    while w.safety is None and time.monotonic() - t1 < 5.0:
+        time.sleep(0.05)
+
+    def guard(label):
+        """이동 중 폴링: STOP 이면 바로 정지 명령 → 정지 확인 → 끝냄 (예전엔 이동 전에만 확인)."""
+        s = w.safety
+        if s is not None and s.level == 2:
+            stopped = stop_robot(dsr, w.get_logger(), f"safety STOP {s.reason} ({label})")
+            raise SystemExit(f"{label} 중 안전 STOP ({s.reason}) — 정지 {'확인' if stopped else '실패! 펜던트 확인'}")
+
+    def wait_motion(t_cmd, label, limit_s):
+        while True:
+            time.sleep(0.01)
+            guard(label)
+            if time.monotonic() - t_cmd > 0.2 and check_motion() == 0:
+                return
+            if time.monotonic() - t_cmd > limit_s:
+                stop_robot(dsr, w.get_logger(), f"{label} 시간 초과")
+                raise SystemExit(f"{label}: {limit_s:.0f} s 안에 안 끝남 — 멈춤")
 
     def scale():
         s = w.wait_normal()
@@ -274,12 +318,7 @@ def main():
                     w.clear()
                     t_cmd = time.monotonic()
                     amovel(tgt6, vel=opt.vel * k, acc=acc * k)
-                    while True:
-                        time.sleep(0.01)
-                        if time.monotonic() - t_cmd > 0.2 and check_motion() == 0:
-                            break
-                        if time.monotonic() - t_cmd > 10:
-                            raise SystemExit("10 s 안에 안 끝남 — 멈춤")
+                    wait_motion(t_cmd, "시험 이동", 10.0)
                     time.sleep(0.3)
                     r = analyse(w.take(t_cmd), t_cmd, p0, s["target"], d)
                     r.update(w.force_stats(t_cmd, time.monotonic()))
@@ -292,9 +331,12 @@ def main():
                           f"힘 최대 {r.get('force_peak_n', float('nan')):.1f} N (변화 {r.get('force_dpeak_n', float('nan')):.1f})")
                     if r["robot_state"] not in (1, 2):
                         raise SystemExit(f"로봇 상태 {r['robot_state']} (알람·정지) — 펜던트에서 해제 후 대기 자세로")
-                    scale()
-                    movel(start6, vel=opt.return_vel * scale(), acc=opt.return_vel * 2 * scale())
-                    mwait()
+                    # 복귀도 amovel + 폴링 — 막는 movel·mwait 동안엔 두산 서비스가 막혀 wrench_stale SLOW 가 나고(정동휘 #144) STOP 도 못 봤다
+                    kr = scale()
+                    t_ret = time.monotonic()
+                    amovel(start6, vel=opt.return_vel * kr, acc=opt.return_vel * 2 * kr)
+                    dist_mm = s["dist_cm"] * 10.0
+                    wait_motion(t_ret, "대기 자세 복귀", dist_mm / max(opt.return_vel * kr, 1.0) * 2.0 + 5.0)
     finally:
         if rows:
             with open(out, "w", newline="") as f:

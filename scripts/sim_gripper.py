@@ -105,6 +105,11 @@ class SimGripper(Node):
         self.ball_v = (0.0, 0.0)        # 굴러가는 속도 (m/s)
         self.tip_hist = []              # [(monotonic, x, y)] 최근 0.25 s 손가락 끝 위치
         self.tip_q = (0.0, 0.0, 0.0, 1.0)
+        # 모드 3: 패드 거치대 (10/12) — 손잡이 = skills.yaml mode3.pad_rack_grasp_posx 위치. 거기서 닫으면 폭 30 mm 로 쥠, 열면 놓음
+        g = ((skills.get("mode3") or {}).get("pad_rack_grasp_posx") or [])
+        self.pad_handle = [float(v) / 1000.0 for v in g[:3]] if len(g) >= 3 else None
+        self.pad_held, self.pad_mm = False, 30.0
+        self.pad_rack0 = list(self.pad_handle) if self.pad_handle else None     # 거치대 그림 자리 (처음 손잡이 위치)
         # 모드 5: 막대 + 환자
         self.centerline_x = float(table.get("centerline_x_m") or 0.568)
         self.rod_r, self.rod_len = rod_mm / 2000.0, rod_len
@@ -175,19 +180,30 @@ class SimGripper(Node):
                 self.offering = self.rod_state == "table"
                 self.rod_state = "held"
                 self.get_logger().info("막대 쥠")
+            if self.pad_held and target >= 40.0:                       # 패드 놓기 (그 자리에 남음)
+                self.pad_held = False
+                if tip is not None:
+                    self.pad_handle = list(tip[1:])
+                self.get_logger().info("패드 놓음")
+            if (not self.pad_held and not self.held and self.rod_state != "held" and target < self.pad_mm
+                    and tip is not None and self.pad_handle is not None and math.dist(tip[1:], self.pad_handle) < 0.03):
+                self.pad_held = True
+                self.get_logger().info(f"패드 쥠 (손잡이와 {math.dist(tip[1:], self.pad_handle) * 1000:.0f} mm)")
             if self.held and target >= ball_mm:          # 열기 → 놓기
                 self.held = False
                 self.ball[2] = self.table_z + self.r
                 self.ball_v = (0.0, 0.0)
-            grab = (not self.held) and self.rod_state != "held" and target < ball_mm and self._ball_between_fingers()
+            grab = (not self.held) and self.rod_state != "held" and not self.pad_held and target < ball_mm and self._ball_between_fingers()
             if grab:
                 self.held = True
-            if self.rod_state == "held":
+            if self.pad_held:
+                actual = self.pad_mm
+            elif self.rod_state == "held":
                 actual = rod_mm
             else:
                 actual = ball_mm if self.held else max(target, 12.4)   # 실물 RG2: 빈손으로 닫아도 12.4 mm
             self.width = actual
-            holding = self.held or self.rod_state == "held"
+            holding = self.held or self.rod_state == "held" or self.pad_held
         if self.cli.wait_for_service(timeout_sec=0.5):
             ev = threading.Event()
             fut = self.cli.call_async(SetCommand.Request(command=str(int(actual * 10))))
@@ -240,6 +256,8 @@ class SimGripper(Node):
     def step(self):
         tip = self._tip()
         with self.lock:
+            if tip is not None and self.pad_held:
+                self.pad_handle = list(tip[1:])
             if tip is not None and self.held and self.ball is not None:
                 self.ball = list(tip[1:])
             elif self.ball is not None and tip is not None and not self.held:
@@ -285,7 +303,10 @@ class SimGripper(Node):
             self._patient(tip)
             if self.patient1:
                 self._patient1()
-        self.pub_force.publish(Vector3(x=self.force[0], y=self.force[1], z=self.force[2]))
+        f = (float(self.force[0]), float(self.force[1]), float(self.force[2]))
+        if f != getattr(self, "_last_force", None):        # 바뀔 때만 — 다른 시험 스크립트가 넣는 힘(모드 7 밀기 등)을 0 으로 덮지 않게 (10/12)
+            self._last_force = f
+            self.pub_force.publish(Vector3(x=f[0], y=f[1], z=f[2]))
         self.publish_scene(ball)
 
     def _patient(self, tip):
@@ -438,6 +459,15 @@ class SimGripper(Node):
         qx, qy, qz, qw = quat_z_to(rod_axis)
         m.pose.orientation.x, m.pose.orientation.y, m.pose.orientation.z, m.pose.orientation.w = qx, qy, qz, qw
         arr.markers.append(m)
+        if self.pad_rack0 is not None:          # 모드 3 패드 거치대·패드 (모양은 대략 — 손잡이 아래 벨크로 면, 그 아래 거치대)
+            rx, ry, rz = self.pad_rack0
+            arr.markers.append(mk(500, Marker.CUBE, (rx, ry, rz - 0.21), (0.09, 0.09, 0.08), (0.45, 0.45, 0.5, 0.8), "pad"))
+            with self.lock:
+                hx, hy, hz = self.pad_handle
+            arr.markers.append(mk(501, Marker.CUBE, (hx, hy, hz + 0.01), (0.025, 0.025, 0.06), (0.15, 0.15, 0.15, 1.0), "pad"))
+            disk = mk(502, Marker.CYLINDER, (hx, hy, hz - 0.10), (0.15, 0.15, 0.012), (0.85, 0.2, 0.2, 0.9), "pad")   # 패드는 손잡이 아래
+            disk.pose.orientation.x, disk.pose.orientation.w = math.sqrt(0.5), math.sqrt(0.5)    # 면을 세움
+            arr.markers.append(disk)
         arr.markers.append(mk(300, Marker.CUBE, tuple(hand), (0.10, 0.08, 0.04), (0.96, 0.75, 0.6, 1.0), "hand"))
         arr.markers.append(mk(301, Marker.CUBE, (hand[0] + 0.17, hand[1], hand[2]), (0.24, 0.06, 0.06), (0.96, 0.75, 0.6, 0.6), "hand"))
         cam = self._camera()
