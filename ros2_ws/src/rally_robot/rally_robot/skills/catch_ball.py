@@ -262,9 +262,11 @@ def execute(node):
 
             if goal.catch_radius > 0 and plan.offset_m > goal.catch_radius:
                 res.failure_reason = "out_of_radius"
+                node.set_catch_window(False)                   # 안 움직이면 130 N 필요 없음 — 바로 25 N (#165 리뷰). nudge 끔은 유지
                 log.info(f"[catch_ball] 예측점이 대기 위치에서 {plan.offset_m:.2f} m — 반경 밖, 움직이지 않음")
             elif not quality_ok(pred.std, pred.n_obs, cfg["gate_std_max_m"], cfg["gate_n_obs_min"]):
                 res.failure_reason = "low_confidence"
+                node.set_catch_window(False)                   # 위와 같음
                 log.info(f"[catch_ball] 예측 품질 미달 (std {pred.std[0] * 100:.1f}·{pred.std[1] * 100:.1f} cm, 관측 {pred.n_obs}) — 움직이지 않음")
             else:
                 node.check_stop(goal_handle)
