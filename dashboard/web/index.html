@@ -13,20 +13,21 @@
   * { box-sizing:border-box; }
   [hidden] { display:none!important; }
   body { margin:0; background:linear-gradient(120deg,var(--bg),#f4f0fa 65%,#fff8e8); color:var(--text); font:15px/1.55 system-ui,-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif; }
-  header { max-width:1500px; margin:auto; padding:16px 28px; display:flex; justify-content:space-between; align-items:center; gap:16px; }
+  header { max-width:1500px; margin:auto; padding:10px 28px; display:flex; align-items:center; gap:22px; border-bottom:1px solid var(--line); }
+  #conn { margin-left:auto; white-space:nowrap; }
   header h1 { margin:0; display:flex; align-items:center; gap:20px; }
   header small { font-size:15px; font-weight:500; color:var(--muted); }
-  .brand { font-size:30px; letter-spacing:.08em; }
+  .brand { font-size:24px; letter-spacing:.08em; }
   .brand span { color:var(--accent); font-size:12px; margin-left:4px; }
   #conn { font-size:13px; color:var(--muted); }
   #conn.off { color:var(--stop); }
-  #mode-nav { display:flex; gap:8px; padding:8px max(20px,calc((100vw - 1444px)/2)); background:#fffdf5; border-block:1px solid var(--line); overflow-x:auto; }
-  #mode-nav a { padding:10px 16px; border:1px solid transparent; border-radius:10px; color:var(--muted); text-decoration:none; font-weight:700; white-space:nowrap; }
+  #mode-nav { display:flex; gap:4px; overflow-x:auto; }
+  #mode-nav a { padding:7px 12px; border:1px solid transparent; border-radius:10px; color:var(--muted); text-decoration:none; font-weight:700; white-space:nowrap; }
   #mode-nav a[aria-current] { background:var(--mint); border-color:#7cae99; color:#164e3f; }
   #mode-nav small { font-size:11px; padding:2px 6px; background:var(--lavender); border-radius:6px; }
   a:focus-visible,button:focus-visible,[tabindex]:focus-visible { outline:3px solid #9b6400; outline-offset:3px; }
   main { max-width:1500px; margin:auto; padding:14px 28px 32px; display:grid; gap:14px; }
-  #page-heading { display:flex; align-items:center; gap:12px; padding:0; }
+  #page-heading { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
   #page-heading h2 { margin:0; font-size:24px; line-height:1.3; }
   .badge { display:inline-block; border:1px solid var(--line); border-radius:8px; background:#fafcf9; padding:5px 9px; color:var(--muted); font-size:12px; }
   .panel { min-width:0; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:18px; box-shadow:0 3px 0 #244c3510; }
@@ -73,9 +74,24 @@
   #proposal-message { font-weight:650; }
   /* 모드 화면 배치 (10/12 조정묵 스케치): 1줄 훈련 상태 · 현재 동작 · 진행 현황 / 2줄 환자 시점 그림(2칸) · 카메라 / 3줄 단계 순서 */
   #mode-view { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; align-items:stretch;
-               grid-template-areas:"control instr stats" "diagram diagram cams" "steps steps steps"; }
+               grid-template-areas:"control control control" "diagram diagram cams" "steps steps steps"; }
+  #mode-view .instruction, #mode-view .stats { display:none; }
+  #mode-view .control-bar { grid-template-columns:minmax(0,1fr) auto; align-items:center; padding:10px 16px; }
+  #resume:disabled { display:none; }   /* 휴식 중이라 누를 수 있을 때만 보임 */
+  #mode-view .control-status { display:flex; align-items:center; gap:14px; }
+  #mode-view .control-status h2 { font-size:15px; color:var(--muted); }
+  #mode-view #phase { font-size:17px; }
+  #mode-view .diagram-panel>.panel-top { display:none; }
+  #mode-view .diagram-panel { padding:10px; }
+  #mode-view #mode-diagram { margin-top:0; }
+  #mode-view #mode-diagram svg { max-height:calc(100vh - 330px); min-height:260px; }
+  #mode-view #camera-view { padding:12px; } #mode-view #camera-view .section-heading { margin-bottom:8px; padding-bottom:6px; font-size:15px; }
+  #mode-view #camera-view .frame { max-height:calc((100vh - 400px) / 2); }
+  #mode-view .steps-panel { padding:10px 16px; display:flex; align-items:center; gap:18px; }
+  #mode-view .steps-panel h2 { margin:0; padding:0; border:0; white-space:nowrap; font-size:15px; }
+  #mode-view #steps { flex:1; } #mode-view #steps li span { width:28px; height:28px; margin-bottom:4px; font-size:14px; }
   #mode-view .visual-column, #mode-view aside { display:contents; }
-  #mode-view .control-bar { grid-area:control; grid-template-columns:1fr; align-content:start; }
+  #mode-view .control-bar { grid-area:control; }
   #mode-view .instruction { grid-area:instr; }
   #mode-view .stats { grid-area:stats; }
   #mode-view .diagram-panel { grid-area:diagram; }
@@ -143,9 +159,7 @@
 </head>
 <body>
 <header>
-  <h1><span class="brand">RALLY<span>●</span></span><small>재활 훈련 대시보드</small></h1>
-  <span id="conn" class="off">연결 중…</span>
-</header>
+  <h1><span class="brand">RALLY<span>●</span></span></h1>
 <nav id="mode-nav" aria-label="훈련 모드 페이지">
 <a href="#overview" data-page="overview">전체 현황</a>
 <a href="#mode1" data-page="1">모드 1 · 공 굴리기</a>
@@ -155,6 +169,8 @@
 <a href="#trials" data-page="trials">최근 시도</a>
 <a href="#events" data-page="events">사건 기록</a>
 </nav>
+  <span id="conn" class="off">연결 중…</span>
+</header>
 <main>
   <section id="page-heading"><h2 id="page-title">전체 현황</h2><span id="view-status" class="badge" hidden></span></section>
   <div id="safety" class="unknown">안전 상태 모름</div>
@@ -245,7 +261,7 @@ function renderControl(s) {
   renderModePage();
   controlReceived = performance.now();
   renderProposal();
-  $("phase").textContent = s ? `${PHASES[s.phase] ?? s.phase} · ${modeName(s.mode)} · 난이도 ${s.difficulty ?? "—"}`
+  $("phase").textContent = s ? `${PHASES[s.phase] ?? s.phase} · ${modeName(s.mode)} · 난이도 ${s.difficulty ?? "—"}` + (s.trial_index ? ` · ${s.trial_index}회째` : "")
     + (s.phase === "paused" && s.blocked_reason ? ` · ${s.blocked_reason}` : "")
     + (s.hand_wait ? ` · 손 근접 정지 대기(${s.hand_wait}) — 손이 빠지면 이어감` : "") : "연결 대기";
   $("resume").disabled = resuming || !s?.can_resume || s.phase !== "paused";

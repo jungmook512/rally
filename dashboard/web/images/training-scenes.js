@@ -39,12 +39,12 @@ function sceneArm([wx, wy], tool = '', grip = 'open') {
     </g></g>`;
 }
 function sceneHand([x, y], {fade = false, scale = 1, rotate = 0, holding = ''} = {}) {
-  // 환자 오른손을 위에서 본 모습 (손가락이 로봇 쪽). 팔뚝은 화면 아래로
-  return `<g transform="translate(${x} ${y}) rotate(${rotate}) scale(${scale})" opacity="${fade ? .38 : 1}" class="hand">
-    <path d="M-20 26L-26 140H26L20 26Z" fill="#efc7a4" stroke="#c99472" stroke-width="2"/>
-    <rect x="-25" y="-16" width="50" height="46" rx="18" fill="#f4d2b3" stroke="#c99472" stroke-width="2"/>
-    ${[-17, -6, 5, 16].map((fx, i) => `<rect x="${fx - 4.5}" y="${-38 + Math.abs(i - 1.5) * 4}" width="9" height="28" rx="4.5" fill="#f4d2b3" stroke="#c99472" stroke-width="1.6"/>`).join('')}
-    <rect x="-37" y="0" width="10" height="24" rx="5" transform="rotate(-28 -32 12)" fill="#f4d2b3" stroke="#c99472" stroke-width="1.6"/>
+  // 환자 손을 위에서 본 단순한 모양 (손가락이 로봇 쪽). 소매는 화면 아래로
+  return `<g transform="translate(${x} ${y}) rotate(${rotate}) scale(${scale})" opacity="${fade ? .35 : 1}" class="hand">
+    <rect x="-24" y="22" width="48" height="120" rx="10" fill="#9fb6c6"/>
+    <path d="M-21 26C-25 4-25-18-19-34C-15-44-7-48 0-48C7-48 15-44 19-34C25-18 25 4 21 26Z" fill="#f1c9a6"/>
+    <path d="M-20 2C-33-4-38-16-31-23C-25-27-20-18-18-10" fill="#f1c9a6"/>
+    <path d="M-8-42V-24M1-45V-25M10-41V-23" stroke="#dcab85" stroke-width="2" stroke-linecap="round"/>
     ${holding}
   </g>`;
 }
