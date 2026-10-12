@@ -5,7 +5,7 @@
    └─ Selector
        ├─ 받기 (Sequence)
        │   ├─ 시작       throw_prompt 안내 ("공을 던져 주세요")
-       │   └─ CatchBall  로봇이 패드를 들고 대기 자세 → 공을 놓은 뒤 예측점으로 한 번 이동 → 힘으로 명중 판정 → 복귀
+       │   └─ CatchBall  로봇이 패드를 들고 대기 자세 → 공을 놓은 뒤 예측점으로 한 번 이동 → 측면 카메라로 판정(패드 위 공 3 s, #147) → 복귀
        └─ 끝             실패를 기록했거나 시도를 건너뛰었으면 시도는 끝 (받기 스킬 서버 없음도 건너뜀 — 세션 실패 아님)
   범위 (docs/mode3/MODE3_PLAN.md, 10/12): CatchBall 결과 기록까지. 패드에서 공 떼기·환자에게 돌려주기는 로봇 after_catch()
   보류 — 그동안 운영자가 공을 떼어 건넨다. 다음 시도의 timeout_s 에 그 시간이 들어간다.
@@ -60,7 +60,7 @@ def _finite(v: float) -> float:
 
 
 def trial_from_result(goal: CatchBall.Goal, result: CatchBall.Result | None, notes: str) -> TrialResult:
-    """success = 힘으로 본 명중 (붙음/튕김 구분은 비전 판정이 생기면). error_mm = 예측 오차 (지금은 로봇이 NaN — 측정 없음)."""
+    """success = 패드 위 공을 측면 카메라가 3 s 연속 본 것 (#147, 힘 판정 없음). error_mm = 예측 오차 (로봇이 패드 위 공 위치로 계산, 못 재면 NaN)."""
     caught = bool(result is not None and result.caught)
     trial = TrialResult(mode=TrialResult.MODE_CATCH_PAD, success=caught, notes=notes,
                         error_mm=_finite(result.prediction_error_mm) if result is not None else math.nan,

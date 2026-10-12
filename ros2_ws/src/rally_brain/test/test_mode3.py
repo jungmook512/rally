@@ -45,7 +45,7 @@ def test_failures_recorded_without_retry(succeeded, reason, prompt):
 
 
 def test_caught_even_if_reason_set_counts_as_success():
-    """반경 밖이어도 힘 판정이 돌아 명중이 나올 수 있음 (MODE3_PLAN 4.1-6) — 명중이면 성공, notes 비움."""
+    """반경 밖이어도 판정은 돌아 명중이 나올 수 있음 (MODE3_PLAN 4.1-6) — 명중이면 성공, notes 비움."""
     _, session, published, _ = arrange([(True, {"caught": True, "failure_reason": "out_of_radius"})])
     run(mode3_catch.build_trial(session))
     assert [(t.success, t.notes) for t in published] == [(True, "")]
