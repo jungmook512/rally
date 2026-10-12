@@ -313,7 +313,7 @@ handover:
   receive_tilt_deg: 0.0           # RECEIVE 때 그리퍼 자세 (돌려받을 땐 똑바로)
   receive_at_retreat: true        # ★ 10/11: 받기는 건네기 후퇴 자리(제시 위치에서 3 cm 뒤·6 cm 위)에서 — 방금 받은 손 쪽으로 다시 다가가지 않음
                                   #   (다가가면 손 근접 STOP 으로 찔끔찔끔). 기울기만 바로 세우고 환자가 넣어 줌. 대기 중엔 환자 접촉이라 손 STOP → SLOW
-  receive_compliance: false       # ★ 10/12 밤 정정인: 돌려받을 때는 순응 끔 (대기·회전·다가가기 모두 딱딱하게). true = 대기는 순응
+  receive_compliance: true        # 대기는 순응, 회전·다가가기 때만 순응 해제 (#142 조건 · #164 리뷰 10/13 정정인). 10/12 밤 false(받기 내내 딱딱)였던 것을 되돌림
   receive_threshold_n: 4.0        # 받기 판정 ①: 그리퍼에 밀어 넣는 힘 (건네기 당김 6 N 보다 작게 — 10/11 실로봇 20 s × 2 못 느낌)
   # ★ 10/12 받기 판정 ②: 그리퍼 사이 깊이 감지 — 손목 RealSense 화면 아래 가운데(그리퍼 사이를 투영한 영역)에서 깊이 0(28 cm 안은 못 잼)
   #   또는 near_mm 보다 가까운 픽셀 비율이 받기 시작 때보다 trigger_frac 넘게 hold_s 동안 늘면 닫음. 닫았는데 빈손이면 다시 열고 계속(max_regrasps)
@@ -351,7 +351,12 @@ handover:
   #   10/12 밤 3차 (정정인 "앞으로만 가서는 안 잡힘, 위아래도"): 막대 3D 중심으로 감 — 옆(손가락 방향) finger_max_m 0.03 → 0.05, 위아래(막대 방향) along_rod_max_m 0.10 안
   #   10/12 밤 4차: 대각선 한 번에 가면 손가락이 막대를 비스듬히 쓸고 지나감 → ① 막대 pre_back_m 앞에서 옆·위아래 맞춤 ② 앞으로만 들어가 닫기
   receive_approach: {enabled: true, wait_line_gap_m: 0.20, clear_s: 0.5, ignore_s: 0.5, pre_back_m: 0.03, max_m: 0.20, min_m: 0.01, jaw_depth_m: 0.02, finger_max_m: 0.05,
-                     along_rod_max_m: 0.10, line_margin_m: 0.03, speed_mm_s: 40.0, stop_force_n: 12.0}
+                     along_rod_max_m: 0.10, line_margin_m: 0.03, speed_mm_s: 40.0, stop_force_n: 12.0,
+                     hand_recent_s: 1.0, allow_without_hand_guard: false, jaw_check_s: 0.3}
+  #   10/13 정정인 결정 (#164 리뷰, 동결 예외 승인): ① stop_force_n 으로 멈추면 닫지 않고 연 채 받기 자리로 물러남
+  #   ② 끝까지 가도 그리퍼 사이가 깊이(jaw_check_s 중앙값 ≥ 기준 + receive_depth.trigger_frac)로 확인될 때만 닫음 — 손가락이 막대 가운데를 쥔 경우 끼임 방지
+  #   ③ 손 보호가 있을 때만 다가감: 손 입력이 hand_recent_s 안에 옴 · hand_stop_mode ≠ off. allow_without_hand_guard: true 는 장갑 시험(HAND=0) 전용 —
+  #      ★ 경고 로그. 커밋하지 말 것
   place_after_receive: true       # RECEIVE 성공 후 마지막 PickCompliant 자리에 내려놓기
   place_above_m: 0.08
   place_drop_m: 0.01              # ★ 10/12: 실제로 쥐었던 높이 + 이만큼 위에서 그리퍼를 열어 놓음 (정확히 제자리일 필요 없음). 3 cm(실제 4 cm)는 너무 높았음. 0 = 예전처럼 테이블 닿을 때까지 순응 하강

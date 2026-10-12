@@ -76,6 +76,7 @@ class SkillServer(Node):
         self.safety_rx = None                # 마지막 /rally/safety/status 수신 monotonic. None = 한 번도 못 받음 → STOP 취급 (#14)
         self.declare_parameter("status_timeout_s", 0.5)   # safety.yaml rally_skill_server. 이보다 오래 못 받으면 STOP 취급
         self.last_hand = None
+        self.last_hand_rx = None             # 손 입력 마지막 수신 monotonic — 받기 다가가기 손 보호 확인 (#164 리뷰)
         self._contact = False
         self._patient_contact = False
         self._cm_client = None
@@ -167,6 +168,7 @@ class SkillServer(Node):
 
     def _on_hand(self, msg):
         self.last_hand = msg
+        self.last_hand_rx = time.monotonic()
 
     def watch_depth(self, on: bool):
         """손목 RealSense 정렬 깊이·camera_info 구독 켜기/끄기 — 큰 영상이라 받기 대기 동안만 (handover RECEIVE)."""

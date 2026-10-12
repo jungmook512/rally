@@ -154,3 +154,35 @@ def approach_plan(tcp_posx, obj_m, jaw_depth_m, max_m, min_m, finger_max_m, alon
     if end_x > x_limit_m:
         return None, f"다가가면 x {end_x:.3f} m — 보라색 선 앞 한계 {x_limit_m:.3f} m 넘음", (0.0, 0.0)
     return adv, f"{along * 100:.1f} cm 앞 → {adv * 100:.1f} cm 다가감 · 옆 {finger * 100:+.1f} cm · 위아래(막대 방향) {rod * 100:+.1f} cm", (finger, rod)
+
+
+def approach_guard(hand_age_s, safety_reason, safety_stale, hand_recent_s, allow_without_guard=False):
+    """받기 다가가기를 해도 되나 (#164 리뷰 3, 10/13 정정인 결정) → (허용, 이유).
+    환자 쪽으로 움직이므로 손 보호가 살아 있을 때만: 손 인식 입력(/rally/perception/hand)이 hand_recent_s 안에 왔고,
+    안전 상태가 끊기지 않았고, hand_stop_mode 가 off 가 아님(SafetyStatus.reason 의 hand_stop_dev_off 표시).
+    allow_without_guard 는 장갑 시험(HAND=0) 전용 — 부르는 쪽이 ★ 경고를 남긴다."""
+    if allow_without_guard:
+        return True, "손 보호 확인 생략 (allow_without_hand_guard)"
+    if safety_stale:
+        return False, "안전 상태 끊김"
+    if "hand_stop_dev_off" in [r.strip() for r in str(safety_reason or "").split(",")]:
+        return False, "hand_stop_mode=off — 손 근접 판정 꺼짐"
+    if hand_age_s is None or hand_age_s > hand_recent_s:
+        return False, "손 인식 입력 없음" + ("" if hand_age_s is None else f" ({hand_age_s:.1f} s 전이 마지막)")
+    return True, ""
+
+
+def jaw_filled(fracs, dbase, trigger_frac):
+    """닫기 직전 그리퍼 사이 확인 (#164 리뷰 2) → (채워짐, 중앙값 또는 None). 깊이 근접 비율 중앙값이 기준 + trigger_frac 이상이면 참.
+    깊이가 없으면(기준·표본 없음) 거짓 — 비전 3D 위치만으로는 닫지 않는다."""
+    if dbase is None or not fracs:
+        return False, None
+    med = sorted(fracs)[len(fracs) // 2]
+    return med - dbase >= trigger_frac, med
+
+
+def after_approach(how, jaw_ok):
+    """다가간 뒤 할 일 (#164 리뷰 1·2) → "close" 또는 "back".
+    끝까지 갔고("done") 그리퍼 사이가 깊이로 확인될 때만 닫는다. 힘으로 멈춤("interrupted" — 환자 손 등에 닿음)·그 밖의 결과·
+    그리퍼 사이 빔이면 닫지 않고 연 채 받기 자리로 물러난다."""
+    return "close" if how == "done" and jaw_ok else "back"

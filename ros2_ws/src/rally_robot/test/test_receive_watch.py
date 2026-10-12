@@ -139,3 +139,28 @@ def test_cup_rim_point_and_class_near():
                    TrackedObject(class_name="cup", position=Point(x=0.49, y=-0.26))]
     assert class_near(arr, 0.487, -0.261, 0.06) == "cup"
     assert class_near(arr, 0.2, 0.2, 0.06) == ""
+
+
+# ---------- 받기 다가가기 조건 (#164 리뷰, 10/13 정정인) ----------
+def test_approach_guard():
+    from rally_robot.receive_watch import approach_guard
+    assert approach_guard(0.1, "hand_stop_dev_slow", False, 1.0) == (True, "")
+    assert approach_guard(0.1, "", False, 1.0) == (True, "")
+    assert not approach_guard(0.1, "hand_stop_dev_off", False, 1.0)[0]            # off → 손 근접 판정 없음
+    assert not approach_guard(0.1, "hand_near_robot,hand_stop_dev_off", False, 1.0)[0]
+    assert not approach_guard(None, "", False, 1.0)[0]                             # 손 입력 한 번도 없음 (HAND=0)
+    assert not approach_guard(2.0, "", False, 1.0)[0]                              # 끊김
+    assert not approach_guard(0.1, "", True, 1.0)[0]                               # 안전 상태 끊김
+    assert approach_guard(None, "hand_stop_dev_off", True, 1.0, allow_without_guard=True)[0]   # 장갑 시험 명시
+
+
+def test_jaw_filled_and_after_approach():
+    from rally_robot.receive_watch import after_approach, jaw_filled
+    assert jaw_filled([0.10, 0.50, 0.55], 0.05, 0.30) == (True, 0.50)
+    assert jaw_filled([0.10, 0.12, 0.30], 0.05, 0.30)[0] is False                 # 손가락만 걸침 → 안 닫음
+    assert jaw_filled([], 0.05, 0.30) == (False, None)                             # 깊이 없음 → 비전만으로 안 닫음
+    assert jaw_filled([0.9], None, 0.30) == (False, None)
+    assert after_approach("done", True) == "close"
+    assert after_approach("interrupted", True) == "back"                           # 12 N 접촉 정지 → 닫지 않고 물러남
+    assert after_approach("done", False) == "back"
+    assert after_approach("stalled", True) == "back"
