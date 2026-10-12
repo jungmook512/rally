@@ -9,7 +9,7 @@ from rally_robot.safety_monitor import (hand_level, hand_lost_level, hand_robot_
                                         input_level, point_segment_dist, robot_segment, worst)
 
 NORMAL, SLOW, STOP = SafetyStatus.LEVEL_NORMAL, SafetyStatus.LEVEL_SLOW, SafetyStatus.LEVEL_STOP
-CFG = {"slow_distance_m": 0.25, "stop_distance_m": 0.15, "hand_deep_stop_m": -0.15,
+CFG = {"slow_distance_m": 0.25, "stop_distance_m": 0.15, "hand_deep_stop_m": -0.15, "hand_deep_end_m": -0.30,
        "hand_stop_robot_m": 0.20, "hand_slow_robot_m": 0.35, "hand_lost_stop_s": 1.0, "hand_lost_slow_s": 3.0}
 CFG_98 = {**CFG, "slow_distance_m": 0.10}       # safety.yaml 10/8 값
 
@@ -42,7 +42,8 @@ def test_near_with_patient_contact_is_slow():
 
 
 def test_deep_intrusion_is_stop_even_with_patient_contact():
-    assert hand_level(-0.20, True, CFG) == (STOP, "hand_deep_intrusion")
+    assert hand_level(-0.20, True, CFG) == (STOP, "hand_near_centerline")      # 15~30 cm: STOP, 손 빼면 이어 감
+    assert hand_level(-0.35, True, CFG) == (STOP, "hand_deep_intrusion")       # 30 cm 넘게: 세션 종료 사유
     assert hand_level(-0.15, True, CFG)[0] == SLOW        # 경계는 완화 쪽 (>= hand_deep_stop_m)
 
 
@@ -62,8 +63,9 @@ def test_hand_near_robot_is_stop_unless_patient_contact():
 
 
 def test_deep_intrusion_is_stop_even_if_robot_far():
-    assert hand_level(-0.20, False, CFG_98, robot_dist=0.60) == (STOP, "hand_deep_intrusion")
-    assert hand_level(-0.20, True, CFG_98, robot_dist=0.60) == (STOP, "hand_deep_intrusion")
+    assert hand_level(-0.20, False, CFG_98, robot_dist=0.60) == (STOP, "hand_near_centerline")
+    assert hand_level(-0.20, True, CFG_98, robot_dist=0.60) == (STOP, "hand_near_centerline")
+    assert hand_level(-0.31, True, CFG_98, robot_dist=0.60) == (STOP, "hand_deep_intrusion")
 
 
 def test_unknown_robot_distance_falls_back_to_line_stop():
@@ -159,8 +161,8 @@ def test_hand_off_table_uses_robot_distance_only():
     assert hand_level(-0.19, False, CFG_98, robot_dist=0.40, on_table=False) == (NORMAL, "")
     assert hand_level(-0.19, False, CFG_98, robot_dist=0.30, on_table=False) == (SLOW, "hand_near_robot")
     assert hand_level(-0.19, False, CFG_98, robot_dist=0.15, on_table=False) == (STOP, "hand_near_robot")
-    # 로봇 위치를 모르면 테이블 밖이어도 선 기준 — −0.19 m 는 hand_deep_stop_m(−0.15) 보다 깊어 깊은 침입 (10/12 사유 분리)
-    assert hand_level(-0.19, False, CFG_98, robot_dist=None, on_table=False) == (STOP, "hand_deep_intrusion")
+    # 로봇 위치를 모르면 테이블 밖이어도 선 기준
+    assert hand_level(-0.19, False, CFG_98, robot_dist=None, on_table=False) == (STOP, "hand_near_centerline")
     assert hand_on_table([(0.44, 0.52, 0.1), (0.45, 0.60, 0.1)], -0.40, 0.40) is False
     assert hand_on_table([(0.44, 0.52, 0.1), (0.45, 0.38, 0.1)], -0.40, 0.40) is True    # 한 점이라도 안이면 테이블 위
     assert hand_on_table([], -0.40, 0.40) is True

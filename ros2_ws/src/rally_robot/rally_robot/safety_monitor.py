@@ -14,7 +14,8 @@
 - 손 거리 (hand_level, #59 · #98):
   손 없음 → NORMAL / 손은 보이는데 거리 NaN(깊이·tf 없음) → SLOW (hand_distance_unknown). 단 직전이 STOP 이었으면 놓침과 같이
   hand_lost_stop_s STOP 유지 (깊이는 카메라 30 cm 안에서 빠지므로 손이 로봇에 가까울수록 NaN — 리뷰 #104) /
-  손이 중앙선 너머 hand_deep_stop_m 보다 깊이 → STOP (hand_deep_intrusion, 접촉 중이어도 — 10/12 분리: brain 손 STOP 대기 목록에 없는 이름이라 세션 종료) /
+  손이 중앙선 너머 hand_deep_stop_m(−0.15) 보다 깊이 → STOP (접촉 중이어도). 사유는 hand_deep_end_m(−0.30) 보다 얕으면 hand_near_centerline
+  (손 빼면 brain 이 이어 감), 더 깊으면 hand_deep_intrusion (brain 대기 목록에 없는 이름 → 세션 종료) — 10/12 정정인 결정 /
   손 관절 21점 ↔ 로봇 끝 선분(TCP → 플랜지, robot_segment_m) 최소 거리가 hand_stop_robot_m 안 → STOP (hand_near_robot),
   hand_slow_robot_m 안 → SLOW / 중앙선에서 slow_distance_m 안 → SLOW.
   로봇 위치(tf·tcp_pose 둘 다)를 모르거나 손 관절이 base_link 가 아니면 예전 선 기준(stop_distance_m 안 → STOP).
@@ -132,8 +133,10 @@ def hand_level(dist, patient_contact, cfg, robot_dist=None, on_table=True):
         if robot_dist < cfg["hand_slow_robot_m"]:
             return SafetyStatus.LEVEL_SLOW, "hand_near_robot"
         return SafetyStatus.LEVEL_NORMAL, ""
-    if dist < cfg["hand_deep_stop_m"]:
-        return SafetyStatus.LEVEL_STOP, "hand_deep_intrusion"          # 로봇 구역 깊이 — 접촉 중이어도. 자동 재진행 안 함 (INTERFACES 9절)
+    if dist < cfg["hand_deep_stop_m"]:                                   # 로봇 구역 깊이 — 접촉 중이어도 STOP
+        if dist < cfg.get("hand_deep_end_m", cfg["hand_deep_stop_m"]):
+            return SafetyStatus.LEVEL_STOP, "hand_deep_intrusion"      # 아주 깊이 — 자동 재진행 안 함 (INTERFACES 9절)
+        return SafetyStatus.LEVEL_STOP, "hand_near_centerline"         # 15~30 cm — 멈추되 손 빼면 이어 감
     if robot_dist is None:
         near, reason = dist < cfg["stop_distance_m"], "hand_near_centerline"
     else:
@@ -252,6 +255,7 @@ class SafetyMonitor(Node):
             read_only=True, dynamic_typing=True,                                # off 가 YAML 에서 false 로 와도 기동 (hand_mode_from_param)
             description="개발용 손 근접 STOP: stop | slow | off. 실행 중 변경 불가. 시연·환자 앞에서는 slow 또는 stop"))
         # 손 거리 완화 (#59) — 값은 safety.yaml
+        self.declare_parameter("hand_deep_end_m", -0.30)             # 이보다 깊으면 사유 hand_deep_intrusion (세션 종료). STOP 기준은 아님
         self.declare_parameter("hand_deep_stop_m", -0.15)            # 이보다 로봇 구역 깊이 들어오면 환자 접촉 중이어도 STOP
         self.declare_parameter("patient_contact_timeout_s", 0.5)     # /rally/safety/patient_contact 하트비트 유효 시간
         # 손 ↔ 로봇 거리 (#98) · 손 놓침 (#95) — 값은 safety.yaml
@@ -484,7 +488,7 @@ class SafetyMonitor(Node):
 
     # ----- 100 Hz -----
     def cfg(self):
-        return {k: self.p(k) for k in ("slow_distance_m", "stop_distance_m", "hand_deep_stop_m", "hand_stop_robot_m",
+        return {k: self.p(k) for k in ("slow_distance_m", "stop_distance_m", "hand_deep_stop_m", "hand_deep_end_m", "hand_stop_robot_m",
                                        "hand_slow_robot_m", "hand_lost_stop_s", "hand_lost_slow_s")}
 
     def robot_dist(self, now):
