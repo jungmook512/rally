@@ -5,7 +5,7 @@ mode3_reach_test.py(박성현, PR #130 판 — force_peak_n 열이 있는 것) �
 세 단계를 따로 부른다 (계획 결과를 사람이 보고 속도를 정한 뒤 실행하도록):
 
   1. plan     방향별로 속도 후보를 넣어 계획 모드(로봇 안 움직임)를 돌리고, 필요한 관절 속도 % 와 OK/빼기 표를 만든다
-                 python3 scripts/mode3_speed_measure.py plan                       # 기본 후보 730 600 550 500 480 450
+                 python3 scripts/mode3_speed_measure.py plan --go-ready            # 먼저 대기 자세로 이동(⚠ 20 °/s) 후 계획. 기본 후보 730 600 550 500 480 450
                  python3 scripts/mode3_speed_measure.py plan --vels 600 500 450 --dirs +u -u
   2. run      고른 속도로 실제 이동. 힘 한계 파라미터를 시험값으로 올렸다가 끝나면(오류·Ctrl+C 포함) 25 N 으로 되돌리고 확인한다 ⚠ 로봇 움직임
                  python3 scripts/mode3_speed_measure.py run --vel-y 730 --vel-u 480 --force-limit 130
@@ -40,6 +40,10 @@ PAD_R_CM = 7.5
 WINDOW_S = 0.58
 BALL_IMPACT_N = 15.4       # 10/11 정지 상태 공 충격 최대 (툴 힘 추정값)
 
+READY_POSJ_DEFAULT = [89.8, 30.0, -121.7, 90.2, -80.2, 88.3]   # 10/11 정정인 결정 (skills.yaml mode3.ready_posj 가 있으면 그것)
+SKILLS_YAML = ROOT / "ros2_ws" / "src" / "rally_bringup" / "config" / "skills.yaml"
+READY_VEL_DEG_S, READY_ACC_DEG_S2 = 20.0, 40.0                  # 대기 자세로 가는 관절 속도·가속 (느리게)
+
 PLAN_LINE = re.compile(r"^\s*([+-][yu])\s+(\d+)\s+\[.*?\]\s+(-?\d+)%\s+(OK|빼기.*)$")
 
 
@@ -52,6 +56,40 @@ def check_down(dists):
     bad = [d for d in dists if d > DOWN_MAX_CM]
     if bad:
         raise SystemExit(f"−u 거리 {bad} cm 는 자기충돌 한계 {DOWN_MAX_CM} cm 초과 — 받지 않음")
+
+
+def ready_posj():
+    try:
+        import yaml
+        v = (yaml.safe_load(SKILLS_YAML.read_text(encoding="utf-8")).get("mode3") or {}).get("ready_posj")
+        if v and len(v) == 6:
+            return [float(x) for x in v], str(SKILLS_YAML.relative_to(ROOT))
+    except Exception:  # noqa: BLE001 — 파일 없음·키 없음이면 기본값
+        pass
+    return READY_POSJ_DEFAULT, "기본값(10/11 정정인)"
+
+
+def go_ready(force_prompt=True):
+    """대기 자세로 관절 이동 ⚠ 로봇 움직임. 이미 그 자세(0.5° 안)면 아무것도 안 함. bringup 만 있으면 됨 (안전 노드 불필요, 그래서 느리게)."""
+    posj, src = ready_posj()
+    from rally_robot.dsr_helpers import init_dsr
+    dsr = init_dsr("rally_mode3_go_ready")
+    from DSR_ROBOT2 import get_current_posj, movej, mwait  # noqa: E402  init_dsr 뒤
+    cur = [float(v) for v in get_current_posj()]
+    diff = max(abs(a - b) for a, b in zip(cur, posj))
+    print(f"대기 자세 {posj} ({src}) · 지금 {[round(v, 1) for v in cur]} · 최대 차이 {diff:.1f}°")
+    if diff < 0.5:
+        print("이미 대기 자세 — 이동 없음")
+        dsr.destroy_node()
+        return
+    if force_prompt and input(f"관절 이동 {READY_VEL_DEG_S:.0f} °/s 로 대기 자세로 간다. 로봇 반경에 사람 없고 비상정지 손 닿나? [y/N] ").strip().lower() != "y":
+        dsr.destroy_node()
+        raise SystemExit("취소")
+    movej(posj, vel=READY_VEL_DEG_S, acc=READY_ACC_DEG_S2)
+    mwait()
+    cur = [float(v) for v in get_current_posj()]
+    print(f"도착 {[round(v, 1) for v in cur]} (최대 차이 {max(abs(a - b) for a, b in zip(cur, posj)):.1f}°)")
+    dsr.destroy_node()
 
 
 # ------------------------------------------------------------------ 1. plan
@@ -255,6 +293,7 @@ def main() -> int:
     p.add_argument("--dirs", nargs="+", type=str.strip, default=["-y", "+u", "-u"], choices=["-y", "+u", "-u"])
     p.add_argument("--dist", type=float, nargs="+", default=[5, 10, 15], help="−y·+u 거리 cm")
     p.add_argument("--dist-down", type=float, nargs="+", default=[5, 8], help=f"−u 거리 cm (≤ {DOWN_MAX_CM})")
+    p.add_argument("--go-ready", action="store_true", help="먼저 대기 자세로 관절 이동 ⚠ (skills.yaml mode3.ready_posj, 20 °/s)")
     r = sub.add_parser("run", help="실제 이동 + 힘 한계 시험값 설정·원복 + 요약 ⚠")
     r.add_argument("--vel-y", type=float, default=730.0, help="−y 속도 mm/s")
     r.add_argument("--vel-u", type=float, required=True, help="±u 속도 mm/s — plan 결과로 정한 값")
@@ -265,6 +304,7 @@ def main() -> int:
     r.add_argument("--dist-down", type=float, nargs="+", default=[5, 8])
     r.add_argument("--force-limit", type=float, default=130.0, help="시험 동안 힘 한계 N (정정인 승인값)")
     r.add_argument("--window", type=float, default=WINDOW_S)
+    r.add_argument("--go-ready", action="store_true", help="먼저 대기 자세로 관절 이동 ⚠")
     a = sub.add_parser("analyze", help="CSV → 도달 거리·유효 범위·힘 요약")
     a.add_argument("csv", nargs="+")
     a.add_argument("--window", type=float, default=WINDOW_S)
@@ -272,8 +312,11 @@ def main() -> int:
     a.add_argument("--stat", choices=list(STATS), default="median", help="회차별 도착 시간의 대표값 (표본 끊김 의심 회차가 있으면 min 도 같이 볼 것)")
     # "-y"·"-u" 를 값으로 넘기기 위한 처리 (mode3_reach_test 와 같은 이유)
     opt = ap.parse_args([x + " " if x in ("-y", "-u") else x for x in sys.argv[1:]])
-    if opt.cmd == "plan":
+    if opt.cmd in ("plan", "run"):
         check_down(opt.dist_down)
+        if opt.go_ready:
+            go_ready()
+    if opt.cmd == "plan":
         return cmd_plan(opt)
     if opt.cmd == "run":
         return cmd_run(opt)
