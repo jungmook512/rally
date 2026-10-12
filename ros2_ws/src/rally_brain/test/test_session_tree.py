@@ -53,10 +53,10 @@ def test_safe_and_hand():
 
 def test_unknown_modes_are_skipped():
     s, _ = make_session()
-    tree = build_session_tree(s, [3], 3)
+    tree = build_session_tree(s, [9], 3)            # 시도 서브트리가 없는 모드 (모드 3 은 10/12 부터 있음)
     tree.tick_once()
     assert tree.status == Status.SUCCESS
-    assert [c.name for c in tree.children] == ["모드 3 캐치볼 건너뜀"]
+    assert [c.name for c in tree.children] == ["모드 9 ? 건너뜀"]
 
 
 def test_wait_until_timeout():
