@@ -3,7 +3,7 @@
 
 모드 5 한 번 (brain 또는 scripts/mode5_cycle.py 가 차례로 부른다):
   PickCompliant(비전 마스크 위치·yaw 로 막대/컵 집기) → Handover GIVE(무작위 tilt) → 환자가 잡고 당기면 놓음
-  → Handover RECEIVE(환자가 다시 내밀면 받음) → 집었던 자리에 내려놓기 → 다른 물체·다른 각도로 반복.
+  → Handover RECEIVE(후퇴 자리에서 열고 대기, 환자가 그리퍼 사이로 넣어 줌) → 집었던 자리에 내려놓기 → 다른 물체·다른 각도로 반복.
   잡는 순간 환자 손목 각도는 result.wrist_angle_at_grasp_deg (HandState, 정동휘) — 제시 각도와 비교해 점수는 brain 이 낸다.
 
 제시 자세 (교시 없음)
@@ -23,10 +23,11 @@ GIVE (물체는 이미 쥔 상태)
   환자 접촉 플래그(set_patient_contact): wait 시작 ~ retreat 끝. 이 동안 손 거리 STOP 이 SLOW 로 낮아진다(#59) —
   그래서 이 구간엔 환자 쪽(+x) 명령 이동이 없어야 한다 (제자리 순응 대기, 베이스 쪽 + 위로 후퇴만).
 RECEIVE
-  present : 그리퍼 연 채 제시 자세(receive_tilt_deg, 기본 똑바로)
-  wait    : 환자가 물체를 그리퍼 사이로 밀어 넣는 힘 감지 → grasp: 닫기 → 물체 판정 → retreat
+  present : 그리퍼 연 채 제시 자세(receive_tilt_deg, 기본 똑바로). receive_at_retreat 면 건네기 후퇴 자리(베이스 쪽 retreat_m, 위 retreat_up_m)
+            — 막대를 방금 받은 손 쪽으로 다가가지 않는다 (손 근접 STOP 반복, 10/11)
+  wait    : 환자가 물체를 그리퍼 사이로 밀어 넣는 힘(receive_threshold_n) 감지 → grasp: 닫기 → 물체 판정 → retreat
   place   : (place_after_receive 이고 마지막 PickCompliant 자리가 있으면) 그 위 → 순응 하강, 테이블 접촉(Z 힘)에서 멈춤
-            → 열기 → 위로. 손 추종(follow_hand, servol)은 아직 — 고정 제시 자세에서 받는다.
+            → 열기 → 위로. 손 추종(follow_hand, servol)은 범위에서 제외 (#134) — 고정 자세에서 받는다.
 공통 규칙
 - 단계 사이 node.check_stop(goal_handle). 이동은 move_checked. 순응은 compliance 컨텍스트로 반드시 해제.
 """
@@ -181,7 +182,7 @@ def execute(node):
                 if not ok:
                     raise SkillAbort("gripper_unavailable")
                 if goal.follow_hand:
-                    log.warning("[handover] follow_hand 손 추종은 아직 미구현 — 고정 제시 자세로 진행")
+                    log.warning("[handover] follow_hand 손 추종은 제외됨 (#134) — 고정 자세에서 받음")
 
             phase("present")
             movej_to_pose(node, present, jv, ja)
