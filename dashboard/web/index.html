@@ -100,6 +100,12 @@
   .card .value { font-size:30px; line-height:1.35; margin-top:13px; font-weight:800; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
   #events-view { background:#f5f0fb; border-color:#b6a6cd; }
   #trials-view .scroll,#events-view .scroll { max-height:520px; }
+  .cameras { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px; }
+  .camera { margin:0; }
+  .camera .frame { position:relative; aspect-ratio:424/240; background:#111; border-radius:8px; overflow:hidden; }
+  .camera img { width:100%; height:100%; object-fit:contain; display:block; }
+  .camera .frame .empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:8px; color:#bbb; }
+  .camera figcaption { margin-top:6px; font-size:.9em; }
   #report { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.6; max-height:520px; overflow:auto; }
   table { width:100%; border-collapse:collapse; font-size:14px; }
   th,td { text-align:left; padding:8px; border-bottom:1px solid var(--line); white-space:nowrap; }
@@ -165,6 +171,10 @@
     <div class="panel card"><div class="label">피로도</div><div class="value" id="fatigue">—</div><div class="sub" id="hand">손 —</div></div>
   </section>
 
+  <section id="camera-view" class="panel" aria-label="카메라 화면">
+      <h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7H16V17H3ZM16 10L21 7V17L16 14"/></svg>카메라</h2><p class="section-help" id="camera-help">로봇·인식 PC 카메라 실시간 화면 (작게 압축 · 저장하지 않음)</p>
+      <div class="cameras" id="cameras"></div><div class="empty" id="cameras-empty" hidden></div>
+  </section>
   <section id="report-view" class="panel" aria-label="세션 리포트">
       <h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3H18V21H6ZM9 8H15M9 12H15M9 16H12"/></svg>세션 리포트</h2><p class="section-help" id="report-meta">가장 최근에 끝난 세션의 요약 · 표의 수치가 기준이고 해석은 참고용입니다</p>
       <div id="report"></div><div class="empty" id="report-empty">아직 리포트 없음 — 세션이 끝나면 표시됩니다</div>
@@ -315,6 +325,34 @@ async function load() {
   try { (await get("/api/trials")).trials.reverse().forEach((t) => addTrial(t, false)); } catch (e) { console.warn(e); }
   try { (await get("/api/events")).forEach((e) => addEvent(e, false, true)); } catch (e) { console.warn(e); }
   await loadReport();
+  await loadCameras();
+}
+
+async function loadCameras() {
+  try {
+    const r = await fetch("/api/cameras");
+    if (!r.ok) throw new Error(await r.text());
+    const cfg = await r.json();
+    $("cameras-empty").hidden = cfg.enabled;
+    $("cameras-empty").textContent = cfg.enabled ? "" : `카메라 화면 꺼짐 — ${cfg.reason}`;
+    $("cameras").replaceChildren(...cfg.streams.map(cameraFigure));
+  } catch (e) { console.warn(e); }
+}
+
+function cameraFigure(cam) {
+  // 영상은 로봇·인식 PC 의 web_video_server 에서 브라우저가 직접 받는다. 끊기면 5 s 뒤 다시 연결
+  const fig = document.createElement("figure"); fig.className = "camera";
+  const frame = document.createElement("div"); frame.className = "frame";
+  const img = document.createElement("img"); img.alt = `${cam.name} 카메라 화면`;
+  const msg = document.createElement("div"); msg.className = "empty"; msg.textContent = "연결 중…";
+  const cap = document.createElement("figcaption"); cap.textContent = `${cam.name} · ${cam.topic}`;
+  // MJPEG(multipart)는 브라우저마다 load 이벤트가 안 올 수 있어, 3 s 안에 error 가 없으면 연결된 것으로 본다
+  let failed = false;
+  const open = () => { failed = false; img.src = `${cam.url}&t=${Date.now()}`; setTimeout(() => { if (!failed) msg.hidden = true; }, 3000); };
+  img.onload = () => { msg.hidden = true; };
+  img.onerror = () => { failed = true; msg.hidden = false; msg.textContent = "영상 없음 — 로봇·인식 PC 의 카메라·web_video_server 확인 (5 s 뒤 다시 시도)"; setTimeout(open, 5000); };
+  frame.append(img, msg); fig.append(frame, cap); open();
+  return fig;
 }
 
 async function loadReport() {
@@ -411,6 +449,7 @@ function selectPage() {
   $('mode-view').hidden=selectedMode===null;
   $('overview-cards').hidden=selectedPage!=='overview';
   $('report-view').hidden=selectedPage!=='overview';
+  $('camera-view').hidden=selectedPage!=='overview';
   $('trials-view').hidden=selectedPage!=='trials';
   $('events-view').hidden=selectedPage!=='events';
   if(selectedMode!==null) {
