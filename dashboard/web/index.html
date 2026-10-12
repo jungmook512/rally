@@ -73,8 +73,18 @@
   #proposal-panel { background:var(--cream); border-color:#c5ab72; }
   #proposal-prompt { font-size:19px; font-weight:700; }
   #proposal-message { font-weight:650; }
-  #mode-view { display:grid; grid-template-columns:minmax(0,3fr) minmax(270px,1fr); gap:16px; }
-  .visual-column,aside { display:grid; align-content:start; gap:16px; min-width:0; }
+  /* 모드 화면 배치 (10/12 조정묵 스케치): 1줄 훈련 상태 · 현재 동작 · 진행 현황 / 2줄 환자 시점 그림(2칸) · 카메라 / 3줄 단계 순서 */
+  #mode-view { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; align-items:stretch;
+               grid-template-areas:"control instr stats" "diagram diagram cams" "steps steps steps"; }
+  #mode-view .visual-column, #mode-view aside { display:contents; }
+  #mode-view .control-bar { grid-area:control; grid-template-columns:1fr; align-content:start; }
+  #mode-view .instruction { grid-area:instr; }
+  #mode-view .stats { grid-area:stats; }
+  #mode-view .diagram-panel { grid-area:diagram; }
+  #mode-view #camera-view { grid-area:cams; }
+  #mode-view #camera-view .cameras { grid-template-columns:1fr; }
+  #mode-view .steps-panel { grid-area:steps; }
+  #mode-view>*, #mode-view .visual-column>*, #mode-view aside>* { min-width:0; }
   .diagram-panel { background:#f9fcf8; border-color:#9eb8a8; }
   #mode-diagram { margin-top:12px; overflow-x:auto; border:1px solid #c2d3c7; border-radius:10px; background:#f1f7ef; }
   #mode-diagram svg { display:block; width:100%; min-width:600px; height:auto; max-height:420px; object-fit:contain; }
@@ -121,10 +131,11 @@
   .empty { color:var(--muted); padding:8px 0; font-size:14px; }
   .new { animation:flash 1.2s ease-out; }
   @keyframes flash { from { background:#d5eee2; } to { background:transparent; } }
-  @media(max-width:1000px) { #mode-view { grid-template-columns:1fr; } aside { grid-template-columns:1fr 1fr; } #page-heading { align-items:flex-start; flex-direction:column; } }
+  @media(max-width:1000px) { #mode-view { grid-template-columns:repeat(2,minmax(0,1fr)); grid-template-areas:"control control" "instr stats" "diagram diagram" "cams cams" "steps steps"; }
+                             #mode-view #camera-view .cameras { grid-template-columns:repeat(auto-fill, minmax(260px, 560px)); } #page-heading { align-items:flex-start; flex-direction:column; } }
   @media(max-width:700px) { .cards { grid-template-columns:repeat(2,minmax(0,1fr)); } header { padding:14px 16px; } header small { display:none; } main { padding:16px 12px 28px; } .panel { padding:14px; } #mode-nav { padding-inline:12px; } #mode-nav a { padding:9px 12px; font-size:14px; } #page-heading h2 { font-size:25px; } .panel-top { align-items:flex-start; flex-direction:column; } #steps { flex-wrap:wrap; row-gap:16px; } #steps li { flex:0 0 calc(33.33% - 6px); } }
   @media(max-width:700px) { #mode-diagram svg { min-width:0; } #mode-diagram svg text { display:none; } }
-  @media(max-width:440px) { aside { grid-template-columns:1fr; } .control-bar { grid-template-columns:1fr; } .control-bar small { grid-column:1/-1; } #resume { justify-self:start; } #proposal-panel button { display:block; width:100%; margin-top:8px; } }
+  @media(max-width:440px) { #mode-view { grid-template-columns:1fr; grid-template-areas:"control" "instr" "stats" "diagram" "cams" "steps"; } .control-bar { grid-template-columns:1fr; } .control-bar small { grid-column:1/-1; } #resume { justify-self:start; } #proposal-panel button { display:block; width:100%; margin-top:8px; } }
 </style>
 </head>
 <body>
@@ -144,7 +155,8 @@
 <main>
   <section id="page-heading"><div><p class="eyebrow">훈련 모니터</p><h2 id="page-title">전체 현황</h2><p id="page-subtitle">연결된 훈련의 상태와 기록을 확인합니다.</p></div><span id="view-status" class="badge">전체 보기</span></section>
   <div id="safety" class="unknown">안전 상태 모름 <small>상황판 수신 전</small></div>
-  <section class="panel control-bar" aria-label="훈련 휴식과 재개">
+  <div id="control-home" hidden></div>
+  <section id="control-bar" class="panel control-bar" aria-label="훈련 휴식과 재개">
     <div class="control-status"><h2><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4H19V20H5ZM9 8H15M9 12H15M9 16H12"/></svg>훈련 상태</h2>
     <p id="phase" role="status">세션 상태 수신 대기</p></div>
     <button id="resume" type="button" disabled>훈련 재개</button>
@@ -172,6 +184,7 @@
     <div class="panel card"><div class="label">피로도</div><div class="value" id="fatigue">—</div><div class="sub" id="hand">손 —</div></div>
   </section>
 
+  <div id="camera-home" hidden></div>
   <section id="camera-view" class="panel" aria-label="카메라 화면">
       <h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7H16V17H3ZM16 10L21 7V17L16 14"/></svg>카메라</h2><p class="section-help" id="camera-help">로봇·인식 PC 카메라 실시간 화면 (작게 압축 · 저장하지 않음)</p>
       <div class="cameras" id="cameras"></div><div class="empty" id="cameras-empty" hidden></div>
@@ -469,6 +482,12 @@ function selectPage() {
   $('overview-cards').hidden=selectedPage!=='overview';
   $('report-view').hidden=selectedPage!=='overview';
   $('camera-view').hidden=!(selectedPage==='overview'||selectedMode!==null);   // 전체 현황 + 모든 모드 화면 (기록 조회 화면엔 없음)
+  // 모드 화면이면 훈련 상태·카메라 칸을 모드 격자 안으로, 아니면 원래 자리로 (요소를 옮길 뿐 새로 만들지 않음 — 버튼·영상 연결 유지)
+  for (const [id, home] of [['control-bar', 'control-home'], ['camera-view', 'camera-home']]) {
+    const el = $(id);
+    if (selectedMode !== null) { if (el.parentNode !== $('mode-view')) $('mode-view').append(el); }
+    else if (el.previousElementSibling !== $(home)) $(home).after(el);
+  }
   showCameras();
   $('trials-view').hidden=selectedPage!=='trials';
   $('events-view').hidden=selectedPage!=='events';

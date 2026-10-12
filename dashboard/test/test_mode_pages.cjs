@@ -8,7 +8,9 @@ const elements = new Map();
 function element() {
   return {dataset:{}, children:[], attributes:{}, hidden:false, textContent:'', htmlWrites:0,
     get innerHTML(){return this.markup||'';}, set innerHTML(value){this.markup=value;this.htmlWrites++;},
-    prepend(row){this.children.unshift(row);}, append(row){this.children.push(row);},
+    parentNode:null, previousElementSibling:null,
+    prepend(row){this.children.unshift(row);}, append(row){this.children.push(row);if(row&&typeof row==='object'){row.parentNode=this;row.previousElementSibling=null;}},
+    after(node){node.parentNode=this.parentNode;node.previousElementSibling=this;},
     setAttribute(name,value){this.attributes[name]=value;}, removeAttribute(name){delete this.attributes[name];}};
 }
 const ids = [...html.matchAll(/id="([^"]+)"/g)].map(m => m[1]);
@@ -90,6 +92,16 @@ run("addTrial({trial_id:'one',mode:1},false);addTrial({trial_id:'five',mode:5},f
 const firstTrial = get('trials').children[1];
 const firstEvent = get('events').children[0];
 function visit(hash) { context.location.hash=hash; listeners.hashchange(); }
+// 스케치 배치 (10/12): 모드 화면이면 훈련 상태·카메라 칸이 모드 격자 안으로, 전체 현황이면 원래 자리로
+visit('#mode5');
+assert.equal(get('control-bar').parentNode, get('mode-view'));
+assert.equal(get('camera-view').parentNode, get('mode-view'));
+assert.equal(get('camera-view').hidden, false);
+visit('#overview');
+assert.equal(get('control-bar').previousElementSibling, get('control-home'));
+assert.equal(get('camera-view').previousElementSibling, get('camera-home'));
+visit('#trials');
+assert.equal(get('camera-view').hidden, true);
 for (const [hash,title,trialVisible,eventVisible] of [
   ['#trials','최근 시도',true,false], ['#events','사건 기록',false,true], ['#overview','전체 현황',false,false],
 ]) {
