@@ -6,6 +6,8 @@
 #              scripts/robot.sh nodes novision     #   비전 없이
 #              HAND=0 scripts/robot.sh nodes       #   손 인식 없이 (모드 5 장갑 끼고 막대만 볼 때). CONF=0.25 면 약한 검출도 보임
 #                                                  #   ★ HAND=0 은 손 거리 안전 판정이 없다 — 리허설·시연·환자 앞에서는 쓰지 않는다
+#              MODE3=1 HAND=0 HAND_STOP=slow scripts/robot.sh nodes   # 모드 3: 손목+측면 RealSense·flight_predictor (이미지 rally/vision:mode3,
+#                                                  #   scripts/vision_local.sh 머리말). 투구자는 3 m 밖이라 손 인식 없이. 세션은 session 3
 #   터미널 4:  scripts/robot.sh brain              # (세션으로 돌릴 때만) brain: context_builder + bt_runner (준비 확인 끔). DB·LLM·음성 없이
 #   터미널 3:  source scripts/robot.sh env         # 명령 터미널 (그 뒤 ros2 action send_goal ... / python3 scripts/...)
 #              scripts/robot.sh session 1          # 모드 1 세션 한 번 (brain 이 레인 무작위로 공 4개). 모드 5 는 session 5
