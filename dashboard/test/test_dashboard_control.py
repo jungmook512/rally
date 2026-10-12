@@ -155,3 +155,29 @@ def test_latest_report(monkeypatch):
     assert r.json()["ended_at"].startswith("2026-10-11T01:12") and "report_md IS NOT NULL" in seen[0]
     monkeypatch.setattr(web, "_query", empty)
     assert asyncio.run(call()).json() is None
+
+
+def test_cameras_off_without_robot_url(monkeypatch):
+    async def call():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url="http://test") as client:
+            return await client.get("/api/cameras")
+
+    monkeypatch.setattr(web, "ROBOT_VIDEO_URL", "")
+    r = asyncio.run(call()).json()
+    assert r["enabled"] is False and "ROBOT_VIDEO_URL" in r["reason"] and r["streams"] == []
+    monkeypatch.setattr(web, "ROBOT_VIDEO_URL", "192.168.0.10:8080")          # http:// 없음 → 꺼짐 (잘못된 주소로 요청하지 않음)
+    assert asyncio.run(call()).json()["enabled"] is False
+
+
+def test_camera_streams_point_to_robot_pc():
+    r = web.camera_streams("http://192.168.0.10:8080")
+    assert r["enabled"] and [s["name"] for s in r["streams"]] == ["손목", "측면"]
+    wrist = r["streams"][0]["url"]
+    assert wrist.startswith("http://192.168.0.10:8080/stream?topic=/camera/color/image_raw&")
+    assert "type=mjpeg" in wrist and "width=424" in wrist and "qos_profile=sensor_data" in wrist
+    assert r["streams"][1]["topic"] == "/side/side/color/image_raw"
+
+
+def test_camera_panel_on_page():
+    html = (Path(__file__).parents[1] / "web" / "index.html").read_text(encoding="utf-8")
+    assert 'id="camera-view"' in html and "/api/cameras" in html

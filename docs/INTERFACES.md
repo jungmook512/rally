@@ -24,9 +24,9 @@ webcam_link          측면 대각 웹캠, 높이 약 2 m (table_link 기준 sta
 
 | 토픽 | 타입 | 발행 | 주기 | QoS |
 |---|---|---|---|---|
-| `/camera/color/image_raw` | `sensor_msgs/Image` | realsense2_camera | 30 Hz | SensorData |
-| `/camera/aligned_depth_to_color/image_raw` | `sensor_msgs/Image` | realsense2_camera | 30 Hz | SensorData |
-| `/camera/color/camera_info` | `sensor_msgs/CameraInfo` | realsense2_camera | 30 Hz | SensorData |
+| `/camera/color/image_raw` | `sensor_msgs/Image` | realsense2_camera (손목, 시리얼 `cameras.yaml`) | 60 Hz (10/12~, 848×480) | SensorData |
+| `/camera/aligned_depth_to_color/image_raw` | `sensor_msgs/Image` | realsense2_camera (손목, 시리얼 `cameras.yaml`) | 60 Hz (10/12~, 848×480) | SensorData |
+| `/camera/color/camera_info` | `sensor_msgs/CameraInfo` | realsense2_camera (손목, 시리얼 `cameras.yaml`) | 60 Hz (10/12~, 848×480) | SensorData |
 | `/webcam/image_raw` | `sensor_msgs/Image` | usb_cam (측면) | 60 Hz | SensorData |
 | `/side/side/color/image_raw`, `/side/side/color/camera_info` | `sensor_msgs/Image`, `CameraInfo` | realsense2_camera (모드 3 측면 RealSense D435i, `camera_namespace:=side camera_name:=side`, 컬러 848×480 @60, 노출 20 · gain 128) | 60 Hz | SensorData |
 | `/rally/robot/wrench` | `geometry_msgs/WrenchStamped` | rally_robot/force_publisher | 50 Hz (두산 서비스 폴링 — 100 Hz 면 컨트롤러 서비스가 막힘) | SensorData |
@@ -35,6 +35,8 @@ webcam_link          측면 대각 웹캠, 높이 약 2 m (table_link 기준 sta
 | `/joint_states` | `sensor_msgs/JointState` | dsr_bringup2 | 100 Hz | SensorData |
 | `/tf`, `/tf_static` | `tf2_msgs/TFMessage` | 여러 노드 | - | 표준 |
 
+- **RealSense 두 대 (10/12, `rally_bringup/config/cameras.yaml`)**: `pc2_perception.launch.py part:=vision` 이 시리얼로 구분해 둘 다 848×480 @60 으로 띄운다 (`side_camera:=false` 면 측면 안 띄움). 노출: 측면은 항상 고정(20 · gain 128, `set_camera_params` 가 뜬 뒤 넣음), **손목은 평소 자동이고 모드 3 동안만 고정** — brain(`camera_exposure.py`)이 모드 3 에 들어갈 때·나올 때·세션이 끝날 때 손목 드라이버 노드(`/camera`)의 `rgb_camera.enable_auto_exposure`·`exposure`·`gain` 파라미터를 바꾼다. brain 이 켜질 때도 자동 노출을 한 번 보낸다(모드 3 도중 재시작 대비). 모드 3 은 고정이 적용된 뒤(최대 `skills.yaml mode3.exposure_wait_s` 3 s) 투구를 안내한다. 모드 3 동안은 노출이 짧아 손 검출이 약해질 수 있다. 노출·gain 은 드라이버 launch 인자로 받지 않아(4.58.4) 파라미터로만 넣는다.
+
 ### 2.2 인식 (커스텀)
 
 | 토픽 | 타입 | 발행 | 구독 | 주기 | QoS |
@@ -42,12 +44,16 @@ webcam_link          측면 대각 웹캠, 높이 약 2 m (table_link 기준 sta
 | `/rally/perception/objects` | `rally_interfaces/TrackedObjectArray` | rally_vision/segmenter (ByteTrack tracker 전까지) | brain, robot | 30 Hz (웹캠 비행 추적은 60 Hz) | BestEffort, depth 1 |
 | `/rally/perception/landing` | `geometry_msgs/PointStamped` — 패드 평면 교차 예측점 (`base_link`). `header.stamp` = 마지막 관측의 센서 시각(손목 카메라 시계) | rally_vision/flight_predictor | robot(catch_ball) | 60 Hz, 비행 중만 | BestEffort, depth 1 |
 | `/rally/perception/landing_info` | `std_msgs/Float64MultiArray` — `[교차 시각 s(ROS 시각), 교차까지 남은 시간 s(landing stamp 기준), 평면 위 표준편차 u·w m, 관측 수, 릴리스 이후 s]`. landing 과 같은 순서로 하나씩 발행 (전용 msg 는 팀 합의 후) | rally_vision/flight_predictor | robot(catch_ball) | landing 과 같음 | BestEffort, depth 1 |
+| `/rally/perception/ball_on_pad` | `geometry_msgs/PointStamped` — 측면 카메라가 **패드 중심(실시간 TCP + `pad_offset_tool_m`) 주변 10 cm 안**에서 본 공의 3D (`base_link`, 패드 평면과 교차). 보일 때만 측면 프레임마다. `header.stamp` = 측면 시각 + dt(손목 시계) | rally_vision/flight_predictor | robot(catch_ball: 3 s 연속이면 잡음) | ≤ 60 Hz, 보일 때만 | BestEffort, depth 1 |
 | `/rally/perception/objects/debug_image` | `sensor_msgs/Image` | rally_vision/segmenter (ByteTrack tracker 전까지) | dashboard | 10 Hz | BestEffort |
+| `/rally/perception/objects/image_axis` | `geometry_msgs/PoseArray` | rally_vision/segmenter | robot(handover 받기) | objects 와 같이 (같은 header·순서) | BestEffort, depth 1 |
 | `/rally/perception/hand` | `rally_interfaces/HandState` | rally_human/hand_pose_node | brain, robot(safety), robot(handover) | 30 Hz | BestEffort, depth 1 |
 | `/rally/perception/body` | `rally_interfaces/BodyPose` | rally_human/body_pose_node | brain | 15 Hz | BestEffort |
 | `/rally/voice/intent` | `rally_interfaces/VoiceIntent` | rally_voice/intent_node | brain, safety | 이벤트 | Reliable |
 | `/rally/voice/transcript` | `std_msgs/String` | rally_voice/intent_node | dashboard | 이벤트 | Reliable |
 | `/rally/voice/speaking` | `std_msgs/Bool` | rally_voice/tts_node | rally_voice/intent_node, rally_brain/bt_runner (말하는 중 자세 교정 안내 건너뜀, #119), dashboard 선택 | 발화 시작·끝 이벤트 | **Reliable, TransientLocal**, depth 1 |
+
+**objects/image_axis** (10/12, 모드 5 받기 기울기): `poses[i]` 는 `objects[i]` 와 짝 (header.stamp 같을 때만 짝지음). `position` = 그 물체 중심(objects 와 같음), `orientation` = 화면 속 마스크 주축 각도를 z 축 회전으로 — 화면 위쪽 0°, 오른쪽으로 기울면 +, −90~90°. 둥근 물체(장단축 비 ≤ 1.3)는 (0,0,0,0). `TrackedObject.yaw` 는 base 평면에 투영한 값이라 카메라가 앞을 보는 받기 자세에서는 늘 ±90° 로 뭉개져서 따로 낸다. 메시지 형식을 안 바꾸려고 TrackedObject 필드 대신 별도 토픽 (정정인 결정, 비전 컨테이너 재빌드 없이).
 
 **objects 좌표 프레임** (#66): `/rally/perception/objects` 의 `header.frame_id` 가 `base_link` 가 아니면(카메라 프레임 `camera_color_optical_frame`) 카메라→base 변환을 못 구한 것이다 — 그 좌표로 로봇을 움직이지 않는다(abort 또는 대기). segmenter 는 파라미터 `transform_source` 로 변환을 고른다: `tcp_npy`(기본, `/rally/robot/tcp_pose` × hand_eye) · `tf` · `auto`(tf 우선). **로봇 PC bringup URDF(`m0609_with_rg2_camera`)가 `tool0 → bracket_link → camera_bottom_screw_frame → camera_link → … → camera_color_optical_frame` 을 설계값으로 발행**(10/8 정정인 view_frames)하므로, 그 체인이 있는 동안 `tf`/`auto` 는 설계값을 집어 1 cm·2.5° 치우친다(PR #42 원인). URDF 에서 카메라 체인을 빼고 `camera_tf` 가 유일한 `camera_link` 부모가 되면 기본을 `auto` 로 바꾼다. `tcp_npy` 는 영상 시각이 아니라 마지막 `tcp_pose`(10 Hz) 를 쓰므로 **로봇이 멈춰 있을 때의 좌표만 정확**하다 — 이동 중 좌표로 로봇을 보내지 않는다. `camera_tf` 가 떠 있으면 `auto`(tf 는 영상 시각으로 보간) 가 낫다.
 
@@ -103,7 +109,7 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 | `/rally/skill/push_ball` | `rally_interfaces/PushBall` | 1 | 거치대 공 비전 집기 → 레인 입구 → 퍼터식 치기 → **손 보기 자세에서 끝남**(`mode1.end_at_hand_view`, 환자가 받는 모습). 훈련 Brain은 `target` + 계산한 양수 `push_speed` 전달. 속도 0의 로봇 계산 경로는 단독 시험용. 결과 `stop_position`·`error_mm` 은 `mode1.stop_measure: true`(단독 시험)일 때만 채움 — 세션에선 brain 이 받기 관측과 동시에 손 보기 자세 카메라(`SceneContext.objects`)로 재서 `TrialResult.error_mm`·`stop_d_m` 에 기록 |
 | `/rally/skill/return_ball` | `rally_interfaces/ReturnBall` | 1 | 시도 뒤 레인 안 공을 비전으로 찾아 집고 거치대 맨 윗부분(`mode1.rack_drop_posx`, 직접교시)에 넣기 → 손 보기 자세. 로봇이 닿는 곳(중앙선 앞)에 올 때까지 기다림 (feedback `out_of_reach` → brain 이 안내) |
 | `/rally/skill/pick_compliant` | `rally_interfaces/PickCompliant` | 1·3·5 공통 | task_compliance_ctrl(Z 저강성), 접촉 감지 후 파지 |
-| `/rally/skill/catch_ball` | `rally_interfaces/CatchBall` | 3 (챌린지) | 대기 자세 → 공 놓은 뒤 0.16 s 예측점으로 amovel 한 번(TCP 자세 고정, 왼쪽 안 감, 오른쪽·위아래 15 cm) → 힘으로 명중 판정 → 판정 뒤 로직(`catch_ball_after.py`) → 복귀. 비행 중 `contact_expected`. servol 보정은 나중 |
+| `/rally/skill/catch_ball` | `rally_interfaces/CatchBall` | 3 (챌린지) | 패드 집기(`catch_ball.pickup_pad()`, 정정인 자리) → 대기 자세 → 공 놓은 뒤 0.16 s 예측점으로 amovel 한 번(TCP 자세 고정, 왼쪽 안 감, 오른쪽·위 15 cm, 아래 8 cm — 대기 자세 −9.4 cm 자기충돌). 예측 std > 10 cm·관측 < 4 면 안 움직임(`low_confidence`), 안전 SLOW 면 `slow_at_catch` 중단 → **비전 판정**: `/rally/perception/ball_on_pad` 가 3 s 연속이면 `caught` (힘 판정 없음, 10/12) → 판정 뒤 로직(`catch_ball.after_catch()`, 정정인 자리) → 복귀. 비행 중 `contact_expected`. servol 보정은 나중 |
 | `/rally/skill/move_target` | `rally_interfaces/MoveTarget` | 3 (Phase 2) | movec / movesx / moveb 궤적, 환자가 맞혀야 하는 후기 단계 |
 | `/rally/skill/detach_ball` | `rally_interfaces/DetachBall` | 3 | 힘 제어 당김, 힘 급락으로 떼어짐 판정 |
 | `/rally/skill/handover` | `rally_interfaces/Handover` | 5 | 기울여 제시, 당김 힘 감지 해제 / 받기: 후퇴 자리에서 열고 대기 → 밀어 넣는 힘 감지 → 잡기 → 제자리. `follow_hand` 는 쓰지 않음 (#134) |
@@ -274,7 +280,7 @@ STOP·취소는 기존 세션 중단 처리. 타격 action 실패 시에도 다�
 | 모드 5 Handover RECEIVE | `present` 까지면 다시 보냄, 그 뒤는 세션 종료 |
 | PushBall `place` 이후 (놓기~치기~복귀) · ReturnBall `pickup`~`drop` | 공·그리퍼 상태가 애매해 **세션 종료** (2단계: 로봇 스킬에 '입구 공 바로 치기'·'쥔 공 거치대로' 옵션 필요, #117) |
 
-재전송은 NORMAL 1 s 유지 뒤, 명령당 최대 5회. 재전송한 goal 이 그 순간 다시 STOP 으로 **거절**되면(손이 또 다가옴) 실패로 끝내지 않고 같은 대기로 돌아간다 (10/11 실로봇: 받기 goal 거절 → 세션 종료가 났었음). 공 회수 전 손 이탈 확인은 별도 조건이다: 최신 검출 손의 중앙선 거리 ≥ `skills.yaml mode1.hand_clear_m`(0.20 m, `safety.yaml slow_distance_m` 과 별개 — #113).
+재전송은 NORMAL 1 s 유지 뒤, 명령당 최대 5회. 재전송한 goal 이 그 순간 다시 STOP 으로 **거절**되면(손이 또 다가옴) 실패로 끝내지 않고 같은 대기로 돌아간다 (10/11 실로봇: 받기 goal 거절 → 세션 종료가 났었음). 공 회수 전 손 이탈 확인은 별도 조건이다: 최신 검출 손의 중앙선 거리 ≥ `skills.yaml mode1.hand_clear_m`(0.20 m, `safety.yaml slow_distance_m` 과 별개 — #113). 이 확인은 **처음 보낼 때만** 하고, 손 STOP 뒤 재전송은 NORMAL 1 s 만 본다 (10/12 실로봇: 회수하러 가다 선 자세에선 손이 카메라에 안 보여 '손 안 보임' 으로 영영 대기).
 
 ### 그대로 세션 종료
 

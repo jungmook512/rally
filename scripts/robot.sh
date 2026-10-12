@@ -4,9 +4,12 @@
 #   터미널 2:  scripts/robot.sh nodes              # 비전 컨테이너 + 안전감시·힘·그리퍼·스킬서버. Ctrl+C 면 비전까지 끔
 #              (개발 기간 기본 HAND_STOP=off — 손 판정 꺼짐) HAND_STOP=slow|stop scripts/robot.sh nodes  # 리허설·시연은 slow 또는 stop
 #              scripts/robot.sh nodes novision     #   비전 없이
+#              HAND=0 scripts/robot.sh nodes       #   손 인식 없이 (모드 5 장갑 끼고 막대만 볼 때). CONF=0.25 면 약한 검출도 보임
+#                                                  #   ★ HAND=0 은 손 거리 안전 판정이 없다 — 리허설·시연·환자 앞에서는 쓰지 않는다
 #   터미널 4:  scripts/robot.sh brain              # (세션으로 돌릴 때만) brain: context_builder + bt_runner (준비 확인 끔). DB·LLM·음성 없이
 #   터미널 3:  source scripts/robot.sh env         # 명령 터미널 (그 뒤 ros2 action send_goal ... / python3 scripts/...)
 #              scripts/robot.sh session 1          # 모드 1 세션 한 번 (brain 이 레인 무작위로 공 4개). 모드 5 는 session 5
+#              scripts/robot.sh view               # 비전 확인 창 (마스크·바운딩 박스). session 은 자동으로 띄움 (VIEW=0 이면 안 띄움)
 #              scripts/robot.sh status             # 뭐가 떠 있는지 + check_controller + 비전 공 한 번
 #              scripts/robot.sh observe            # 관측 자세로 (특이점에서 힘 0 일 때)
 #              scripts/robot.sh estop | reset      # 소프트 비상정지 / 해제
@@ -61,7 +64,10 @@ case "$1" in
     fi
     if [ "$2" != "novision" ]; then
       "$ROOT/scripts/vision_local.sh" | sed 's/^/    /'
-      if docker image inspect rally/hand_pose:local >/dev/null 2>&1; then   # 손 인식 (모드 1 레인 고르기·받기 판정)
+      if [ "${HAND:-1}" = 0 ]; then                                    # 10/12 모드 5 비전 막대 기울기 시험: 손 인식 끔
+        echo "    [hand] ★ HAND=0 — 손 인식 안 띄움 (손 거리 안전 판정·손목 각도 기록 없음. 모드 1 은 레인 무작위). 리허설·시연·환자 앞에서는 쓰지 않는다"
+        trap '"$ROOT/scripts/vision_local.sh" stop' EXIT
+      elif docker image inspect rally/hand_pose:local >/dev/null 2>&1; then   # 손 인식 (모드 1 레인 고르기·받기 판정)
         "$ROOT/scripts/hand_local.sh" | sed 's/^/    /'
         trap '"$ROOT/scripts/vision_local.sh" stop; "$ROOT/scripts/hand_local.sh" stop' EXIT
       else
@@ -104,6 +110,11 @@ case "$1" in
     robot_env
     [ -n "$2" ] || { echo "사용법: scripts/robot.sh session 1   (모드 번호, 여러 개면 \"1,5\")"; exit 1; }
     source "$BRAIN_WS/ros2_ws/install/setup.bash"
+    # 비전 확인 창 (마스크·바운딩 박스 + 안전·손·handover 단계). VIEW=0 이면 안 띄움. 창은 q 로 닫고, 세션이 끝나도 남는다
+    if [ "${VIEW:-1}" != 0 ] && [ -n "$DISPLAY" ]; then
+      python3 "$ROOT/scripts/view.py" >/dev/null 2>&1 &
+      echo "[robot] 비전 확인 창 띄움 (q 로 닫기, 안 띄우려면 VIEW=0)"
+    fi
     exec ros2 action send_goal /rally/session/run rally_interfaces/action/RunSession "{patient_id: test, modes: [$2], trials_per_mode: 0}" --feedback
     ;;
 
@@ -116,6 +127,11 @@ case "$1" in
     timeout 40 python3 "$ROOT/scripts/check_controller.py"
     echo "[robot] 비전 공 (3 s):"
     timeout 3 ros2 topic echo /rally/perception/objects --once 2>/dev/null | grep -E "frame_id|class_name|^    x:|^    y:" | head -8 || true
+    ;;
+
+  view)
+    robot_env
+    exec python3 "$ROOT/scripts/view.py"
     ;;
 
   observe)

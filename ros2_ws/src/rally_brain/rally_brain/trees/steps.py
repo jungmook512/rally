@@ -76,16 +76,19 @@ def skill_step(state: TrialState, name: str, client: ActionClient, make_goal: Ca
                reason_of: Callable[[Any, bool], str] = lambda r, _aborted: getattr(r, "failure_reason", ""),
                on_feedback: Callable[[Any], None] | None = None,
                hand_resume: Callable[[str, list[str]], str | None] | None = None,
+               succeeded: Callable[[Any], bool] = lambda r: bool(r.success),
                ) -> py_trees.behaviour.Behaviour:
     """on_success(result, k) / on_fail(result 또는 None, reason, k) / on_retry(reason, k): k = 방금 끝난 회차 (1부터).
-    reason_of(result, aborted): 실패 이유. 빈 문자열이면 skill_<상태> (예: skill_aborted — 이유 없는 abort 는 안전 정지일 수 있다)."""
+    reason_of(result, aborted): 실패 이유. 빈 문자열이면 skill_<상태> (예: skill_aborted — 이유 없는 abort 는 안전 정지일 수 있다).
+    succeeded(result): 끝난(SUCCEEDED) goal 의 결과를 성공으로 볼지. 기본 result.success — success 필드가 없는 결과
+    (CatchBall: caught)는 끝까지 돈 것 자체를 시도 결과로 받고 판정은 on_success 쪽에서 한다."""
     session = state.session
     log = session.node.get_logger()
     step = {"done": False, "ok": False}
 
     def attempt(k: int) -> py_trees.behaviour.Behaviour:
         def on_result(result: Any) -> None:
-            if result.success:
+            if succeeded(result):
                 step["ok"] = True
                 on_success(result, k)
 

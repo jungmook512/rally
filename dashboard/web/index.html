@@ -13,23 +13,22 @@
   * { box-sizing:border-box; }
   [hidden] { display:none!important; }
   body { margin:0; background:linear-gradient(120deg,var(--bg),#f4f0fa 65%,#fff8e8); color:var(--text); font:15px/1.55 system-ui,-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif; }
-  header { max-width:1500px; margin:auto; padding:16px 28px; display:flex; justify-content:space-between; align-items:center; gap:16px; }
+  header { max-width:1500px; margin:auto; padding:10px 28px; display:flex; align-items:center; gap:22px; border-bottom:1px solid var(--line); }
+  #conn { margin-left:auto; white-space:nowrap; }
   header h1 { margin:0; display:flex; align-items:center; gap:20px; }
   header small { font-size:15px; font-weight:500; color:var(--muted); }
-  .brand { font-size:30px; letter-spacing:.08em; }
+  .brand { font-size:24px; letter-spacing:.08em; }
   .brand span { color:var(--accent); font-size:12px; margin-left:4px; }
   #conn { font-size:13px; color:var(--muted); }
   #conn.off { color:var(--stop); }
-  #mode-nav { display:flex; gap:8px; padding:8px max(20px,calc((100vw - 1444px)/2)); background:#fffdf5; border-block:1px solid var(--line); overflow-x:auto; }
-  #mode-nav a { padding:10px 16px; border:1px solid transparent; border-radius:10px; color:var(--muted); text-decoration:none; font-weight:700; white-space:nowrap; }
+  #mode-nav { display:flex; gap:4px; overflow-x:auto; }
+  #mode-nav a { padding:7px 12px; border:1px solid transparent; border-radius:10px; color:var(--muted); text-decoration:none; font-weight:700; white-space:nowrap; }
   #mode-nav a[aria-current] { background:var(--mint); border-color:#7cae99; color:#164e3f; }
   #mode-nav small { font-size:11px; padding:2px 6px; background:var(--lavender); border-radius:6px; }
   a:focus-visible,button:focus-visible,[tabindex]:focus-visible { outline:3px solid #9b6400; outline-offset:3px; }
-  main { max-width:1500px; margin:auto; padding:20px 28px 40px; display:grid; gap:16px; }
-  #page-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:4px 0; }
-  #page-heading h2 { margin:3px 0 6px; font-size:28px; line-height:1.3; }
-  #page-heading p { margin:0; color:var(--muted); }
-  .eyebrow { color:var(--accent)!important; font-size:11px; letter-spacing:.12em; font-weight:800; }
+  main { max-width:1500px; margin:auto; padding:14px 28px 32px; display:grid; gap:14px; }
+  #page-heading { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
+  #page-heading h2 { margin:0; font-size:24px; line-height:1.3; }
   .badge { display:inline-block; border:1px solid var(--line); border-radius:8px; background:#fafcf9; padding:5px 9px; color:var(--muted); font-size:12px; }
   .panel { min-width:0; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:18px; box-shadow:0 3px 0 #244c3510; }
   .panel h2 { margin:0 0 12px; color:var(--text); font-size:18px; font-weight:750; }
@@ -57,7 +56,7 @@
   button:disabled { background:#e3e8e4; color:#53635c; border-color:#b8c3bd; cursor:not-allowed; }
   #proposal-reject { background:#fffdf6; color:var(--text); border-color:#8c9e93; }
   #proposal-reject:disabled { background:#e3e8e4; color:#53635c; }
-  #safety { display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; border:1px solid currentColor; border-left:6px solid currentColor; border-radius:10px; padding:10px 14px; font-weight:750; }
+  #safety { display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; border:1px solid currentColor; border-left:6px solid currentColor; border-radius:10px; padding:6px 14px; font-weight:750; }
   #safety.normal { background:var(--ok-bg); color:var(--ok); }
   #safety.slow { background:var(--warn-bg); color:var(--warn); }
   #safety.stop { background:var(--stop-bg); color:var(--stop); }
@@ -73,8 +72,69 @@
   #proposal-panel { background:var(--cream); border-color:#c5ab72; }
   #proposal-prompt { font-size:19px; font-weight:700; }
   #proposal-message { font-weight:650; }
-  #mode-view { display:grid; grid-template-columns:minmax(0,3fr) minmax(270px,1fr); gap:16px; }
-  .visual-column,aside { display:grid; align-content:start; gap:16px; min-width:0; }
+  /* 모드 화면 배치 (10/12, 참고 화면 느낌): 위 상태 줄 / 왼쪽 그림 + 작은 카메라 / 오른쪽 현재 단계 + 모드별 진행 카드 (선택 모드 카드 안에 단계 목록) */
+  /* 전체 현황 (10/12): 왼쪽 모드별 진행 + 세션 리포트 / 오른쪽 세션 요약 + 카메라 */
+  #overview-view { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(0,1fr); gap:14px; align-items:start; }
+  #ov-left, #ov-right { display:grid; gap:14px; min-width:0; }
+  .summary-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+  .summary .tile { background:#f1f5f2; border-radius:12px; padding:12px 14px; min-width:0; }
+  .summary .tile .label { font-size:12.5px; color:var(--muted); font-weight:650; }
+  .summary .tile .value { font-family:"Noto Serif KR","Nanum Myeongjo",Georgia,serif; font-size:26px; margin:4px 0 2px; overflow-wrap:anywhere; }
+  .summary .tile .sub { font-size:12px; color:var(--muted); overflow-wrap:anywhere; }
+  #ov-right .cameras { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+  #report-view #report { max-height:calc(100vh - 470px); }
+  @media(max-width:1000px) { #overview-view { grid-template-columns:1fr; } }
+  #mode-view { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(0,1fr); gap:14px; align-items:start;
+               grid-template-areas:"control control" "left right"; }
+  #mode-view>* { min-width:0; }
+  #mode-view .control-bar { grid-area:control; }
+  .control-bar { grid-template-columns:minmax(0,1fr) auto auto!important; align-items:center; padding:8px 16px!important; }
+  .control-status { display:flex!important; align-items:center; gap:14px; } .control-status h2 { margin:0!important; }
+  #resume:disabled { display:none; }   /* 휴식 중이라 누를 수 있을 때만 */
+  #mode-left { grid-area:left; display:grid; gap:14px; min-width:0; }
+  #mode-right { grid-area:right; display:grid; gap:14px; min-width:0; }
+  #mode-view .diagram-panel { padding:12px; }
+  #mode-view #mode-diagram { margin-top:10px; }
+  #mode-view #mode-diagram svg { min-width:0; max-height:calc(100vh - 400px); min-height:200px; }
+  #camera-slot .camera .frame { max-height:calc(100vh - 440px); } #camera-slot .cameras { justify-content:start; }
+  #camera-slot #camera-view { padding:12px; } #camera-slot #camera-view .section-heading { margin-bottom:8px; padding-bottom:6px; font-size:14px; }
+  #camera-slot .cameras { grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:8px; }
+  #camera-slot .camera figcaption { font-size:12px; }
+  .stat-line { color:var(--muted); font-size:14px; } .stat-line b { color:var(--text); font-size:16px; font-variant-numeric:tabular-nums; }
+  .mode-cards { display:flex; gap:10px; align-items:flex-start; }
+  .mode-cards>.mode-card { flex:1 1 0; } .mode-cards>.mode-card.selected { flex:2.6 1 0; }
+  .mode-card { border:1px solid var(--line); border-top:4px solid #cbd8cf; border-radius:12px; background:#fbfdfb; padding:10px; cursor:pointer; min-width:0; }
+  .mode-card:hover { border-color:#9fb3a7; }
+  .mode-card[data-live="1"]:not(.selected) { border-top-color:var(--accent); }
+  .mode-card.selected { border:2px solid var(--accent); border-top-width:4px; background:#e2efeb; cursor:default; }
+  .mode-card .top { display:flex; justify-content:space-between; align-items:center; gap:6px; }
+  .mode-card .num { display:grid; place-items:center; width:30px; height:30px; border-radius:50%; border:1.5px solid #9fb3a7; background:#fff; font-weight:750; }
+  .mode-card.selected .num { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .mode-card .state { font-size:12px; padding:2px 9px; border-radius:999px; border:1px solid var(--line); background:#eef3ef; color:var(--muted); white-space:nowrap; }
+  .mode-card .state.running { background:#dcece7; border-color:#93c0b6; color:#1f5752; }
+  .mode-card .state.paused { background:#f7e9cc; border-color:#d0a95b; color:#7a5414; }
+  .mode-card .state.off { opacity:.6; }
+  .mode-card .name { font-family:"Noto Serif KR","Nanum Myeongjo",Georgia,serif; font-size:19px; word-break:keep-all; margin:6px 0 2px; color:var(--text); }
+  .mode-card .sub { font-size:12px; color:var(--muted); }
+  .mode-card .bar { height:6px; border-radius:3px; background:#e1e9e3; margin:8px 0 2px; overflow:hidden; }
+  .mode-card .bar i { display:block; height:100%; width:0; background:#7fae8c; }
+  .card-slot:empty { display:none; }
+  .card-slot { margin-top:8px; padding-top:8px; border-top:1px dashed var(--line); }
+  #steps-panel { padding:0; border:0; background:none; box-shadow:none; }
+  #steps-panel h2 { display:none; }
+  #steps-panel #steps { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 6px; }
+  #steps-panel #steps li { flex:none; display:flex; align-items:center; gap:7px; text-align:left; padding:3px 5px; font-size:12.5px; white-space:nowrap; }
+  #steps-panel #steps li span { width:10px; height:10px; margin:0; flex:none; font-size:0; border:1.5px solid #a3b5ab; background:#fff; }
+  #steps-panel #steps li.active span { background:var(--accent); border-color:var(--accent); box-shadow:none; }
+  #steps-panel #steps li.active { color:var(--accent); font-weight:700; }
+  #steps-panel #steps li.preview span { background:#4f9a8f; border-color:#4f9a8f; }
+  #steps-play { margin:6px 0 0; width:100%; padding:5px 10px; }
+  .badges { display:flex; gap:12px; align-items:center; }
+  .badges label { display:grid; justify-items:center; gap:2px; font-size:11px; color:var(--muted); }
+  .badges output { font-size:13px; font-weight:700; padding:3px 12px; border-radius:999px; border:1px solid #9fc5bc; background:#e4f0ec; color:#1f5752; white-space:nowrap; }
+  .badges output.safe-normal { border-color:#9cc3a8; background:#e2f1e6; color:#2f6b45; }
+  .badges output.safe-slow { border-color:#d6b56f; background:#f8ecd0; color:#7a5414; }
+  .badges output.safe-stop { border-color:#d48b8b; background:#f8dede; color:#9a2525; }
   .diagram-panel { background:#f9fcf8; border-color:#9eb8a8; }
   #mode-diagram { margin-top:12px; overflow-x:auto; border:1px solid #c2d3c7; border-radius:10px; background:#f1f7ef; }
   #mode-diagram svg { display:block; width:100%; min-width:600px; height:auto; max-height:420px; object-fit:contain; }
@@ -84,22 +144,34 @@
   #steps li { flex:1; text-align:center; color:var(--muted); font-size:13px; }
   #steps li span { display:grid; place-items:center; width:34px; height:34px; margin:0 auto 8px; border:1px solid #aa9cbb; border-radius:50%; background:#fffdfb; font-size:16px; }
   #steps strong { font-weight:650; }
+  #steps li { cursor:pointer; border-radius:10px; padding:6px 2px; }
+  #steps li:hover { background:#e3eee9; }
+  #steps li.preview { color:#2b6f6a; } #steps li.preview span { background:#dcece7; border:2px solid #4f9a8f; }
   #steps li.active { color:#725008; }
+  button.ghost { margin-left:auto; padding:6px 12px; font-size:13px; background:#fffdfb; color:#2b6f6a; border-color:#9fc5bc; }
   #steps li.active span { background:#ffe4a3; border:2px solid #a57617; box-shadow:0 0 0 3px #fff8dc; }
   .instruction { background:var(--cream); border-color:#c5ab72; }
   .instruction h2 { font-size:24px; line-height:1.35; margin:2px 0 12px; overflow-wrap:anywhere; }
-  .instruction p { margin:8px 0; font-size:15px; }
+  .instruction p { margin:6px 0; font-size:14px; color:var(--muted); }
   .stats { background:var(--mint); border-color:#9bbda9; }
   .stats dl { margin:0; }
   .stats dl>div { display:flex; justify-content:space-between; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); }
   dt { color:var(--muted); font-size:14px; } dd { margin:0; font-weight:750; text-align:right; }
   .cards { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; }
   .card:nth-child(odd) { background:var(--mint); } .card:nth-child(even) { background:var(--lavender); }
-  .card .label { font-size:14px; color:var(--text); font-weight:750; padding-bottom:10px; border-bottom:1px solid var(--line); }
+  .card .label { font-size:14px; color:var(--muted); font-weight:700; }
+  .panel.card { padding:14px 16px; }
   .card .sub { font-size:12px; color:var(--muted); margin-top:5px; overflow-wrap:anywhere; }
-  .card .value { font-size:30px; line-height:1.35; margin-top:13px; font-weight:800; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+  .card .value { font-size:24px; line-height:1.3; margin-top:8px; font-weight:800; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
   #events-view { background:#f5f0fb; border-color:#b6a6cd; }
   #trials-view .scroll,#events-view .scroll { max-height:520px; }
+  .cameras { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 560px)); gap:12px; }   /* 한 대만 보일 때 너무 커지지 않게 */
+  .camera { margin:0; }
+  .camera .frame { position:relative; aspect-ratio:424/240; background:#111; border-radius:8px; overflow:hidden; }
+  .camera img { width:100%; height:100%; object-fit:contain; display:block; }
+  .camera .frame .empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:8px; color:#bbb; background:#111; font-weight:600; letter-spacing:.04em; }
+  .camera .frame .empty[hidden] { display:none; }
+  .camera figcaption { margin-top:6px; font-size:.9em; }
   #report { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.6; max-height:520px; overflow:auto; }
   table { width:100%; border-collapse:collapse; font-size:14px; }
   th,td { text-align:left; padding:8px; border-bottom:1px solid var(--line); white-space:nowrap; }
@@ -114,35 +186,131 @@
   .empty { color:var(--muted); padding:8px 0; font-size:14px; }
   .new { animation:flash 1.2s ease-out; }
   @keyframes flash { from { background:#d5eee2; } to { background:transparent; } }
-  @media(max-width:1000px) { #mode-view { grid-template-columns:1fr; } aside { grid-template-columns:1fr 1fr; } #page-heading { align-items:flex-start; flex-direction:column; } }
+  @media(max-width:1000px) { #mode-view { grid-template-columns:1fr; grid-template-areas:"control" "left" "right"; } .mode-cards { flex-wrap:wrap; }
+                             #mode-view #camera-view .cameras { grid-template-columns:repeat(auto-fill, minmax(260px, 560px)); } #page-heading { align-items:flex-start; flex-direction:column; } }
   @media(max-width:700px) { .cards { grid-template-columns:repeat(2,minmax(0,1fr)); } header { padding:14px 16px; } header small { display:none; } main { padding:16px 12px 28px; } .panel { padding:14px; } #mode-nav { padding-inline:12px; } #mode-nav a { padding:9px 12px; font-size:14px; } #page-heading h2 { font-size:25px; } .panel-top { align-items:flex-start; flex-direction:column; } #steps { flex-wrap:wrap; row-gap:16px; } #steps li { flex:0 0 calc(33.33% - 6px); } }
   @media(max-width:700px) { #mode-diagram svg { min-width:0; } #mode-diagram svg text { display:none; } }
-  @media(max-width:440px) { aside { grid-template-columns:1fr; } .control-bar { grid-template-columns:1fr; } .control-bar small { grid-column:1/-1; } #resume { justify-self:start; } #proposal-panel button { display:block; width:100%; margin-top:8px; } }
+  @media(max-width:440px) { #mode-view { grid-template-columns:1fr; grid-template-areas:"control" "left" "right"; } .control-bar { grid-template-columns:1fr; } .control-bar small { grid-column:1/-1; } #resume { justify-self:start; } #proposal-panel button { display:block; width:100%; margin-top:8px; } }
+  /* 테마 (10/12) — 크림색 바탕·연한 테두리·남색 강조 */
+  :root { --bg:#e8eee9; --panel:#f8faf7; --text:#2e3a35; --muted:#738078; --line:#d9e2db; --accent:#2b6f6a; --mint:#f8faf7; --lavender:#f8faf7; --cream:#f8faf7; }
+  body { background:var(--bg); }
+  header { border-color:var(--line); }
+  .panel { border-color:var(--line); box-shadow:0 1px 2px #2a403012; border-radius:14px; }
+  .control-bar,.instruction,.stats,.steps-panel,#trials-view,#events-view { border-left-width:1px; border-left-color:var(--line)!important; }
+  .control-bar, .instruction, .stats, .diagram-panel, .card, #events-view { background:var(--panel)!important; border-color:var(--line)!important; }
+  #mode-nav a[aria-current] { background:#e4f0ec; border-color:#9fc5bc; color:#1f5752; }
+  button { background:#fbfdfb; color:var(--text); border-color:#b9cbbf; border-radius:999px; }
+  button:not(:disabled):hover { border-color:var(--accent); }
+  #resume:not(:disabled) { background:var(--accent); border-color:var(--accent); color:#fff; }
+  /* 정돈 (10/12): 칸 제목은 작은 회색 글씨 하나로, 아이콘·장식 배지 없음 */
+  .section-icon, .diagram-panel .panel-top .badge { display:none; }
+  .panel h2:not(#step-title), .panel .section-heading, .current-label, .control-status h2 { font-size:13px!important; font-weight:650; color:var(--muted)!important; letter-spacing:.02em; border:0!important; padding:0!important; margin:0 0 10px!important; }
+  .panel-top { margin-bottom:10px; } .panel-top h2, .panel-top .section-heading { margin:0!important; }
+  .diagram-panel>.panel-top { border:0; padding:0; }
+  .panel { border:1px solid #dde6df; box-shadow:0 1px 2px #2a40300d, 0 6px 18px #2a40300a; }
+  /* 안전 띠: 정상·모름이면 숨김 (상태 줄 배지로 충분), 느리게·정지일 때만 경고 띠 */
+  #safety { display:none!important; }   /* 안전은 상태 줄 배지·색으로 (띠가 화면을 밀지 않게) */
+  .control-bar[data-safety=stop] { background:#fbe3e3!important; border-color:#d98c8c!important; }
+  .control-bar[data-safety=slow] { background:#fbf0d6!important; border-color:#dcb767!important; }
+  .control-bar[data-safety=stop] #phase { color:#9a2525; }
+  #safety.slow, #safety.stop { font-size:16px; padding:10px 16px; border-width:1px; border-left-width:6px; }
+  /* 그림: 회색 상자·안쪽 테두리 없이 칸에 바로 */
+  #mode-diagram { border:0!important; background:none!important; margin-top:0!important; }
+  /* 메뉴: 상자 대신 밑줄 탭 */
+  #mode-nav { gap:2px; align-self:stretch; }
+  #mode-nav a { border:0; border-radius:0; border-bottom:2px solid transparent; padding:16px 10px 14px; }
+  #mode-nav a[aria-current] { background:none; color:var(--accent); border-bottom-color:var(--accent); }
+  #mode-nav a:hover { color:var(--text); }
+  header { padding-block:0; }
+  .instruction h2 { font-family:"Noto Serif KR","Nanum Myeongjo",Georgia,serif; font-size:30px; font-weight:600; margin:6px 0 4px; }
+  .current-label { color:var(--muted); font-size:14px; } .instruction .section-heading { border:0; padding:0; margin:0; }
+  #mode-diagram { border-color:var(--line); background:#f1f5f2; }
+  #safety { border-width:1px; border-left-width:1px; border-radius:10px; font-weight:650; }
+  #safety.normal { background:#eef7ef; color:#2f6b45; border-color:#b9dcc2; }
+  /* 모드 화면 최종 배치 (10/12): 왼쪽 세로 레일(모드 고르기) · 가운데 그림 + 진행 트랙 · 오른쪽 현재 단계 + 카메라 */
+  .badges label { font-size:0; gap:0; } .badges output { font-size:12.5px; }
+  .badges output::before { content:""; display:inline-block; width:7px; height:7px; border-radius:50%; background:currentColor; margin-right:6px; vertical-align:1px; }
+  #mode-view { grid-template-columns:108px minmax(0,1.3fr) minmax(0,1fr); grid-template-areas:"control control control" "rail left right"; }
+  #mode-view #progress-panel { display:none; }
+  .v-head { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:14px; }
+  .v-head button { margin:0; width:auto; padding:5px 12px; font-size:12.5px; }
+  .track-title { font-family:"Noto Serif KR","Nanum Myeongjo",Georgia,serif; font-size:20px; color:var(--text); }
+  .track-title small { font-family:system-ui,"Noto Sans KR",sans-serif; font-size:13px; color:var(--muted); margin-left:8px; }
+  .ticks { display:flex; position:relative; }
+  .ticks::before { content:""; position:absolute; left:calc(50% / var(--n)); right:calc(50% / var(--n)); top:10px; height:4px; background:#d3ddd6; border-radius:2px; }
+  .ticks::after { content:""; position:absolute; left:calc(50% / var(--n)); top:10px; height:4px; border-radius:2px; background:var(--accent); width:calc((100% - 100% / var(--n)) * var(--p)); transition:width .4s; }
+  .tick { flex:1 1 0; display:grid; justify-items:center; gap:8px; background:none; border:0; padding:0 2px; font:inherit; color:var(--muted); cursor:pointer; position:relative; z-index:1; border-radius:8px; }
+  .tick:hover span { color:var(--text); }
+  .tick i { width:24px; height:24px; border-radius:50%; background:#fff; border:2px solid #b9c9be; display:grid; place-items:center; font-style:normal; font-size:11px; font-weight:700; color:#8a978f; }
+  .tick span { font-size:12.5px; line-height:1.3; text-align:center; word-break:keep-all; }
+  .tick.done i { background:#9fc5bc; border-color:#9fc5bc; color:#fff; }
+  .tick.now i { background:var(--accent); border-color:var(--accent); color:#fff; box-shadow:0 0 0 5px #2b6f6a2e; } .tick.now span { color:var(--accent); font-weight:700; }
+  .tick.pv i { background:#4f9a8f; border-color:#4f9a8f; color:#fff; } .tick.pv span { color:#4f9a8f; font-weight:700; }
+  #v-rail { grid-area:rail; display:grid; gap:8px; align-content:start; }
+  .rail-m { background:var(--panel); border:1px solid #dde6df; border-radius:14px; padding:12px 8px; text-align:center; cursor:pointer; box-shadow:0 1px 2px #2a40300d; position:relative; }
+  .rail-m:hover { border-color:#9fc5bc; }
+  .rail-m .n { font-family:"Noto Serif KR",Georgia,serif; font-size:30px; line-height:1; color:var(--muted); }
+  .rail-m .t { font-size:12px; margin-top:6px; color:var(--text); word-break:keep-all; } .rail-m .s { font-size:11px; color:var(--muted); margin-top:4px; }
+  .rail-m .mini { height:4px; border-radius:2px; background:#e1e9e3; margin:8px 6px 0; overflow:hidden; } .rail-m .mini i { display:block; height:100%; background:#7fae8c; }
+  .rail-m.sel { background:var(--accent); border-color:var(--accent); cursor:default; } .rail-m.sel .n, .rail-m.sel .t, .rail-m.sel .s { color:#fff; } .rail-m.sel .mini { background:#ffffff40; } .rail-m.sel .mini i { background:#fff; }
+  .rail-m.live::after { content:""; position:absolute; top:9px; right:9px; width:8px; height:8px; border-radius:50%; background:#3f9a6a; box-shadow:0 0 0 3px #3f9a6a33; }
+  .rail-m.paused::after { content:""; position:absolute; top:9px; right:9px; width:8px; height:8px; border-radius:50%; background:#d0a95b; }
+  @media(max-width:1000px) { #mode-view { grid-template-columns:1fr; grid-template-areas:"control" "rail" "left" "right"; } #v-rail { grid-template-columns:repeat(4,1fr); } }
+  /* 정돈 2 (10/12): 진행 단계 점 표시 빼고 안전만, 개발용 BT 이름 숨김(제목에 마우스), 최근 시도 칸 */
+  .badges label:first-child { display:none; }
+  #raw-stage { display:none!important; }
+  #recent-list { list-style:none; margin:0; padding:0; }
+  #recent-list li { display:grid; grid-template-columns:44px 46px 90px 56px minmax(0,1fr); gap:6px; align-items:center; padding:7px 2px; border-bottom:1px solid #e3ebe5; font-size:13px; }
+  #recent-list li:last-child { border-bottom:0; }
+  #recent-list .r-no { color:var(--muted); font-variant-numeric:tabular-nums; }
+  #recent-list .r-res { font-size:12px; font-weight:700; padding:2px 0; border-radius:999px; text-align:center; }
+  #recent-list .r-res.ok { background:#e2f1e6; color:#2f6b45; } #recent-list .r-res.fail { background:#f6e3e3; color:#9a2525; }
+  #recent-list .r-m { color:var(--text); font-variant-numeric:tabular-nums; } #recent-list .r-note { color:var(--muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #recent-panel .empty { padding:4px 0; }
+  /* 최근 시도·사건 기록 탭 (10/12) */
+  #trials-view .scroll, #events-view .scroll { max-height:calc(100vh - 190px); }
+  .list-head { flex-wrap:wrap; gap:12px; margin-bottom:12px; }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; margin-right:auto; }
+  .chips button { margin:0; padding:5px 12px; font-size:12.5px; border-radius:999px; background:#eef3ef; border:1px solid transparent; color:var(--muted); font-weight:600; }
+  .chips button.on { background:var(--accent); color:#fff; }
+  #trials-view table { font-size:14px; }
+  #trials-view thead { background:var(--panel); }
+  #trials-view th { font-size:12px; font-weight:650; color:var(--muted); border-bottom:1px solid var(--line); padding:8px 10px; }
+  #trials-view td { padding:10px; border-bottom:1px solid #e3ebe5; }
+  #trials-view tbody tr:hover { background:#f1f6f2; }
+  #trials-view td.num { font-variant-numeric:tabular-nums; }
+  .mchip { display:inline-grid; place-items:center; width:22px; height:22px; border-radius:50%; background:#e2efeb; color:var(--accent); font-size:12px; font-weight:700; margin-right:8px; }
+  #trials-view .r-res { display:inline-block; min-width:44px; font-size:12px; font-weight:700; padding:2px 8px; border-radius:999px; text-align:center; }
+  #trials-view .r-res.ok { background:#e2f1e6; color:#2f6b45; } #trials-view .r-res.fail { background:#f6e3e3; color:#9a2525; }
+  ul#events li { align-items:center; padding:9px 4px; border-bottom:1px solid #e3ebe5; }
+  ul#events time { width:72px; color:var(--muted); font-size:13px; }
+  ul#events .kind { flex:none; min-width:52px; text-align:center; font-size:12px; font-weight:700; padding:2px 8px; border-radius:999px; background:#eef3ef; color:var(--muted); }
+  ul#events .kind.safety-normal { background:#e2f1e6; color:#2f6b45; } ul#events .kind.safety-slow { background:#f8ecd0; color:#7a5414; } ul#events .kind.safety-stop { background:#f6e3e3; color:#9a2525; }
+  ul#events .kind.ok { background:#e2efeb; color:var(--accent); } ul#events .kind.fail { background:#f6e3e3; color:#9a2525; }
+  ul#events .kind.voice_intent { background:#ece7f5; color:#5b4a8a; } ul#events .kind.mode_change { background:#e4ecf3; color:#3b5a78; } ul#events .kind.session_report { background:#f1ece2; color:#6b5a3a; }
 </style>
 </head>
 <body>
 <header>
-  <h1><span class="brand">RALLY<span>●</span></span><small>재활 훈련 대시보드</small></h1>
-  <span id="conn" class="off">연결 중…</span>
-</header>
+  <h1><span class="brand">RALLY<span>●</span></span></h1>
 <nav id="mode-nav" aria-label="훈련 모드 페이지">
 <a href="#overview" data-page="overview">전체 현황</a>
-<a href="#mode1" data-page="1">모드 1 · 공 굴리기</a>
-<a href="#mode3" data-page="3">모드 3 · 캐치볼 <small>챌린지</small></a>
-<a href="#mode5" data-page="5">모드 5 · 건네고 받기</a>
-<a href="#mode7" data-page="7">모드 7 · 저항 밀기</a>
+<a href="#mode1" id="nav-mode" data-page="mode">훈련</a>
 <a href="#trials" data-page="trials">최근 시도</a>
 <a href="#events" data-page="events">사건 기록</a>
 </nav>
+  <span id="conn" class="off">연결 중…</span>
+</header>
 <main>
-  <section id="page-heading"><div><p class="eyebrow">훈련 모니터</p><h2 id="page-title">전체 현황</h2><p id="page-subtitle">연결된 훈련의 상태와 기록을 확인합니다.</p></div><span id="view-status" class="badge">전체 보기</span></section>
-  <div id="safety" class="unknown">안전 상태 모름 <small>상황판 수신 전</small></div>
-  <section class="panel control-bar" aria-label="훈련 휴식과 재개">
+  <section id="page-heading"><h2 id="page-title">전체 현황</h2><span id="view-status" class="badge" hidden></span></section>
+  <div id="safety" class="unknown">안전 상태 모름</div>
+  <div id="control-home" hidden></div>
+  <section id="control-bar" class="panel control-bar" aria-label="훈련 휴식과 재개">
     <div class="control-status"><h2><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4H19V20H5ZM9 8H15M9 12H15M9 16H12"/></svg>훈련 상태</h2>
-    <p id="phase" role="status">세션 상태 수신 대기</p></div>
+    <p id="phase" role="status">연결 대기</p></div>
     <button id="resume" type="button" disabled>훈련 재개</button>
+    <div class="badges"><label>진행 단계<output id="badge-step">—</output></label><label>안전<output id="badge-safety">모름</output></label></div>
     <p id="control-message" role="status" aria-live="polite"></p>
-    <small>휴식 후 같은 난이도로 이어갑니다. 안전 정지 해제는 운영자의 별도 절차가 필요합니다.</small>
   </section>
   <section id="proposal-panel" class="panel" hidden aria-label="휴식 제안">
     <div class="panel-top"><h2><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5V19M16 5V19"/></svg>휴식 제안 <small id="proposal-source" class="section-tag"></small></h2><span id="proposal-time" class="badge"></span></div>
@@ -152,35 +320,67 @@
     <p id="proposal-message" role="status" aria-live="polite"></p>
   </section>
   <section id="mode-view" hidden>
-    <div class="visual-column"><div class="panel diagram-panel"><div class="panel-top"><h2 id="diagram-title">훈련 공간</h2><span class="badge">환자 시점 · 실행 단계 설명</span></div><div id="mode-diagram" tabindex="0" role="region" aria-label="환자 시점에서 현재 실행 단계를 설명하는 훈련 일러스트"></div><p id="diagram-caption" class="caption"></p></div>
-    <div class="panel steps-panel"><h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5H8V9H4ZM12 7H20M4 15H8V19H4ZM12 17H20M6 9V15"/></svg>단계 순서</h2><ol id="steps"></ol><p class="caption">현재 강조는 수신된 실행 단계입니다. 이전 단계의 성공을 뜻하지 않습니다.</p></div></div>
-    <aside><div class="panel instruction"><div class="section-heading current-label"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5L18 12L8 19Z"/></svg>현재 동작</div><h2 id="step-title" role="status">상태 수신 대기</h2><p id="step-description"></p><span id="raw-stage" class="caption"></span></div>
-    <div class="panel stats"><h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19H20M7 15V10M12 15V5M17 15V8"/></svg>진행 현황</h2><dl><div><dt>완료한 시도</dt><dd id="mode-trials">—</dd></div><div><dt>현재 난이도</dt><dd id="mode-level">—</dd></div><div><dt>세션 상태</dt><dd id="mode-phase">미수신</dd></div></dl><p id="mode-extra" class="caption"></p></div></aside>
+    <nav class="variant" id="v-rail" hidden aria-label="모드"></nav>
+    <div id="mode-left">
+      <div class="panel diagram-panel"><div class="panel-top"><h2 id="diagram-title">훈련 그림</h2><span class="badge">위에서 본 설명 그림</span></div><div id="mode-diagram" tabindex="0" role="region" aria-label="현재 실행 단계를 설명하는 훈련 그림"></div><p id="diagram-caption" class="caption" hidden></p></div>
+
+      <div class="panel variant" id="v-track" hidden></div>
+      <div class="panel progress-panel" id="progress-panel"><div class="panel-top"><h2>모드별 진행</h2><span class="stat-line">카드를 누르면 그 모드 화면</span></div>
+      <div class="mode-cards">
+        <div class="mode-card" id="card-1" role="link" tabindex="0"><div class="top"><span class="num">1</span><span class="state" id="card-state-1">대기</span></div>
+          <div class="name">공 굴리기</div><div class="sub" id="card-sub-1">시도 0회</div><div class="bar"><i id="card-bar-1"></i></div><div class="card-slot" id="card-slot-1"></div></div>
+        <div class="mode-card" id="card-3" role="link" tabindex="0"><div class="top"><span class="num">3</span><span class="state" id="card-state-3">대기</span></div>
+          <div class="name">캐치볼</div><div class="sub" id="card-sub-3">시도 0회</div><div class="bar"><i id="card-bar-3"></i></div><div class="card-slot" id="card-slot-3"></div></div>
+        <div class="mode-card" id="card-5" role="link" tabindex="0"><div class="top"><span class="num">5</span><span class="state" id="card-state-5">대기</span></div>
+          <div class="name">건네고 받기</div><div class="sub" id="card-sub-5">시도 0회</div><div class="bar"><i id="card-bar-5"></i></div><div class="card-slot" id="card-slot-5"></div></div>
+        <div class="mode-card" id="card-7" role="link" tabindex="0"><div class="top"><span class="num">7</span><span class="state" id="card-state-7">대기</span></div>
+          <div class="name">저항 밀기</div><div class="sub" id="card-sub-7">시도 0회</div><div class="bar"><i id="card-bar-7"></i></div><div class="card-slot" id="card-slot-7"></div></div>
+      </div></div>
+    </div>
+    <div id="mode-right">
+      <div class="panel instruction"><div class="panel-top"><div class="section-heading current-label">현재 단계</div><span class="stat-line">시도 <b id="mode-trials">—</b> · 난이도 <b id="mode-level">—</b></span></div>
+        <h2 id="step-title" role="status">대기 중</h2><p id="step-description"></p><span id="raw-stage" class="caption"></span><p id="mode-extra" class="caption"></p></div>
+      <div id="camera-slot"></div>
+      <div class="panel" id="recent-panel"><div class="panel-top"><h2>이 모드 최근 시도</h2><span class="stat-line" id="recent-sum"></span></div><ol id="recent-list"></ol><div class="empty" id="recent-empty">아직 시도 없음</div></div>
+    </div>
+    <div id="steps-home" hidden></div>
+    <div class="panel steps-panel" id="steps-panel"><h2>단계</h2><ol id="steps"></ol><button id="steps-play" type="button" class="ghost">▶ 단계 미리보기</button></div>
   </section>
 
-  <section class="cards" id="overview-cards">
-    <div class="panel card"><div class="label">현재 훈련 모드</div><div class="value" id="mode">—</div><div class="sub" id="robot">로봇 —</div></div>
-    <div class="panel card"><div class="label">현재 시도</div><div class="value" id="trial">—</div><div class="sub" id="session">세션 —</div></div>
-    <div class="panel card"><div class="label">최근 성공률</div><div class="value" id="rate">—</div><div class="sub">같은 세션 최근 5회</div></div>
-    <div class="panel card"><div class="label">피로도</div><div class="value" id="fatigue">—</div><div class="sub" id="hand">손 —</div></div>
-  </section>
-
+  <section id="overview-view">
+    <div id="ov-left">
+      <div id="ov-progress-slot"></div>
   <section id="report-view" class="panel" aria-label="세션 리포트">
-      <h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3H18V21H6ZM9 8H15M9 12H15M9 16H12"/></svg>세션 리포트</h2><p class="section-help" id="report-meta">가장 최근에 끝난 세션의 요약 · 표의 수치가 기준이고 해석은 참고용입니다</p>
-      <div id="report"></div><div class="empty" id="report-empty">아직 리포트 없음 — 세션이 끝나면 표시됩니다</div>
+      <h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3H18V21H6ZM9 8H15M9 12H15M9 16H12"/></svg>세션 리포트</h2><p class="section-help" id="report-meta"></p>
+      <div id="report"></div><div class="empty" id="report-empty">세션이 끝나면 표시됩니다</div>
+  </section>
+    </div>
+    <div id="ov-right">
+      <section class="panel summary" id="overview-cards"><h2>세션 요약</h2><div class="summary-grid">
+        <div class="tile"><div class="label">현재 훈련 모드</div><div class="value" id="mode">—</div><div class="sub" id="robot">로봇 —</div></div>
+        <div class="tile"><div class="label">현재 시도</div><div class="value" id="trial">—</div><div class="sub" id="session">세션 —</div></div>
+        <div class="tile"><div class="label">최근 성공률</div><div class="value" id="rate">—</div><div class="sub">같은 세션 최근 5회</div></div>
+        <div class="tile"><div class="label">피로도</div><div class="value" id="fatigue">—</div><div class="sub" id="hand">손 —</div></div>
+      </div></section>
+  <div id="camera-home" hidden></div>
+  <section id="camera-view" class="panel" aria-label="카메라 화면">
+      <h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7H16V17H3ZM16 10L21 7V17L16 14"/></svg>카메라</h2>
+      <div class="cameras" id="cameras"></div><div class="empty" id="cameras-empty" hidden></div>
+  </section>
+    </div>
   </section>
   <section id="trials-view" class="panel" hidden>
-      <h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3H15L19 7V21H6ZM15 3V7H19M9 11H16M9 15H16M9 18H13"/></svg>최근 시도</h2><p class="section-help">수신된 시도별 결과 · 오차 · 소요 시간</p>
+      <div class="panel-top list-head"><h2>최근 시도</h2><div class="chips" id="trial-filter"><button type="button" data-f="" class="on">전체</button><button type="button" data-f="1">1 공 굴리기</button><button type="button" data-f="3">3 캐치볼</button><button type="button" data-f="5">5 건네고 받기</button><button type="button" data-f="7">7 저항 밀기</button></div><span class="stat-line" id="trials-sum"></span></div>
       <div class="scroll">
         <table>
-          <thead><tr><th>#</th><th>모드</th><th>결과</th><th>오차</th><th>시간</th><th>메모</th></tr></thead>
+          <thead><tr><th>회차</th><th>모드</th><th>결과</th><th>오차</th><th>걸린 시간</th><th>메모</th></tr></thead>
           <tbody id="trials"></tbody>
         </table>
         <div class="empty" id="trials-empty">아직 시도 없음</div>
       </div>
   </section>
   <section id="events-view" class="panel" hidden>
-      <h2 class="section-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4A8 8 0 1 1 4 12M4 4V9H9M12 7V12L16 14"/></svg>사건 기록</h2><p class="section-help">수신된 안전 상태 · 음성 · 모드 변경 기록</p>
+      <div class="panel-top list-head"><h2>사건 기록</h2><span class="stat-line">안전 상태 · 음성 · 모드 변경 · 시도 · 리포트 (최신이 위)</span></div>
       <div class="scroll"><ul id="events"></ul><div class="empty" id="events-empty">아직 사건 없음</div></div>
   </section>
 
@@ -189,17 +389,26 @@
 <script>
 const MODES = {1: "공 굴리기", 3: "캐치볼", 5: "건네고 받기", 7: "저항 밀기"};
 const LEVELS = {normal: ["normal", "정상"], slow: ["slow", "느리게"], stop: ["stop", "정지"]};   // rally_db convert.SAFETY_LEVELS
+const REASONS = {hand_near_robot: "손이 로봇 가까이", hand_lost_near: "가까이서 손이 사라짐", hand_near_centerline: "손이 중앙선을 넘음",
+  hand_near_patient_contact: "손 근접(접촉 구간)", hand_distance_unknown: "손 거리 모름", hand_deep_intrusion: "손이 깊이 들어옴",
+  force_limit: "힘 한계 초과", nudge: "로봇이 밀림", wrench_lost: "힘 센서 끊김", workspace_limit: "작업 공간 밖",
+  estop: "비상정지", voice_stop: "음성 정지", slow_override: "느리게 고정"};
+const reasonText = (r) => String(r || "").split(/[ ,]+/).filter(Boolean).map((c) => REASONS[c.replace(/^hand_stop_dev_\w+$/, "")] ?? REASONS[c] ?? c).join(", ");
+const NOTES = {missed: "놓침", timeout: "시간 초과", out_of_radius: "반경 밖", low_confidence: "예측 불확실", slow_at_catch: "느리게 상태라 중단",
+  interrupted: "중단", pick_failed: "집기 실패", object_not_found: "물체 못 찾음", skill_aborted: "스킬 중단", safety_stop: "안전 정지"};
 const ROBOT = {idle: "대기", moving: "움직이는 중", holding: "잡고 있음", stopped: "멈춤"};
 const KINDS = {safety_change: "안전", voice_intent: "음성", mode_change: "모드", trial: "시도", session_report: "리포트"};
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 const modeName = (m) => m ? `${m} ${MODES[m] ?? ""}`.trim() : "—";
-const clock = (iso) => iso ? new Date(iso).toLocaleTimeString("ko-KR", {hour12: false}) : "";
+const clock = (iso) => iso ? new Date(iso).toLocaleTimeString("en-GB", {hour12: false}) : "";   // 15:16:22
 const pct = (x) => x == null ? "—" : `${Math.round(x * 100)}%`;
 const seenTrials = new Set();
+const recentTrials = [];   // 받은 시도 (최신이 앞) — 모드 화면 '최근 시도' 칸
+const modeTally = {1: {n: 0, ok: 0}, 3: {n: 0, ok: 0}, 5: {n: 0, ok: 0}, 7: {n: 0, ok: 0}};   // 받은 시도 기록으로 카드에 표시
 let selectedMode = null, selectedPage = 'overview';
 let control = null, controlReceived = 0, resuming = false, stateTime = 0;
-let sceneSafety = null, sceneKey = null;
+let sceneSafety = null, sceneKey = null, previewStage = null, previewTimer = null;
 let lastProposalId = null, lastProposalSessionId = null;
 const PHASES = {idle: "대기", running: "진행 중", pause_pending: "현재 시도 완료 후 휴식 예정",
                 paused: "휴식 중", ended: "세션 종료"};
@@ -216,12 +425,13 @@ function renderControl(s) {
     $("proposal-message").textContent = "";
   }
   control = s;
+  if (s && [1, 3, 5, 7].includes(Number(s.mode))) $('nav-mode').setAttribute('href', `#mode${s.mode}`);   // '훈련' 탭 = 지금 진행 중인 모드
   renderModePage();
   controlReceived = performance.now();
   renderProposal();
-  $("phase").textContent = s ? `${PHASES[s.phase] ?? s.phase} · ${modeName(s.mode)} · 난이도 ${s.difficulty ?? "—"}`
+  $("phase").textContent = s ? `${PHASES[s.phase] ?? s.phase} · 모드 ${modeName(s.mode)}`
     + (s.phase === "paused" && s.blocked_reason ? ` · ${s.blocked_reason}` : "")
-    + (s.hand_wait ? ` · 손 근접 정지 대기(${s.hand_wait}) — 손이 빠지면 이어감` : "") : "세션 상태 연결 끊김";
+    + (s.hand_wait ? " · 손 근접 정지 대기" : "") : "연결 대기";
   $("resume").disabled = resuming || !s?.can_resume || s.phase !== "paused";
 }
 
@@ -249,7 +459,8 @@ setInterval(() => {
   renderProposal();
   if (!stateTime || Date.now() - stateTime > 2000) {
     $("safety").className = "unknown";
-    $("safety").textContent = "안전 상태 모름 — 최신 상황판 수신 대기";
+    $("safety").textContent = "안전 상태 모름";
+    $("badge-safety").textContent = "모름"; $("badge-safety").className = ""; $("control-bar").dataset.safety = "unknown";
   }
   renderModePage();
 }, 500);
@@ -260,7 +471,9 @@ function renderState(s) {
   if (!stateTime || Date.now() - stateTime < 0 || Date.now() - stateTime > 2000) { renderModePage(); return; }
   const [cls, word] = LEVELS[s.safety?.level] ?? ["unknown", "모름"];
   $("safety").className = cls;
-  $("safety").innerHTML = `안전: ${word}` + (s.safety?.reason ? ` <small>${esc(s.safety.reason)}</small>` : "");
+  $("safety").innerHTML = `안전: ${word}` + (s.safety?.reason ? ` <small>${esc(reasonText(s.safety.reason))}</small>` : "");
+  $("badge-safety").textContent = cls === "normal" || !s.safety?.reason ? word : `${word} · ${reasonText(s.safety.reason)}`;
+  $("badge-safety").className = `safe-${cls}`; $("control-bar").dataset.safety = cls;
   $("mode").textContent = modeName(s.mode);
   $("robot").textContent = `로봇 ${ROBOT[s.robot_state] ?? s.robot_state ?? "—"}`;
   $("trial").textContent = s.trial_index ? `${s.trial_index}회째` : "—";
@@ -274,23 +487,25 @@ function renderState(s) {
 function addTrial(t, flash) {
   if (seenTrials.has(t.trial_id)) return;
   seenTrials.add(t.trial_id);
+  if (modeTally[t.mode]) { modeTally[t.mode].n++; if (t.success) modeTally[t.mode].ok++; }
+  recentTrials.unshift(t); if (recentTrials.length > 200) recentTrials.pop();
   $("trials-empty").hidden = true;
   const tr = document.createElement("tr");
-  tr.dataset.mode = t.mode;
+  tr.dataset.mode = t.mode; tr.dataset.ok = t.success ? '1' : '';
   tr.hidden = selectedMode !== null && Number(t.mode) !== selectedMode;
   if (flash) tr.className = "new";
   const err = (t.mode === 1 || t.mode === 3) && t.error_mm != null ? `${Number(t.error_mm).toFixed(0)} mm` : "—";
-  tr.innerHTML = `<td>${t.trial_index}</td><td>${esc(modeName(t.mode))}</td>` +
-    `<td class="${t.success ? "ok" : "fail"}">${t.success ? "성공" : "실패"}</td>` +
-    `<td>${err}</td><td>${t.duration_s != null ? Number(t.duration_s).toFixed(1) + " s" : "—"}</td>` +
-    `<td class="notes">${esc(t.notes)}</td>`;
+  tr.innerHTML = `<td class="num">${t.trial_index}회</td><td><span class="mchip">${t.mode}</span>${esc(MODES[t.mode] ?? "")}</td>` +
+    `<td><span class="r-res ${t.success ? "ok" : "fail"}">${t.success ? "성공" : "실패"}</span></td>` +
+    `<td class="num">${err}</td><td class="num">${t.duration_s != null ? Number(t.duration_s).toFixed(1) + " s" : "—"}</td>` +
+    `<td class="notes">${esc(NOTES[t.notes] ?? t.notes ?? "")}</td>`;
   $("trials").prepend(tr);
   filterTrials();
 }
 
 function describe(e) {
   switch (e.kind) {
-    case "safety_change": return `${(LEVELS[e.level] ?? [, e.level])[1]}${e.reason ? " — " + e.reason : ""}`;
+    case "safety_change": return `${(LEVELS[e.level] ?? [, e.level])[1]}${e.reason ? " — " + reasonText(e.reason) : ""}`;
     case "voice_intent": return `"${e.text || e.intent}" → ${e.intent}${e.is_emergency ? " (비상)" : ""}`;
     case "mode_change": return `${modeName(e.from)} → ${modeName(e.to)}`;
     case "trial": return `${e.trial_index}회째 ${modeName(e.mode)} ${e.success ? "성공" : "실패"}`;
@@ -303,18 +518,65 @@ function addEvent(e, flash, atEnd) {
   $("events-empty").hidden = true;
   const li = document.createElement("li");
   if (flash) li.className = "new";
-  li.innerHTML = `<time>${clock(e.time || e.ended_at)}</time><span><b>${KINDS[e.kind] ?? esc(e.kind)}</b> ${esc(describe(e))}</span>`;
+  const tone = e.kind === "safety_change" ? `safety-${e.level}` : e.kind === "trial" ? (e.success ? "ok" : "fail") : e.kind;
+  li.innerHTML = `<time>${clock(e.time || e.ended_at)}</time><span class="kind ${esc(tone)}">${KINDS[e.kind] ?? esc(e.kind)}</span><span>${esc(describe(e))}</span>`;
   atEnd ? $("events").append(li) : $("events").prepend(li);
   while ($("events").children.length > 100) $("events").lastChild.remove();
 }
 
 async function load() {
   const get = async (url) => { const r = await fetch(url); if (!r.ok) throw new Error(await r.text()); return r.json(); };
+  loadCameras();   // DB·Redis 응답을 기다리지 않고 먼저 (카메라는 로봇 PC 에서 따로 옴)
   try { renderState(await get("/api/state")); } catch (e) { console.warn(e); }
   try { renderControl(await get("/api/session")); } catch (e) { renderControl(null); }
   try { (await get("/api/trials")).trials.reverse().forEach((t) => addTrial(t, false)); } catch (e) { console.warn(e); }
   try { (await get("/api/events")).forEach((e) => addEvent(e, false, true)); } catch (e) { console.warn(e); }
   await loadReport();
+}
+
+async function loadCameras() {
+  try {
+    const r = await fetch("/api/cameras");
+    if (!r.ok) throw new Error(await r.text());
+    const cfg = await r.json();
+    $("cameras-empty").hidden = true;
+    // 주소가 없으면(ROBOT_VIDEO_URL 미설정) 칸만 그리고 No Image — 이유는 마우스를 올리면 보임
+    const streams = cfg.enabled ? cfg.streams : [{name: "손목", topic: "", url: ""}, {name: "측면", topic: "", url: ""}];
+    $("cameras").replaceChildren(...streams.map((c) => cameraFigure(c, cfg.reason)));
+    showCameras();
+  } catch (e) { console.warn(e); }
+}
+
+// 측면 카메라는 모드 3 (던진 공) 전용 — 모드 1·5·7 화면에선 숨기고 연결도 끊는다 (로봇 PC 압축 부담을 줄이려고)
+function showCameras() {
+  for (const fig of $("cameras").children) {
+    const show = fig.dataset.side !== "1" || selectedMode === null || selectedMode === 3;
+    if (fig.hidden !== !show) { fig.hidden = !show; fig.toggle?.(show); }
+  }
+}
+
+function cameraFigure(cam, why = "") {
+  // 영상은 로봇·인식 PC 의 web_video_server 에서 브라우저가 직접 받는다. 끊기면 5 s 뒤 다시 연결
+  const fig = document.createElement("figure"); fig.className = "camera";
+  fig.dataset.side = cam.topic.startsWith("/side/") || cam.name === "측면" ? "1" : "0";
+  const frame = document.createElement("div"); frame.className = "frame";
+  const img = document.createElement("img"); img.alt = `${cam.name} 카메라 화면`;
+  const msg = document.createElement("div"); msg.className = "empty"; msg.textContent = "No Image";
+  const cap = document.createElement("figcaption"); cap.textContent = cam.topic ? `${cam.name} · ${cam.topic}` : cam.name;
+  if (!cam.url) { msg.title = why; frame.append(msg); fig.append(frame, cap); return fig; }
+  // MJPEG(multipart)는 브라우저마다 load 이벤트가 다르게 와서, 실제로 그림이 한 장 들어왔는지(naturalWidth)로 본다.
+  // 서버는 있는데 카메라 토픽이 없으면 그림이 안 들어오므로 계속 No Image
+  let failed = false;
+  const open = () => { if (fig.hidden) return; failed = false; img.src = `${cam.url}&t=${Date.now()}`; };
+  fig.toggle = (show) => { if (show) open(); else { img.removeAttribute("src"); msg.hidden = false; } };
+  const check = setInterval(() => {
+    if (!fig.isConnected) { clearInterval(check); return; }
+    msg.hidden = !failed && img.naturalWidth > 0;
+  }, 1000);
+  img.onload = () => { msg.hidden = true; };
+  img.onerror = () => { failed = true; msg.hidden = false; setTimeout(open, 5000); };   // 카메라·web_video_server 없음 → No Image, 5 s 뒤 다시
+  frame.append(img, msg); fig.append(frame, cap); open();
+  return fig;
 }
 
 async function loadReport() {
@@ -324,7 +586,7 @@ async function loadReport() {
     const rep = await r.json();
     $("report-empty").hidden = !!rep;
     $("report").textContent = rep ? rep.report_md : "";     // 글자 그대로 (HTML 해석 안 함)
-    if (rep) $("report-meta").textContent = `세션 ${rep.session_id.slice(0, 8)} · 끝난 시각 ${rep.ended_at ? clock(rep.ended_at) : "—"} · 표의 수치가 기준이고 해석은 참고용입니다`;
+    if (rep) $("report-meta").textContent = `세션 ${rep.session_id.slice(0, 8)} · 끝난 시각 ${rep.ended_at ? clock(rep.ended_at) : "—"}`;
   } catch (e) { console.warn(e); }
 }
 
@@ -392,7 +654,8 @@ const PAGES = {
       help:['손 시작 위치와 안전 NORMAL을 확인합니다.','로봇이 공을 준비하고 보냅니다.','손동작으로 받기 후보를 관측합니다.','손 이탈을 확인할 때까지 회수를 시작하지 않습니다.','레인 위 공을 거치대로 돌려놓습니다.','받기 후보와 회수 결과를 기록합니다.']},
   3: {title:'캐치볼', subtitle:'관측한 공 궤적과 예상 착지점, 패드의 역할을 살펴봅니다.',diagram:'공 궤적과 요격',
       caption:'환자 자리에서 로봇의 패드를 바라봅니다. 점선은 던지는 방향의 예시이며 실제 궤적·착지점 데이터는 아직 연결되지 않았습니다.',
-      steps:['준비','던지기 관측','착지점 예측','패드 이동','받기 확인','결과 기록'],match:[],help:[]},
+      steps:['준비','던지기·받기','결과 기록'],match:[/관측 자세|모드 3 시작|노출|^시작$/,/공 받기/,/^끝$|기록/],
+      help:['로봇이 패드를 들고 대기 자세로 갑니다.','공이 날아오면 예측 지점으로 패드를 옮기고, 측면 카메라로 받았는지 봅니다.','받기 결과를 기록합니다.']},
   5: {title:'건네고 받기', subtitle:'물체 집기부터 건네기, 돌려받기까지 전달 방향을 확인합니다.',diagram:'물체 전달',
       caption:'환자 자리에서 물체를 건네받고 돌려주는 방향을 보여줍니다. 위치·움직임은 단계 설명용이며 실측이 아닙니다.',
       steps:['손·물체 확인','집기','건네기','돌려받기','시도 기록'],
@@ -407,31 +670,96 @@ function selectPage() {
   const hash=location.hash.slice(1);
   selectedPage=/^mode[1357]$/.test(hash)?hash.slice(4):(['trials','events'].includes(hash)?hash:'overview');
   selectedMode=Object.hasOwn(PAGES,selectedPage)?Number(selectedPage):null;
-  document.querySelectorAll('#mode-nav a').forEach(a=>{if(a.dataset.page===selectedPage)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
+  // 모드 화면은 '훈련' 탭 하나 (모드끼리는 아래 모드별 진행 카드로 옮겨 감)
+  document.querySelectorAll('#mode-nav a').forEach(a=>{if(a.dataset.page===selectedPage||(a.dataset.page==='mode'&&selectedMode!==null))a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
   $('mode-view').hidden=selectedMode===null;
-  $('overview-cards').hidden=selectedPage!=='overview';
-  $('report-view').hidden=selectedPage!=='overview';
+  $('overview-view').hidden=selectedPage!=='overview';
+  $('camera-view').hidden=!(selectedPage==='overview'||selectedMode!==null);   // 전체 현황 + 모든 모드 화면 (기록 조회 화면엔 없음)
+  // 모드 화면이면 훈련 상태·카메라 칸을 모드 격자 안으로, 아니면 원래 자리로 (요소를 옮길 뿐 새로 만들지 않음 — 버튼·영상 연결 유지)
+  for (const [id, home, slot] of [['control-bar', 'control-home', 'mode-view'], ['camera-view', 'camera-home', 'camera-slot']]) {
+    const el = $(id);
+    if (selectedMode !== null) { if (el.parentNode !== $(slot)) $(slot).append(el); }
+    else if (el.previousElementSibling !== $(home)) $(home).after(el);
+  }
+  // 모드별 진행 카드: 모드 화면이면 그림 아래, 전체 현황이면 왼쪽 위. 단계 목록은 보고 있는 모드 카드 안 (전체 현황에선 숨김)
+  const progressHome = selectedMode !== null ? $('mode-left') : $('ov-progress-slot');
+  if ($('progress-panel').parentNode !== progressHome) progressHome.append($('progress-panel'));
+  const stepsHome = selectedMode !== null ? $(`card-slot-${selectedMode}`) : $('steps-home');
+  if ($('steps-panel').parentNode !== stepsHome) stepsHome.append($('steps-panel'));
+  for (const m of [1, 3, 5, 7]) $(`card-${m}`).className = `mode-card${m === selectedMode ? ' selected' : ''}`;
+  $('v-rail').hidden = $('v-track').hidden = selectedMode === null;
+  showCameras();
   $('trials-view').hidden=selectedPage!=='trials';
   $('events-view').hidden=selectedPage!=='events';
   if(selectedMode!==null) {
     $('page-title').textContent=`모드 ${selectedMode} · ${PAGES[selectedMode].title}`;
-    $('page-subtitle').textContent=PAGES[selectedMode].subtitle;
     $('diagram-title').textContent=PAGES[selectedMode].diagram;
-    $('diagram-caption').textContent=PAGES[selectedMode].caption;
   } else {
-    const pages={overview:['전체 현황','현재 훈련과 안전 상태를 한눈에 확인합니다.'],trials:['최근 시도','수신된 전체 모드의 시도 결과를 확인합니다.'],events:['사건 기록','안전·음성·모드 변경 등 수신된 사건을 확인합니다.']};
-    [$('page-title').textContent,$('page-subtitle').textContent]=pages[selectedPage];
+    $('page-title').textContent={overview:'전체 현황',trials:'최근 시도',events:'사건 기록'}[selectedPage];
   }
   filterTrials(); renderModePage();
 }
+let trialFilter=null;   // 최근 시도 탭의 모드 거르기 (null = 전체)
 function filterTrials(){
-  let visible=0;
-  for(const row of $('trials').children){row.hidden=selectedMode!==null&&Number(row.dataset.mode)!==selectedMode;if(!row.hidden)visible++;}
+  let visible=0, ok=0;
+  const only=selectedMode??trialFilter;
+  for(const row of $('trials').children){row.hidden=only!==null&&Number(row.dataset.mode)!==only;if(!row.hidden){visible++;if(row.dataset.ok==='1')ok++;}}
+  $('trials-sum').textContent=visible?`${visible}회 · 성공 ${ok} (${Math.round(ok/visible*100)}%)`:'';
   $('trials-empty').hidden=visible>0;
   $('trials-empty').textContent=selectedMode===null?'아직 수신한 시도 기록이 없습니다.':'이 모드의 수신된 시도 기록이 없습니다.';
 }
+// 모드 화면 (10/12): 왼쪽 레일 = 모드 고르기, 그림 아래 트랙 = 지금 모드의 단계 진행도
+function modeStatus(m, fresh) {
+  const live = fresh && Number(control.mode) === m;
+  if (m === 3 && fresh && control.mode3_enabled === false) return ['off', '꺼짐'];
+  if (live && ['running', 'pause_pending'].includes(control.phase)) return ['live', '진행 중'];
+  if (live && control.phase === 'paused') return ['paused', '휴식'];
+  return ['', '대기'];
+}
+function renderVariants(page, index, preview, fresh) {
+  const steps = page.steps, t = modeTally[selectedMode];
+  const cls = (i) => `${index >= 0 && i < index ? 'done' : ''} ${i === index ? 'now' : ''} ${preview && i === previewStage ? 'pv' : ''}`;
+  const [, word] = modeStatus(selectedMode, fresh);
+  const shown = preview ? previewStage : index;
+  $('v-rail').innerHTML = [1, 3, 5, 7].map((m) => { const [st, w] = modeStatus(m, fresh), k = modeTally[m];
+    return `<div class="rail-m ${m === selectedMode ? 'sel' : ''} ${st}" data-mode="${m}" role="link" tabindex="0" title="모드 ${m} 화면"><div class="n">${m}</div><div class="t">${MODES[m]}</div><div class="s">${w} · ${k.n}회</div><div class="mini"><i style="width:${k.n ? Math.round(k.ok / k.n * 100) : 0}%"></i></div></div>`; }).join('');
+  $('v-track').innerHTML = `<div class="v-head"><span class="track-title">${shown >= 0 ? `${shown + 1} / ${steps.length} · ${esc(steps[shown])}` : `단계 ${steps.length}개`}<small>${preview ? '미리보기' : `${word} · ${t.n ? `시도 ${t.n}회 · 성공 ${t.ok}` : '시도 0회'}`}</small></span>
+    <button type="button" class="ghost" data-play>${preview ? '■ 실시간 보기' : '▶ 단계 미리보기'}</button></div>
+    <div class="ticks" style="--n:${steps.length};--p:${index > 0 ? index / (steps.length - 1) : 0}">${steps.map((x, i) => `<button type="button" class="tick ${cls(i)}" data-i="${i}"><i>${i + 1}</i><span>${esc(x)}</span></button>`).join('')}</div>`;
+}
+function renderRecent() {
+  const rows = recentTrials.filter((t) => Number(t.mode) === selectedMode);
+  const t = modeTally[selectedMode];
+  $('recent-sum').textContent = t.n ? `${t.n}회 중 성공 ${t.ok}` : '';
+  $('recent-empty').hidden = rows.length > 0;
+  $('recent-list').innerHTML = rows.slice(0, 3).map((r) => `<li><span class="r-no">${r.trial_index ?? ''}회</span>
+    <span class="r-res ${r.success ? 'ok' : 'fail'}">${r.success ? '성공' : '실패'}</span>
+    <span class="r-m">${(r.mode === 1 || r.mode === 3) && r.error_mm != null ? `오차 ${Number(r.error_mm).toFixed(0)} mm` : ''}</span>
+    <span class="r-m">${r.duration_s != null ? `${Number(r.duration_s).toFixed(1)} s` : ''}</span>
+    <span class="r-note">${esc(NOTES[r.notes] ?? r.notes ?? '')}</span></li>`).join('');
+}
+function renderModeCards(fresh){
+  for (const m of [1, 3, 5, 7]) {
+    const live = fresh && Number(control.mode) === m;
+    const off = m === 3 && fresh && control.mode3_enabled === false;
+    const [cls, word] = off ? ['off', '꺼짐'] : live && ['running', 'pause_pending'].includes(control.phase) ? ['running', '진행 중']
+      : live && control.phase === 'paused' ? ['paused', '휴식'] : ['', '대기'];
+    $(`card-state-${m}`).className = `state ${cls}`; $(`card-state-${m}`).textContent = word;
+    $(`card-${m}`).dataset.live = cls === 'running' || cls === 'paused' ? '1' : '';
+    const t = modeTally[m];
+    $(`card-sub-${m}`).textContent = t.n ? `시도 ${t.n}회 · 성공 ${t.ok}` : '시도 0회';
+    $(`card-bar-${m}`).style.width = t.n ? `${Math.round(t.ok / t.n * 100)}%` : '0';
+  }
+}
 function renderModePage(){
-  if(selectedMode===null){$('view-status').textContent=selectedPage==='overview'?'전체 보기':'기록 조회';return;}
+  if(selectedMode===null){
+    // 전체 현황: 카드 상태·진행 단계 배지만 (진행 중인 모드 기준)
+    const live=control&&Number.isFinite(control.updated_at)&&Date.now()/1000-control.updated_at>=0&&Date.now()/1000-control.updated_at<2;
+    $('view-status').hidden=true; renderModeCards(live);
+    const p=live?PAGES[control.mode]:null, i=p&&['running','pause_pending'].includes(control.phase)?p.match.findIndex(r=>r.test(String(control.bt_node||''))):-1;
+    $('badge-step').textContent=i>=0?p.steps[i]:live?(PHASES[control.phase]||'—'):'—';
+    return;
+  }
   const page=PAGES[selectedMode];
   const fresh=control&&Number.isFinite(control.updated_at)&&Date.now()/1000-control.updated_at>=0&&Date.now()/1000-control.updated_at<2;
   const active=fresh&&Number(control.mode)===selectedMode;
@@ -446,29 +774,58 @@ function renderModePage(){
     else if (running&&index<0) sceneStatus='waiting';
   }
   if (!['running','pause_pending','paused','ended','stopped','stale','inactive','waiting'].includes(sceneStatus)) sceneStatus='waiting';
-  const nextSceneKey=`${selectedMode}:${index}:${sceneStatus}`;
+  const preview=previewStage!==null&&previewStage<page.steps.length;
+  const nextSceneKey=preview?`${selectedMode}:preview:${previewStage}`:`${selectedMode}:${index}:${sceneStatus}`;
   if (sceneKey!==nextSceneKey) {
-    $('mode-diagram').innerHTML=renderTrainingScene(selectedMode,index,sceneStatus);
+    $('mode-diagram').innerHTML=preview?renderTrainingScene(selectedMode,previewStage,'running',{preview:true}):renderTrainingScene(selectedMode,index,sceneStatus);
     sceneKey=nextSceneKey;
   }
-  $('view-status').textContent=active?'현재 훈련 모드':'둘러보는 페이지 · 훈련 모드는 바뀌지 않습니다';
-  $('mode-trials').textContent=active?`${control.trial_index ?? 0}회 (세션 전체)`:'—';
+  $('view-status').hidden=!active;$('view-status').textContent='지금 진행 중';
+  $('mode-trials').textContent=active?`${control.trial_index ?? 0}회`:'—';
+  renderModeCards(fresh); $('badge-step').textContent=index>=0?page.steps[index]:active?(PHASES[control.phase]||'—'):'—';
   $('mode-level').textContent=active&&control.difficulty!=null?`${control.difficulty}단계`:'—';
-  $('mode-phase').textContent=active?(PHASES[control.phase]||'미수신'):'현재 실행 중 아님';
-  $('mode-extra').textContent=selectedMode===3?(fresh?(control.mode3_enabled?'챌린지 설정 켜짐 · 상세 단계 연결 대기':'챌린지 비활성'):'챌린지 설정 미수신'):selectedMode===7?'실시간 힘·목표 힘 데이터 연결 대기':'실제 위치·목표 좌표는 아직 표시하지 않습니다.';
-  let title='현재 모드 실행 대기',description='탭은 조회용입니다. 이 페이지를 열어도 로봇 동작은 시작되지 않습니다.';
-  if(!fresh){title='상태 수신 대기';description='연결이 복구되면 현재 단계를 표시합니다.';}
+  $('mode-extra').textContent=selectedMode===3&&fresh&&!control.mode3_enabled?'챌린지 꺼짐 (skills.yaml mode3_challenge)':'';
+  let title='이 모드는 진행 중이 아님',description='세션에서 이 모드가 시작되면 단계가 표시됩니다.';
+  if(!fresh){title='대기 중';description='세션이 시작되면 지금 단계가 여기 표시됩니다.';}
   else if(active&&control.phase==='paused'){title='휴식 중';description='준비되면 상단 훈련 재개 버튼으로 같은 난이도에서 이어갑니다.';}
   else if(active&&control.phase==='ended'){title='세션 종료';description='완료된 시도 기록을 확인할 수 있습니다.';}
   else if(index>=0){title=page.steps[index];description=page.help[index];}
   else if(running){title='세부 단계 확인 중';description='수신한 상태에 대응하는 단계가 아직 연결되지 않았습니다.';}
   if(active&&control.phase==='pause_pending')description+=' 현재 시도와 회수 완료 후 휴식합니다.';
-  if(active&&control.hand_wait){title='손 근접 정지 대기';description=`안전 감시 ${control.hand_wait} — 로봇은 멈춰 있고, 손이 빠져 정상 상태가 1초 이어지면 같은 시도를 이어갑니다.`;}
-  $('step-title').textContent=title;$('step-description').textContent=description;$('raw-stage').textContent=node?`수신 상태 · ${node}`:'';
-  $('steps').innerHTML=page.steps.map((step,i)=>`<li class="${i===index?'active':''}" ${i===index?'aria-current="step"':''}><span>${i+1}</span><strong>${esc(step)}</strong></li>`).join('');
+  if(active&&control.hand_wait){title='손 근접 정지 대기';description=`${reasonText(control.hand_wait)} — 로봇은 멈춰 있고, 손이 빠져 정상 상태가 1초 이어지면 같은 시도를 이어갑니다.`;}
+  $('step-title').textContent=title;$('step-description').textContent=description;$('raw-stage').textContent=node?`BT · ${node}`:''; $('step-title').title=node?`BT · ${node}`:'';
+  $('steps').innerHTML=page.steps.map((step,i)=>`<li data-i="${i}" title="눌러서 이 단계 그림 보기" class="${i===index?'active':''}${preview&&i===previewStage?' preview':''}" ${i===index?'aria-current="step"':''}><span>${i+1}</span><strong>${esc(step)}</strong></li>`).join('');
+  $('steps-play').textContent=preview?'■ 실시간 보기':'▶ 단계 미리보기';
+  renderVariants(page,index,preview,fresh); renderRecent();
 }
 
-window.addEventListener("hashchange", selectPage);
+// 단계 미리보기 — 실제 상태와 상관없이 단계별 그림을 보여 준다 (그림 칸에 '미리보기' 표시). 로봇에는 아무것도 보내지 않음
+function stopPreview(){ clearInterval(previewTimer); previewTimer=null; previewStage=null; }
+function showPreview(i){ previewStage=i; renderModePage(); }
+$('steps').onclick=(e)=>{ const li=e.target.closest?.('li[data-i]'); if(!li) return; clearInterval(previewTimer); previewTimer=null; showPreview(Number(li.dataset.i)); };
+$('steps-play').onclick=()=>{
+  if(previewStage!==null){ stopPreview(); renderModePage(); return; }
+  showPreview(0);
+  previewTimer=setInterval(()=>showPreview((previewStage+1)%PAGES[selectedMode].steps.length),3000);
+};
+for (const m of [1, 3, 5, 7]) {
+  const go = (e) => { if (e?.target?.closest?.('#steps-panel') || selectedMode === m) return; location.hash = `#mode${m}`; };
+  $(`card-${m}`).onclick = go; $(`card-${m}`).onkeydown = (e) => { if (e.key === 'Enter') go(e); };
+}
+// 레일·트랙 누르기: data-mode = 그 모드 화면, data-i = 단계 미리보기, data-play = 자동 재생/실시간
+for (const id of ['v-track', 'v-rail']) $(id).onclick = (e) => {
+  const t = e.target.closest?.('[data-mode],[data-i],[data-play]'); if (!t) return;
+  if (t.dataset.mode) location.hash = `#mode${t.dataset.mode}`;
+  else if (t.dataset.i !== undefined) { clearInterval(previewTimer); previewTimer = null; showPreview(Number(t.dataset.i)); }
+  else $('steps-play').onclick();
+};
+$('trial-filter').onclick = (e) => {
+  const b = e.target.closest?.('[data-f]'); if (!b) return;
+  trialFilter = b.dataset.f ? Number(b.dataset.f) : null;
+  for (const x of $('trial-filter').children) x.className = x === b ? 'on' : '';
+  filterTrials();
+};
+window.addEventListener("hashchange", ()=>{ stopPreview(); selectPage(); });
 selectPage();
 load().then(connect);
 </script>

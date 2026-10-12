@@ -5,6 +5,7 @@
    ├─ 자세 기준 잡기 — 안내 → /rally/perception/body/reset_baseline → 기준 잡는 동안 대기 (#83). 세션에 한 번.
    │    body_pose 가 없거나 실패해도 경고만 남기고 넘어간다 (보상 동작 감지만 빠짐). 값은 skills.yaml brain.body_baseline_*
    ├─ 모드 1 × 공 개수 (Repeat) ─ 시도 서브트리 (trees/mode1_push.py) — 시도 수는 TRIAL_COUNTS (거치대 공 4개 = 한 사이클)
+   ├─ 모드 3 × N (Repeat) ─ 시도 서브트리 (trees/mode3_catch.py) — mode3_challenge.enabled 일 때만
    ├─ 모드 5 × N (Repeat) ─ 시도 서브트리 (trees/mode5_handover.py)
    ├─ 모드 7 × N (Repeat) ─ 시도 서브트리 (trees/mode7_resist.py)
    └─ ...
@@ -27,7 +28,7 @@ from std_srvs.srv import Trigger
 from rally_brain import hand_stop
 from rally_brain.config import load_table
 from rally_brain.behaviours import Do, ServiceCall, WaitUntil
-from rally_brain.trees import mode1_push, mode5_handover, mode7_resist
+from rally_brain.trees import mode1_push, mode3_catch, mode5_handover, mode7_resist
 from rally_interfaces.msg import SafetyStatus, SceneContext, TrialResult
 
 OBSERVE_SERVICE = "/rally/robot/go_observe_pose"
@@ -39,6 +40,7 @@ NOT_PERFORMANCE = {"no_hand"}   # 환자가 자리에 없었던 시도 — 기�
 
 TRIAL_BUILDERS: dict[int, Callable[["Session"], py_trees.behaviour.Behaviour]] = {
     TrialResult.MODE_PUSH_BALL: mode1_push.build_trial,
+    TrialResult.MODE_CATCH_PAD: mode3_catch.build_trial,
     TrialResult.MODE_HANDOVER: mode5_handover.build_trial,
     TrialResult.MODE_RESIST: mode7_resist.build_trial,
 }
@@ -68,6 +70,7 @@ class Session:
     trial_active: bool = False                                      # 로봇이 시도 중 (begin_trial ~ record). 모드 전환은 이때 안 함
     allow_trial: Callable[[], bool] = lambda: True                   # 시도 전체(손 대기 포함) 시작 전 휴식 관문
     robot_resume_ok: Callable[[], bool] = lambda: True               # 손 근접 STOP 으로 멈춘 명령을 다시 보내도 되는가 (#98, bt_runner)
+    exposure_fixed: Callable[[], bool] = lambda: True                # 모드 3 손목 노출 고정이 적용됐는가 (#139, bt_runner)
     body_baseline_done: bool = False                                # 자세 기준 잡기를 지났음 (모드 전환으로 트리를 새로 만들어도 다시 안 함)
 
     table_cfg: dict = field(default_factory=load_table)             # 중앙선 원본: table.yaml

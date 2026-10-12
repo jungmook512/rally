@@ -7,6 +7,8 @@
   GET  /api/events    최근 사건 — DB events (안전·음성·모드 바뀜)
   WS   /ws            {"type": "state", "data": …} 0.5 s 마다 바뀌었을 때 / {"type": "event", "data": …} rally:events 그대로
   GET /api/session · POST /api/session/resume — Redis를 통해 brain 상태 조회·재개 승인 요청
+  GET  /api/cameras   카메라 화면 주소 — 로봇·인식 PC 의 web_video_server(ROBOT_VIDEO_URL) MJPEG. 브라우저가 거기서 직접 받는다
+                      (영상은 대시보드 서버를 거치지 않고, 저장하지 않는다 — 같은 네트워크 안 화면 표시만)
 대시보드는 ROS 를 쓰지 않는다. 휴식 재개·휴식 제안 응답을 Redis로 연결하며 안전 reset과 구분한다.
 Redis·DB 가 죽어 있어도 서버는 뜨고, 해당 API 는 503 + 이유를 돌려준다. 화면은 다시 연결될 때까지 재시도한다.
 """
@@ -37,6 +39,11 @@ CONTROL_KEY = "rally:session_control"
 COMMAND_CHANNEL = "rally:session_commands"
 REPLY_PREFIX = "rally:session_reply:"
 STATE_PERIOD_S = 0.5
+# 로봇·인식 PC 의 web_video_server (pc2_perception.launch part:=vision, 포트 8080). 예: http://192.168.0.10:8080. 비우면 카메라 칸 꺼짐
+ROBOT_VIDEO_URL = os.environ.get("ROBOT_VIDEO_URL", "").strip().rstrip("/")
+# 보여 줄 카메라 (INTERFACES 2.1). 작게·낮은 화질로 — 로봇 PC 의 압축 부담과 네트워크를 줄인다
+CAMERAS = [("손목", "/camera/color/image_raw"), ("측면", "/side/side/color/image_raw")]
+STREAM_QUERY = "type=mjpeg&quality=50&width=424&height=240&qos_profile=sensor_data"
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 
 app = FastAPI(title="RALLY dashboard")
@@ -189,6 +196,19 @@ async def latest_report() -> dict[str, Any] | None:
     for k in ("started_at", "ended_at"):
         r[k] = r[k].isoformat() if r[k] else None
     return r
+
+
+def camera_streams(base: str) -> dict[str, Any]:
+    if not base.startswith(("http://", "https://")):
+        return {"enabled": False, "reason": "ROBOT_VIDEO_URL 미설정 (docker/.env, 예: http://로봇PC주소:8080)", "streams": []}
+    return {"enabled": True, "reason": "",
+            "streams": [{"name": name, "topic": topic, "url": f"{base}/stream?topic={topic}&{STREAM_QUERY}"}
+                        for name, topic in CAMERAS]}
+
+
+@app.get("/api/cameras")
+async def cameras() -> dict[str, Any]:
+    return camera_streams(ROBOT_VIDEO_URL)
 
 
 @app.get("/api/events")

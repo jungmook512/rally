@@ -8,6 +8,11 @@
   /rally/perception/landing       geometry_msgs/PointStamped  교차점 (base_link). header.stamp = 마지막 관측의 센서 시각(손목 시계)
   /rally/perception/landing_info  std_msgs/Float64MultiArray  [교차 시각(s, ROS 시각), 교차까지 남은 시간(stamp 기준 s),
                                                                평면 위 표준편차 u·w (m), 관측 수, 릴리스 이후 s] — landing 과 같은 순서로 발행
+  /rally/perception/ball_on_pad   geometry_msgs/PointStamped  측면 카메라가 패드 중심(실시간 TCP + pad_offset_tool_m) 주변 pad_ball_radius_m
+                                                               안에서 본 공의 base 3D (패드 평면과 교차). 보일 때만 측면 프레임마다 → catch_ball 이
+                                                               몇 초 연속이면 '잡음' (10/12 결정: 힘 판정 대신)
+검출 고르기: 카메라마다 StaticFilter — 같은 자리에 오래 머무는 검출(패드 손잡이 초록 브래킷·테이블 초록 장식, 10/12 예측 0 의 원인)은 빼고
+  움직이는 후보 중 conf 최고. 패드 위 공 판정은 측면 후보 전체로 한다 (붙은 공은 고정이므로).
 손목 카메라 자세: transform_source
   "auto"(기본) tf base_link←link_6 (영상 시각 보간, 로봇이 움직여도 정확) 이 있으면 그것, 없으면 마지막 tcp_pose(로봇 정지 중에만 정확)
   "tf" · "tcp_pose" 고정. 둘 다 × hand_eye.yaml (플랜지→TCP, TCP←컬러 광학)
@@ -33,7 +38,7 @@ from std_msgs.msg import Float64MultiArray
 from tf2_ros import Buffer, TransformListener
 
 from rally_vision import projection as pj
-from rally_vision.flight_tracking import SideCalib, StereoAssociator, ThrowSession, WristDet, projection_matrix
+from rally_vision.flight_tracking import PadBallJudge, SideCalib, StaticFilter, StereoAssociator, ThrowSession, WristDet, projection_matrix
 
 MODEL_NAMES = ("velcro_ball_yolo11n-seg_1024_rot_final.engine", "velcro_ball_yolo11n-seg_1024_rot_final.pt")
 MODEL_DIRS = ("/models", os.path.expanduser("~/rally/models"), "models")
@@ -93,6 +98,11 @@ class FlightPredictorNode(Node):
         d("tcp_pose_max_age_s", 0.5)
         d("hand_eye_path", pj.default_hand_eye_path())
         d("rate_hz", 120.0)                        # 새 측면 프레임 확인 주기 (추론은 새 프레임이 있을 때만)
+        d("pad_offset_tool_m", [float("nan")] * 3)  # TCP → 패드 중심 (공구 좌표). nan = skills.yaml mode3.pad_offset_tool_m (받기 스킬과 같은 값)
+        d("pad_ball_radius_m", 0.10)               # 패드 중심에서 이 안의 측면 검출 = 패드 위 공 (반지름 7.5 + 여유)
+        d("static_cell_px", 24.0)                  # 고정 물체 오검출 제외: 격자 칸
+        d("static_window", 120)                    #   최근 프레임 수 (60 Hz → 2 s)
+        d("static_frac", 0.5)                      #   그중 이 비율 넘게 같은 칸이면 고정 물체
         g = lambda k: self.get_parameter(k).value  # noqa: E731
 
         self.bridge = CvBridge()
@@ -139,6 +149,18 @@ class FlightPredictorNode(Node):
                                     min_speed=float(g("min_speed_mps")), min_obs=int(g("min_obs")),
                                     min_start_x=float(g("min_start_x_m")), max_cross_dist=float(g("max_cross_dist_m")))
         self.max_reproj = float(g("max_reproj_px"))
+        self.plane_n = plane_n                                # 패드 위 공 판정도 같은 평면 법선
+        off = np.array(g("pad_offset_tool_m"), float)
+        if not np.all(np.isfinite(off)):
+            off = np.array(self._skills_mode3(str(g("skills_path"))).get("pad_offset_tool_m", [np.nan] * 3), float)
+        if not np.all(np.isfinite(off)):
+            raise RuntimeError("pad_offset_tool_m 을 못 읽음 — skills.yaml mode3 또는 파라미터로 지정")
+        self.pad_offset = off
+        self.get_logger().info(f"패드 오프셋(공구) {np.round(self.pad_offset, 4).tolist()} m · 패드 위 공 반경 {float(g('pad_ball_radius_m')):.2f} m")
+        self.pad_ball_radius = float(g("pad_ball_radius_m"))
+        sf = lambda: StaticFilter(float(g("static_cell_px")), int(g("static_window")), float(g("static_frac")))  # noqa: E731
+        self.static = {"side": sf(), "wrist": sf()}
+        self.judge: PadBallJudge | None = None               # 측면 camera_info 를 받으면 만든다
         self.max_pair_gap = float(g("max_pair_gap_s"))
         self.assoc: StereoAssociator | None = None          # 측면 camera_info 를 받으면 만든다
 
@@ -157,6 +179,8 @@ class FlightPredictorNode(Node):
 
         self.pub = self.create_publisher(PointStamped, "/rally/perception/landing", qos_profile_sensor_data)
         self.pub_info = self.create_publisher(Float64MultiArray, "/rally/perception/landing_info", qos_profile_sensor_data)
+        self.pub_pad = self.create_publisher(PointStamped, "/rally/perception/ball_on_pad", qos_profile_sensor_data)
+        self._n_pad = 0
         self._n = 0
         self._t_infer = 0.0
         self._n_pub = 0
@@ -179,6 +203,16 @@ class FlightPredictorNode(Node):
             if os.path.isfile(p):
                 return p
         return ""
+
+    def _skills_mode3(self, skills_path: str) -> dict:
+        """skills.yaml 의 mode3 절 (없으면 {})."""
+        path = skills_path or self.default_skills_path()
+        try:
+            import yaml
+            with open(path, encoding="utf-8") as f:
+                return (yaml.safe_load(f) or {}).get("mode3") or {}
+        except Exception:  # noqa: BLE001
+            return {}
 
     def _pad_plane(self, p_param: np.ndarray, n_param: np.ndarray, skills_path: str):
         """(중심, 단위 법선, 출처). 파라미터 세 값이 다 있으면 그것, 아니면 skills.yaml mode3. 둘 다 없으면 시작하지 않는다
@@ -215,14 +249,15 @@ class FlightPredictorNode(Node):
             K = np.array(msg.k, float).reshape(3, 3)
             self.assoc = StereoAssociator(projection_matrix(K, self.calib.T_cam_from_base), self.dt_side,
                                           max_gap_s=self.max_pair_gap, max_reproj_px=self.max_reproj)
+            self.judge = PadBallJudge(K, self.calib.T_cam_from_base, self.pad_ball_radius)
             self.get_logger().info("측면 camera_info 받음 → 삼각측량 준비")
 
     def _on_tcp(self, msg: PoseStamped):
         self.tcp = (msg, time.monotonic())
 
     # --- 손목 카메라 자세 ---
-    def _wrist_cam_from_base(self, t: float) -> np.ndarray | None:
-        """camera ← base 4x4 (영상 시각 t). 없으면 None."""
+    def _base_from_tcp(self, t: float) -> np.ndarray | None:
+        """base ← TCP 4x4 (시각 t). tf 가 있으면 그것, 없으면 마지막 tcp_pose. 없으면 None."""
         T_base_tcp = None
         if self.transform_source in ("auto", "tf"):
             try:
@@ -236,9 +271,12 @@ class FlightPredictorNode(Node):
             if self.tcp is not None and time.monotonic() - self.tcp[1] < self.tcp_max_age:
                 p, q = self.tcp[0].pose.position, self.tcp[0].pose.orientation
                 T_base_tcp = pj.pose_to_matrix(p.x, p.y, p.z, q.x, q.y, q.z, q.w)
-        if T_base_tcp is None:
-            return None
-        return np.linalg.inv(T_base_tcp @ self.T_tcp_cam)
+        return T_base_tcp
+
+    def _wrist_cam_from_base(self, t: float) -> np.ndarray | None:
+        """camera ← base 4x4 (영상 시각 t). 없으면 None."""
+        T_base_tcp = self._base_from_tcp(t)
+        return None if T_base_tcp is None else np.linalg.inv(T_base_tcp @ self.T_tcp_cam)
 
     # --- 주기 ---
     def _tick(self):
@@ -257,7 +295,9 @@ class FlightPredictorNode(Node):
         self._t_infer += dt_inf
         if dt_inf > 0.5:
             self.get_logger().warn(f"추론 {dt_inf:.1f} s (첫 호출 워밍업이면 정상)")
-        uv_s, uv_w = (self._best_uv(r) for r in res)
+        cands_s, cands_w = (self._cands(r) for r in res)
+        uv_s, uv_w = self.static["side"].pick(cands_s), self.static["wrist"].pick(cands_w)
+        self._judge_pad(ts, cands_s)
 
         pts = []
         if tw != self._last_wrist_t:
@@ -275,12 +315,31 @@ class FlightPredictorNode(Node):
         self.session.tick(ts + self.dt_side)
 
     @staticmethod
-    def _best_uv(r):
+    def _cands(r) -> list[tuple[float, float, float]]:
+        """YOLO 결과 → [(u, v, conf), ...] (상자 중심)."""
         if r.boxes is None or not len(r.boxes):
-            return None
-        k = int(r.boxes.conf.argmax())
-        x1, y1, x2, y2 = r.boxes.xyxy[k].tolist()
-        return ((x1 + x2) / 2, (y1 + y2) / 2)
+            return []
+        xyxy, conf = r.boxes.xyxy.tolist(), r.boxes.conf.tolist()
+        return [((x1 + x2) / 2, (y1 + y2) / 2, float(c)) for (x1, y1, x2, y2), c in zip(xyxy, conf)]
+
+    def _judge_pad(self, ts: float, cands_s) -> None:
+        """측면 후보 중 패드 위 공이 있으면 /rally/perception/ball_on_pad 발행 (측면 프레임 시각 + dt → 손목 시계)."""
+        if self.judge is None or not cands_s:
+            return
+        T_base_tcp = self._base_from_tcp(ts + self.dt_side)
+        if T_base_tcp is None:
+            return
+        pad_center = T_base_tcp[:3, :3] @ self.pad_offset + T_base_tcp[:3, 3]
+        hit = self.judge.check(cands_s, pad_center, self.plane_n)
+        if hit is None:
+            return
+        p, _ = hit
+        m = PointStamped()
+        m.header.stamp = to_stamp(ts + self.dt_side)
+        m.header.frame_id = self.base_frame
+        m.point.x, m.point.y, m.point.z = (float(v) for v in p)
+        self.pub_pad.publish(m)
+        self._n_pad += 1
 
     def _publish(self, t_obs: float, c):
         m = PointStamped()
@@ -297,8 +356,9 @@ class FlightPredictorNode(Node):
     def _stats(self):
         if self._n:
             self.get_logger().info(f"수신 손목 {self._rx[0] / 5.0:.0f} · 측면 {self._rx[1] / 5.0:.0f} Hz · 추론 {self._n / 5.0:.0f} Hz · 평균 {self._t_infer / self._n * 1000:.1f} ms · "
-                                   f"발행 {self._n_pub} · 재투영 탈락 누적 {self.assoc.n_rejected if self.assoc else 0}")
-        self._n, self._t_infer, self._n_pub, self._rx = 0, 0.0, 0, [0, 0]
+                                   f"발행 {self._n_pub} · 패드 위 공 {self._n_pad} · 재투영 탈락 누적 {self.assoc.n_rejected if self.assoc else 0} · "
+                                   f"고정 오검출 칸 측면 {len(self.static['side'].static_cells())} 손목 {len(self.static['wrist'].static_cells())}")
+        self._n, self._t_infer, self._n_pub, self._n_pad, self._rx = 0, 0.0, 0, 0, [0, 0]
 
 
 def main(args=None):

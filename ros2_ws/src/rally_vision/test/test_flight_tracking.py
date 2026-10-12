@@ -112,3 +112,58 @@ def test_session_ends_after_loss():
     assert sess.state == "flight"
     sess.tick(10.0)
     assert sess.state == "idle"
+
+
+# ---------------------------------------------------------------- 10/12 추가: 고정 오검출 제외 · 패드 위 공
+from rally_vision.flight_tracking import PadBallJudge, StaticFilter, ray_plane_point  # noqa: E402
+
+
+def test_static_filter_drops_fixed_object_keeps_moving_ball():
+    """초록 장식(한 자리, conf 0.8) + 움직이는 공(conf 0.6): 처음엔 장식을 고르지만 창이 차면 공을 고른다."""
+    f = StaticFilter(cell_px=24, window=60, frac=0.5, min_frames=30)
+    picks = []
+    for i in range(90):
+        cands = [(120.0, 400.0, 0.8)]                      # 고정 물체
+        if i >= 40:
+            cands.append((300.0 + 8 * (i - 40), 200.0, 0.6))   # 공: 프레임당 8 px 이동
+        picks.append(f.pick(cands))
+    assert picks[0] == (120.0, 400.0)                      # 아직 통계 없음 → conf 최고
+    assert picks[-1] == (300.0 + 8 * 49, 200.0)            # 고정 칸 제외 → 공
+    assert any(p is None for p in picks[30:40])            # 공 없고 장식만 → None (장식은 안 고름)
+
+
+def test_static_filter_window_forgets():
+    f = StaticFilter(cell_px=24, window=40, frac=0.5, min_frames=10)
+    for _ in range(40):
+        f.pick([(10.0, 10.0, 0.9)])
+    assert f.static_cells()
+    for _ in range(40):
+        f.pick([])
+    assert not f.static_cells()
+
+
+def test_ray_plane_point_roundtrip():
+    T = look_at(np.array([0.9, -2.6, 0.85]), PLANE_P)
+    X = PLANE_P + 0.05 * np.array([0.0, -1.0, 0.0])        # 평면 위 점 (u 방향은 평면 안)
+    uv = (K @ (T[:3, :3] @ X + T[:3, 3]))
+    uv = uv[:2] / uv[2]
+    back = ray_plane_point(K, T, uv, PLANE_P, PLANE_N)
+    assert np.allclose(back, X, atol=1e-6)
+
+
+def test_pad_ball_judge_radius():
+    T = look_at(np.array([0.9, -2.6, 0.85]), PLANE_P)
+    j = PadBallJudge(K, T, radius_m=0.10)
+    n = PLANE_N / np.linalg.norm(PLANE_N)
+    u = np.cross(n, [0, 0, 1.0]); u /= np.linalg.norm(u)
+
+    def px(X):
+        x = T[:3, :3] @ X + T[:3, 3]
+        q = K @ x
+        return (q[0] / q[2], q[1] / q[2], 0.7)
+    on_pad = PLANE_P + 0.05 * u
+    off_pad = PLANE_P + 0.20 * u
+    hit = j.check([px(off_pad), px(on_pad)], PLANE_P, PLANE_N)
+    assert hit is not None and abs(hit[1] - 0.05) < 1e-3 and np.allclose(hit[0], on_pad, atol=1e-3)
+    assert j.check([px(off_pad)], PLANE_P, PLANE_N) is None
+    assert j.check([], PLANE_P, PLANE_N) is None
