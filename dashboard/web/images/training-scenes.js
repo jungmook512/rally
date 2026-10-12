@@ -205,13 +205,15 @@ function renderTrainingScene(mode, stageIndex, status, opts = {}) {
   const motion = active && ((mode === 1 && [1, 4].includes(stage)) || (mode === 3 && stage === 1) || (mode === 5 && [1, 3].includes(stage)) || (mode === 7 && stage === 1));
   const s = TOP_BUILDERS[mode](stage);
   const body = `${topTable()}${s.back || ''}${s.patient || ''}${topArm(s.arm, {grip: s.grip, tool: s.tool || ''})}${s.front || ''}`;
-  const label = active ? `${stage + 1}. ${stages[stage]}` : (SCENE_STATUS[status] || '');
+  // 그림 위 표시는 미리보기·정지·휴식일 때만 (진행 중 단계 이름은 진행 트랙·현재 단계 칸에 이미 있음)
+  const stepName = active ? `${stage + 1}. ${stages[stage]}` : '';
+  const label = preview ? stepName : active ? '' : (SCENE_STATUS[status] || '');
   const tone = status === 'stopped' && !preview ? '#a71d28' : preview ? '#2b6f6a' : '#1f5752';
   const pill = label ? `<g transform="translate(100 0)"><rect x="20" y="16" width="${40 + label.length * 16 + (preview ? 64 : 0)}" height="36" rx="18" fill="#fff" stroke="${tone}" stroke-width="2"/>
     <text x="36" y="40" class="pill" style="fill:${tone}">${preview ? '미리보기 · ' : ''}${sceneEscape(label)}</text></g>` : '';
   const frame = status === 'stopped' && !preview ? '<rect x="113" y="3" width="734" height="404" rx="10" fill="none" stroke="#a71d28" stroke-width="6"/>' : '';
   const veil = !active ? '<rect width="960" height="410" fill="#f8faf7" opacity=".35"/>' : '';
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="110 0 740 410" role="img" aria-label="${sceneEscape(label || stages.join(' → '))} · 환자 자리에서 본 설명 그림" data-scene-mode="${mode}" data-scene-stage="${stage}" data-scene-status="${sceneEscape(status)}" class="${motion ? 'scene-moving' : 'scene-still'}">
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="110 0 740 410" role="img" aria-label="${sceneEscape(stepName || label || stages.join(' → '))} · 위에서 본 설명 그림" data-scene-mode="${mode}" data-scene-stage="${stage}" data-scene-status="${sceneEscape(status)}" class="${motion ? 'scene-moving' : 'scene-still'}">
     <style>
       text{font-family:system-ui,'Noto Sans KR',sans-serif;font-weight:650}.pill{font-size:17px}.note{font-size:15px;fill:#3a4a55}.note.small{font-size:13px;fill:#6c6352}
       .scene-moving .flow{animation:scene-flow 1s linear infinite}
