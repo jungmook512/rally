@@ -33,6 +33,15 @@ def jaw_roi(K, gripper2cam, box_mm, shape):
     return u0, v0, u1, v1
 
 
+def object_seen(objects, class_name, min_conf=0.25) -> bool:
+    """비전 objects(TrackedObjectArray)에 class_name 이 min_conf 이상으로 있는가. 받기 깊이 트리거 조건 (#142 리뷰 (b)):
+    그리퍼 사이 깊이 근접만으로는 손가락이 들어와도 닫히므로, 받을 물체가 화면에 보일 때만 깊이로 닫는다.
+    컵처럼 둥근 물체는 image_axis 각도가 없으므로 각도가 아니라 검출 자체를 본다."""
+    if objects is None:
+        return False
+    return any(o.class_name == class_name and o.confidence >= min_conf for o in objects.objects)
+
+
 def near_fraction(depth_mm, roi, near_mm) -> float:
     """roi 안 픽셀 중 깊이 0(너무 가까워 못 잼 포함) 또는 near_mm 미만 비율 0~1."""
     u0, v0, u1, v1 = roi

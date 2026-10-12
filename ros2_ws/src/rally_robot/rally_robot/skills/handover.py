@@ -39,7 +39,7 @@ import time
 from rally_interfaces.action import Handover
 from rally_robot.dsr_helpers import (SkillAbort, compliance, force_mag, load_gripper2cam, motion_speeds, move_checked, movej_to_pose,
                                      rotate_base)
-from rally_robot.receive_watch import jaw_roi, median_recent, near_fraction, rod_image_tilt, tilt_step
+from rally_robot.receive_watch import jaw_roi, median_recent, near_fraction, object_seen, rod_image_tilt, tilt_step
 
 DEFAULTS = dict(present_pose=None, present_margin_m=0.06, present_y_m=0.0, present_height_m=0.29, present_zyz=[0.0, 90.0, 90.0],
                 tilt_axis="x", tilt_range_deg=[-90.0, 90.0], receive_tilt_deg=0.0,
@@ -49,7 +49,9 @@ DEFAULTS = dict(present_pose=None, present_margin_m=0.06, present_y_m=0.0, prese
                 receive_at_retreat=True, receive_threshold_n=4.0,
                 # 받기 그리퍼 사이 깊이 감지 (10/12) — receive_watch 모듈 docstring. box: 그리퍼(TCP) 좌표 mm x0,x1,y0,y1,z0,z1
                 receive_depth=dict(enabled=True, box_mm=[-35.0, 35.0, -15.0, 60.0, -40.0, 5.0], near_mm=300.0,
-                                   trigger_frac=0.30, hold_s=0.3, freeze_frac=0.10, max_regrasps=3, stale_s=0.5, base_cap=0.15),
+                                   trigger_frac=0.30, hold_s=0.3, freeze_frac=0.10, max_regrasps=3, stale_s=0.5, base_cap=0.15,
+                                   # 받을 물체가 비전에 보일 때만 깊이로 닫는다 (손가락만 들어와도 20 N 으로 닫히던 것, #142 리뷰 (b))
+                                   require_object=True, object_recent_s=1.0, object_min_conf=0.25),
                 # 받기 기울기를 손에 든 막대 화면 각도(비전 image_axis)에 맞춤 (10/12) — 제자리 손목 회전만.
                 # 그리퍼 사이에 뭔가 들어오기 시작했거나(freeze_frac) 힘이 걸려 있으면(max_force_n) 안 돌림
                 receive_tilt_follow=dict(enabled=False, class_name="rod", min_conf=0.25, sign=1.0, window_s=1.0, min_samples=3,
@@ -154,6 +156,7 @@ def execute(node):
             g2c = load_gripper2cam() if rd["enabled"] else None
             node.watch_depth(bool(rd["enabled"]))
             regrasps, cur_tilt, rod, last_stamp = 0, tilt0, [], None
+            recv_class, seen_t = goal.object_class or "rod", None   # 받을 물체를 비전에서 마지막으로 본 monotonic
 
             def depth_frac():
                 d, K = node.depth, node.cam_K
@@ -208,8 +211,13 @@ def execute(node):
                     med = median_recent(rod, now, rt["window_s"], rt["min_samples"]) if rt["enabled"] else None
                     target = None if med is None else min(max(cur_tilt + med, cfg["tilt_range_deg"][0]), cfg["tilt_range_deg"][1])
 
+                    entry = node.objects
+                    if (entry is not None and now - entry[0] <= rd["object_recent_s"]
+                            and object_seen(entry[1], recv_class, rd["object_min_conf"])):
+                        seen_t = now
+                    depth_ok = not rd["require_object"] or (seen_t is not None and now - seen_t <= rd["object_recent_s"])
                     over_f = (over_f or now) if dev >= threshold else None
-                    over_d = (over_d or now) if dd is not None and dd >= rd["trigger_frac"] else None
+                    over_d = (over_d or now) if depth_ok and dd is not None and dd >= rd["trigger_frac"] else None
                     trig = ""
                     if over_f and now - over_f >= cfg["pull_hold_s"]:
                         trig = f"힘 {dev:.1f} N ≥ {threshold:.1f} N"
@@ -220,7 +228,8 @@ def execute(node):
                         ds = "-" if frac is None else f"{frac:.0%}/{dbase:.0%}"
                         ts = "-" if target is None else f"{target:+.0f}°"
                         log.info(f"[handover] 받기 대기 {now - t0:4.1f} s · 힘 {dev:4.1f} N · 그리퍼 사이 깊이 근접 {ds} (닫기: 기준 + {rd['trigger_frac']:.0%})"
-                                 f" · 막대 화면 기울기 {ts} (그리퍼 {cur_tilt:+.0f}°)")
+                                 f" · 막대 화면 기울기 {ts} (그리퍼 {cur_tilt:+.0f}°)"
+                                 + ("" if depth_ok else f" · {recv_class} 안 보임 → 깊이로는 안 닫음(힘만)"))
                     if trig:
                         log.info(f"[handover] 받기 감지: {trig} → 닫기")
                         phase("grasp")

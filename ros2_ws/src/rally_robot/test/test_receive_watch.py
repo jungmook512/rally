@@ -1,7 +1,9 @@
+from types import SimpleNamespace as NS
+
 import numpy as np
 import pytest
 
-from rally_robot.receive_watch import jaw_roi, near_fraction
+from rally_robot.receive_watch import jaw_roi, near_fraction, object_seen
 
 K = [[909.5, 0.0, 659.5], [0.0, 909.2, 370.2], [0.0, 0.0, 1.0]]
 # 10/12 실측 T_gripper2camera 와 같은 꼴: 카메라가 TCP 뒤 234 mm, 툴 y 76 mm (그리퍼 → 카메라 축 x·y 반대)
@@ -62,3 +64,12 @@ def test_median_recent_and_tilt_step():
     assert tilt_step(0.0, 8.0, 10.0, 20.0) is None
     assert tilt_step(0.0, 50.0, 10.0, 20.0) == 20.0
     assert tilt_step(30.0, 15.0, 10.0, 20.0) == 15.0
+
+
+def test_object_seen_needs_class_and_confidence():
+    objs = NS(objects=[NS(class_name="cup", confidence=0.9), NS(class_name="rod", confidence=0.2)])
+    assert object_seen(objs, "cup")
+    assert not object_seen(objs, "rod")                 # 신뢰도 0.2 < 0.25
+    assert object_seen(objs, "rod", min_conf=0.1)
+    assert not object_seen(NS(objects=[]), "rod")       # 아무것도 없음 (손가락만) → 깊이로 안 닫음
+    assert not object_seen(None, "rod")                 # 비전 없음

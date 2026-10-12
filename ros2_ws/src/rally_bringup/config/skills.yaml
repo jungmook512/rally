@@ -284,7 +284,11 @@ handover:
   #   또는 near_mm 보다 가까운 픽셀 비율이 받기 시작 때보다 trigger_frac 넘게 hold_s 동안 늘면 닫음. 닫았는데 빈손이면 다시 열고 계속(max_regrasps)
   #   10/12 실측: 아무것도 없을 때 8~12 %. 기준은 받기 시작에 한 번만 재고 base_cap(15 %) 이하로 (이미 손이 와 있어도 감지되게).
   #   로그 '받기 대기 … 깊이 근접 지금/기준' 으로 맞춘다
-  receive_depth: {enabled: true, near_mm: 300.0, trigger_frac: 0.30, hold_s: 0.3, freeze_frac: 0.10, max_regrasps: 3}
+  #   require_object (10/12 #142 리뷰 (b)): 받을 물체가 비전에 최근 object_recent_s 안에 보였을 때만 깊이로 닫음 — 손가락만 들어와도 20 N 으로
+  #   닫히지 않게. 손에 든 막대 인식 모델(박성현 재학습 중) 전에는 사실상 힘(receive_threshold_n)으로만 받는다.
+  #   실로봇에서 힘만으로 못 받으면 모델 전까지 require_object: false + 받기 닫는 힘을 낮춰서 쓴다
+  receive_depth: {enabled: true, near_mm: 300.0, trigger_frac: 0.30, hold_s: 0.3, freeze_frac: 0.10, max_regrasps: 3,
+                  require_object: true, object_recent_s: 1.0, object_min_conf: 0.25}
   # ★ 10/12 받기 기울기 = 손에 든 막대의 화면 각도(비전 /rally/perception/objects/image_axis, 신뢰도 min_conf 이상) 1 s 중앙값에 맞춤.
   #   제자리 손목 회전만 (10° 넘게 다를 때, 한 번에 20° 까지, 모드 5 속도 × speed_scale). 그리퍼 사이에 뭔가 들어오기 시작했거나 힘 2 N 넘으면 안 돌림.
   #   손목 각도·손가락 뿌리 줄로는 막대 기울기와 안 맞았다 (10/12 실로봇) → 장갑 끼고 막대만 본다 (HAND=0). 반대로 돌면 sign: -1, 끄기 enabled: false
