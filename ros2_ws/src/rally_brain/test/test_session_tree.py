@@ -162,3 +162,41 @@ def test_each_mode_starts_at_observe_pose():
     s.service_client = lambda t, name: (names.append(name), inner(t, name))[1]
     build_session_tree(s, [5], 1)
     assert names.count(OBSERVE_SERVICE) == 1           # 모드 시작 (모드 5 는 손 확인 안 함 — require_hand 기본 False)
+
+
+def test_observe_pose_resends_after_hand_stop():
+    # 10/12 (#132 정동휘 리뷰): 모드 시작 관측 자세 이동 중 손 STOP 이면 세션을 끝내지 않고 NORMAL 유지 뒤 다시 요청.
+    # 요청을 받을 때 이미 STOP 이면 skill_server 가 "safety STOP (사유)" 로 답한다 — 이것도 같은 손 STOP
+    from rally_brain.trees.session_tree import OBSERVE_SERVICE
+    s, _, _ = baseline_session()
+    gate = {"ok": False}
+    s.robot_resume_ok = lambda: gate["ok"]
+    answers = [NS(success=False, message="hand_near_robot"), NS(success=False, message="safety STOP (hand_lost_near)"),
+               NS(success=True, message="observe pose")]
+    sent = []
+    inner = s.service_client
+
+    def client(t, name):
+        if name != OBSERVE_SERVICE:
+            return inner(t, name)
+        return NS(name=name, service_is_ready=lambda: True,
+                  call_async=lambda req: sent.append(req) or Done(answers[len(sent) - 1]))
+    s.service_client = client
+    tree = build_session_tree(s, [5], 1)
+    assert not tick_until(tree, lambda: s.current_mode == 5, n=5)
+    assert len(sent) == 1 and tree.status != Status.FAILURE        # 손 STOP — 손이 빠지기 전엔 다시 안 보냄
+    gate["ok"] = True
+    assert tick_until(tree, lambda: s.current_mode == 5)
+    assert len(sent) == 3                                           # 이동 중 STOP · 받을 때 STOP 둘 다 다시 요청
+
+
+def test_observe_pose_other_failure_ends_session():
+    from rally_brain.trees.session_tree import OBSERVE_SERVICE
+    s, _, _ = baseline_session()
+    inner = s.service_client
+    s.service_client = lambda t, name: (NS(name=name, service_is_ready=lambda: True,
+                                           call_async=lambda req: Done(NS(success=False, message="force_limit")))
+                                        if name == OBSERVE_SERVICE else inner(t, name))
+    tree = build_session_tree(s, [5], 1)
+    tick_until(tree, lambda: tree.status == Status.FAILURE, n=5)
+    assert tree.status == Status.FAILURE and s.current_mode != 5   # 래치 STOP 등은 지금처럼 세션 실패

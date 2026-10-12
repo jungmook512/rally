@@ -385,3 +385,12 @@ def test_moving_hand_stop_waits_and_resends_in_session_loop(node, monkeypatch):
     finally:
         feed.close()
     assert out == ["success"] and client.sent == 2 and results[0].success
+
+
+def test_service_stop_reason():
+    from rally_brain.behaviours import service_stop_reason
+    assert service_stop_reason("hand_near_robot") == "hand_near_robot"                 # 이동 중 STOP (SkillAbort 사유)
+    assert service_stop_reason("safety STOP (hand_lost_near)") == "hand_lost_near"     # 요청 받을 때 이미 STOP
+    assert service_stop_reason("safety STOP (force_limit,hand_stop_dev_off)") == "force_limit"
+    assert service_stop_reason("observe pose [0, 0]") == "observe"
+    assert service_stop_reason("") == ""
