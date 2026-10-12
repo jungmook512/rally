@@ -12,7 +12,7 @@ const sceneEscape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;
 const TOP_DEFS = `<defs>
   <filter id="t-sh" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="3" dy="6" stdDeviation="5" flood-color="#2b2418" flood-opacity=".28"/></filter>
   <filter id="t-sh2" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="1.5" dy="3" stdDeviation="2.5" flood-color="#2b2418" flood-opacity=".3"/></filter>
-  <linearGradient id="t-wood" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#efe3cc"/><stop offset="1" stop-color="#dfccaa"/></linearGradient>
+  <linearGradient id="t-wood" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f3f5f1"/><stop offset="1" stop-color="#dde4dd"/></linearGradient>
   <linearGradient id="t-white" x2="0" y2="1"><stop stop-color="#c9d2d8"/><stop offset=".25" stop-color="#ffffff"/><stop offset=".6" stop-color="#eef2f4"/><stop offset="1" stop-color="#b8c3ca"/></linearGradient>
   <radialGradient id="t-joint" cx=".38" cy=".35" r=".75"><stop stop-color="#ffffff"/><stop offset=".6" stop-color="#e6ebee"/><stop offset="1" stop-color="#aab6be"/></radialGradient>
   <radialGradient id="t-cap" cx=".4" cy=".35" r=".8"><stop stop-color="#7d8892"/><stop offset="1" stop-color="#3e474f"/></radialGradient>
@@ -37,8 +37,8 @@ function tCapsule([x1, y1], [x2, y2], w, fill, extra = '') {
   return `<g transform="translate(${r1(x1)} ${r1(y1)}) rotate(${r1(ang)})"><rect x="${-w / 2}" y="${-w / 2}" width="${r1(len + w)}" height="${w}" rx="${w / 2}" fill="${fill}" ${extra}/></g>`;
 }
 function topTable() {
-  const grain = [60, 120, 175, 240, 300].map((y, i) => `<path d="M160 ${y}Q480 ${y + (i % 2 ? 8 : -8)} 800 ${y}" stroke="#cdb894" stroke-width="1" opacity=".35" fill="none"/>`).join('');
-  return `<rect width="960" height="410" fill="#fbf8f0"/>
+  const grain = [60, 120, 175, 240, 300].map((y, i) => `<path d="M160 ${y}Q480 ${y + (i % 2 ? 8 : -8)} 800 ${y}" stroke="#c7d1c8" stroke-width="1" opacity=".35" fill="none"/>`).join('');
+  return `<rect width="960" height="410" fill="#f8faf7"/>
     <rect x="150" y="22" width="660" height="336" rx="10" fill="url(#t-wood)" filter="url(#t-sh)"/>${grain}`;
 }
 // 오른손 손등 윤곽 한 줄 (손목 왼쪽 → 엄지 → 검지·중지·약지·새끼 → 손날 → 팔뚝). 손목 = (0, 40), 손가락 = 위
@@ -127,7 +127,7 @@ const topRecord = `<g transform="translate(716 210)"><circle r="25" fill="#e5f4e
   <path d="M-10 1L-3 8L11-8" fill="none" stroke="#2f7d5b" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
   <text y="46" text-anchor="middle" class="note">기록</text></g>`;
 function topRack(n) {
-  return `<g filter="url(#t-sh2)"><rect x="660" y="44" width="108" height="36" rx="8" fill="#b88d5e"/><rect x="666" y="50" width="96" height="24" rx="6" fill="#9c7448"/></g>
+  return `<g filter="url(#t-sh2)"><rect x="660" y="44" width="108" height="36" rx="8" fill="#9fb3a8"/><rect x="666" y="50" width="96" height="24" rx="6" fill="#7f978a"/></g>
     ${Array.from({length: n}, (_, i) => topBall([690 + i * 28, 62])).join('')}<text x="714" y="100" text-anchor="middle" class="note small">거치대</text>`;
 }
 function topLanes() {
@@ -206,11 +206,11 @@ function renderTrainingScene(mode, stageIndex, status, opts = {}) {
   const s = TOP_BUILDERS[mode](stage);
   const body = `${topTable()}${s.back || ''}${s.patient || ''}${topArm(s.arm, {grip: s.grip, tool: s.tool || ''})}${s.front || ''}`;
   const label = active ? `${stage + 1}. ${stages[stage]}` : (SCENE_STATUS[status] || '');
-  const tone = status === 'stopped' && !preview ? '#a71d28' : preview ? '#8a5a2e' : '#6b4421';
+  const tone = status === 'stopped' && !preview ? '#a71d28' : preview ? '#2b6f6a' : '#1f5752';
   const pill = label ? `<g transform="translate(100 0)"><rect x="20" y="16" width="${40 + label.length * 16 + (preview ? 64 : 0)}" height="36" rx="18" fill="#fff" stroke="${tone}" stroke-width="2"/>
     <text x="36" y="40" class="pill" style="fill:${tone}">${preview ? '미리보기 · ' : ''}${sceneEscape(label)}</text></g>` : '';
   const frame = status === 'stopped' && !preview ? '<rect x="113" y="3" width="734" height="404" rx="10" fill="none" stroke="#a71d28" stroke-width="6"/>' : '';
-  const veil = !active ? '<rect width="960" height="410" fill="#fbf8f0" opacity=".35"/>' : '';
+  const veil = !active ? '<rect width="960" height="410" fill="#f8faf7" opacity=".35"/>' : '';
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="110 0 740 410" role="img" aria-label="${sceneEscape(label || stages.join(' → '))} · 환자 자리에서 본 설명 그림" data-scene-mode="${mode}" data-scene-stage="${stage}" data-scene-status="${sceneEscape(status)}" class="${motion ? 'scene-moving' : 'scene-still'}">
     <style>
       text{font-family:system-ui,'Noto Sans KR',sans-serif;font-weight:650}.pill{font-size:17px}.note{font-size:15px;fill:#3a4a55}.note.small{font-size:13px;fill:#6c6352}
