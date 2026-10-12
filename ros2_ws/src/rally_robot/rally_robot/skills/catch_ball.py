@@ -7,15 +7,16 @@
   /rally/perception/ball_on_pad   PointStamped        측면 카메라가 패드 중심 주변에서 본 공 (base_link). 보일 때만 프레임마다
 
 단계
-1. ready     : pickup_pad() — 패드 집기 (정정인 자리, 지금은 "쥐고 있나 확인"만) → 대기 자세 posj 로 관절 이동
-2. tracking  : 이 goal 이후 첫 예측이 오면 투구 시작 → contact_expected ON (공이 맞아도 nudge STOP 안 나게, 힘 한계는 그대로).
-               공 놓은 뒤 decide_after_s(0.16 s, 오차 중앙 약 3 cm) 까지 최신 예측을 기다림
+1. ready     : pickup_pad() — 패드 집기 (정정인 자리, 거치대 교시가 있으면 거치대에서 집어 대기 자세까지) → 대기 자세 posj 로 관절 이동
+2. tracking  : 이 goal 이후 첫 예측이 오면 투구 시작 → **받기 창** contact_expected ON (공이 맞아도 nudge STOP 안 나게. 힘 한계 130 N 도
+               이 창에만 걸릴 예정 — #144). 공 놓은 뒤 decide_after_s(0.16 s, 오차 중앙 약 3 cm) 까지 최신 예측을 기다림
 3. intercept : 예측 품질(std·n_obs)이 기준 안이고 안전이 NORMAL 이면, 예측점으로 패드 중심을 옮기는 TCP 위치로 amovel 한 번
                (자세 고정, 왼쪽 안 감, 오른쪽·위 15 cm·아래 8 cm 까지 — catch_plan.intercept).
                대기 패드 중심에서 catch_radius 밖이면 움직이지 않음 (out_of_radius) · 품질 미달이면 low_confidence · SLOW 면 slow_at_catch 중단
-4. judge     : **비전 판정** — 측면 카메라의 ball_on_pad 가 pad_hold_s(3 s) 연속(틈 ≤ pad_gap_s) 들어오면 caught.
+4. judge     : 받기 창은 **교차 시각 + contact_window_after_cross_s(0.5 s) 에 닫는다** (투구 감지 ~ 교차 + 0.5 s ≈ 1.2 s, #144 "창 약 1 s").
+               판정은 창이 닫힌 뒤에도 계속 기다린다 — **비전 판정**: 측면 카메라의 ball_on_pad 가 pad_hold_s(3 s) 연속(틈 ≤ pad_gap_s) 들어오면 caught.
                교차 시각 + judge_timeout_s 안에 없으면 missed. 힘 판정은 쓰지 않는다 (10/12 결정: 패드 끝 튕김·이동 관성과 구분 불가)
-5. after     : after_catch() — 정정인 자리 (패드 거치대에 두기 → 공 떼기 → 공 거치대). 지금은 아무것도 안 함
+5. after     : after_catch() — 정정인 자리. 지금은 대기 자세 → 패드를 거치대에 꽂고 빠짐 (공 떼기·공 거치대는 아직)
 6. return    : 대기 자세 TCP 로 복귀 (after_catch 가 skip_return 을 켜면 생략)
 결과: 끝까지 돌면 succeed (caught 참/거짓), 안전·타임아웃·예외면 abort.
 
@@ -37,7 +38,7 @@ from std_msgs.msg import Float64MultiArray
 
 from rally_interfaces.action import CatchBall
 from rally_robot.dsr_helpers import SkillAbort, move_checked, movej_checked, stop_robot
-from rally_robot.skills.catch_plan import Prediction, clamp_cross, hold_run, intercept, pad_caught, pad_center, parse_info, quality_ok
+from rally_robot.skills.catch_plan import Prediction, clamp_cross, intercept, judge_pad, pad_center, parse_info, quality_ok
 
 LANDING_TOPIC = "/rally/perception/landing"
 LANDING_INFO_TOPIC = "/rally/perception/landing_info"
@@ -45,7 +46,7 @@ BALL_ON_PAD_TOPIC = "/rally/perception/ball_on_pad"
 
 DEFAULTS = dict(
     ready_posj=[89.8, 30.0, -121.7, 90.2, -80.2, 88.3],   # 10/11 정정인 결정 (패드 면 45°)
-    pad_offset_tool_m=[-0.0175, -0.1043, 0.0065],       # TCP → 패드 중심, 공구 좌표 (10/12 정동휘 실측, #138. yaml 이 있으면 yaml 이 이김)
+    pad_offset_tool_m=[-0.0175, -0.1043, 0.0285],       # TCP → 패드 중심, 공구 좌표 (10/12 정동휘 실측 #138, z 는 #155 보정값 0.0285 — skills.yaml 과 같게. yaml 이 있으면 yaml 이 이김)
     pad_normal=[0.697, -0.123, 0.706],                  # 패드 면 법선 base (위로 45° + 그리퍼 −10° 회전, #138)
     decide_after_s=0.16,
     right_max_m=0.15,
@@ -66,6 +67,7 @@ DEFAULTS = dict(
     pad_gap_s=0.3,                                      #   연속으로 치는 관측 틈 상한 (측면 60 Hz, 가림·검출 실패 여유)
     judge_timeout_s=5.0,                                #   교차 시각 뒤 이 시간 안에 못 채우면 missed
     judge_poll_hz=20.0,
+    contact_window_after_cross_s=0.5,                   # 받기 창(contact_expected) 닫는 시각 = 교차 + 이 값 (#144: 130 N 은 이 창에만. 판정은 창 뒤에도 계속)
 )
 
 
@@ -127,9 +129,15 @@ def pickup_pad(node, goal_handle, cfg: dict) -> None:
     티칭 포인트는 코드가 아니라 skills.yaml mode3 에 (예: pad_rack_posx, pad_rack_lift_m).
     할 수 있는 것: dsr_helpers.move_checked · movej_checked, node.gripper, goal_handle.publish_feedback.
     지킬 것: 단계 사이 node.check_stop(goal_handle) · 실패는 SkillAbort 로.
-    지금 동작: 이미 쥐고 있으면 통과, 아니면 닫아서 쥐었는지 확인 (없으면 no_pad 중단).
+    지금 동작: 이미 쥐고 있으면 통과. skills.yaml mode3.pad_rack_*_posj(정정인 10/12 교시)가 있으면 거치대에서 집어
+      대기 자세까지 (rally_robot/pad_rack.pick_pad — A → 열기 → G → 쥐기·폭 확인 → 홈 따라 순응으로 U → 팔 먼저·손목 나중으로 대기 자세).
+      교시가 없으면 예전처럼 닫아서 쥐었는지 확인 (없으면 no_pad 중단).
     """
     if node.holding_now():
+        return
+    from rally_robot import pad_rack
+    if pad_rack.taught(node):
+        pad_rack.pick_pad(node, node.get_logger(), lambda: node.check_stop(goal_handle))
         return
     _, grip_force = node.gripper_cfg("pad")
     ok, _, detected = node.gripper(0.0, grip_force)
@@ -161,7 +169,20 @@ def after_catch(node, goal_handle, ctx: CatchContext) -> None:
     지킬 것: 단계 사이 node.check_stop(goal_handle) · 순응은 compliance() 컨텍스트 · 접촉 예정이면 node.set_contact(True)
              (끝나면 False, _execute 의 finally 가 한 번 더 끈다) · 실패는 SkillAbort 로 올리면 _execute 가 abort·정리
     복귀가 필요 없는 흐름이면 ctx.skip_return = True.
+
+    지금 동작 (정정인 10/12): mode3.pad_place_after_catch 이고 거치대 교시가 있으면 — 대기 자세로 관절 복귀(요격 자리에서 U 로
+      바로 가면 TCP 가 작업 공간 밖으로 휨) → pad_rack.place_pad (대기 자세 → 손목 먼저·팔 나중 → U → 순응 꽂기 → 놓고 빠짐)
+      → skip_return. 받았든 놓쳤든 같다. ④~⑥ 공 떼기·공 거치대는 아직 (패드에 공이 붙은 채 거치대에 꽂힘).
     """
+    from rally_robot import pad_rack
+    from rally_robot.dsr_helpers import movej_checked
+    if not (ctx.cfg.get("pad_place_after_catch", True) and pad_rack.taught(node)):
+        return None
+    node.check_stop(goal_handle)
+    jv, ja = pad_rack.joint_speeds(node)
+    movej_checked(node, ctx.ready_posj, jv, ja)
+    pad_rack.place_pad(node, node.get_logger(), lambda: node.check_stop(goal_handle))
+    ctx.skip_return = True
     return None
 
 
@@ -178,7 +199,6 @@ def execute(node):
         cfg = {**DEFAULTS, **(node.cfg.get("mode3") or {})}
         fb, res = CatchBall.Feedback(), CatchBall.Result()
         log = node.get_logger()
-        nan3 = [float("nan")] * 3
 
         def ros_now() -> float:
             return node.get_clock().now().nanoseconds * 1e-9
@@ -212,22 +232,12 @@ def execute(node):
             return pred
 
         def judge(t_from_mono: float, t_cross_ros: float) -> tuple[bool, float, list[float]]:
-            """비전 판정: t_from_mono 뒤의 ball_on_pad 관측이 pad_hold_s 연속이면 caught. 교차 뒤 judge_timeout_s 까지 기다림.
-            → (caught, 연속 관측 시간 s, 패드 위 공 위치 평균 또는 nan)"""
-            deadline = max(t_cross_ros, ros_now()) + cfg["judge_timeout_s"]
-            period, best = 1.0 / cfg["judge_poll_hz"], 0.0
-            while True:
-                node.check_stop(goal_handle)
-                now = time.monotonic()
-                times, pts = landing.pad_obs(t_from_mono)
-                run_s, n = hold_run(times, cfg["pad_gap_s"])
-                best = max(best, run_s)
-                if pad_caught(times, now, cfg["pad_hold_s"], cfg["pad_gap_s"]):
-                    return True, run_s, np.mean(np.array(pts[-n:]), axis=0).tolist()
-                if ros_now() > deadline:
-                    actual = np.mean(np.array(pts[-n:]), axis=0).tolist() if n else nan3
-                    return False, best, actual
-                time.sleep(period)
+            """비전 판정 (catch_plan.judge_pad). 받기 창은 교차 + contact_window_after_cross_s 에 닫고(set_contact False), 판정은 계속."""
+            def close():
+                node.set_contact(False)
+                log.info(f"[catch_ball] 받기 창 닫음 (교차 + {cfg['contact_window_after_cross_s']:.2f} s)")
+            return judge_pad(landing.pad_obs, time.monotonic, ros_now, time.sleep, lambda: node.check_stop(goal_handle),
+                             t_from_mono, t_cross_ros, cfg, contact_close=close)
 
         try:
             node.check_controller()
@@ -242,7 +252,7 @@ def execute(node):
 
             pred = wait_release(t_goal, timeout_s)
             t_detect = time.monotonic()
-            node.set_contact(True)                             # 공이 날아오는 동안만 nudge 끔 (힘 한계는 그대로)
+            node.set_contact(True)                             # 받기 창 열기 — nudge 끔. 교차 + 0.5 s 에 judge 가 닫는다
             phase("tracking", pred)
             pred = wait_decide(pred, t_goal)
             plan = intercept(ready, pad0, cfg["pad_normal"], pred.point, cfg["right_max_m"], cfg["updown_max_m"], cfg["down_max_m"])
@@ -284,7 +294,6 @@ def execute(node):
                                intercept_posx=[float(v) for v in get_current_posx()[0]],
                                landing_predicted_m=[float(v) for v in last.point], landing_actual_m=[float(v) for v in actual], cfg=cfg)
             after_catch(node, goal_handle, ctx)
-            node.set_contact(False)
 
             if not ctx.skip_return:
                 node.check_stop(goal_handle)
