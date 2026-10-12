@@ -9,12 +9,12 @@
 단계
 1. ready     : pickup_pad() — 패드 집기 (정정인 자리, 거치대 교시가 있으면 거치대에서 집어 대기 자세까지) → 대기 자세 posj 로 관절 이동
 2. tracking  : 이 goal 이후 첫 예측이 오면 투구 시작 → **받기 창** contact_expected ON (공이 맞아도 nudge STOP 안 나게. 힘 한계 130 N 도
-               이 창에만 걸릴 예정 — #144). 공 놓은 뒤 decide_after_s(0.16 s, 오차 중앙 약 3 cm) 까지 최신 예측을 기다림
+               이 창에만 걸릴 예정 — #144). 공 놓은 뒤 decide_after_s(0.25 s, 10/12 밤 실투구 기준) 까지 최신 예측을 기다림
 3. intercept : 예측 품질(std·n_obs)이 기준 안이고 안전이 NORMAL 이면, 예측점으로 패드 중심을 옮기는 TCP 위치로 amovel 한 번
                (자세 고정, 왼쪽 안 감, 오른쪽·위 15 cm·아래 8 cm 까지 — catch_plan.intercept).
                대기 패드 중심에서 catch_radius 밖이면 움직이지 않음 (out_of_radius) · 품질 미달이면 low_confidence · SLOW 면 slow_at_catch 중단
 4. judge     : 받기 창은 **교차 시각 + contact_window_after_cross_s(0.5 s) 에 닫는다** (투구 감지 ~ 교차 + 0.5 s ≈ 1.2 s, #144 "창 약 1 s").
-               판정은 창이 닫힌 뒤에도 계속 기다린다 — **비전 판정**: 측면 카메라의 ball_on_pad 가 pad_hold_s(3 s) 연속(틈 ≤ pad_gap_s) 들어오면 caught.
+               판정은 창이 닫힌 뒤에도 계속 기다린다 — **비전 판정**: 측면 카메라의 ball_on_pad 가 pad_hold_s(1 s) 연속(틈 ≤ pad_gap_s) 들어오면 caught.
                교차 시각 + judge_timeout_s 안에 없으면 missed. 힘 판정은 쓰지 않는다 (10/12 결정: 패드 끝 튕김·이동 관성과 구분 불가)
 5. after     : after_catch() — 정정인 자리. 지금은 대기 자세 → 패드를 거치대에 꽂고 빠짐 (공 떼기·공 거치대는 아직)
 6. return    : 대기 자세 TCP 로 복귀 (after_catch 가 skip_return 을 켜면 생략)
@@ -48,13 +48,13 @@ DEFAULTS = dict(
     ready_posj=[89.8, 30.0, -121.7, 90.2, -80.2, 88.3],   # 10/11 정정인 결정 (패드 면 45°)
     pad_offset_tool_m=[-0.0175, -0.1043, 0.0285],       # TCP → 패드 중심, 공구 좌표 (10/12 정동휘 실측 #138, z 는 #155 보정값 0.0285 — skills.yaml 과 같게. yaml 이 있으면 yaml 이 이김)
     pad_normal=[0.697, -0.123, 0.706],                  # 패드 면 법선 base (위로 45° + 그리퍼 −10° 회전, #138)
-    decide_after_s=0.16,
+    decide_after_s=0.25,                                # 10/12 밤 0.16 → 0.25 (skills.yaml 과 같게 — 근거는 yaml 주석)
     decide_max_s=0.40,                                  # 결정 시점 예측이 품질 미달이면 이때까지 더 기다림 (10/12 밤)
     right_max_m=0.15,
     updown_max_m=0.15,
     down_max_m=0.08,                                    # 아래(투구자 쪽): 대기 자세 −9.4 cm 에 자기충돌 (10/11 실측)
     catch_vel_mm_s=450.0,                               # 위아래 730 mm/s 는 관절 속도 121 % 로 불가 (10/11 계산)
-    catch_acc_mm_s2=1000.0,                             # 10/10 실측: 20 cm 출발 148 ms · 도착 0.85 s
+    catch_acc_mm_s2=2000.0,                             # #144 승인값 (받기 창 130 N, #165 와 함께). 1000 은 10/10 실측 20 cm 도착 0.85 s
     return_vel_mm_s=150.0,
     return_acc_mm_s2=300.0,
     ready_joint_vel_deg_s=30.0,
@@ -64,7 +64,7 @@ DEFAULTS = dict(
     gate_std_max_m=0.10,                                # 출발 시점 예측 표준편차(u·w 큰 쪽) 상한 — 넘으면 안 움직임 (정정인 #128 후속 2)
     gate_n_obs_min=4,                                   #   관측 수 하한
     cross_max_after_s=1.5,                              # 교차 시각이 이보다 뒤로 나오면 그만큼 기다리지 않음 (정정인 #128 후속 1)
-    pad_hold_s=3.0,                                     # 비전 판정: 패드 위 공이 이 시간 연속 보이면 caught (10/12 결정)
+    pad_hold_s=1.0,                                     # 비전 판정: 패드 위 공이 이 시간 연속 보이면 caught (10/12 밤 3.0 → 1.0)
     pad_gap_s=0.3,                                      #   연속으로 치는 관측 틈 상한 (측면 60 Hz, 가림·검출 실패 여유)
     judge_timeout_s=5.0,                                #   교차 시각 뒤 이 시간 안에 못 채우면 missed
     judge_poll_hz=20.0,
@@ -275,12 +275,14 @@ def execute(node):
 
             if goal.catch_radius > 0 and plan.offset_m > goal.catch_radius:
                 res.failure_reason = "out_of_radius"
+                node.set_catch_window(False)                   # 안 움직이면 130 N 필요 없음 — 바로 25 N (#165 리뷰). nudge 끔은 유지
                 d = [float(a - b) for a, b in zip(pred.point, pad0)]
                 log.info(f"[catch_ball] 예측점이 대기 위치에서 {plan.offset_m:.2f} m — 반경 밖, 움직이지 않음 · 예측 교차점 "
                          f"({pred.point[0]:.3f}, {pred.point[1]:.3f}, {pred.point[2]:.3f}) m, 패드 중심 ({pad0[0]:.3f}, {pad0[1]:.3f}, {pad0[2]:.3f}) m, "
                          f"차이 x {d[0] * 100:+.0f} y {d[1] * 100:+.0f} z {d[2] * 100:+.0f} cm (std {pred.std[0] * 100:.1f}·{pred.std[1] * 100:.1f} cm, 관측 {pred.n_obs})")
             elif not quality_ok(pred.std, pred.n_obs, cfg["gate_std_max_m"], cfg["gate_n_obs_min"]):
                 res.failure_reason = "low_confidence"
+                node.set_catch_window(False)                   # 위와 같음
                 log.info(f"[catch_ball] 예측 품질 미달 (std {pred.std[0] * 100:.1f}·{pred.std[1] * 100:.1f} cm, 관측 {pred.n_obs}) — 움직이지 않음")
             else:
                 node.check_stop(goal_handle)

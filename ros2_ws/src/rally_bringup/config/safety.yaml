@@ -9,12 +9,13 @@ rally_safety_monitor:
     #   거리는 선분 '중심축'까지다. 그리퍼·카메라 표면은 축에서 약 6~8 cm(RG2 손가락 최대 벌림 11 cm 의 반, 카메라 마운트 —
     #   실측 TODO(정정인)) 바깥이라, 0.20 m 일 때 표면까지 실제 여유는 약 12~14 cm. 실측 후 표면 기준으로 올릴지 정정인 결정 (리뷰 #104)
     # 개발용 손 STOP 스위치: stop | slow | off (#118, 조정묵 요청 · 정정인 결정 10/11)
-    #   ★ 개발 기간 한정 기본 off — 10/11~ 실기 동작 확인 중 손 근접 STOP 이 잦아서. 리허설(10/12)·시연 전에 slow 또는 stop 으로 되돌림
+    #   ★ 10/12 정정인: 개발 기간 off 종료 → 기본 slow (시연 체크리스트 #145 — 리허설은 slow 로 띄우고 결과로 slow/stop 확정, off 금지).
+    #     (10/11~10/12 개발 기간 기본 off 였음: 실기 동작 확인 중 손 근접 STOP 이 잦아서)
     #   off: 손 판정 통째로 꺼짐 (근접 STOP·SLOW, 손 놓침 STOP, 손 NaN·끊김 SLOW 모두). 남는 STOP: 힘 한계·nudge·작업 공간·estop·음성·필수 입력
     #   slow: 손 근접 STOP → SLOW. 둘 다 보이는 손만 보고 놓침·끊김 유지(#95)를 안 함
     #   실행 때 바꾸기: ros2 launch rally_bringup pc1_robot.launch.py hand_stop:=stop (또는 HAND_STOP=stop scripts/robot.sh nodes)
     #   따옴표 필수 — 따옴표 없는 off 는 YAML 에서 false 가 된다 (노드는 false 도 off 로 받지만 헷갈리지 않게)
-    hand_stop_mode: "off"
+    hand_stop_mode: "slow"
     hand_stop_robot_m: 0.20    # 손 ↔ 로봇 이 안이면 STOP (hand_near_robot). 환자 접촉(patient_contact) 중엔 SLOW
     hand_slow_robot_m: 0.35    # 이 안이면 SLOW
     robot_segment_m: 0.228     # TCP(RG2 손가락 끝) → 플랜지. 펜던트 툴 오프셋 228 mm. 그리퍼 몸통·카메라가 이 선분 근처
@@ -43,6 +44,8 @@ rally_safety_monitor:
     #   근거: 가속 2000 요격 이동 관성 59~73 N(−y, 패드 쥠, #130) · 위아래 최대 55 N(#144 ①) + 공 충격 15.4 N ≈ 88 N × 1.5.
     #   전제: 투구자는 J1 에서 3 m 밖, 두산 자체 충돌 감지는 그대로. 다른 모든 동작(집기·놓기 하강 포함)은 25 N 그대로
     catch_window_force_limit_n: 130.0
+    catch_window_max_s: 2.0    # 받기 창 한 번의 최대 길이 (#165 리뷰 10/13). 설계 약 1.2 s(#171 타이머). 넘으면 신호가 계속 와도 25 N
+                               #   — skill 스레드가 멈춰 하트비트만 남는 경우 130 N 이 계속 켜져 있지 않게. 실제 창이 이보다 길면 이동 중 25 N STOP
     nudge_dfdt_n: 5.0          # 정지 구간 힘 급변 (N, wrench 한 샘플 = 20 ms @ 50 Hz 기준) → STOP. 10/6 실측: 정지 노이즈 |ΔF| ≤ 0.25 N, |F| ≤ 2.5 N → 노이즈 20배. 실제 톡 쳐서 안 걸리면 3.0 으로
     nudge_speed_max_mps: 0.02  # TCP 가 이보다 빨리 움직이는 중에는 nudge 판정 안 함 (가속 관성 오탐, CP7)
     nudge_ang_speed_max_dps: 5.0  # 툴이 이보다 빨리 도는 중에도 nudge 판정 안 함. 10/8: 손 보기 자세로 손목만 45° 도는 관절 이동(손끝 거의 제자리)에서 nudge 오탐 STOP. 힘 임계·STOP 흐름은 그대로
