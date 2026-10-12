@@ -2,7 +2,7 @@
 # 실로봇 실행 — 터미널 3개로 나눈다. 1·2 는 앞에 띄워 두고 끌 때 그 터미널에서 Ctrl+C. (시뮬은 scripts/sim_robot.sh)
 #   터미널 1:  scripts/robot.sh bringup            # 두산 bringup (real). 이미 떠 있으면 거부
 #   터미널 2:  scripts/robot.sh nodes              # 비전 컨테이너 + 안전감시·힘·그리퍼·스킬서버. Ctrl+C 면 비전까지 끔
-#              (개발 기간 기본 HAND_STOP=off — 손 판정 꺼짐) HAND_STOP=slow|stop scripts/robot.sh nodes  # 리허설·시연은 slow 또는 stop
+#              (10/12~ 기본 HAND_STOP=slow — 손이 가까우면 감속) HAND_STOP=stop|off scripts/robot.sh nodes  # off 는 개발 시험 전용, 시연 금지
 #              scripts/robot.sh nodes novision     #   비전 없이
 #              HAND=0 scripts/robot.sh nodes       #   손 인식 없이 (모드 5 장갑 끼고 막대만 볼 때). CONF=0.25 면 약한 검출도 보임
 #                                                  #   ★ HAND=0 은 손 거리 안전 판정이 없다 — 리허설·시연·환자 앞에서는 쓰지 않는다
@@ -78,11 +78,11 @@ case "$1" in
       fi
     fi
     echo "[robot] safety_monitor → force_publisher · gripper_node · skill_server — 끌 때 Ctrl+C. 'skill_server ready' 가 나오면 터미널 3 에서 명령"
-    HAND_STOP="${HAND_STOP:-off}"
+    HAND_STOP="${HAND_STOP:-slow}"
     if [ "$HAND_STOP" != stop ]; then
-      echo "[robot] ★★ 손 근접 STOP = ${HAND_STOP} (개발용, 10/11~ 기본 off)"
+      echo "[robot] ★★ 손 근접 STOP = ${HAND_STOP} (10/12~ 기본 slow. 시연 전 리허설 결과로 slow/stop 확정)"
       case "$HAND_STOP" in
-        off)  echo "[robot] ★★ 손 판정 통째로 꺼짐 — 근접 STOP·SLOW, 손 놓침 STOP, 손 끊김 SLOW 없음" ;;
+        off)  echo "[robot] ★★★ 손 판정 통째로 꺼짐 — 근접 STOP·SLOW, 손 놓침 STOP, 손 끊김 SLOW 없음. 개발 시험 전용 — 시연·환자 앞 금지" ;;
         slow) echo "[robot] ★★ 손이 가까우면 감속만 (멈추지 않음)" ;;
       esac
       echo "[robot] ★★ 남는 STOP: 힘 한계·nudge·작업 공간·estop·음성·필수 입력. 리허설·시연·환자 앞에서는 HAND_STOP=slow 또는 stop"
