@@ -43,11 +43,14 @@ webcam_link          측면 대각 웹캠, 높이 약 2 m (table_link 기준 sta
 | `/rally/perception/landing` | `geometry_msgs/PointStamped` — 패드 평면 교차 예측점 (`base_link`). `header.stamp` = 마지막 관측의 센서 시각(손목 카메라 시계) | rally_vision/flight_predictor | robot(catch_ball) | 60 Hz, 비행 중만 | BestEffort, depth 1 |
 | `/rally/perception/landing_info` | `std_msgs/Float64MultiArray` — `[교차 시각 s(ROS 시각), 교차까지 남은 시간 s(landing stamp 기준), 평면 위 표준편차 u·w m, 관측 수, 릴리스 이후 s]`. landing 과 같은 순서로 하나씩 발행 (전용 msg 는 팀 합의 후) | rally_vision/flight_predictor | robot(catch_ball) | landing 과 같음 | BestEffort, depth 1 |
 | `/rally/perception/objects/debug_image` | `sensor_msgs/Image` | rally_vision/segmenter (ByteTrack tracker 전까지) | dashboard | 10 Hz | BestEffort |
+| `/rally/perception/objects/image_axis` | `geometry_msgs/PoseArray` | rally_vision/segmenter | robot(handover 받기) | objects 와 같이 (같은 header·순서) | BestEffort, depth 1 |
 | `/rally/perception/hand` | `rally_interfaces/HandState` | rally_human/hand_pose_node | brain, robot(safety), robot(handover) | 30 Hz | BestEffort, depth 1 |
 | `/rally/perception/body` | `rally_interfaces/BodyPose` | rally_human/body_pose_node | brain | 15 Hz | BestEffort |
 | `/rally/voice/intent` | `rally_interfaces/VoiceIntent` | rally_voice/intent_node | brain, safety | 이벤트 | Reliable |
 | `/rally/voice/transcript` | `std_msgs/String` | rally_voice/intent_node | dashboard | 이벤트 | Reliable |
 | `/rally/voice/speaking` | `std_msgs/Bool` | rally_voice/tts_node | rally_voice/intent_node, rally_brain/bt_runner (말하는 중 자세 교정 안내 건너뜀, #119), dashboard 선택 | 발화 시작·끝 이벤트 | **Reliable, TransientLocal**, depth 1 |
+
+**objects/image_axis** (10/12, 모드 5 받기 기울기): `poses[i]` 는 `objects[i]` 와 짝 (header.stamp 같을 때만 짝지음). `position` = 그 물체 중심(objects 와 같음), `orientation` = 화면 속 마스크 주축 각도를 z 축 회전으로 — 화면 위쪽 0°, 오른쪽으로 기울면 +, −90~90°. 둥근 물체(장단축 비 ≤ 1.3)는 (0,0,0,0). `TrackedObject.yaw` 는 base 평면에 투영한 값이라 카메라가 앞을 보는 받기 자세에서는 늘 ±90° 로 뭉개져서 따로 낸다. 메시지 형식을 안 바꾸려고 TrackedObject 필드 대신 별도 토픽 (정정인 결정, 비전 컨테이너 재빌드 없이).
 
 **objects 좌표 프레임** (#66): `/rally/perception/objects` 의 `header.frame_id` 가 `base_link` 가 아니면(카메라 프레임 `camera_color_optical_frame`) 카메라→base 변환을 못 구한 것이다 — 그 좌표로 로봇을 움직이지 않는다(abort 또는 대기). segmenter 는 파라미터 `transform_source` 로 변환을 고른다: `tcp_npy`(기본, `/rally/robot/tcp_pose` × hand_eye) · `tf` · `auto`(tf 우선). **로봇 PC bringup URDF(`m0609_with_rg2_camera`)가 `tool0 → bracket_link → camera_bottom_screw_frame → camera_link → … → camera_color_optical_frame` 을 설계값으로 발행**(10/8 정정인 view_frames)하므로, 그 체인이 있는 동안 `tf`/`auto` 는 설계값을 집어 1 cm·2.5° 치우친다(PR #42 원인). URDF 에서 카메라 체인을 빼고 `camera_tf` 가 유일한 `camera_link` 부모가 되면 기본을 `auto` 로 바꾼다. `tcp_npy` 는 영상 시각이 아니라 마지막 `tcp_pose`(10 Hz) 를 쓰므로 **로봇이 멈춰 있을 때의 좌표만 정확**하다 — 이동 중 좌표로 로봇을 보내지 않는다. `camera_tf` 가 떠 있으면 `auto`(tf 는 영상 시각으로 보간) 가 낫다.
 
@@ -274,7 +277,7 @@ STOP·취소는 기존 세션 중단 처리. 타격 action 실패 시에도 다�
 | 모드 5 Handover RECEIVE | `present` 까지면 다시 보냄, 그 뒤는 세션 종료 |
 | PushBall `place` 이후 (놓기~치기~복귀) · ReturnBall `pickup`~`drop` | 공·그리퍼 상태가 애매해 **세션 종료** (2단계: 로봇 스킬에 '입구 공 바로 치기'·'쥔 공 거치대로' 옵션 필요, #117) |
 
-재전송은 NORMAL 1 s 유지 뒤, 명령당 최대 5회. 재전송한 goal 이 그 순간 다시 STOP 으로 **거절**되면(손이 또 다가옴) 실패로 끝내지 않고 같은 대기로 돌아간다 (10/11 실로봇: 받기 goal 거절 → 세션 종료가 났었음). 공 회수 전 손 이탈 확인은 별도 조건이다: 최신 검출 손의 중앙선 거리 ≥ `skills.yaml mode1.hand_clear_m`(0.20 m, `safety.yaml slow_distance_m` 과 별개 — #113).
+재전송은 NORMAL 1 s 유지 뒤, 명령당 최대 5회. 재전송한 goal 이 그 순간 다시 STOP 으로 **거절**되면(손이 또 다가옴) 실패로 끝내지 않고 같은 대기로 돌아간다 (10/11 실로봇: 받기 goal 거절 → 세션 종료가 났었음). 공 회수 전 손 이탈 확인은 별도 조건이다: 최신 검출 손의 중앙선 거리 ≥ `skills.yaml mode1.hand_clear_m`(0.20 m, `safety.yaml slow_distance_m` 과 별개 — #113). 이 확인은 **처음 보낼 때만** 하고, 손 STOP 뒤 재전송은 NORMAL 1 s 만 본다 (10/12 실로봇: 회수하러 가다 선 자세에선 손이 카메라에 안 보여 '손 안 보임' 으로 영영 대기).
 
 ### 그대로 세션 종료
 
