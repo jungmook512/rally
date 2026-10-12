@@ -21,6 +21,8 @@ robot:
   services:
     - {name: /rally/gripper/command, type: rally_interfaces/srv/GripperCommand}
     - {name: /rally/robot/go_hand_view, type: std_srvs/srv/Trigger}          # 모드 1 시도 전 손 보기 자세 (10/8)
+    - {name: /rally/robot/go_observe_pose, type: std_srvs/srv/Trigger}      # 모든 모드 시작 관측 자세 (10/11, #132)
+    - {name: /rally/robot/go_pick_view, type: std_srvs/srv/Trigger}         # 모드 5 물체 보기 자세 (10/11, #132)
   actions:
     - {name: /rally/skill/push_ball, type: rally_interfaces/action/PushBall}
     - {name: /rally/skill/return_ball, type: rally_interfaces/action/ReturnBall}   # 모드 1 시도 뒤 공 회수 (10/8)
@@ -37,6 +39,6 @@ voice:
   services:
     - {name: /rally/voice/speak, type: rally_interfaces/srv/Speak}
 
-# 세션 시작 조건. 모드 3 스킬(catch_ball, detach_ball)은 mode3_challenge.enabled 일 때 bt_runner 가 따로 확인한다
+# 세션 시작 조건. 모드 3 받기 스킬(catch_ball)은 세션 조건에 넣지 않는다 — 챌린지라 없으면 모드 3 시도만 건너뜀 (trees/mode3_catch.py)
 session:
   include: [robot, perception, voice]

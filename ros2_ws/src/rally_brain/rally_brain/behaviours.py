@@ -84,6 +84,7 @@ class SkillCall(py_trees.behaviour.Behaviour):
         self._t0 = time.monotonic()
         self.phases: list[str] = []    # 이번 goal 에서 받은 feedback.phase (순서대로)
         self._resend_wait = False      # 손 STOP 뒤 다시 보낼 때까지 대기
+        self._resuming = False         # 손 STOP 뒤 재전송 중 — can_send 건너뜀
 
     def initialise(self) -> None:
         self._reset()
@@ -123,6 +124,9 @@ class SkillCall(py_trees.behaviour.Behaviour):
                 self.feedback_message = "손 근접 STOP 뒤 재전송 대기"
                 return Status.RUNNING
             self._resend_wait = False
+            # 재전송은 resume_ok(NORMAL 유지)만 본다 — can_send(예: 모드 1 회수 전 '손이 20 cm 밖에 보임')는 처음 보낼 때만.
+            # 10/12 실로봇: 회수하러 가다 STOP 으로 선 자세에선 카메라에 손이 안 보여 '손 안 보임' 으로 영영 대기 (#115: 손이 보이는지는 재진행 조건 아님)
+            self._resuming = True
         if self._send_future is None:
             if not self.client.server_is_ready():
                 if time.monotonic() - self._t0 > self.server_timeout_s:
@@ -130,9 +134,10 @@ class SkillCall(py_trees.behaviour.Behaviour):
                     self.node.get_logger().error(f"[{self.name}] {self.feedback_message}")
                     return Status.FAILURE
                 return Status.RUNNING
-            if not self.can_send():
+            if not self._resuming and not self.can_send():
                 self.feedback_message = "precondition_failed"
                 return Status.RUNNING if self.wait_for_precondition else Status.FAILURE
+            self._resuming = False
             if self.on_feedback is not None or self.hand_resume is not None:   # 진행 단계가 필요할 때만 (feedback 구독)
                 self._send_future = self.client.send_goal_async(self.make_goal(), feedback_callback=self._feedback)
             else:
@@ -144,6 +149,14 @@ class SkillCall(py_trees.behaviour.Behaviour):
                 return Status.RUNNING
             self._goal_handle = self._send_future.result()
             if not self._goal_handle.accepted:
+                if self.hand_resume is not None and self._resends < self.max_resends:
+                    # 10/11 실로봇(모드 5): 손 STOP 대기에서 NORMAL 을 보고 다시 보낸 순간 손이 또 가까워져 skill_server 가 거절
+                    # (STOP 중 goal 거부) → 세션 종료됐다. 손 STOP 재전송이 붙은 단계면 거절도 같은 대기로 돌린다
+                    self._resends += 1
+                    self.node.get_logger().info(f"[{self.name}] goal 거절 (안전 STOP 중) — 다시 NORMAL 이 되면 다시 보냄 ({self._resends}회)")
+                    self._reset()
+                    self._resend_wait = True
+                    return Status.RUNNING
                 self._handled = True
                 self.feedback_message = "goal 거절"
                 self.node.get_logger().warn(f"[{self.name}] goal 거절")
@@ -209,6 +222,17 @@ class SkillCall(py_trees.behaviour.Behaviour):
             self.on_interrupt(reason)
 
 
+SAFETY_STOP_PREFIX = "safety STOP ("
+
+
+def service_stop_reason(message: str) -> str:
+    """서비스 응답 message → 안전 사유. 이동 중 STOP 은 사유가 첫 낱말("hand_near_robot ..."), 요청을 받을 때 이미 STOP 이면
+    skill_server 가 "safety STOP (hand_near_robot)" 로 돌려준다 (10/12: 이 경우도 재요청 대상). 사유가 여럿이면 첫 사유."""
+    if message.startswith(SAFETY_STOP_PREFIX):
+        message = message[len(SAFETY_STOP_PREFIX):].split(")")[0]
+    return (message.replace(",", " ").split() or [""])[0]
+
+
 class ServiceCall(py_trees.behaviour.Behaviour):
     """서비스 한 번 호출하고 응답을 기다린다. ok(응답) 이면 SUCCESS. 서버 없음·시간 초과·ok 아님 → FAILURE.
     (예: /rally/robot/go_hand_view — 손 보기 자세로)"""
@@ -265,7 +289,7 @@ class ServiceCall(py_trees.behaviour.Behaviour):
             return Status.FAILURE
         if self.response is not None and self.ok(self.response):
             return Status.SUCCESS
-        reason = (str(getattr(self.response, "message", "") or "").split() or [""])[0]
+        reason = service_stop_reason(str(getattr(self.response, "message", "") or ""))
         if reason in self.resend_reasons and self._resends < self.max_resends:
             self._resends += 1
             self._future, self.response, self._resend_wait = None, None, True

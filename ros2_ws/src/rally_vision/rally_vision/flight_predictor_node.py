@@ -75,8 +75,11 @@ class FlightPredictorNode(Node):
         d("dt_side_s", float("nan"))               # nan = calib 값 (10/11 +0.015)
         d("k_drag", float("nan"))                  # nan = calib 값 (10/11 0.073)
         d("meas_std_m", 0.015)
-        d("plane_p", [0.327, -0.271, 0.531])       # 패드 중심 (기존 대기 자세 + 실측 패드 오프셋, 10/11)
-        d("plane_n", [0.7071, 0.0, 0.7071])        # 패드 면 법선 (투구자 쪽 45° 위)
+        # 패드 평면: 기본은 skills.yaml mode3.pad_center_base_m·pad_normal (받기 스킬 catch_ball 과 같은 파일, 10/12).
+        # 파라미터로 세 값을 주면 그것이 우선 (bag 재생 시험용). nan 이면 "안 줌".
+        d("plane_p", [float("nan")] * 3)           # 패드 중심 base [m]
+        d("plane_n", [float("nan")] * 3)           # 패드 면 법선 base
+        d("skills_path", "")                       # 비면 rally_bringup/config/skills.yaml (설치본 → 소스 트리)
         d("min_speed_mps", 1.5)
         d("min_obs", 4)
         d("min_start_x_m", 1.2)                    # 투구 시작점이 이보다 투구자 쪽(+x)이어야 (로봇 근처 낙하·튕김 무시)
@@ -129,7 +132,9 @@ class FlightPredictorNode(Node):
         self.get_logger().info(f"모델 {path} · 입력 {self.imgsz} · 워밍업 {time.monotonic() - t0:.1f} s "
                                "(.engine 은 두 장 묶음 batch=2 로 export 한 것)")
 
-        self.session = ThrowSession(plane_p=np.array(g("plane_p"), float), plane_n=np.array(g("plane_n"), float),
+        plane_p, plane_n, plane_src = self._pad_plane(np.array(g("plane_p"), float), np.array(g("plane_n"), float), str(g("skills_path")))
+        self.get_logger().info(f"패드 평면 ({plane_src}): 중심 {np.round(plane_p, 3).tolist()} m · 법선 {np.round(plane_n, 3).tolist()}")
+        self.session = ThrowSession(plane_p=plane_p, plane_n=plane_n,
                                     k_drag=k_drag, meas_std_m=float(g("meas_std_m")),
                                     min_speed=float(g("min_speed_mps")), min_obs=int(g("min_obs")),
                                     min_start_x=float(g("min_start_x_m")), max_cross_dist=float(g("max_cross_dist_m")))
@@ -158,6 +163,40 @@ class FlightPredictorNode(Node):
         self._rx = [0, 0]
         self.create_timer(1.0 / max(float(g("rate_hz")), 1.0), self._tick)
         self.create_timer(5.0, self._stats)
+
+    # --- 패드 평면 ---
+    @staticmethod
+    def default_skills_path() -> str:
+        cands = []
+        try:
+            from ament_index_python.packages import get_package_share_directory
+            cands.append(os.path.join(get_package_share_directory("rally_bringup"), "config", "skills.yaml"))
+        except Exception:  # noqa: BLE001
+            pass
+        here = os.path.dirname(os.path.realpath(__file__))
+        cands.append(os.path.normpath(os.path.join(here, "..", "..", "rally_bringup", "config", "skills.yaml")))
+        for p in cands:
+            if os.path.isfile(p):
+                return p
+        return ""
+
+    def _pad_plane(self, p_param: np.ndarray, n_param: np.ndarray, skills_path: str):
+        """(중심, 단위 법선, 출처). 파라미터 세 값이 다 있으면 그것, 아니면 skills.yaml mode3. 둘 다 없으면 시작하지 않는다
+        (옛 하드코딩 값으로 조용히 돌면 받기 스킬과 다른 평면을 쓰게 됨 — 10/12 패드 TCP 재측정에서 y 5.7 cm 차이)."""
+        if np.all(np.isfinite(p_param)) and np.all(np.isfinite(n_param)):
+            return p_param, n_param / np.linalg.norm(n_param), "파라미터"
+        path = skills_path or self.default_skills_path()
+        try:
+            import yaml
+            with open(path, encoding="utf-8") as f:
+                m3 = (yaml.safe_load(f) or {}).get("mode3") or {}
+            c, n = np.array(m3["pad_center_base_m"], float), np.array(m3["pad_normal"], float)
+            if c.shape != (3,) or n.shape != (3,) or not np.all(np.isfinite(c)) or np.linalg.norm(n) < 0.5:
+                raise ValueError(f"pad_center_base_m={c.tolist()}, pad_normal={n.tolist()}")
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(f"패드 평면을 못 읽음: {path or 'skills.yaml 없음'} mode3.pad_center_base_m·pad_normal ({e}) "
+                               "— skills_path 또는 plane_p·plane_n 파라미터로 지정") from e
+        return c, n / np.linalg.norm(n), path
 
     # --- 구독 ---
     def _on_wrist(self, msg: Image):

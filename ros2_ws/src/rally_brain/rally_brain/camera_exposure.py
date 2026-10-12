@@ -5,6 +5,8 @@
 모드 1·5 는 물체·손 인식이 자동 노출 영상 기준이라 평소엔 자동으로 둔다. 노출은 드라이버를 켠 채 바꿀 수 있는 값이라
 bt_runner 가 tick 마다 want(현재 모드 == 3) 을 부르고, 바뀔 때만 파라미터를 보낸다 (응답을 기다리지 않음 — tick 을 막지 않는다).
 세션이 끝나면(정상·취소·중단) want(False) 로 자동 노출로 되돌린다.
+상태를 모르면(brain 이 켜진 직후) 자동 노출을 한 번 실제로 보낸다 — 모드 3 도중 brain 이 재시작되면 손목이 고정 노출로 남아
+모드 1·5 손 인식(안전 판정 입력)이 어두운 영상으로 돌기 때문 (#139 정정인·박성현 리뷰). 응답이 pending_timeout_s 안에 안 오면 다시 보낸다.
 실패(카메라 노드 없음·거절)하면 경고만 남기고 세션은 계속 — 모드 3 은 자동 노출로 돌아 인식률이 떨어질 수 있다.
 실패한 요청은 retry_s 뒤에 다시 보낸다. 값·노드 이름은 rally_bringup config/cameras.yaml.
 """
@@ -19,22 +21,25 @@ from rally_bringup.camera_params import exposure_params
 
 class ExposureSwitch:
     def __init__(self, node, cfg: dict[str, Any], client_factory: Callable[[Any, str], Any] | None = None,
-                 clock: Callable[[], float] = time.monotonic, retry_s: float = 5.0):
-        self.node, self.cfg, self.clock, self.retry_s = node, cfg, clock, retry_s
+                 clock: Callable[[], float] = time.monotonic, retry_s: float = 5.0, pending_timeout_s: float = 3.0):
+        self.node, self.cfg, self.clock, self.retry_s, self.pending_timeout_s = node, cfg, clock, retry_s, pending_timeout_s
         self.camera = str((cfg.get("wrist") or {}).get("node", "/camera"))
         if client_factory is None:
             from rclpy.parameter_client import AsyncParameterClient
             client_factory = AsyncParameterClient
         self._client = client_factory(node, self.camera)
-        self.state: bool | None = None      # 마지막으로 적용된 상태 (None = 모름 — 켤 때 자동이라고 보고 건드리지 않음)
+        self.state: bool | None = None      # 마지막으로 적용된 상태 (None = 모름 — want(False) 도 실제로 보냄)
         self._pending: bool | None = None   # 보내고 응답을 기다리는 상태
+        self._pending_at = 0.0
         self._failed_at = -1e9
         self._failed: bool | None = None
 
     def want(self, fixed: bool) -> None:
         """tick 스레드에서. 원하는 상태와 다를 때만 비동기로 보낸다."""
-        current = False if self.state is None else self.state
-        if fixed == current or self._pending == fixed:
+        if self._pending is not None and self.clock() - self._pending_at > self.pending_timeout_s:
+            self._fail(self._pending, f"응답 없음 {self.pending_timeout_s:.0f} s")
+            self._pending = None
+        if fixed == self.state or self._pending == fixed:
             return
         if self._failed == fixed and self.clock() - self._failed_at < self.retry_s:
             return
@@ -43,7 +48,7 @@ class ExposureSwitch:
             return
         from rclpy.parameter import Parameter
         params = [Parameter(name, value=value) for name, value in exposure_params(fixed, self.cfg)]
-        self._pending = fixed
+        self._pending, self._pending_at = fixed, self.clock()
         future = self._client.set_parameters(params)
         future.add_done_callback(lambda f, p=params, want=fixed: self._done(f, p, want))
 

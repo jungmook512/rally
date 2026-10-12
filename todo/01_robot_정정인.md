@@ -49,13 +49,14 @@
 - [ ] 당김 힘 임계값 실험 (사람이 당길 때 힘 곡선 10회 기록)
 - [ ] (10/8, #75 brain 모드 5 트리 연결 후속)
   - [ ] `pick_compliant.py` 못 쥐면 이유 보내기: 지금은 이유 없이 `abort()` → brain 이 "안전 정지일 수 있음"으로 보고 `pick_failed` 1회 재시도가 실제로는 안 일어남. `PickCompliant.Result` 끝에 `string failure_reason` 추가(+ `docs/INTERFACES.md`) → 못 쥠 = `"pick_failed"`
-  - [ ] `handover.py` 손이 안 보이면 `wrist_angle_at_grasp_deg` 를 0.0 대신 NaN (0° 는 "손바닥 아래" 정상 값으로 보임). 30 cm 안쪽은 손목 각도가 ±20° 흔들림(#74) → 잡기 직전 접근 구간 중간값 쓰기 정동휘와 정하기
+  - [x] `handover.py` 손이 안 보이면 `wrist_angle_at_grasp_deg` 를 0.0 대신 NaN (#79 완료) (0° 는 "손바닥 아래" 정상 값으로 보임). 30 cm 안쪽은 손목 각도가 ±20° 흔들림(#74) → 잡기 직전 접근 구간 중간값 쓰기 정동휘와 정하기
   - [ ] 기울기 `handover.tilt_range_deg` ±90° (`skills.yaml`·`embeddings.yaml`) 커밋·push — 원격 #57 은 아직 ±45°
   - [ ] 모드 5 물체 거치 자리가 brain `mode5.pick_x_range_m` [0.15, 0.55] 안인지 실측
 
 ## Day 3 — 모드 5 완성 + 안전 ✅
-- [ ] `handover.py` RECEIVE: `HandState.palm_pose`를 `servol`로 추종(30 Hz, One-Euro 필터) → 순응 상태로 받기 → 파지 판정
-- [ ] (정동휘와) 손 토픽 → 로봇 반응 지연 측정, 추종 게인 튜닝
+- [x] `handover.py` RECEIVE: ~~`HandState.palm_pose`를 `servol`로 추종~~ → 손 추종 제외(#134, 10/11). 후퇴 자리에서 열고 대기 → 밀어 넣는 힘 4 N → 잡기 → 제자리 (#132, 실로봇 받기 확인 필요)
+- [ ] 받기 기울기 맞춤 (#134 대신 할 것): 환자가 든 막대의 화면 기울기 → 손목만 그 각도로 회전, 사람이 넣기. `TrackedObject` 필드 추가는 박성현과 (인터페이스 PR)
+- [x] ~~(정동휘와) 손 토픽 → 로봇 반응 지연 측정, 추종 게인 튜닝~~ — 손 추종 제외(#134)
 - [x] `safety_monitor.py`: 작업 공간 제한, 손 근접 감속, 힘 한계 25 N, nudge(정지 중·접촉 예정 아닐 때만), `/rally/safety/estop` 구독 — 코드 완료. 접촉 예정 플래그 `/rally/safety/contact_expected` 는 skill_server 가 발행. 임계값 실측 후 확정
 - [x] `SafetyStatus` Reliable 발행, `LEVEL_STOP` 시 실행 중 action abort — 가짜 모드에서 확인(estop → 이동 중 abort, STOP 중 goal 거부). 로봇에서 재확인
 - [x] `/rally/robot/reset_safety`

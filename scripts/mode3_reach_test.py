@@ -12,7 +12,7 @@
     python3 scripts/mode3_reach_test.py --run --dist 5 10 --acc 1000 --vel 500 --reps 3 --dirs +y -y
 결과 CSV: data/measure/mode3_reach_MMDD_HHMM.csv (한 줄 = 한 번 이동).
 안전: 대기 자세는 지금 로봇 자세. 매 이동 전 /rally/safety/status 가 NORMAL 이 아니면 멈춤. 매 이동 뒤 대기 자세로 천천히(--return-vel) 돌아감.
-      safety.yaml 작업 공간(x 0.20~0.57, y ±0.45, z 0~0.60) 밖 목표는 계획에서 빼고 알림. 속도는 --vel × 안전 speed_override.
+      safety.yaml 작업 공간(x −2.00~0.57, y ±0.60, z 0~2.00) 밖 목표는 계획에서 빼고 알림. 속도는 --vel × 안전 speed_override.
 DSR_ROBOT2 는 rally_robot.dsr_helpers.init_dsr() 뒤에 import (CLAUDE.md).
 """
 import argparse
@@ -38,7 +38,7 @@ from print_pose import TCP_OFFSET_MM  # noqa: E402
 ROOT = Path(__file__).resolve().parents[1]
 JOINT_VMAX = np.array([150, 150, 180, 225, 225, 225.0])   # M0609 관절 속도 한계 deg/s
 J3_MAX = 148.0
-WORKSPACE = dict(x=(0.20, 0.57), y=(-0.45, 0.45), z=(0.0, 0.60))   # safety.yaml (모드 1 기준)
+WORKSPACE = dict(x=(-2.00, 0.57), y=(-0.60, 0.60), z=(0.0, 2.00))   # safety.yaml 과 같게 (#132 10/11 정정인: x_min −2.00·y ±0.60, z_max 10/11 2.00). 실행 중엔 안전 노드가 safety.yaml 로 따로 감시
 PAD_TILT_DEG = 45.0
 
 

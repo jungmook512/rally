@@ -52,8 +52,6 @@ def names(params):
 def test_fixed_only_in_mode3_then_back_to_auto():
     c = Client()
     sw, logs = make(c)
-    sw.want(False)
-    assert c.sent == []                                   # 처음은 자동이라고 보고 건드리지 않음
     sw.want(True)
     sw.want(True)                                         # 응답 기다리는 중 — 다시 안 보냄
     assert len(c.sent) == 1
@@ -89,3 +87,31 @@ def test_rejected_params_do_not_change_state():
     sw.want(True)
     c.sent[0][1].finish()
     assert sw.state is None and "거절" in logs[-1]
+
+
+def test_unknown_state_forces_auto_once():
+    # brain 이 모드 3 도중 재시작되면 손목이 고정 노출로 남을 수 있다 — 상태를 모르면 자동을 실제로 보낸다 (#139 리뷰)
+    c = Client()
+    sw, _ = make(c)
+    sw.want(False)
+    sw.want(False)
+    assert len(c.sent) == 1 and names(c.sent[0][0])[-1] == ("rgb_camera.enable_auto_exposure", True)
+    c.sent[0][1].finish()
+    sw.want(False)
+    assert sw.state is False and len(c.sent) == 1          # 적용된 뒤엔 다시 안 보냄
+
+
+def test_lost_response_is_resent_after_timeout():
+    now = [0.0]
+    c = Client()
+    sw, logs = make(c, clock=lambda: now[0])
+    sw.want(True)
+    now[0] = 2.0
+    sw.want(True)
+    assert len(c.sent) == 1                                # 3 s 전 — 기다림
+    now[0] = 3.5
+    sw.want(True)
+    assert any("응답 없음" in m for m in logs)
+    now[0] = 9.0                                           # 실패 뒤 retry_s(5 s) 지나 다시 보냄
+    sw.want(True)
+    assert len(c.sent) == 2

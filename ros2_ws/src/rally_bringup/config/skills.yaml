@@ -13,11 +13,14 @@ motion:
   joint_vel_deg_s: 60.0           # 관절 이동 — 관측 자세·거치대 보기·손 보기 자세·막대 집으러 가기·모드 5 제시
   joint_acc_deg_s2: 120.0
 
+
 # observe_pose (10/6 티칭) — 카메라가 테이블 작업 구역(x 0.23~0.68 m)·중앙선이 다 보이는 자세. 환자(+x) 쪽으로 약 11° 기울임.
 # 캘리브레이션 순회(calib_sweep --center) 중심이자 go_observe_pose 복귀 자세. posj 로 복귀(movej), posx 는 참고·순회용.
 observe_pose:
   posx: [352.6, -29.3, 481.6, 146.9, -169.3, 147.3]      # mm · ZYZ deg
   posj: [0.06, 9.06, 30.37, -7.68, 131.29, -5.15]         # deg
+  route_x_max_m: 0.54            # ★ 10/12: 관측 자세로 가는 관절 경로 TCP x 가 이걸 넘을 것 같으면(fkin 으로 미리 계산) 먼저 곧게 뒤·위(x 0.30, z 0.45)로 빠짐.
+                                  #   모드 5 내려놓기 자리에서 바로 가다 x 0.58 → workspace_limit STOP (보라색 선 0.57)
 
 # mode3 (던진 공 요격)
 #   catch_radius_m: Phase 1 초기 단계 0.35 (넓게 받아줌). Phase 2 에서 명중률에 따라 0.35 → 0.15 → 0(패드 고정)
@@ -27,10 +30,21 @@ mode3:
   catch_radius_m: 0.35
   lead_time_s: 0.12
   max_ball_speed_mps: 3.0
+  # brain 모드 3 트리 (10/12, rally_brain/trees/mode3_catch.py). catch_radius_m 은 goal.catch_radius 로 간다
+  trial_timeout_s: 30.0             # 공을 던지기를 기다리는 시간 — 운영자가 패드에서 공을 떼어 건네는 시간 포함 (after_catch 보류)
+  timeout_end_after: 2              # 연속 이만큼 안 던지면 모드 3 남은 시도 건너뜀
+  intro_prompt: "이번에는 공을 던져서 로봇 패드에 붙여 볼게요"      # 모드 3 시작 (session_tree)
+  throw_prompt: "준비되면 패드를 향해 공을 던져 주세요"             # 시도마다
+  done_prompt: "캐치볼을 마쳤어요. 수고하셨어요"                   # 모드 3 시도를 모두 마침 (session_tree)
   # catch_ball 스킬 (10/11, 근거 docs/mode3/MODE3_OVERVIEW.md). 없으면 catch_ball.DEFAULTS
   ready_posj: [89.8, 30.0, -121.7, 90.2, -80.2, 88.3]   # 대기 자세 (정정인 결정, 패드 면 45°)
-  pad_offset_tool_m: [-0.053, -0.048, 0.001]          # TCP → 패드 중심, 공구 좌표 (줄자)
-  pad_normal: [0.7071, 0.0, 0.7071]                   # 패드 면 법선 (base, 투구자 쪽 45° 위)
+  # 패드 TCP 10/12 정동휘 실측: 공구 좌표 (−17.5, −104.3, 6.5) mm, Ry −45°. 대기 자세에서 base 패드 중심 (0.323, −0.328, 0.496) m,
+  #   법선은 위로 45° + 그리퍼를 따라 −10° (공구 좌표로 쟀으므로 자동 반영). 이전 값 [-0.053, -0.048, 0.001] 은 7.2 cm 로 실물(10.6 cm)과 다름.
+  #   예측 노드 flight_predictor 도 이 파일의 pad_center_base_m·pad_normal 을 패드 평면으로 읽는다 (노드 파라미터 plane_p·plane_n 을 주면 그것이 우선).
+  #   그림·검증 방법: https://claude.ai/artifact/NcvZtyTn9MHD8Nvsb99JKg
+  pad_offset_tool_m: [-0.0175, -0.1043, 0.0065]       # TCP → 패드 중심, 공구 좌표 (10/12 실측)
+  pad_normal: [0.697, -0.123, 0.706]                  # 패드 면 법선 (base, 대기 자세. 위로 45°, −10° 회전 포함)
+  pad_center_base_m: [0.323, -0.328, 0.496]          # 대기 자세(ready_posj)에서 패드 중심 base [m] = TCP + R·pad_offset_tool_m. ready_posj·오프셋을 바꾸면 같이 다시 계산
   decide_after_s: 0.16                                # 공 놓은 뒤 이 시각의 예측으로 출발 (오차 중앙 약 3 cm)
   right_max_m: 0.15                                   # 오른쪽(−y)만. 왼쪽은 안 감 (환자 투구 실패로 셈)
   updown_max_m: 0.15
@@ -38,11 +52,11 @@ mode3:
   catch_acc_mm_s2: 1000.0
   impact_force_n: 4.0                                 # 명중 판정 힘 증가 (맞을 때 4.9~15.3 N, 정지 0.9 N)
 
-# mode1 (공 굴려주기) — 가이드 길 3개 (폭 10~12 cm, 높이 ≤ 공 반지름)
+# mode1 (공 굴려주기) — 가이드 길 2개 (10/12: 3개 → 2개) (폭 10~12 cm, 높이 ≤ 공 반지름)
 #   start: 공을 놓는 자리 (base, m). 공 위에 TCP 를 대고 scripts/print_pose.py 로 읽는다. z 는 안 쓴다(table.yaml 사용)
 #   dir_deg: base XY 에서 +x(환자 쪽)로부터 반시계 [deg]. 0 = 정면. 길이 비스듬하면 그 각도
 mode1:
-  # 10/7 실측: 공을 쥐고 입구 점·20 cm 앞 점 (scripts/print_pose.py). goal.lane 0/1/2 = 현장 레인 1/2/3. 간격 ≈ 15 cm
+  # 10/7 실측: 공을 쥐고 입구 점·20 cm 앞 점 (scripts/print_pose.py). goal.lane 0/1 = 현장 레인 1/2 (10/12 레인 3 제거). 간격 ≈ 15 cm
   # recipe: 스윙 속도 v → 정지 거리 d = v²/(2·decel) + d0 (레인 입구 기준, scripts/push_recipe.py 10/8 실측, 0.2·0.3·0.4 m/s 각 3회 안팎)
   #   goal 에 target 만 주고 push_speed 0 이면 v = √(2·decel·(d − d0)). 실측 범위 ≈ 0.12 ~ 0.45 m 밖은 외삽
   lanes:
@@ -80,23 +94,8 @@ mode1:
       speed_range_mps:
       - 0.2
       - 0.4
-  - name: lane3_minus_y
-    start:
-    - 0.4319
-    - -0.1562
-    - 0.0
-    dir_deg: -0.7
-    target_d_m: 0.35  # 개발용 고정 목표: 레인 입구 기준. 실물 정지 위치 확인 전 확정값 아님
-    recipe:
-      decel_mps2: 0.193
-      d0_m: 0.065
-      rmse_m: 0.029
-      distance_range_m:
-      - 0.15
-      - 0.45
-      speed_range_mps:
-      - 0.2
-      - 0.4
+  # 10/12 정정인: lane3_minus_y(goal.lane 2, −y 맨 오른쪽 · start [0.4319, −0.1562], dir −0.7°, recipe decel 0.193 d0 0.065 rmse 0.029)
+  #   제거 — 모드 3 패드 거치대가 그 자리에 놓임. 손 보기 자세는 남은 레인 입구 평균(y ≈ +0.07)을 본다
   # 받기 후보 판정과 회수. 실제 공 잡기 검증 전 자동 난이도 변경은 차단.
   catch_timeout_s: 20.0
   catch_grab_closure: 0.6
@@ -174,6 +173,7 @@ mode1:
   hand_hold_s: 1.5                # ★ 손바닥이 hand_hold_tol_m 안에 이 시간 머물러야 레인을 정하고 친다. 10/11 실로봇: 지나가는 손 한 프레임에
   hand_hold_tol_m: 0.04           #   레인 0 으로 결정돼 바로 침 (원래 레인 1). 레인 간격 ≈ 12 cm 라 4 cm 안이면 같은 레인
   hand_view_height_m: 0.30
+  hand_view_center: [0.4327, -0.0068, -0.43]   # ★ 10/12 레인 3 제거 뒤에도 손 보기 자세 그대로: 예전 레인 3개 입구 평균 (x m, y m, 방향 deg). 비우면 남은 레인 평균
   hand_view_hold_s: 2.0
   push_mode: strike               # strike | push(예전 수직 밀기)
   strike_radius_m: 0.18           # 손가락 끝이 그리는 원호 반지름 (클수록 직선에 가까움)
@@ -236,7 +236,7 @@ brain:
   #   로봇이 서 있을 때 걸린 아래 사유의 STOP(safety_monitor 비래치)은 세션을 끝내지 않고 기다렸다가, NORMAL 이 resume_hold_s
   #   이어지면 같은 시도를 이어 간다 (SLOW 는 재진행 아님, 10/11 결정). 로봇이 움직이는 중이거나 그 밖의 STOP 은 기존대로 세션 종료
   hand_stop_wait_reasons: [hand_near_robot, hand_near_centerline, hand_lost_near]
-  hand_stop_wait_modes: [1]
+  hand_stop_wait_modes: [1, 5]     # 10/11: 모드 5 추가 — 받기 자세로 가는 중 방금 막대를 받은 손이 가까워 STOP → 세션 종료되던 것
   hand_stop_resume_hold_s: 1.0
   hand_stop_prompt: "손을 조금 떼어 주세요. 손이 빠지면 이어서 할게요"
   hand_stop_prompt_s: 10.0          # 기다리는 동안 안내 간격
@@ -268,7 +268,8 @@ pick:
   z_from_table: true
   grasp_above_table_m: 0.0315     # 테이블 면 + 이만큼 = 파지 높이 (공 반지름 31.5 mm, 10/7 실측 지름 63 mm)
   z_stiffness_default: 300.0
-  tool_down_zyz: [174.8, -177.0, 175.1]   # 집는 자세 기준(툴 수직 아래, 10/6 실측). 마스크 yaw 는 이 자세에서 툴 Z 회전
+  tool_down_zyz: [174.8, -177.0, 175.1]   # 집는 자세 기준(툴 수직 아래, 10/6 실측). 마스크 주축 yaw → 손가락이 주축에 수직이 되게 베이스 Z 회전
+  finger_axis_deg: 0.0            # 위 자세에서 손가락 닫힘 방향의 베이스 각도 (0 = x). 10/8 수동: 막대를 y 로 눕히면 yaw 0 으로 집힘 → 0. 비전 집기 첫 시험에서 확인
 
 # handover (모드 5) — present_pose 는 티칭 후 기입 (posx mm·deg, 중앙선 앞 · 환자 팔 높이). 없으면 현재 자세에서 제시
 handover:
@@ -277,16 +278,37 @@ handover:
   present_pose: null
   present_zyz: [0.0, 90.0, 90.0]  # 제시 자세: 툴 z = +x (테이블과 수평, 환자 쪽), 툴 +y(그리퍼 위 RealSense) = 위 → 카메라가 환자 손을 봄
   present_margin_m: 0.06          # 한계선(중앙선)에서 로봇 쪽으로 이만큼 앞
-  present_y_m: 0.0
-  present_height_m: 0.29          # 테이블 위 높이. 툴 수평 + 한계선 6 cm 앞이면 팔이 접혀 22 cm 는 J3 152.6° > 한계 150° (10/8 에뮬레이터). 29 cm → J3 146°
+  present_y_m: -0.15             # 10/11 0.0 → −0.15: y 0 · 높이 44 cm 는 팔뚝과 툴이 일직선(J5 ≈ 6°, 손목 특이점) → 툴 힘 0 → wrench_missing STOP,
+                                  #   후퇴 직선 이동도 특이점 구역에서 not_arrived. y −0.15 면 J5 ≈ 47°, J3 126° (기울임 ±90° 전부, 후퇴 J3 120°)
+  present_height_m: 0.40          # 테이블 위 높이 (서서 받는 높이). 10/11: 실로봇 컨트롤러 J3 한계 ±135°. 0.29·y 0 은 J3 146° (POS LIMIT ERROR, 출발 못 함),
+                                  #   0.44·y 0 은 손목 특이점(위). 0.40·y −0.15 → J3 126° · J5 47°. 툴 수평(z 축과 수직)은 그대로
   # 기울이기 — goal.tilt_deg 를 tilt_range_deg 로 클램프, 베이스 tilt_axis 축으로 돌린다.
   #   x = 환자를 향한 축(= 제시 자세의 툴 z) → 물체가 환자 기준 좌우로 기울어짐 (손목 회전 훈련). 0° 막대 세로, ±90° 가로
   tilt_axis: x
   tilt_range_deg: [-90.0, 90.0]
   # 이동 속도는 맨 위 motion: — 집기 자세(툴 아래) ↔ 제시 자세(툴 수평)는 관절 이동(joint_vel_deg_s). movel 은 손목 특이점(J5≈0)에 걸림
   receive_tilt_deg: 0.0           # RECEIVE 때 그리퍼 자세 (돌려받을 땐 똑바로)
+  receive_at_retreat: true        # ★ 10/11: 받기는 건네기 후퇴 자리(제시 위치에서 3 cm 뒤·6 cm 위)에서 — 방금 받은 손 쪽으로 다시 다가가지 않음
+                                  #   (다가가면 손 근접 STOP 으로 찔끔찔끔). 기울기만 바로 세우고 환자가 넣어 줌. 대기 중엔 환자 접촉이라 손 STOP → SLOW
+  receive_threshold_n: 4.0        # 받기 판정 ①: 그리퍼에 밀어 넣는 힘 (건네기 당김 6 N 보다 작게 — 10/11 실로봇 20 s × 2 못 느낌)
+  # ★ 10/12 받기 판정 ②: 그리퍼 사이 깊이 감지 — 손목 RealSense 화면 아래 가운데(그리퍼 사이를 투영한 영역)에서 깊이 0(28 cm 안은 못 잼)
+  #   또는 near_mm 보다 가까운 픽셀 비율이 받기 시작 때보다 trigger_frac 넘게 hold_s 동안 늘면 닫음. 닫았는데 빈손이면 다시 열고 계속(max_regrasps)
+  #   10/12 실측: 아무것도 없을 때 8~12 %. 기준은 받기 시작에 한 번만 재고 base_cap(15 %) 이하로 (이미 손이 와 있어도 감지되게).
+  #   로그 '받기 대기 … 깊이 근접 지금/기준' 으로 맞춘다
+  #   require_object (10/12 #142 리뷰 (b)): 받을 물체가 비전에 최근 object_recent_s 안에 보였을 때만 깊이로 닫음 — 손가락만 들어와도 20 N 으로
+  #   닫히지 않게. 손에 든 막대 인식 모델(박성현 재학습 중) 전에는 사실상 힘(receive_threshold_n)으로만 받는다.
+  #   실로봇에서 힘만으로 못 받으면 모델 전까지 require_object: false + 받기 닫는 힘을 낮춰서 쓴다
+  receive_depth: {enabled: true, near_mm: 300.0, trigger_frac: 0.30, hold_s: 0.3, freeze_frac: 0.10, max_regrasps: 3,
+                  require_object: true, object_recent_s: 1.0, object_min_conf: 0.25}
+  # ★ 10/12 받기 기울기 = 손에 든 막대의 화면 각도(비전 /rally/perception/objects/image_axis, 신뢰도 min_conf 이상) 1 s 중앙값에 맞춤.
+  #   제자리 손목 회전만 (10° 넘게 다를 때, 한 번에 20° 까지, 모드 5 속도 × speed_scale). 그리퍼 사이에 뭔가 들어오기 시작했거나 힘 2 N 넘으면 안 돌림.
+  #   손목 각도·손가락 뿌리 줄로는 막대 기울기와 안 맞았다 (10/12 실로봇) → 장갑 끼고 막대만 본다 (HAND=0). 반대로 돌면 sign: -1, 끄기 enabled: false
+  #   10/12 #142 리뷰: 기본 끔 — 손에 든 막대 인식 모델이 아직 없고, 켜면 받기 대기가 순응 없이(딱딱하게) 돈다. 다시 켜기 전에:
+  #   회전할 때만 순응 해제·대기는 순응, 손에 든 막대 인식 확인. 깊이가 없으면 켜져 있어도 돌리지 않는다
+  receive_tilt_follow: {enabled: false, class_name: rod, min_conf: 0.25, sign: 1.0, deadband_deg: 10.0, max_step_deg: 20.0, speed_scale: 0.5, max_force_n: 2.0}
   place_after_receive: true       # RECEIVE 성공 후 마지막 PickCompliant 자리에 내려놓기
   place_above_m: 0.08
+  place_drop_m: 0.01              # ★ 10/12: 실제로 쥐었던 높이 + 이만큼 위에서 그리퍼를 열어 놓음 (정확히 제자리일 필요 없음). 3 cm(실제 4 cm)는 너무 높았음. 0 = 예전처럼 테이블 닿을 때까지 순응 하강
   place_contact_force_n: 6.0      # 내려놓으며 테이블 접촉 판정 (Z 힘 변화)
   place_below_m: 0.02             # 집었던 높이보다 이만큼 아래를 향해 순응 하강 (접촉에서 멈춤)
   stiffness: [2000, 2000, 2000, 200, 200, 200]
@@ -302,13 +324,20 @@ mode5:
   hand_wait_s: 10.0               # 손이 이 시간 안 보이면 안내하고 다시 기다림
   hand_wait_tries: 2              # 기다리는 횟수. 다 넘기면 이번 시도는 실패(notes=no_hand)로 기록하고 다음 시도
   hand_prompt: "손을 앞으로 내밀어 주세요"
+  speed_scale: 0.5                # ★ 모드 5 이동 속도 한 곳에서: motion: 의 직선·회전·관절 속도·가속 × 이 값 (집기 접근·들기, 건네기·받기,
+                                  #   물체 보기 자세). 0.5 → 관절 30 °/s · 60 °/s², 직선 75 mm/s. 접촉 하강(36 mm/s)은 그대로. 10/11: 막대 집으러 가는 게 너무 빠름
+  require_hand: false             # ★ 10/11: 집기 전에 손을 기다리지 않음 (집는 동안 카메라는 테이블만 봄 — 건네기 스킬이 잡을 때까지 기다림). true = 관측 자세에서 손 확인 뒤
   retry_reasons: [timeout, no_object]   # 이 실패 이유만 다시 시도. 안전 정지·취소·컨트롤러 오류는 재시도 안 함
   max_retries: 1
   retry_prompt: "한 번 더 해 볼게요"   # TTS 문구에 '그만'·'멈춰' 금지 (INTERFACES #45)
   # 집기 → 건네기 → 받기 (#57). 기울기 범위는 로봇과 같은 handover.tilt_range_deg 를 쓴다 (여기 두지 않음)
   object_class: rod
+  object_classes: [rod, cup]      # ★ 10/11: 보이는 것 중 시도마다 무작위 (둘 다 보이면 랜덤, 하나만 보이면 그것)
   object_wait_s: 5.0              # 비전에서 이 시간 안에 물체가 안 보이면 이번 시도 실패(notes=object_not_found)
   object_min_confidence: 0.5
+  grasp_height_m: {rod: 0.007, cup: 0.035}   # ★ 물체별 파지 높이 (테이블 면 위, m) = 두께·지름의 절반. 10/11 실측: 막대 두께 14.5 mm → 7 mm. 컵(길이 94.9 mm) 누운 지름 TODO
+  pick_view_posx: [352.6, -139.3, 481.6, 146.9, -169.3, 147.3]   # ★ 물체 보기 자세 (mm·ZYZ deg) = 관측 자세 posx 에서 y −110 mm. 10/11 jog 로 정함:
+                                  #   흰 배경(막대·컵 자리)이 화면에 다 들어옴. 세션 5 의 집기 전 /rally/robot/go_pick_view 가 관측 자세 → 여기 (직선)
   pick_x_range_m: [0.15, 0.55]    # 이 x 범위의 물체만 집는다 — 환자 손에 든 물체(중앙선 근처)를 집으러 가지 않게
   pick_retry_reasons: [pick_failed]   # 집기 재시도 (max_retries 공용). 이유 없는 abort(안전 정지일 수 있음)는 재시도 안 함
   receive_prompt: "물체를 로봇 손 사이로 다시 넣어 주세요"   # 받기 timeout 때 안내 후 1회 재시도
