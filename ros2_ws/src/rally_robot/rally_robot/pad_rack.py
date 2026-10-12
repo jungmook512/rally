@@ -181,17 +181,25 @@ def place_pad(node, log, check=lambda: None):
     time.sleep(0.3)                                          # 흔들림 가라앉힘
     check()
     node.set_contact(True)
-    hits, fz0 = [0], {}
+    hits, fz0, peak = [0], {}, [0.0]
 
     def seated():                                            # 연속 3 샘플 넘어야 (이동 중 힘 튐 무시)
-        hits[0] = hits[0] + 1 if abs(get_tool_force()[2] - fz0["z"]) >= cfg["pad_insert_contact_n"] else 0
+        # 10/12 밤 실로봇: 홈 입구에 걸리면 옆 방향 힘이 먼저 커져 Z 변화 6 N 전에 합력 25 N(force_limit STOP) → 세 축 힘 변화로 본다
+        f = get_tool_force()
+        dev = float(np.linalg.norm([f[i] - fz0["f"][i] for i in range(3)]))
+        peak[0] = max(peak[0], dev)
+        hits[0] = hits[0] + 1 if dev >= cfg["pad_insert_contact_n"] else 0
         return hits[0] >= 3
 
     try:
         with compliance(cfg["pad_insert_stiffness"], log):
-            fz0["z"] = get_tool_force()[2]                   # 순응을 켠 뒤의 영점
-            how = move_checked(node, B, min(lv, 20.0), ca, on_poll=seated, stall_ok=True)
-            cur = [float(v) for v in get_current_posx()[0]]
+            fz0["f"] = [float(v) for v in get_tool_force()]   # 순응을 켠 뒤의 영점
+            try:
+                how = move_checked(node, B, min(lv, 20.0), ca, on_poll=seated, stall_ok=True)
+            finally:
+                cur = [float(v) for v in get_current_posx()[0]]
+                log.info(f"[pad_rack] 하강 끝 TCP {[round(v) for v in cur[:3]]} (입구 위 {[round(v) for v in P[:3]]} → G {[round(v) for v in pts['G'][:3]]})"
+                         f" · 힘 변화 최대 {peak[0]:.1f} N")
             off = float(np.linalg.norm(np.array(cur[:3]) - np.array(pts["G"][:3])))
             log.info(f"[pad_rack] 꽂힘 ({how}) — G 와 {off:.1f} mm")
             if how == "done":

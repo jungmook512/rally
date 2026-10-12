@@ -49,6 +49,7 @@ DEFAULTS = dict(
     pad_offset_tool_m=[-0.0175, -0.1043, 0.0285],       # TCP → 패드 중심, 공구 좌표 (10/12 정동휘 실측 #138, z 는 #155 보정값 0.0285 — skills.yaml 과 같게. yaml 이 있으면 yaml 이 이김)
     pad_normal=[0.697, -0.123, 0.706],                  # 패드 면 법선 base (위로 45° + 그리퍼 −10° 회전, #138)
     decide_after_s=0.16,
+    decide_max_s=0.40,                                  # 결정 시점 예측이 품질 미달이면 이때까지 더 기다림 (10/12 밤)
     right_max_m=0.15,
     updown_max_m=0.15,
     down_max_m=0.08,                                    # 아래(투구자 쪽): 대기 자세 −9.4 cm 에 자기충돌 (10/11 실측)
@@ -172,11 +173,15 @@ def after_catch(node, goal_handle, ctx: CatchContext) -> None:
 
     지금 동작 (정정인 10/12): mode3.pad_place_after_catch 이고 거치대 교시가 있으면 — 대기 자세로 관절 복귀(요격 자리에서 U 로
       바로 가면 TCP 가 작업 공간 밖으로 휨) → pad_rack.place_pad (대기 자세 → 손목 먼저·팔 나중 → U → 순응 꽂기 → 놓고 빠짐)
-      → skip_return. 받았든 놓쳤든 같다. ④~⑥ 공 떼기·공 거치대는 아직 (패드에 공이 붙은 채 거치대에 꽂힘).
+      → skip_return. ④~⑥ 공 떼기·공 거치대는 아직 (패드에 공이 붙은 채 거치대에 꽂힘).
+      10/12 밤 정정인 "놓쳤는데 왜 꽂음": 놓쳤으면(caught 거짓) 꽂지 않고 패드를 쥔 채 대기 자세로 복귀 (pad_place_only_if_caught).
     """
     from rally_robot import pad_rack
     from rally_robot.dsr_helpers import movej_checked
     if not (ctx.cfg.get("pad_place_after_catch", True) and pad_rack.taught(node)):
+        return None
+    if ctx.cfg.get("pad_place_only_if_caught", True) and not ctx.caught:
+        node.get_logger().info("[catch_ball] 놓침 — 패드를 쥔 채 대기 자세로 (거치대에 꽂지 않음)")
         return None
     node.check_stop(goal_handle)
     jv, ja = pad_rack.joint_speeds(node)
@@ -221,14 +226,22 @@ def execute(node):
             raise SkillAbort("timeout", stopped=True)
 
         def wait_decide(pred: Prediction, t_goal: float) -> Prediction:
-            """decide_after_s 까지 최신 예측으로 갱신. 예측이 끊기면 마지막 것."""
-            while pred.since_release < cfg["decide_after_s"]:
+            """decide_after_s 까지 최신 예측으로 갱신. 그때 예측 품질이 기준(gate_std_max_m·gate_n_obs_min) 미달이면
+            decide_max_s 까지 더 기다린다 — 10/12 밤 실로봇 16회: 0.25 s 시점 예측(관측 5·std 12~14 cm)이 38 cm 빗나가
+            '반경 밖'으로 안 움직였는데 그 뒤 예측은 좋아졌다. 예측이 끊기면 마지막 것."""
+            while True:
                 node.check_stop(goal_handle)
                 time.sleep(0.005)
                 newer = landing.latest(newer_than=t_goal, max_age_s=cfg["landing_max_age_s"])
                 if newer is None:
                     break
                 pred = newer
+                if pred.since_release < cfg["decide_after_s"]:
+                    continue
+                if quality_ok(pred.std, pred.n_obs, cfg["gate_std_max_m"], cfg["gate_n_obs_min"]) or pred.since_release >= cfg["decide_max_s"]:
+                    break
+            if pred.since_release > cfg["decide_after_s"] + 0.02:
+                log.info(f"[catch_ball] 예측 품질 기다림 → 놓은 뒤 {pred.since_release:.2f} s 에 결정 (std {pred.std[0] * 100:.1f}·{pred.std[1] * 100:.1f} cm, 관측 {pred.n_obs})")
             return pred
 
         def judge(t_from_mono: float, t_cross_ros: float) -> tuple[bool, float, list[float]]:
@@ -262,7 +275,10 @@ def execute(node):
 
             if goal.catch_radius > 0 and plan.offset_m > goal.catch_radius:
                 res.failure_reason = "out_of_radius"
-                log.info(f"[catch_ball] 예측점이 대기 위치에서 {plan.offset_m:.2f} m — 반경 밖, 움직이지 않음")
+                d = [float(a - b) for a, b in zip(pred.point, pad0)]
+                log.info(f"[catch_ball] 예측점이 대기 위치에서 {plan.offset_m:.2f} m — 반경 밖, 움직이지 않음 · 예측 교차점 "
+                         f"({pred.point[0]:.3f}, {pred.point[1]:.3f}, {pred.point[2]:.3f}) m, 패드 중심 ({pad0[0]:.3f}, {pad0[1]:.3f}, {pad0[2]:.3f}) m, "
+                         f"차이 x {d[0] * 100:+.0f} y {d[1] * 100:+.0f} z {d[2] * 100:+.0f} cm (std {pred.std[0] * 100:.1f}·{pred.std[1] * 100:.1f} cm, 관측 {pred.n_obs})")
             elif not quality_ok(pred.std, pred.n_obs, cfg["gate_std_max_m"], cfg["gate_n_obs_min"]):
                 res.failure_reason = "low_confidence"
                 log.info(f"[catch_ball] 예측 품질 미달 (std {pred.std[0] * 100:.1f}·{pred.std[1] * 100:.1f} cm, 관측 {pred.n_obs}) — 움직이지 않음")
