@@ -7,7 +7,8 @@ WORKDIR /ros2_ws
 COPY ros2_ws/src/rally_interfaces src/rally_interfaces
 COPY ros2_ws/src/rally_bringup    src/rally_bringup
 COPY ros2_ws/src/rally_voice     src/rally_voice
-RUN . /opt/ros/jazzy/setup.sh && colcon build --merge-install --packages-up-to rally_voice
+RUN . /opt/ros/jazzy/setup.sh && colcon build --merge-install --packages-up-to rally_voice rally_bringup
+# rally_bringup: compose 가 pc2_perception.launch.py part:=voice 로 띄우는데 rally_voice 가 의존하지 않아 빌드에서 빠졌었다 (10/13)
 # 빌드된 패키지 수 확인용: docker build --target build ... 2>&1 | grep Summary
 
 FROM ros:jazzy-ros-base AS runtime
