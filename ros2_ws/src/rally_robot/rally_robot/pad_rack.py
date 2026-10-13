@@ -12,7 +12,8 @@
   (요격·받은 뒤 처리는 그 사이에 — 나중에)
 꽂기 place_pad: (대기 자세에 있으면) 대기 자세 → U 로 · 아니면 U(관절) → 홈 입구 위 P(G 에서 홈 축 따라 pre_m)
                 → 순응(옆·회전 무르게) 하강 G 너머 below_m 까지,
-                위아래 힘이 contact_n 넘으면(연속 3 샘플) 멈춤 → 열기 → 순응 해제 → 지금 자리에서 (A − G) 만큼 직선으로 빠짐
+                세 축 힘 변화가 contact_n 넘으면(연속 3 샘플) 멈춤 → G 위 max_gap 보다 높으면 입구에 걸린 것: 쥔 채 P 로 빠져 중단
+                → 아니면 열기 → 순응 해제 → 지금 자리에서 (A − G) 만큼 직선으로 빠짐
 10/12 실로봇: 쥘 때마다 폭 28.7~31.2 mm — 손잡이를 쥐는 자리가 몇 mm 달라 패드가 그만큼 어긋난 채 단단한 직선으로 꽂다가
 거치대에 부딪혀 force_limit STOP. 옆을 무르게 하면 패드가 홈 모서리를 따라 미끄러져 들어간다 (모드 5 내려놓기·공 집기와 같은 방식).
 U ↔ 대기 자세: 바로 관절 이동하면 TCP 가 y −0.62 m 까지 나가 작업 공간(±0.60) 밖 (10/12 계산). 팔(J1~3)을 먼저 대기 자세 값으로,
@@ -30,7 +31,9 @@ from rally_robot.dsr_helpers import SkillAbort, compliance, motion_speeds, move_
 DEFAULTS = dict(
     pad_rack_grasp_posj=None, pad_rack_approach_posj=None, pad_rack_lift_posj=None,
     pad_grip_min_mm=24.0, pad_grip_max_mm=38.0,             # 손잡이 쥔 폭 (10/12: 28.7~31.2 mm). 밖이면 잘못 쥔 것
-    pad_insert_pre_m=0.03,                                  # 꽂기: 홈 입구 위 이만큼에서 한 번 멈춘 뒤 순응 하강
+    pad_insert_pre_m=0.08,                                  # 꽂기: G 위 이만큼(P)까지만 단단한 직선, 그 아래는 순응 하강. 10/12 20:29 실로봇: 0.03 이면
+                                                            #   U → P 단단한 직선 끝에서 패드가 거치대에 걸려 96 N (컨트롤러 External_Force + force_limit STOP)
+    pad_insert_max_gap_m=0.02,                              # 힘으로 멈춘 자리가 G 위 이보다 높으면 홈 입구에 걸린 것 — 놓지 않고 P 로 빠져 중단
     pad_insert_below_m=0.01,                                # G 보다 이만큼 더 내려가라고 명령 (닿으면 힘으로 멈춤)
     pad_insert_contact_n=6.0,                               # 위아래 힘 변화 이 이상 연속 3 샘플 → 다 꽂힘
     pad_insert_stiffness=[500, 500, 1000, 30, 30, 30],      # 꽂기 순응 [x y z N/m, rx ry rz Nm/rad] — 옆·회전 무르게
@@ -86,6 +89,12 @@ def insert_points(G, U, pre_m, below_m):
     return [float(v) for v in g + axis * pre_m * 1000.0] + rot, [float(v) for v in g - axis * below_m * 1000.0] + rot
 
 
+def above_seat(cur, G, U) -> float:
+    """지금 자리가 G 보다 홈 축(G → U) 방향으로 몇 mm 위인지 (아래면 음수). 순수 함수."""
+    g, d = np.array(G[:3], float), np.array(U[:3], float) - np.array(G[:3], float)
+    return float((np.array(cur[:3], float) - g) @ (d / np.linalg.norm(d)))
+
+
 def retreat_from(cur, G, A):
     """지금 자리(순응으로 G 에서 몇 mm 비켜 있을 수 있음)에서 (A − G) 만큼 직선으로 빠지는 점. 자세는 A. 순수 함수.
     절대 A 로 가면 비켜 선 만큼 손가락이 손잡이를 옆으로 긁는다."""
@@ -120,6 +129,14 @@ def pick_pad(node, log, check=lambda: None):
     tv, ta, lv, ca, jv, ja = _speeds(node, cfg)
     open_mm, force = node.gripper_cfg("pad")
     log.info(f"[pad_rack] 집기 A {[round(v) for v in pts['A'][:3]]} → G {[round(v) for v in pts['G'][:3]]} → U {[round(v) for v in pts['U'][:3]]}")
+    from DSR_ROBOT2 import get_current_posj
+    ready = _ready_posj(node)
+    if ready is not None and _near(get_current_posj(), ready):
+        # 10/13 실로봇: 대기 자세 → A 한 번에 관절 이동하면 TCP 가 y −0.675 까지 휘어 workspace_limit STOP (순기구학 여유 −7.5 cm).
+        # 꽂기(place_pad)처럼 손목 먼저 A 값으로(팔은 그대로) → 팔을 A 로: 여유 +9.1 cm
+        via = [float(v) for v in ready[:3]] + [float(v) for v in cfg["pad_rack_approach_posj"][3:6]]
+        check()
+        movej_checked(node, via, jv, ja)
     check()
     movej_checked(node, cfg["pad_rack_approach_posj"], jv, ja)
     ok, _, _ = node.gripper(open_mm, force)
@@ -205,7 +222,12 @@ def place_pad(node, log, check=lambda: None):
                 log.info(f"[pad_rack] 하강 끝 TCP [{', '.join(f'{v:.0f}' for v in cur[:3])}] (입구 위 {[round(v) for v in P[:3]]} → G {[round(v) for v in pts['G'][:3]]})"
                          f" · 힘 변화 최대 {peak[0]:.1f} N")
             off = float(np.linalg.norm(np.array(cur[:3]) - np.array(pts["G"][:3])))
-            log.info(f"[pad_rack] 꽂힘 ({how}) — G 와 {off:.1f} mm")
+            gap = above_seat(cur, pts["G"], pts["U"])
+            if gap > cfg["pad_insert_max_gap_m"] * 1000.0:
+                log.warning(f"[pad_rack] G 위 {gap:.0f} mm 에서 걸림 — 패드를 쥔 채 입구 위로 빠지고 중단")
+                move_checked(node, P, lv, ca, stall_ok=True)
+                raise SkillAbort(f"pad_insert_blocked ({gap:.0f} mm)")
+            log.info(f"[pad_rack] 꽂힘 ({how}) — G 와 {off:.1f} mm (G 위 {gap:.1f} mm)")
             if how == "done":
                 log.warning("[pad_rack] 힘 감지 없이 끝까지 내려감 — 패드가 홈에 들어갔는지 확인")
             ok, _, _ = node.gripper(open_mm, force)

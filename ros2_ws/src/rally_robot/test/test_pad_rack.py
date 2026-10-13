@@ -68,3 +68,10 @@ def test_taught_needs_all_three_points():
     assert pr.taught(SimpleNamespace(cfg={"mode3": full}))
     assert not pr.taught(SimpleNamespace(cfg={"mode3": {**full, "pad_rack_lift_posj": []}}))
     assert not pr.taught(SimpleNamespace(cfg={}))
+
+
+def test_above_seat_along_slot_axis():
+    P, B = pr.insert_points(G, U, 0.08, 0.01)
+    assert pr.above_seat(P, G, U) == pytest.approx(80.0)
+    assert pr.above_seat(B, G, U) == pytest.approx(-10.0)
+    assert pr.above_seat([G[0] + 3.0, G[1] - 2.0, G[2], *G[3:]], G, U) == pytest.approx(0.0, abs=0.1)   # 옆으로 비켜도 높이는 그대로

@@ -214,3 +214,27 @@ def test_window_close_delay_caps_at_window_max():
     # 이미 상한을 넘김 / 교차가 이미 지남 → 바로
     assert window_close_delay(10.4, 10.0, 1.5, 0.5, 1.6, 1.5) == 0.0
     assert window_close_delay(9.0, 10.0, 1.5, 0.5, 0.3, 1.5) == 0.0
+
+
+def test_reach_max_keeps_direction_and_caps_length():
+    _, u, w = plane_axes(N45)
+    plan = intercept(READY, PAD, N45, PAD + 0.32 * u - 0.35 * w, 0.35, 0.35, down_max_m=0.08, reach_max_m=0.35)
+    assert np.hypot(plan.du, plan.dw) == pytest.approx(0.35)
+    assert plan.dw / plan.du == pytest.approx(-0.35 / 0.32)        # 방향 유지
+    assert plan.clipped
+    near = intercept(READY, PAD, N45, PAD + 0.10 * u - 0.10 * w, 0.35, 0.35, down_max_m=0.08, reach_max_m=0.35)
+    assert near.du == pytest.approx(0.10) and near.dw == pytest.approx(-0.10) and not near.clipped
+
+
+def test_overshoot_extends_along_move_and_respects_limits():
+    _, u, w = plane_axes(N45)
+    base = intercept(READY, PAD, N45, PAD + 0.12 * u - 0.09 * w, 0.35, 0.35, down_max_m=0.08, reach_max_m=0.35)
+    over = intercept(READY, PAD, N45, PAD + 0.12 * u - 0.09 * w, 0.35, 0.35, down_max_m=0.08, reach_max_m=0.35, overshoot_m=0.05)
+    assert np.hypot(over.du, over.dw) == pytest.approx(np.hypot(base.du, base.dw) + 0.05)
+    assert over.dw / over.du == pytest.approx(base.dw / base.du)                       # 방향 유지
+    down = intercept(READY, PAD, N45, PAD + 0.06 * w, 0.35, 0.35, down_max_m=0.08, reach_max_m=0.35, overshoot_m=0.05)
+    assert down.dw == pytest.approx(0.08) and down.du == pytest.approx(0.0)          # 아래는 8 cm 에서 잘림 (자기충돌)
+    far = intercept(READY, PAD, N45, PAD + 0.34 * u, 0.35, 0.35, down_max_m=0.08, reach_max_m=0.35, overshoot_m=0.05)
+    assert far.du == pytest.approx(0.35)                                             # 오른쪽 한계
+    still = intercept(READY, PAD, N45, PAD + 0.0 * u, 0.35, 0.35, down_max_m=0.08, reach_max_m=0.35, overshoot_m=0.05)
+    assert still.du == pytest.approx(0.0) and still.dw == pytest.approx(0.0)         # 안 움직이는 공은 더 가지 않음

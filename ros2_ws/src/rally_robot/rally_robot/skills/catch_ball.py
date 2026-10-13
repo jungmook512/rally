@@ -60,9 +60,14 @@ DEFAULTS = dict(
     pad_normal=[0.697, -0.123, 0.706],                  # 패드 면 법선 base (위로 45° + 그리퍼 −10° 회전, #138)
     decide_after_s=0.25,                                # 10/12 밤 0.16 → 0.25 (skills.yaml 과 같게 — 근거는 yaml 주석)
     decide_max_s=0.40,                                  # 결정 시점 예측이 품질 미달이면 이때까지 더 기다림 (10/12 밤)
+    decide_ttg_s=0.0,                                   # >0 이면 예측 교차까지 이만큼 남을 때까지 더 보고 결정 (10/13, 0 = 끔)
+    ball_removal_wait_s=0.0,                            # 받은 뒤 대기 자세에서 접촉 예정 켜고 기다림 (공 떼기, 10/13). 0 = 안 기다림
     right_max_m=0.15,
     updown_max_m=0.15,
     down_max_m=0.08,                                    # 아래(투구자 쪽): 대기 자세 −9.4 cm 에 자기충돌 (10/11 실측)
+    reach_max_m=0.35,                                   # 두 축 합 이동 상한 — 대각선(오른쪽 32·위 35 cm)은 두산 NOT REACHABLE (10/13)
+    catch_overshoot_m=0.0,                              # 목표를 이동 방향으로 이만큼 더 (감속 구간을 예측점 뒤로, 10/13 정정인). catch_plan.intercept
+    resend_min_interval_s=0.3,                          # 비행 중 갱신: 직전 amovel 뒤 최소 이 간격 (10/13: 0.05 s 뒤 재전송이 첫 동작에 겹쳐 J1 150 °/s 초과·외력 103 N 보호 정지)
     catch_vel_mm_s=450.0,                               # 위아래 730 mm/s 는 관절 속도 121 % 로 불가 (10/11 계산)
     catch_acc_mm_s2=2000.0,                             # #144 승인값 (받기 창 130 N, #165 와 함께). 1000 은 10/10 실측 20 cm 도착 0.85 s
     return_vel_mm_s=150.0,
@@ -159,6 +164,16 @@ def pickup_pad(node, goal_handle, cfg: dict) -> None:
     """
     if node.holding_now():
         return
+    # 10/13 실로봇: 터미널 2 재시작 직후엔 명령 기록이 없고 grip 비트도 0 (패드를 쥔 폭 26.4 mm 인데) → 빈손으로 보고
+    # 대기 자세에서 거치대로 집으러 가다 workspace_limit STOP. 폭이 뭔가 쥔 폭이면 패드 힘으로 한 번 다시 쥐어 확인 (팔은 안 움직임)
+    st = node.gripper_state
+    open_mm, grip_force = node.gripper_cfg("pad")
+    if st is not None and 20.0 <= st[1] < open_mm - 5.0:
+        ok, width, detected = node.gripper(0.0, grip_force)
+        node.get_logger().info(f"[catch_ball] 명령 기록 없이 폭 {st[1]:.1f} mm — 다시 쥠: 폭 {width:.1f} mm, 물체 {detected}")
+        if ok and detected:
+            return
+        node.gripper(open_mm, grip_force)                    # 빈손이면 열어 두고 거치대에서 집음
     from rally_robot import pad_rack
     if pad_rack.taught(node):
         pad_rack.pick_pad(node, node.get_logger(), lambda: node.check_stop(goal_handle))
@@ -279,10 +294,16 @@ def execute(node):
                 pred = newer
                 if pred.since_release < cfg["decide_after_s"]:
                     continue
-                if quality_ok(pred.std, pred.n_obs, cfg["gate_std_max_m"], cfg["gate_n_obs_min"]) or pred.since_release >= cfg["decide_max_s"]:
+                if pred.since_release >= cfg["decide_max_s"]:
+                    break
+                # 10/13 오후: 높은 포물선(비행 0.9~1.4 s)은 놓은 뒤 0.25 s 예측이 14~36 cm 빗나감. 예측 교차까지 decide_ttg_s 남을 때까지
+                # 더 보고 결정하면 3~6 cm (bag 1511, 4 투구), 빠른 투구는 0.25~0.31 s 에 이미 그 조건이라 거의 그대로 (bag 0738, 1~7 cm)
+                ttg_ok = cfg["decide_ttg_s"] <= 0 or pred.t_cross - ros_now() <= cfg["decide_ttg_s"]
+                if quality_ok(pred.std, pred.n_obs, cfg["gate_std_max_m"], cfg["gate_n_obs_min"]) and ttg_ok:
                     break
             if pred.since_release > cfg["decide_after_s"] + 0.02:
-                log.info(f"[catch_ball] 예측 품질 기다림 → 놓은 뒤 {pred.since_release:.2f} s 에 결정 (std {pred.std[0] * 100:.1f}·{pred.std[1] * 100:.1f} cm, 관측 {pred.n_obs})")
+                log.info(f"[catch_ball] 예측 품질·남은 시간 기다림 → 놓은 뒤 {pred.since_release:.2f} s 에 결정 (std {pred.std[0] * 100:.1f}·{pred.std[1] * 100:.1f} cm, "
+                         f"관측 {pred.n_obs}, 교차까지 {pred.t_cross - ros_now():.2f} s)")
             return pred
 
         t_open = {"mono": None}
@@ -338,7 +359,7 @@ def execute(node):
             window.schedule_close(window_close_delay(pred.t_cross, ros_now(), cfg["cross_max_after_s"], cfg["contact_window_after_cross_s"],
                                                      time.monotonic() - t_open["mono"], cfg["contact_window_max_s"]))
             plan = intercept(ready, pad0, cfg["pad_normal"], pred.point if target is None else target,
-                             cfg["right_max_m"], cfg["updown_max_m"], cfg["down_max_m"])
+                             cfg["right_max_m"], cfg["updown_max_m"], cfg["down_max_m"], cfg["reach_max_m"], cfg["catch_overshoot_m"])
             res.landing_predicted = _point(pred.point)
 
             if goal.catch_radius > 0 and plan.offset_m > goal.catch_radius:
@@ -360,30 +381,54 @@ def execute(node):
                 res.reaction_time_s = float(time.monotonic() - t_detect)
                 log.info(f"[catch_ball] 요격 오른쪽 {plan.du * 100:.1f} · 아래 {plan.dw * 100:.1f} cm"
                          f"{' (잘림)' if plan.clipped else ''}, 놓은 뒤 {pred.since_release:.2f} s, 교차까지 {pred.t_cross - ros_now():.2f} s")
-                sent = {"n": 0, "plan": plan, "pred": pred}
+                sent = {"n": 0, "plan": plan, "pred": pred, "t_cmd": time.monotonic()}
 
                 def retarget():
                     """비행 중 갱신 ③ (기본 꺼짐): 새 예측이 처음 예측점에서 3 cm 넘게 벗어나면 새 요격점으로 한 번 더."""
                     newer = landing.latest(newer_than=t_goal, max_age_s=cfg["landing_max_age_s"])
-                    if newer is None or not should_resend(pred.point, newer.point, newer.since_release, sent["n"], cfg):
+                    if newer is None:
+                        return None
+                    if newer.since_release != why["last_t"]:                 # 10/12 밤 진단: 재전송이 안 될 때 왜 안 되는지 (새 예측마다 한 번)
+                        why["last_t"] = newer.since_release
+                        why["seen"] += 1
+                        d = float(np.linalg.norm(np.asarray(newer.point) - np.asarray(pred.point)))
+                        if newer.since_release > float(cfg.get("resend_until_release_s", 0.30)):
+                            why["late"] += 1
+                        elif d <= float(cfg.get("resend_threshold_m", 0.03)):
+                            why["near"] += 1
+                        elif not quality_ok(newer.std, newer.n_obs, cfg["gate_std_max_m"], cfg["gate_n_obs_min"]):
+                            why["quality"] += 1
+                    # 10/13: 마지막으로 보낸 예측과 비교 (처음 예측이 아니라) · 교차 직전(resend_min_ttg_s 안)엔 안 보냄
+                    # · 직전 amovel 뒤 resend_min_interval_s 안엔 안 보냄 (겹치면 속도가 더해짐 — 10/12 측정 0.15 s 겹침·0.30 s 안 겹침, 10/13 보호 정지)
+                    if newer.t_cross - ros_now() < float(cfg.get("resend_min_ttg_s", 0.0)):
+                        return None
+                    if time.monotonic() - sent["t_cmd"] < cfg["resend_min_interval_s"]:
+                        why["interval"] += 1
+                        return None
+                    if not should_resend(sent["pred"].point, newer.point, newer.since_release, sent["n"], cfg):
                         return None
                     if not quality_ok(newer.std, newer.n_obs, cfg["gate_std_max_m"], cfg["gate_n_obs_min"]):
                         return None
-                    new_plan = intercept(ready, pad0, cfg["pad_normal"], newer.point, cfg["right_max_m"], cfg["updown_max_m"], cfg["down_max_m"])
+                    new_plan = intercept(ready, pad0, cfg["pad_normal"], newer.point, cfg["right_max_m"], cfg["updown_max_m"], cfg["down_max_m"], cfg["reach_max_m"], cfg["catch_overshoot_m"])
                     if goal.catch_radius > 0 and new_plan.offset_m > goal.catch_radius:
+                        why["radius"] += 1
                         return None
                     sent["n"] += 1
-                    sent["plan"], sent["pred"] = new_plan, newer
+                    sent["plan"], sent["pred"], sent["t_cmd"] = new_plan, newer, time.monotonic()
                     log.info(f"[catch_ball] 비행 중 갱신 {sent['n']}회 — 예측 {np.linalg.norm(newer.point - pred.point) * 100:.1f} cm 이동, "
                              f"놓은 뒤 {newer.since_release:.2f} s, 새 요격 오른쪽 {new_plan.du * 100:.1f} · 아래 {new_plan.dw * 100:.1f} cm")
                     return new_plan.tcp_posx
 
+                why = dict(last_t=None, seen=0, late=0, near=0, quality=0, radius=0, interval=0)
                 # 정책 보정점으로 출발했으면 재전송 안 함 — retarget 은 보정 없는 예측점으로 덮어쓴다 (#175 리뷰 2)
                 resend = cfg["resend_enabled"] and target is None
                 if cfg["resend_enabled"] and target is not None:
                     log.info("[catch_ball] 정책 보정점으로 출발 — 비행 중 갱신(resend) 끔")
                 move_checked(node, plan.tcp_posx, cfg["catch_vel_mm_s"], cfg["catch_acc_mm_s2"],
                              retarget=retarget if resend else None)
+                if resend:
+                    log.info(f"[catch_ball] 비행 중 갱신 {sent['n']}회 — 이동 중 새 예측 {why['seen']}개: 창(놓은 뒤 {cfg['resend_until_release_s']:.2f} s) 지남 {why['late']} · "
+                             f"3 cm 안 {why['near']} · 품질 미달 {why['quality']} · 반경 밖 {why['radius']} · 간격 {cfg['resend_min_interval_s']:.2f} s 안 {why['interval']}")
                 plan, pred = sent["plan"], sent["pred"]
                 res.landing_predicted = _point(pred.point)
                 res.robot_travel_mm = float(np.hypot(plan.du, plan.dw) * 1000.0)
@@ -411,6 +456,21 @@ def execute(node):
             if not ctx.skip_return:
                 node.check_stop(goal_handle)
                 move_checked(node, ready, cfg["return_vel_mm_s"], cfg["return_acc_mm_s2"])
+            # 10/13 실로봇: 받은 공을 대기 자세에서 떼면 힘 급변이 nudge STOP 으로 잡힘(3회). 대기 자세에 멈춘 채 '접촉 예정' 을 켜고
+            # ball_removal_wait_s 동안 기다린다 — nudge 판정만 쉬고 힘 한계 25 N 은 그대로 (safety_monitor 의 기존 contact_expected 규칙)
+            # 10/13: 측면 판정이 패드 한가운데 붙은 공을 못 봐 '놓침'으로 나오는 경우가 있어(패드가 측면 카메라에 거의 옆면) 받았든 아니든
+            # 투구가 있었으면 기다린다 — 사람이 붙은 공을 떼는 동안. 10/13 실로봇: 품질 미달로 안 움직였는데 공이 패드에 붙어
+            # 다음 시도 대기 중에 떼다가 nudge STOP → 이동 여부와 상관없이 (투구가 없으면 위에서 timeout 으로 끝나 여기 안 옴)
+            if not ctx.skip_return and cfg["ball_removal_wait_s"] > 0:
+                node.set_contact(True)
+                log.info(f"[catch_ball] 공이 붙어 있으면 떼 주세요 — {cfg['ball_removal_wait_s']:.0f} s (접촉 예정: nudge 만 쉼, 힘 한계 그대로, 로봇 정지)")
+                try:
+                    t_rm = time.monotonic()
+                    while time.monotonic() - t_rm < cfg["ball_removal_wait_s"]:
+                        node.check_stop(goal_handle)
+                        time.sleep(0.1)
+                finally:
+                    node.set_contact(False)
             goal_handle.succeed()
             return res
         except SkillAbort as e:
