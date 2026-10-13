@@ -13,6 +13,12 @@
     # pyrealsense2
     python3 scripts/capture_realsense.py --out data/raw/ball_table --depth
 
+모드 3 벨크로 공 (10/13): 시연 추론과 같은 고정 노출(20 · gain 128, config/cameras.yaml)·60 fps 로 찍는다 — 자동 노출로 찍은 사진은
+  밝기·번짐이 달라 학습해도 시연 때 안 맞는다. 날아가는 공은 b 연사나 --auto 로.
+    python3 scripts/capture_realsense.py --mode3 --out data/raw/velcro_ball_1013 --prefix side
+    python3 scripts/capture_realsense.py --exposure 20 --gain 128 --out ...   # 값만 직접
+  (노출 고정은 pyrealsense2 소스만. --ros 면 ros2 param set <노드> rgb_camera.exposure 20 등으로 드라이버에 직접)
+
 키: SPACE 한 장 · b 연사(--burst 장, --burst-interval 간격) · q 종료.
 파일명: <out>/<prefix>_<번호>.png  (깊이는 <prefix>_<번호>_depth.png, 단위 mm, uint16)
 해상도는 segmenter 가 쓸 스트림과 같게 (848x480). 학습 사진과 추론 입력이 다르면 mAP 가 떨어진다.
@@ -91,7 +97,7 @@ class RosSource:
 
 # ---------------------------------------------------------------- 프레임 소스 2: pyrealsense2
 class RsSource:
-    def __init__(self, width: int, height: int, fps: int, want_depth: bool):
+    def __init__(self, width: int, height: int, fps: int, want_depth: bool, exposure: int = 0, gain: int = 0):
         try:
             import pyrealsense2 as rs
         except ImportError:
@@ -104,6 +110,15 @@ class RsSource:
         profile = self.pipe.start(cfg)
         self.align = rs.align(rs.stream.color) if want_depth else None
         self.scale = profile.get_device().first_depth_sensor().get_depth_scale() if want_depth else None
+        if exposure > 0:   # 자동 끄기 → 노출 → gain (camera_params.exposure_params 와 같은 순서)
+            color_sensor = profile.get_device().first_color_sensor()
+            color_sensor.set_option(rs.option.enable_auto_exposure, 0)
+            color_sensor.set_option(rs.option.exposure, float(exposure))
+            if gain > 0:
+                color_sensor.set_option(rs.option.gain, float(gain))
+            print(f"[capture] 노출 고정: exposure={exposure}" + (f", gain={gain}" if gain > 0 else ""))
+            for _ in range(max(fps // 2, 5)):   # 바뀐 노출이 반영될 때까지 0.5 s 버림
+                self.pipe.wait_for_frames()
         for _ in range(fps):  # 자동 노출 안정 (1 초 버림)
             self.pipe.wait_for_frames()
 
@@ -138,12 +153,20 @@ def main() -> None:
     ap.add_argument("--burst-interval", type=float, default=0.3, help="연사 간격 [s]")
     ap.add_argument("--auto", type=int, default=0, help="창 없이 N 장 자동 저장 후 종료")
     ap.add_argument("--interval", type=float, default=0.5, help="--auto 간격 [s]")
+    ap.add_argument("--exposure", type=int, default=0, help="컬러 고정 노출 (0 = 자동). 모드 3 은 20")
+    ap.add_argument("--gain", type=int, default=0, help="컬러 gain (0 = 그대로). 모드 3 은 128")
+    ap.add_argument("--mode3", action="store_true", help="모드 3 벨크로 공: --exposure 20 --gain 128 --fps 60 (config/cameras.yaml 과 같게)")
     args = ap.parse_args()
+    if args.mode3:
+        args.exposure, args.gain, args.fps = args.exposure or 20, args.gain or 128, 60
+    if args.ros and args.exposure:
+        print("[capture] --ros 에서는 노출을 못 바꿈 — 드라이버에 ros2 param set 으로 (위 사용법)")
 
     saver = Saver(args.out, args.prefix)
     src = RosSource(args.color_topic, args.depth_topic if args.depth else None) if args.ros \
-        else RsSource(args.width, args.height, args.fps, args.depth)
-    print(f"[capture] 저장 {args.out}, 시작 번호 {saver.idx}, 소스 {'ROS' if args.ros else 'pyrealsense2'}")
+        else RsSource(args.width, args.height, args.fps, args.depth, args.exposure, args.gain)
+    print(f"[capture] 저장 {args.out}, 시작 번호 {saver.idx}, 소스 {'ROS' if args.ros else 'pyrealsense2'}, "
+          f"{args.width}x{args.height}@{args.fps}, 노출 {args.exposure or '자동'}")
 
     try:
         if args.auto:
