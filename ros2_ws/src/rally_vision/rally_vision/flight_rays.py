@@ -103,7 +103,7 @@ def fit_linear(obs: list[Obs], t_ref: float, k: float, speed0: float = 5.5, iter
         cov = np.linalg.inv(Am.T @ Am) * sig2
     except np.linalg.LinAlgError:
         cov = None
-    return dict(x=x, cov=cov, res_px=res, keep=keep, ok=cov is not None and bool(np.all(np.isfinite(x))))
+    return dict(x=x, cov=cov, res_px=res, keep=keep, ok=cov is not None and bool(np.all(np.isfinite(x))) and bool(np.all(np.isfinite(cov))))   # cov NaN 이면 std 비교가 통과해 버림 (#182 리뷰)
 
 
 def fit_trim_lead(obs: list[Obs], k: float, lead_px: float = 4.0, lead_k: float = 2.5, max_trim_frac: float = 0.4,

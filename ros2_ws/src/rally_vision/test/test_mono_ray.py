@@ -161,3 +161,20 @@ def test_trim_lead_drops_in_hand_phase():
     assert kept[0].t >= -1 / 60 - 1e-9                       # 손 구간 대부분 잘림
     assert np.linalg.norm(r["x"][3:] - truth[3:]) < np.linalg.norm(raw["x"][3:] - truth[3:])
     assert np.linalg.norm(r["x"][3:] - truth[3:]) < 0.3
+
+
+
+def test_fit_rejects_nan_cov(monkeypatch):
+    """#182 리뷰: 공분산에 NaN 이 섞이면 ok 가 거짓 — NaN 이면 std 비교(>)가 통과해 버린다."""
+    from rally_vision import flight_rays as fr
+    from rally_vision.flight_rays import Obs, fit_linear
+    rng = np.random.default_rng(0)
+    obs = []
+    for i in range(12):
+        t = i / 60
+        P = P_S if i % 2 else P_W
+        obs.append(Obs(t, "side" if i % 2 else "wrist", P, pix(P, propagate(X0, k, t)[:3]) + rng.normal(0, 1.0, 2)))
+    assert fit_linear(obs, obs[-1].t, k)["ok"]
+    real_inv = np.linalg.inv
+    monkeypatch.setattr(fr.np.linalg, "inv", lambda m: real_inv(m) * np.nan)
+    assert not fit_linear(obs, obs[-1].t, k)["ok"]

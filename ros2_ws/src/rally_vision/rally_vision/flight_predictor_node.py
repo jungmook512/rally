@@ -151,6 +151,7 @@ class FlightPredictorNode(Node):
         # 10/13 정정인 B: "stereo"(기본, 측면 시각에 손목 보간 → 3D 점) | "rays"(3D 점 없이 카메라별 픽셀·시각으로 궤적 맞춤, flight_rays.py)
         #   bag 비교(scripts/mode3_mono_lab.py): 손목이 드문드문 볼 때 rays 는 0.25 s 에 6/6 예측(stereo 0/6), 다 볼 때 0.30 s 오차 5.6 vs 8.0 cm
         d("estimator", "stereo")
+        d("debug_log", False)                      # 프레임·점마다 [진단] 로그 (공이 보이는 동안 ≤ 60/s + 교차 계산 한 번 더). 기본 끔 — #182 리뷰
         g = lambda k: self.get_parameter(k).value  # noqa: E731
 
         self.imgsz, self.conf, self.device = int(g("imgsz")), float(g("conf")), str(g("device"))
@@ -192,6 +193,8 @@ class FlightPredictorNode(Node):
         plane_p, plane_n, plane_src = self._pad_plane(np.array(g("plane_p"), float), np.array(g("plane_n"), float), str(g("skills_path")))
         self.get_logger().info(f"패드 평면 ({plane_src}): 중심 {np.round(plane_p, 3).tolist()} m · 법선 {np.round(plane_n, 3).tolist()}")
         self.estimator = str(g("estimator"))
+        self.debug_log = bool(g("debug_log"))
+        self._last_rays_fit_t = None                 # rays: 마지막으로 발행한 맞춤의 시각 — 새 관측이 없으면 다시 발행하지 않음
         if self.estimator not in ("stereo", "rays"):
             raise RuntimeError(f"estimator 는 stereo | rays (받은 값 {self.estimator})")
         if self.estimator == "rays":
@@ -357,7 +360,7 @@ class FlightPredictorNode(Node):
         uv_s, uv_w = self.static["side"].pick(cands_s), self.static["wrist"].pick(cands_w)
         self._dbg[0] += uv_s is not None
         self._dbg[1] += uv_w is not None
-        if uv_s is not None or uv_w is not None:                 # 10/13 진단: 카메라별 검출 (비행 중 어느 쪽이 놓치는지)
+        if self.debug_log and (uv_s is not None or uv_w is not None):   # 10/13 진단: 카메라별 검출 (비행 중 어느 쪽이 놓치는지)
             self.get_logger().info(f"[진단] t {ts % 1000:7.3f} 검출 측면 {None if uv_s is None else [round(v) for v in uv_s]} "
                                    f"손목 {None if uv_w is None else [round(v) for v in uv_w]} (측면 후보 {len(cands_s)} 손목 후보 {len(cands_w)})")
         self._judge_pad(ts, cands_s)
@@ -386,7 +389,7 @@ class FlightPredictorNode(Node):
             self._dbg_prev = (t, X)
             if self.session.state != st0:
                 self.get_logger().info(f"[진단] 상태 {st0} → {self.session.state} (놓음 {self.session.t_release})")
-            if True:                                            # 10/13: 공이 보일 때만 점이 오므로 점마다 (≤ 60/s)
+            if self.debug_log:                                  # 10/13: 공이 보일 때만 점이 오므로 점마다 (≤ 60/s) — 교차 계산을 한 번 더 하므로 기본 끔
                 vs = "-" if v is None else f"{np.linalg.norm(v):.2f} m/s (vx {v[0]:+.2f})"
                 cs = ""
                 if self.session.state == "flight" and self.session.fp is not None:
@@ -410,14 +413,21 @@ class FlightPredictorNode(Node):
         for t, cam, P, uv in sorted(ev, key=lambda e: e[0]):
             r.add(t, cam, P, uv)
             self._dbg[2] += uv is not None
-        c = r.latest()
+        # 새 관측으로 맞춤이 바뀐 때만 교차점 계산·발행 (#182 리뷰): 같은 예측을 매 tick 다시 보내면 catch_ball 이 받은 시각으로
+        # 신선도를 봐서 공을 놓친 뒤에도 '새 예측'으로 받는다. predict_crossing(10~27 ms)도 매 tick 하지 않게
+        fit_t = r.fp.t if r.state == "flight" and r.fp is not None else None
+        c = None
+        if fit_t is not None and fit_t != self._last_rays_fit_t:
+            self._last_rays_fit_t = fit_t
+            c = r.latest()
         if r.state != st0:
             self.get_logger().info(f"[진단] 상태 {st0} → {r.state} (놓음 {r.t_release}{'' if r.state == 'flight' else ' · 끝 ' + r.end_reason})")
         if c is not None and c.time_to_go > 0:
             t_obs = r.fp.t
             self._publish(t_obs, c, n_obs=r.fp.n, t_release=r.t_release)
-            self.get_logger().info(f"[진단] rays 교차점 {np.round(c.point, 3).tolist()} 패드에서 {np.linalg.norm(c.point - r.plane_p):.2f} m · "
-                                   f"std {np.round(c.std_m * 100, 1).tolist()} cm · 관측 {r.fp.n} · 놓은 뒤 {t_obs - r.t_release:.3f} s")
+            if self.debug_log:
+                self.get_logger().info(f"[진단] rays 교차점 {np.round(c.point, 3).tolist()} 패드에서 {np.linalg.norm(c.point - r.plane_p):.2f} m · "
+                                       f"std {np.round(c.std_m * 100, 1).tolist()} cm · 관측 {r.fp.n} · 놓은 뒤 {t_obs - r.t_release:.3f} s")
 
     @staticmethod
     def _cands(r) -> list[tuple[float, float, float]]:
