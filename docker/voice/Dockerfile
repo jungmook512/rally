@@ -15,5 +15,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3-pip lib
 COPY --from=build /ros2_ws/install /ros2_ws/install
 COPY docker/voice/requirements.txt /tmp/requirements.txt
 RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
+# openwakeword 0.6.0 — 의존성은 requirements.txt 에. tflite_runtime 은 ai_edge_litert 로 대체 (선생님 호출어 모델이 .tflite)
+# 특징 추출 모델(melspectrogram·embedding)·VAD 는 빌드 때 받아 둔다 (실행 중 네트워크 없이)
+RUN pip3 install --no-cache-dir --break-system-packages --no-deps openwakeword==0.6.0 \
+ && d=$(python3 -c "import site; print(site.getsitepackages()[0])") \
+ && mkdir -p "$d/tflite_runtime" && touch "$d/tflite_runtime/__init__.py" \
+ && echo "from ai_edge_litert.interpreter import Interpreter  # noqa: F401" > "$d/tflite_runtime/interpreter.py" \
+ && python3 -c "from openwakeword.utils import download_models; download_models(['__features_only__'])"
 COPY docker/entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
