@@ -12,10 +12,13 @@
               z 테이블 + present_height_m, 툴 수직 아래(손목 몸체가 환자 쪽으로 드러남). 관절 이동(속도 상한 joint_vel_deg_s)
 2. resist   : 환자 접촉 표시 ON(손 근접 STOP → SLOW) + 접촉 예정(nudge 방지) → 순응(x 만 goal.stiffness, 나머지 단단)
               → 0.3 s 힘 영점 → 20 Hz 로 미는 힘(−x 성분) 기록. 목표 힘 이상이 hold_time_s 이어지면 yielding
+              (접촉 예정 표시는 환자가 손을 뗄 때까지 유지 — 순응을 푼 뒤 손을 떼면 힘이 한 샘플에 꺼져 nudge STOP 이 걸린다, 10/13)
               손을 떼면(밀던 힘이 release_n 아래 release_s) released 실패, timeout_s 넘으면 timeout 실패
 3. yielding : 순응 그대로 −x 로 yield_distance_m 만큼 저속 직선 이동 (환자에게서 멀어짐) → success
 4. return   : 손을 뗄 때까지(최대 release_wait_s) 기다림 → 순응 해제 → 환자 접촉 표시 OFF → 제시 자세로 저속 복귀,
-              복귀 중 힘이 return_contact_n 넘으면 바로 멈춤
+              복귀 중 힘이 return_contact_n 넘으면 바로 멈춤. **release_wait_s 안에 손을 안 떼면 복귀하지 않는다** (10/13 검토:
+              복귀는 +x, 환자 쪽. 밀고 있는 손 쪽으로 가면 안 되고, 접촉 판정의 힘 영점도 미는 중에 잡혀 쓸모없다) — 그 자리에서 끝내고
+              다음 시도의 present 가 자세를 되돌린다
 안전: 힘 크기가 force_limit_n(goal, 없으면 skills.yaml mode7.force_limit_n 15 N) 넘으면 순응 해제 → −x 로 물러남 → force_limit 실패.
       safety STOP → abort. 순응은 compliance() 로 예외·취소에도 반드시 해제. 접촉 표시는 finally 에서 끈다.
 결과: peak_force_n, hold_time_achieved_s, force_smoothness(목표 절반 이상 구간 표준편차/평균), force_profile_n(20 Hz), failure_reason.
@@ -177,12 +180,26 @@ def execute(node):
             node.set_contact(True)
             node.set_patient_contact(True)               # 환자가 손목을 미는 구간 (#59) — 여기부터 +x 명령 이동 없음
             tr = HoldTracker(target, hold_s, cfg["release_n"], cfg["release_s"], cfg["contact_n"])
-            outcome, p = "", 0.0
+            outcome, p, released = "", 0.0, False
             with compliance([k, *cfg["stiffness_other"]], log):
                 time.sleep(cfg["settle_s"])
                 samples = [get_tool_force() for _ in range(5)]
                 f0 = [sum(s[i] for s in samples) / len(samples) for i in range(6)]
                 t0, period, last_log = time.monotonic(), 1.0 / cfg["poll_hz"], 0.0
+
+                def wait_release() -> bool:
+                    """미는 힘이 release_n 아래로 release_s 이어지면 True. release_wait_s 안에 안 떼면 False. STOP·취소는 SkillAbort."""
+                    low_t0, t1 = None, time.monotonic()
+                    while time.monotonic() - t1 < cfg["release_wait_s"]:
+                        node.check_stop(goal_handle)
+                        if push_force(get_tool_force(), f0) < cfg["release_n"]:
+                            low_t0 = low_t0 or time.monotonic()
+                            if time.monotonic() - low_t0 >= cfg["release_s"]:
+                                return True
+                        else:
+                            low_t0 = None
+                        time.sleep(period)
+                    return False
                 while True:
                     node.check_stop(goal_handle)
                     now = time.monotonic()
@@ -200,7 +217,8 @@ def execute(node):
                     goal_handle.publish_feedback(fb)
                     if now - last_log >= 1.0:
                         last_log = now
-                        log.info(f"[resist_push] 미는 힘 {p:4.1f} N (최대 {tr.peak:.1f}) · 유지 {tr.best_hold:.1f}/{hold_s:.1f} s")
+                        log.info(f"[resist_push] 미는 힘 {p:4.1f} N (최대 {tr.peak:.1f}) · 유지 {tr.best_hold:.1f}/{hold_s:.1f} s"
+                                 f" · 원시 Δx {f[0] - f0[0]:+.1f} N (실로봇 확인용: 밀고 있는데 미는 힘이 0 이고 Δx 가 + 면 부호 반대)")
                     if outcome:
                         break
                     if now - t0 >= timeout_s:
@@ -215,23 +233,22 @@ def execute(node):
                     move_checked(node, yield_target(cur, yield_m), cfg["yield_vel_mm_s"], ca, stall_ok=True)
                     log.info(f"[resist_push] 목표 {target:.1f} N 을 {hold_s:.1f} s 유지 — {yield_m * 100:.0f} cm 져줌")
                     phase("return")                       # 손 뗄 때까지 순응 그대로 기다림
-                    low_t0, t1 = None, time.monotonic()
-                    while time.monotonic() - t1 < cfg["release_wait_s"]:
-                        node.check_stop(goal_handle)
-                        if push_force(get_tool_force(), f0) < cfg["release_n"]:
-                            low_t0 = low_t0 or time.monotonic()
-                            if time.monotonic() - low_t0 >= cfg["release_s"]:
-                                break
-                        else:
-                            low_t0 = None
-                        time.sleep(period)
-            node.set_contact(False)
+                    released = wait_release()
             node.set_patient_contact(False)               # 접촉 끝 — 이제부터 손이 가까우면 안전 감시가 STOP
 
-            if outcome == "force_limit":
+            if outcome == "force_limit":                  # 접촉 예정은 아직 켜 둠 — 물러나는 동안 손이 붙어 있다
                 cur = [float(v) for v in get_current_posx()[0]]
                 move_checked(node, yield_target(cur, cfg["retreat_m"]), cfg["return_vel_mm_s"], ca, stall_ok=True)
-            else:                                         # 저속 복귀 — 닿으면 멈춤
+            if not released and p >= cfg["release_n"]:    # 순응이 풀린 뒤에도 밀고 있음 (force_limit · 안 뗀 held · 목표 미달 timeout)
+                # 손을 뗄 때 힘이 한 샘플에 꺼지면 nudge(|ΔF| > 5 N, 정지 중) 가 STOP 을 건다 → 뗄 때까지(최대 release_wait_s) 접촉 예정을 유지
+                released = wait_release()
+                if not released:
+                    log.warning(f"[resist_push] 순응을 푼 뒤 {cfg['release_wait_s']:.0f} s 가 지나도 손을 안 뗌")
+            node.set_contact(False)
+
+            if outcome == "held" and not released:        # 아직 밀고 있음 — 손 쪽(+x)으로 복귀하지 않는다 (docstring 4)
+                log.warning(f"[resist_push] 손을 안 뗀 채 끝냄 — 제시 자세로 복귀하지 않음 (다음 시도 present 가 되돌림)")
+            elif outcome != "force_limit":                # 저속 복귀 — 닿으면 멈춤
                 hits = [0]
                 fz = get_tool_force()
 
