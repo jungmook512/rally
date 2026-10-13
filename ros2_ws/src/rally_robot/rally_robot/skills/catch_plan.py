@@ -139,6 +139,18 @@ def judge_pad(pad_obs, now_mono, now_ros, sleep, tick, t_from_mono: float, t_cro
             contact_close()          # 중단(STOP·취소)으로 빠져나가도 창은 닫힌다 (catch_ball 의 finally 가 한 번 더 끈다)
 
 
+def should_resend(planned_m, new_pred_m, since_release: float, n_sent: int, cfg: dict) -> bool:
+    """비행 중 갱신(MODE3_PLAN ③): 출발 뒤 새 예측점이 처음 계획한 예측점에서 resend_threshold_m(3 cm) 넘게 벗어났고,
+    놓은 뒤 resend_until_release_s 안이며, 아직 resend_max 번 안 보냈으면 amovel 을 한 번 더. resend_enabled 가 꺼져 있으면 항상 거짓.
+    (실측 #130: 0.15 s 뒤 재전송은 첫 동작 위에 얹혀 속도가 명령값을 넘음 → 기본 꺼짐, 정정인 안전 확인 뒤 켬)"""
+    if not cfg.get("resend_enabled", False) or n_sent >= int(cfg.get("resend_max", 1)):
+        return False
+    if since_release > float(cfg.get("resend_until_release_s", 0.45)):
+        return False
+    d = float(np.linalg.norm(np.asarray(new_pred_m, float) - np.asarray(planned_m, float)))
+    return d > float(cfg.get("resend_threshold_m", 0.03))
+
+
 class ContactWindow:
     """받기 창(contact_expected · catch_window 130 N)을 **이동과 무관한 타이머**로 닫는다 (10/12 밤 실측 #163 결함: 닫는 코드가
     판정 루프 안에 있어 요격 이동(0.5~0.8 s)이 끝나야 돌았고, 창이 1.3~2.4 s 로 #144 조건 "약 1 s" 를 넘었다).

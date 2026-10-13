@@ -288,3 +288,60 @@ def test_joint_path_max_x_samples_interpolated_path():
         return [500.0 + 100.0 * math.sin(math.pi * q[0] / 90.0), 0.0, 0.0, 0.0, 0.0, 0.0]
     assert joint_path_max_x([0.0] * 6, [90.0] + [0.0] * 5, fk) == pytest.approx(600.0, abs=1.0)
     assert joint_path_max_x([0.0] * 6, [90.0] + [0.0] * 5, lambda q: -1) is None    # fkin 실패
+
+
+def test_move_checked_retarget_switches_goal_without_stopping():
+    """모드 3 비행 중 갱신: 이동 중 retarget() 이 새 목표를 주면 멈추지 않고 그쪽으로 가서 새 목표에 도착한다 (가짜 DSR)."""
+    import sys
+    from types import SimpleNamespace
+    pytest.importorskip("rclpy")
+    from rally_robot import fake_dsr as f
+    sys.modules["DSR_ROBOT2"] = f
+    from rally_robot.dsr_helpers import move_checked
+    f.S.pose = [400.0, 0.0, 350.0, 0.0, 180.0, 0.0]
+    f.S.target = list(f.S.pose)
+    logs = []
+    log = SimpleNamespace(info=logs.append, warning=logs.append, error=logs.append)
+    node = SimpleNamespace(stop_requested=lambda: False, speed_scale=lambda: 1.0, safety_reason=lambda: "", dsr=f,
+                           get_logger=lambda: log)
+    first = [400.0, -100.0, 350.0, 0.0, 180.0, 0.0]
+    second = [400.0, -150.0, 400.0, 0.0, 180.0, 0.0]
+    calls = {"n": 0}
+
+    def retarget():
+        calls["n"] += 1
+        return second if calls["n"] == 3 else None            # 몇 바퀴 돈 뒤(이동 중) 한 번만
+    assert move_checked(node, first, 450.0, 1000.0, retarget=retarget) == "done"
+    assert f.get_current_posx()[0][:3] == pytest.approx(second[:3])
+    assert any("이동 중 목표 변경" in m for m in logs)
+    assert f.S.last_ra == f.DR_MV_RA_OVERRIDE                 # #166 리뷰: 재전송은 겹치기(DUPLICATE) 아님
+
+
+def test_move_checked_retarget_skipped_when_speed_changes():
+    """#166 리뷰: 같은 바퀴에 감속 배율이 바뀌면 재전송하지 않고 멈춘 뒤 같은 목표로 다시 명령."""
+    import sys
+    from types import SimpleNamespace
+    pytest.importorskip("rclpy")
+    from rally_robot import fake_dsr as f
+    sys.modules["DSR_ROBOT2"] = f
+    from rally_robot.dsr_helpers import move_checked
+    f.S.pose = [400.0, 0.0, 350.0, 0.0, 180.0, 0.0]
+    f.S.target = list(f.S.pose)
+    logs = []
+    log = SimpleNamespace(info=logs.append, warning=logs.append, error=logs.append)
+    scale = {"v": 1.0}
+    node = SimpleNamespace(stop_requested=lambda: False, speed_scale=lambda: scale["v"], safety_reason=lambda: "", dsr=None,  # None = 가짜 정지
+                           get_logger=lambda: log)
+    first = [400.0, -100.0, 350.0, 0.0, 180.0, 0.0]
+    second = [400.0, -150.0, 400.0, 0.0, 180.0, 0.0]
+    calls = {"n": 0}
+
+    def retarget():
+        calls["n"] += 1
+        if calls["n"] == 3:
+            scale["v"] = 0.5                                  # 이 바퀴에 SLOW 로 바뀜
+            return second
+        return None
+    move_checked(node, first, 450.0, 1000.0, retarget=retarget)
+    assert not any("이동 중 목표 변경" in m for m in logs)
+    assert any("안전 레벨 변경" in m for m in logs)

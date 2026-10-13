@@ -17,6 +17,7 @@ DR_BASE, DR_TOOL, DR_WORLD = 0, 1, 2
 DR_AXIS_X, DR_AXIS_Y, DR_AXIS_Z = 0, 1, 2
 DR_AXIS_A, DR_AXIS_B, DR_AXIS_C = 10, 11, 12
 DR_MV_MOD_ABS, DR_MV_MOD_REL = 0, 1
+DR_MV_RA_DUPLICATE, DR_MV_RA_OVERRIDE = 0, 1
 DR_FC_MOD_ABS, DR_FC_MOD_REL = 0, 1
 DR_COND_NONE = -10000
 
@@ -32,6 +33,7 @@ class _State:
     move_start = 0.0
     move_until = 0.0
     compliance = False
+    last_ra = None                                # 마지막 amovel 의 ra (재전송 OVERRIDE 확인용)
     poll_times = []
 
 
@@ -79,6 +81,7 @@ def movel(pos, vel=None, acc=None, **kw):
 
 
 def amovel(pos, vel=None, acc=None, **kw):
+    S.last_ra = kw.get("ra", DR_MV_RA_DUPLICATE)
     _start_move(pos if kw.get("mod", DR_MV_MOD_ABS) == DR_MV_MOD_ABS else [p + d for p, d in zip(S.pose, pos)], vel)
     return 0
 
