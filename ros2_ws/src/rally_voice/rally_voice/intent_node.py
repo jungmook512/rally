@@ -137,13 +137,18 @@ class IntentNode(Node):
         name = Path(path).stem
         thr = float(self.get_parameter("wake_threshold").value)
         rec_frames = int(float(self.get_parameter("record_s").value) * RATE / FRAME)
+        mic = resolve_input_device()
         try:
-            stream = sd.InputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=FRAME,
-                                    device=resolve_input_device())
+            stream = sd.InputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=FRAME, device=mic)
             stream.start()
         except Exception as e:      # noqa: BLE001
-            self.get_logger().error(f"마이크 열기 실패: {e}")
+            self.get_logger().error(f"마이크 열기 실패 (VOICE_MIC_DEVICE={os.environ.get('VOICE_MIC_DEVICE', '')!r}, 고른 장치 {mic!r}): {e}")
             return
+        try:
+            mic_name = sd.query_devices(stream.device)["name"]
+        except Exception:           # noqa: BLE001 — 이름은 로그용
+            mic_name = "?"
+        self.get_logger().info(f"마이크: {mic_name} (장치 {stream.device}, VOICE_MIC_DEVICE={os.environ.get('VOICE_MIC_DEVICE', '')!r})")
         self._kws = self._make_kws()
         self.get_logger().info(f"호출어 대기 ({name}, 임계 {thr})")
 

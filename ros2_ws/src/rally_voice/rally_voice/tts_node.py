@@ -11,6 +11,7 @@ TTS 문구에 비상어("그만"·"멈춰"·"아프"·"위험" 등, intent_rules
 종료(Ctrl+C)·발화 실패 때도 speaking=false 를 먼저 내보낸다 — TransientLocal 이라 true 가 남으면 intent_node 가 일반 명령을 계속 무시.
 음성 모델은 git 에 없다: models/piper/ 에 ko_KR-kss-medium.onnx(+.json) 을 받아 둔다 (README).
 """
+import os
 import time
 from pathlib import Path
 
@@ -64,7 +65,7 @@ class TtsNode(Node):
         self.declare_parameter("voice_model", "")           # 비우면 /models/piper → ~/rally/models/piper
         self.declare_parameter("length_scale", 1.1)         # 1 보다 크면 느리게. 어르신 대상이라 약간 천천히
         self.declare_parameter("tail_s", 0.3)               # 재생 끝 → speaking=false 까지 잔향 여유
-        self.declare_parameter("output_device", "")         # 비우면 기본 장치. 번호 또는 이름 일부
+        self.declare_parameter("output_device", "")         # 번호 또는 이름 일부. 비우면 환경변수 VOICE_SPEAKER_DEVICE, 그것도 없으면 기본 장치
 
         latched = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL,
                              history=HistoryPolicy.KEEP_LAST, depth=1)
@@ -80,7 +81,7 @@ class TtsNode(Node):
             t0 = time.perf_counter()
             self.voice = PiperVoice.load(str(path))
             self.get_logger().info(f"Piper 음성 {path.name} ({time.perf_counter() - t0:.1f} s)")
-        dev = self.get_parameter("output_device").value
+        dev = self.get_parameter("output_device").value or os.environ.get("VOICE_SPEAKER_DEVICE", "")
         self.device = int(dev) if str(dev).isdigit() else (dev or None)
         self._check_output()
 
@@ -93,6 +94,8 @@ class TtsNode(Node):
             import sounddevice as sd
             sd.check_output_settings(device=self.device, channels=1, dtype="int16",
                                      samplerate=self.voice.config.sample_rate if self.voice else 22050)
+            name = sd.query_devices(self.device, "output")["name"]
+            self.get_logger().info(f"스피커: {name} (output_device={self.device!r}) — 시연은 이어셋이 아니라 방 스피커여야 함")
         except Exception as e:      # noqa: BLE001
             self.get_logger().error(f"스피커 장치 확인 실패 (output_device={self.device!r}): {e}")
 
