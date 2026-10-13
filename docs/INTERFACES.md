@@ -118,7 +118,7 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 | `/rally/skill/move_target` | `rally_interfaces/MoveTarget` | 3 (Phase 2) | movec / movesx / moveb 궤적, 환자가 맞혀야 하는 후기 단계 |
 | `/rally/skill/detach_ball` | `rally_interfaces/DetachBall` | 3 | 힘 제어 당김, 힘 급락으로 떼어짐 판정 |
 | `/rally/skill/handover` | `rally_interfaces/Handover` | 5 | 기울여 제시, 당김 힘 감지 해제 / 받기: 보라색 선 − 20 cm 에서 열고 대기(막대 화면 기울기에 손목만 맞춤) → 막대 3D 위치로 다가가기(막대 앞에서 옆·위아래 맞춘 뒤 툴 z 로 ≤ 20 cm, 보라색 선 3 cm 앞까지, 40 mm/s, phase `approach`) 또는 밀어 넣는 힘 → 잡기 → 제자리. **다가가기 조건 (#164, 10/13 정정인 — #134 를 이 범위로 좁혀 바꿈)**: 손 인식 입력이 있고 `hand_stop_mode` ≠ off 일 때만(아니면 대기만), 툴 힘 12 N 으로 멈추면 닫지 않고 연 채 물러남, 그리퍼 사이가 깊이로 확인될 때만 닫음. 대기는 순응, 회전·다가가기 때만 해제. `follow_hand`(손 추종 servol)는 쓰지 않음 (#134) |
-| `/rally/skill/resist_push` | `rally_interfaces/ResistPush` | 7 | 환자가 로봇 손목(J5·J6)을 직접 민다(10/12, 손잡이 없음). 제시 x 고정·y 만 손에 맞춤 → 순응 강성으로 버티기, 목표 힘 유지 시 −x 로 져주기, 손 뗀 뒤 저속 복귀. 로봇은 절대 밀지 않음. `handle_pose` 는 쓰지 않음 |
+| `/rally/skill/resist_push` | `rally_interfaces/ResistPush` | 7 | 환자가 로봇 손목(J5·J6)을 직접 민다(10/12, 손잡이 없음). 제시 x 고정·y 만 손에 맞춤 → 순응 강성으로 버티기, 목표 힘 유지 시 −x 로 져주기, 손 뗀 뒤 저속 복귀(release_wait_s 5 s 안에 안 떼면 복귀 없이 그 자리에서 끝남, 10/13). 접촉 예정(nudge 끔)은 손을 뗄 때까지 유지. brain 은 feedback phase `return` 에 `mode7.release_prompt` 를 한 번 말함. 로봇은 절대 밀지 않음. `handle_pose` 는 쓰지 않음 |
 | `/rally/session/run` | `rally_interfaces/RunSession` | 전체 | brain 최상위 action |
 
 ## 4.1 모드 3 요격 타이밍

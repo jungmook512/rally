@@ -13,6 +13,7 @@
   재시도 없음: 실패 이유(timeout·force_limit·released·safety_stop)가 환자의 결과이거나 안전이라 다시 할 이유가 없다.
   로봇은 버티거나 져주기만 한다 — brain 은 숫자만 보낸다 (CLAUDE.md 4절, rally_robot/skills/resist_push.py).
   handle_pose 는 비워 보낸다 → 로봇이 제시 자세를 정한다 (정정인 확인 필요).
+  feedback phase 가 return(져준 뒤 손 뗌 대기)이 되면 release_prompt 를 한 번 말한다 — 손을 안 떼면 로봇은 복귀하지 않고 끝난다.
 
 TODO(Day 6): 시작값 = 지난 세션 최대 힘의 60 % (brain → DB 읽기가 생길 때, Graph RAG 와 같이). 지금은 target_force_start_n.
 """
@@ -104,8 +105,14 @@ def build_trial(session: Session) -> py_trees.behaviour.Behaviour:
         log.warn(f"[모드 7] 실패: {reason}")
         record(result, reason)
 
+    def on_feedback(fb: ResistPush.Feedback) -> None:
+        # 져준 뒤 손 뗌 대기(phase return)에 한 번 안내 — 결과 TTS 는 로봇이 복귀를 마친 뒤라 그때까지 환자가 계속 밀고 있을 수 있다 (10/13)
+        if fb.phase == "return" and not state.data.get("release_said") and cfg.get("release_prompt"):
+            state.data["release_said"] = True
+            session.say(cfg["release_prompt"])
+
     push = skill_step(state, "저항 밀기", client, lambda: state.data["goal"],
-                      on_success=lambda r, _k: record(r, ""), on_fail=on_fail,
+                      on_success=lambda r, _k: record(r, ""), on_fail=on_fail, on_feedback=on_feedback,
                       on_interrupt=lambda reason: state.finish(trial_from_result(state.data["goal"], None,
                                                                                  reason_code(reason))))
 
