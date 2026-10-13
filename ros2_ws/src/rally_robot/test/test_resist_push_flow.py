@@ -57,8 +57,8 @@ def make(monkeypatch, push, stop_after=None):
     goal = ResistPush.Goal(stiffness=700.0, target_force_n=5.0, hold_time_s=0.2, yield_distance_m=0.05,
                            force_limit_n=15.0, timeout_s=5.0)
     outcome = {}
-    gh = SimpleNamespace(request=goal, is_cancel_requested=False,
-                         publish_feedback=lambda fb: setattr(push, "phase", fb.phase),
+    gh = SimpleNamespace(request=goal, is_cancel_requested=False, last_fb=None,
+                         publish_feedback=lambda fb: (setattr(push, "phase", fb.phase), setattr(gh, "last_fb", fb)),
                          succeed=lambda: outcome.setdefault("s", "succeed"), abort=lambda: outcome.setdefault("s", "abort"),
                          canceled=lambda: outcome.setdefault("s", "canceled"))
     return node, gh, present, outcome, logs, flags
@@ -119,7 +119,7 @@ def test_timeout_without_push(monkeypatch):
 
 def test_force_limit_keeps_contact_expected_until_hand_releases(monkeypatch):
     """순응을 푼 뒤 손을 뗄 때 힘이 한 샘플에 꺼지면 nudge STOP → 뗄 때까지 접촉 예정(contact_expected)을 켜 둔다."""
-    push = Push(-20.0, drop_after=12)                      # 한계 초과 → 물러난 뒤에도 몇 번 더 밀다가 12번째 읽기 뒤 뗌 (대기 0.4 s 안)
+    push = Push(-20.0, release_fx=-20.0, drop_after=12)    # 한계 초과 → 물러난 뒤(phase return 뒤)에도 밀다가 12번째 읽기 뒤 뗌 (대기 0.4 s 안)
     node, gh, present, outcome, logs, flags = make(monkeypatch, push)
     res = rp.execute(node)(gh)
     assert res.failure_reason == "force_limit"
@@ -135,4 +135,33 @@ def test_not_released_contact_expected_off_only_after_wait(monkeypatch):
     rp.execute(node)(gh)
     assert any("지나도 손을 안 뗌" in m for m in logs)
     assert [on for on, _ in flags["contact"]][-1] is False  # 기다린 뒤에는 결국 꺼짐 (finally 포함)
+
+
+def test_timeout_still_pushing_does_not_return_to_present(monkeypatch):
+    """#181 리뷰(정정인): 목표 미달 timeout 인데 계속 밀고 있으면 +x 복귀 없음 — 결과와 무관. fake 는 순응으로 밀리지 않아
+    끝 위치로는 못 잡으므로 move_checked 호출(제시 자세 목표)로 본다."""
+    push = Push(-3.0, release_fx=-3.0)                     # 목표 5 N 미달, 끝까지 3 N
+    node, gh, present, outcome, logs, flags = make(monkeypatch, push)
+    gh.request.timeout_s = 0.5
+    calls = []
+    orig = rp.move_checked
+    monkeypatch.setattr(rp, "move_checked", lambda n, pose6, *a, **k: calls.append(list(pose6)) or orig(n, pose6, *a, **k))
+    res = rp.execute(node)(gh)
+    assert res.failure_reason == "timeout"
+    assert not any(c[:3] == pytest.approx(present[:3], abs=1.0) for c in calls)   # 제시 자세로 보낸 적 없음
+    assert any("복귀하지 않음" in m and "timeout" in m for m in logs)
+    assert any(getattr(fb, "phase", "") == "return" for fb in [gh.last_fb])          # 손 떼라는 안내용 phase return 나감
+    assert flags["contact"][-1][0] is False
+
+
+def test_timeout_then_release_returns(monkeypatch):
+    push = Push(-3.0, drop_after=14)                       # 3 N 밀다가 뗌
+    node, gh, present, outcome, logs, flags = make(monkeypatch, push)
+    gh.request.timeout_s = 0.3
+    calls = []
+    orig = rp.move_checked
+    monkeypatch.setattr(rp, "move_checked", lambda n, pose6, *a, **k: calls.append(list(pose6)) or orig(n, pose6, *a, **k))
+    res = rp.execute(node)(gh)
+    assert res.failure_reason == "timeout"
+    assert any(c[:3] == pytest.approx(present[:3], abs=1.0) for c in calls)        # 뗐으니 복귀
 

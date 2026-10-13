@@ -15,10 +15,12 @@
               (접촉 예정 표시는 환자가 손을 뗄 때까지 유지 — 순응을 푼 뒤 손을 떼면 힘이 한 샘플에 꺼져 nudge STOP 이 걸린다, 10/13)
               손을 떼면(밀던 힘이 release_n 아래 release_s) released 실패, timeout_s 넘으면 timeout 실패
 3. yielding : 순응 그대로 −x 로 yield_distance_m 만큼 저속 직선 이동 (환자에게서 멀어짐) → success
-4. return   : 손을 뗄 때까지(최대 release_wait_s) 기다림 → 순응 해제 → 환자 접촉 표시 OFF → 제시 자세로 저속 복귀,
-              복귀 중 힘이 return_contact_n 넘으면 바로 멈춤. **release_wait_s 안에 손을 안 떼면 복귀하지 않는다** (10/13 검토:
-              복귀는 +x, 환자 쪽. 밀고 있는 손 쪽으로 가면 안 되고, 접촉 판정의 힘 영점도 미는 중에 잡혀 쓸모없다) — 그 자리에서 끝내고
-              다음 시도의 present 가 자세를 되돌린다
+4. return   : 손을 뗄 때까지(최대 release_wait_s) 순응 그대로 기다림 → 순응 해제 → 환자 접촉 표시 OFF → 아직 밀고 있으면
+              접촉 예정은 켠 채 한 번 더 손 뗌 대기(최대 release_wait_s, 그래서 held 는 합쳐 최대 2배) → 접촉 예정 OFF →
+              제시 자세로 저속 복귀, 복귀 중 힘이 return_contact_n 넘으면 바로 멈춤.
+              **끝까지 손을 안 떼면 결과(held·timeout)와 무관하게 복귀하지 않는다** (10/13 검토: 복귀는 +x, 환자 쪽. 밀고 있는 손 쪽으로
+              가면 안 되고, 접촉 판정의 힘 영점도 미는 중에 잡혀 쓸모없다) — 그 자리에서 끝내고 다음 시도의 present 가 자세를 되돌린다.
+              timeout·force_limit 뒤의 손 뗌 대기 직전에도 phase return 을 내서 brain 이 "손을 떼 주세요" 안내를 한다
 안전: 힘 크기가 force_limit_n(goal, 없으면 skills.yaml mode7.force_limit_n 15 N) 넘으면 순응 해제 → −x 로 물러남 → force_limit 실패.
       safety STOP → abort. 순응은 compliance() 로 예외·취소에도 반드시 해제. 접촉 표시는 finally 에서 끈다.
 결과: peak_force_n, hold_time_achieved_s, force_smoothness(목표 절반 이상 구간 표준편차/평균), force_profile_n(20 Hz), failure_reason.
@@ -239,16 +241,23 @@ def execute(node):
             if outcome == "force_limit":                  # 접촉 예정은 아직 켜 둠 — 물러나는 동안 손이 붙어 있다
                 cur = [float(v) for v in get_current_posx()[0]]
                 move_checked(node, yield_target(cur, cfg["retreat_m"]), cfg["return_vel_mm_s"], ca, stall_ok=True)
-            if not released and p >= cfg["release_n"]:    # 순응이 풀린 뒤에도 밀고 있음 (force_limit · 안 뗀 held · 목표 미달 timeout)
-                # 손을 뗄 때 힘이 한 샘플에 꺼지면 nudge(|ΔF| > 5 N, 정지 중) 가 STOP 을 건다 → 뗄 때까지(최대 release_wait_s) 접촉 예정을 유지
+            pushing = not released and p >= cfg["release_n"]   # 순응이 풀린 뒤에도 밀고 있음 (force_limit · 안 뗀 held · 목표 미달 timeout)
+            if pushing:
+                # 손을 뗄 때 힘이 한 샘플에 꺼지면 nudge(|ΔF| > 5 N, 정지 중) 가 STOP 을 건다 → 뗄 때까지(최대 release_wait_s) 접촉 예정을 유지.
+                # 결과와 무관하게 phase return 을 내서 brain 이 "손을 떼 주세요" 를 하게 (#181 리뷰 조정묵)
+                if fb.phase != "return":
+                    phase("return", p)
                 released = wait_release()
-                if not released:
-                    log.warning(f"[resist_push] 순응을 푼 뒤 {cfg['release_wait_s']:.0f} s 가 지나도 손을 안 뗌")
+                pushing = not released
+                if pushing:
+                    log.warning(f"[resist_push] 순응을 푼 뒤 {cfg['release_wait_s']:.1f} s 가 지나도 손을 안 뗌")
             node.set_contact(False)
 
-            if outcome == "held" and not released:        # 아직 밀고 있음 — 손 쪽(+x)으로 복귀하지 않는다 (docstring 4)
-                log.warning(f"[resist_push] 손을 안 뗀 채 끝냄 — 제시 자세로 복귀하지 않음 (다음 시도 present 가 되돌림)")
-            elif outcome != "force_limit":                # 저속 복귀 — 닿으면 멈춤
+            if outcome == "force_limit":
+                pass                                      # 이미 −x 로 물러남. 복귀는 다음 시도의 present 가
+            elif pushing:                                 # 결과(held·timeout)와 무관 — 밀고 있는 손 쪽(+x)으로 복귀하지 않는다 (docstring 4, #181 리뷰 정정인)
+                log.warning(f"[resist_push] 손을 안 뗀 채 끝냄 ({outcome}) — 제시 자세로 복귀하지 않음 (다음 시도 present 가 되돌림)")
+            else:                                         # 저속 복귀 — 닿으면 멈춤
                 hits = [0]
                 fz = get_tool_force()
 
