@@ -6,7 +6,7 @@
 | `get_keyword.py` | 선생님 코드 (import만 변경) | **Day 1~2 기준선** `/get_keyword` Trigger 서비스 |
 | `intent_node.py` | 신규 | 같은 부품으로 VoiceIntent 토픽 발행, 긴급어 직결 |
 | `tts_node.py` | 신규 | `/rally/voice/speak` → Piper 한국어 TTS, 발화 중 `/rally/voice/speaking` |
-| `resource/hello_rokey_8332_32.tflite` | 선생님 모델 | "랠리야" 모델로 교체 예정 |
+| `resource/hello_rokey_8332_32.tflite` | 선생님 모델 | 예비 — 10/13 부터 호출어는 "랠리야"(`models/kws/emergency_kws.joblib` 의 P(랠리야), `wake_source:=kws`). 키워드 모델이 없거나 `wake_source:=openwakeword` 면 이것 |
 | `resource/.env` | 직접 생성 (.env.example 참고) | OPENAI_API_KEY |
 
 ## TTS 음성 모델 (git 제외, 직접 받기)
