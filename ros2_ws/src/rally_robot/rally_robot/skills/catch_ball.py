@@ -47,7 +47,7 @@ from std_msgs.msg import Float64MultiArray
 from rally_interfaces.action import CatchBall
 from rally_robot.dsr_helpers import SkillAbort, move_checked, movej_checked, stop_robot
 from rally_robot.skills.catch_policy import OnnxPolicy, decide_with_policy, find_policy, policy_target
-from rally_robot.skills.catch_plan import (ContactWindow, Prediction, clamp_cross, intercept, judge_pad, max_dist_in, move_time_s, pad_center,
+from rally_robot.skills.catch_plan import (ContactWindow, Prediction, clamp_cross, intercept, judge_pad, max_dist_in, pad_center,
                                               parse_info, quality_ok,
                                               should_resend, window_close_delay)
 
