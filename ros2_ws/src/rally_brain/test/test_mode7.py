@@ -83,3 +83,23 @@ def test_interrupted_without_result_has_nan_metrics():
                          + [mode7_resist.DEFAULTS["hand_prompt"]])
 def test_prompts_are_speakable(text):
     assert speech.phrase_problem(text) is None
+
+
+def test_release_prompt_once_on_return_feedback():
+    """져준 뒤 손 뗌 대기(phase return)에 release_prompt 한 번 — 결과 TTS 전에 환자가 손을 떼게 (10/13)."""
+    cfg = {"mode7": {**FAST["mode7"], "release_prompt": "이제 손을 떼 주세요"}}
+    feedbacks = [[{"phase": "present"}, {"phase": "resist", "current_force_n": 6.0}, {"phase": "yielding"},
+                  {"phase": "return"}, {"phase": "return"}]]
+    client = FakeClient(ResistPush, [OK], feedbacks=feedbacks)
+    session, published, said, ctx = make_session({ResistPush: client}, cfg)
+    assert run(mode7_resist.build_trial(session)) == Status.SUCCESS
+    assert said == ["이제 손을 떼 주세요", "좋아요, 2초 버텼어요"]          # return 두 번 와도 한 번만, 결과 문구보다 먼저
+    assert speech.phrase_problem("이제 손을 떼 주세요") is None
+
+
+def test_no_release_prompt_without_config():
+    client = FakeClient(ResistPush, [OK], feedbacks=[[{"phase": "return"}]])
+    session, published, said, ctx = make_session({ResistPush: client}, FAST)
+    assert run(mode7_resist.build_trial(session)) == Status.SUCCESS
+    assert said == ["좋아요, 2초 버텼어요"]
+

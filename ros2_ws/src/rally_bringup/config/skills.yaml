@@ -244,10 +244,11 @@ mode7:
   stiffness_default: 700.0          # 고정 (강성 3단계 200/700/1500 중 가운데). 리허설 느낌 보고 조정
   level_step_ratio: 0.10            # 난이도 한 단계 = 목표 힘 ±10 %
   timeout_s: 20.0                   # 목표 힘을 못 넘기고 이만큼 지나면 timeout 실패
-  hand_wait_s: 10.0                 # 손잡이를 내밀기 전 손 대기 (mode5 와 같은 방식)
+  hand_wait_s: 10.0                 # 손목을 내밀기 전 손 대기 (mode5 와 같은 방식)
   hand_wait_tries: 2
   hand_prompt: "손을 앞으로 내밀어 주세요"
-  push_prompt: "손잡이를 앞으로 밀어 보세요"     # 저항 밀기 goal 보내기 전 (#119). 결과 문구는 mode7_resist.PROMPTS 그대로
+  push_prompt: "로봇 손목을 앞으로 밀어 보세요"   # 저항 밀기 goal 보내기 전 (#119, 10/12 손잡이 없음). 결과 문구는 mode7_resist.PROMPTS 그대로
+  release_prompt: "이제 손을 떼 주세요"          # 져준 뒤(feedback phase return) 한 번 — 안 떼면 로봇은 복귀하지 않고 그 자리에서 끝남 (resist_push 4단계)
 # brain 규칙 레이어 (rally_brain/rule_layer.py) — 시도가 끝날 때마다 행동 하나를 고른다. 행동은 actions 목록 안에서만
 #   difficulty: 모드별 난이도 단계 (0 = 시작). 단계 → 실제 값(목표 거리·힘 등) 변환은 각 모드 서브트리가 한다
 brain:
