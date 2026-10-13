@@ -40,6 +40,13 @@ rally_safety_monitor:
     robot_tf_tcp_cover_s: 2.0  # tcp_pose 가 이 시간 안에 있었을 때만 tf 를 씀(교차 검사 기준). 이동 중 get_current_posx 끊김(0.5 s 넘게, 10/8)을 덮는 길이
     slow_override: 0.5
     force_limit_n: 25.0        # 합력 |F| 초과 → STOP (모드 7 은 스킬 자체 한계 15 N 이 먼저 걸림)
+    # 모드 3 받기 창 전용 (#144, 10/12 정정인 조건부 승인): catch_ball 이 /rally/safety/catch_window 와 contact_expected 를 둘 다 켠 동안
+    #   (투구 감지 ~ 예측 교차 + 0.5 s, 약 1.2 s)에만 이 한계. 창이 끝나거나 신호가 contact_timeout_s 넘게 끊기면 force_limit_n(25 N) 으로.
+    #   근거: 가속 2000 요격 이동 관성 59~73 N(−y, 패드 쥠, #130) · 위아래 최대 55 N(#144 ①) + 공 충격 15.4 N ≈ 88 N × 1.5.
+    #   전제: 투구자는 J1 에서 3 m 밖, 두산 자체 충돌 감지는 그대로. 다른 모든 동작(집기·놓기 하강 포함)은 25 N 그대로
+    catch_window_force_limit_n: 130.0
+    catch_window_max_s: 2.0    # 받기 창 한 번의 최대 길이 (#165 리뷰 10/13). 설계 약 1.2 s(#171 타이머). 넘으면 신호가 계속 와도 25 N
+                               #   — skill 스레드가 멈춰 하트비트만 남는 경우 130 N 이 계속 켜져 있지 않게. 실제 창이 이보다 길면 이동 중 25 N STOP
     nudge_dfdt_n: 5.0          # 정지 구간 힘 급변 (N, wrench 한 샘플 = 20 ms @ 50 Hz 기준) → STOP. 10/6 실측: 정지 노이즈 |ΔF| ≤ 0.25 N, |F| ≤ 2.5 N → 노이즈 20배. 실제 톡 쳐서 안 걸리면 3.0 으로
     nudge_speed_max_mps: 0.02  # TCP 가 이보다 빨리 움직이는 중에는 nudge 판정 안 함 (가속 관성 오탐, CP7)
     nudge_ang_speed_max_dps: 5.0  # 툴이 이보다 빨리 도는 중에도 nudge 판정 안 함. 10/8: 손 보기 자세로 손목만 45° 도는 관절 이동(손끝 거의 제자리)에서 nudge 오탐 STOP. 힘 임계·STOP 흐름은 그대로

@@ -79,6 +79,7 @@ class SkillServer(Node):
         self.last_hand_rx = None             # 손 입력 마지막 수신 monotonic — 받기 다가가기 손 보호 확인 (#164 리뷰)
         self._contact = False
         self._patient_contact = False
+        self._catch_window = False
         self._cm_client = None
         self.last_pick = None                # PickCompliant 성공 자세 {pose(mm·deg), grip_force} — 모드 5 내려놓기 자리
         self.holding = False                 # 물체를 쥐고 있는지 — gripper() 가 닫힘+감지면 True, 열면 False
@@ -100,6 +101,7 @@ class SkillServer(Node):
                                  callback_group=self.cb_state)
         self.pub_contact = self.create_publisher(Bool, "/rally/safety/contact_expected", reliable1)
         self.pub_patient_contact = self.create_publisher(Bool, "/rally/safety/patient_contact", reliable1)
+        self.pub_catch_window = self.create_publisher(Bool, "/rally/safety/catch_window", reliable1)
         self.create_timer(1.0 / CONTACT_HZ, self._contact_tick, callback_group=self.cb_state)
         self.gripper_cli = self.create_client(GripperCommand, "/rally/gripper/command", callback_group=self.cb_state)
         self.create_service(Trigger, "/rally/robot/go_observe_pose", self._go_observe, callback_group=self.cb_skill)
@@ -241,7 +243,15 @@ class SkillServer(Node):
         self._patient_contact = bool(on)
         self.pub_patient_contact.publish(Bool(data=self._patient_contact))
 
+    def set_catch_window(self, on: bool):
+        """모드 3 받기 창 (#144): 켠 동안(+ contact_expected 도 켜져 있을 때) safety_monitor 힘 한계가 catch_window_force_limit_n.
+        catch_ball 만 쓴다. 하트비트가 끊기면 safety_monitor 가 contact_timeout_s 뒤 25 N 으로 되돌린다."""
+        self._catch_window = bool(on)
+        self.pub_catch_window.publish(Bool(data=self._catch_window))
+
     def _contact_tick(self):
+        if self._catch_window:
+            self.pub_catch_window.publish(Bool(data=True))
         if self._contact:
             self.pub_contact.publish(Bool(data=True))
         if self._patient_contact:
