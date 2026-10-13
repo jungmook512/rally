@@ -81,6 +81,34 @@ def test_falls_back_when_never_goes_or_prediction_lost():
     assert action is None and pred.since_release <= 0.16
 
 
+def test_runtime_policy_error_falls_back_with_log():
+    """정책 실행 중 예외(NaN 출력·onnxruntime 오류)는 투구를 버리지 않고 (예측, None) — catch_ball 이 규칙으로 (#175 리뷰 1)."""
+    errors = []
+
+    def bad(obs):
+        raise ValueError("정책 출력 이상 [nan nan nan]")
+    seq = Seq()
+    pred, action, calls = decide_with_policy(seq.latest, bad, PAD, N, lambda: seq.ros, seq.sleep, lambda: None, CFG, pred_at(seq.t),
+                                             on_error=errors.append)
+    assert action is None and calls == 1 and len(errors) == 1 and isinstance(errors[0], ValueError)
+    assert 0.10 <= pred.since_release <= 0.12                   # 첫 호출에서 바로 폴백 (policy_max_s 까지 안 기다림)
+    pred, action, _ = run(bad, Seq())                           # on_error 없어도 예외가 밖으로 안 나감
+    assert action is None
+
+
+def test_tick_abort_still_propagates():
+    """check_stop(tick) 의 중단은 폴백으로 삼키지 않는다."""
+    class Abort(Exception):
+        pass
+
+    def tick():
+        raise Abort()
+    seq = Seq()
+    with pytest.raises(Abort):
+        decide_with_policy(seq.latest, lambda o: np.array([1.0, 0.0, 0.0]), PAD, N, lambda: seq.ros, seq.sleep, tick, CFG, pred_at(seq.t),
+                           on_error=lambda e: None)
+
+
 class FakeSession:
     def __init__(self, shape=(1, 10), out=(0.5, 0.1, -0.2)):
         self._shape, self._out = shape, out

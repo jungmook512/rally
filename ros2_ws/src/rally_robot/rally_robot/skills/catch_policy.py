@@ -106,10 +106,12 @@ class OnnxPolicy:
 def decide_with_policy(latest: Callable[[], Prediction | None], policy: Callable[[np.ndarray], np.ndarray],
                        pad_center_m, normal, now_ros: Callable[[], float], sleep: Callable[[float], None],
                        tick: Callable[[], None], cfg: dict[str, Any], pred: Prediction,
+                       on_error: Callable[[Exception], None] | None = None,
                        ) -> tuple[Prediction, np.ndarray | None, int]:
     """policy_hz 로 최신 예측을 정책에 넣다가 action[0] > 0 이면 (그 예측, action, 호출 수). 놓은 뒤 policy_start_s 전엔 부르지 않는다
     (시뮬 첫 결정 0.1 s). policy_max_s 를 넘기거나 예측이 끊기면 (마지막 예측, None, 호출 수) — catch_ball 이 규칙으로 폴백.
-    tick() 은 매 바퀴 (check_stop 자리)."""
+    정책 실행 오류(출력 NaN·모양, onnxruntime 예외)도 on_error(e) 를 부르고 (마지막 예측, None, 호출 수) — 투구를 버리지 않고 규칙으로
+    (#175 리뷰 1). tick() 은 매 바퀴 (check_stop 자리) — 거기서 나는 SkillAbort 는 그대로 올라간다."""
     period = 1.0 / float(cfg["policy_hz"])
     calls = 0
     while True:
@@ -121,8 +123,14 @@ def decide_with_policy(latest: Callable[[], Prediction | None], policy: Callable
         if pred.since_release >= float(cfg["policy_max_s"]):
             return pred, None, calls
         if pred.since_release >= float(cfg["policy_start_s"]):
-            action = policy(policy_obs(pred, pad_center_m, normal, now_ros(), std_source=str(cfg.get("policy_std_source", "sim_table"))))
+            obs = policy_obs(pred, pad_center_m, normal, now_ros(), std_source=str(cfg.get("policy_std_source", "sim_table")))
             calls += 1
+            try:
+                action = policy(obs)
+            except Exception as e:  # noqa: BLE001
+                if on_error is not None:
+                    on_error(e)
+                return pred, None, calls
             if action[0] > 0.0:
                 return pred, action, calls
         sleep(period)

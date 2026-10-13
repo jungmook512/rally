@@ -81,6 +81,7 @@ mode3:
   #   rule 이 기본. policy 로 바꾸려면 로봇 PC models/policy_stage1.onnx + pip install onnxruntime. 못 읽으면 규칙으로 돎(에러 로그)
   #   정책은 한계 오른쪽 15 · 위 15 · 아래 8 cm 로 학습 → 비교 시험 때는 right_max_m·updown_max_m 0.15 로 규칙·정책 둘 다 같게
   decide_mode: rule
+  #   policy 로 출발한 투구는 resend_enabled 가 true 여도 재전송하지 않음 (재전송이 정책 보정 ±10 cm 를 지움, #175 리뷰). 정책이 출발을 안 내 규칙으로 넘어간 투구는 재전송 그대로
   policy_path: ""                                     #   비면 /models · ~/rally/models · models 의 policy_stage1.onnx
   policy_hz: 50.0                                     #   정책 호출 주기 (시뮬 dt 0.02 s)
   policy_start_s: 0.10                                #   놓은 뒤 이때부터 (시뮬 첫 결정)

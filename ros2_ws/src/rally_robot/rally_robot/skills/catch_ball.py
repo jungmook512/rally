@@ -322,7 +322,8 @@ def execute(node):
             if policy is not None and cfg["decide_mode"] == "policy":
                 pred, action, calls = decide_with_policy(
                     lambda: landing.latest(newer_than=t_goal, max_age_s=cfg["landing_max_age_s"]), policy, pad0, cfg["pad_normal"],
-                    ros_now, time.sleep, lambda: node.check_stop(goal_handle), cfg, pred)
+                    ros_now, time.sleep, lambda: node.check_stop(goal_handle), cfg, pred,
+                    on_error=lambda e: log.error(f"[catch_ball] 정책 실행 오류 {type(e).__name__}: {e} — 이 투구는 규칙 결정으로"))
                 if action is not None:
                     target = policy_target(pred.point, action, cfg["pad_normal"], cfg["policy_corr_scale_m"], cfg["policy_corr_max_m"])
                     log.info(f"[catch_ball] 정책 출발 — 놓은 뒤 {pred.since_release:.2f} s ({calls}회 호출), 보정 "
@@ -377,8 +378,12 @@ def execute(node):
                              f"놓은 뒤 {newer.since_release:.2f} s, 새 요격 오른쪽 {new_plan.du * 100:.1f} · 아래 {new_plan.dw * 100:.1f} cm")
                     return new_plan.tcp_posx
 
+                # 정책 보정점으로 출발했으면 재전송 안 함 — retarget 은 보정 없는 예측점으로 덮어쓴다 (#175 리뷰 2)
+                resend = cfg["resend_enabled"] and target is None
+                if cfg["resend_enabled"] and target is not None:
+                    log.info("[catch_ball] 정책 보정점으로 출발 — 비행 중 갱신(resend) 끔")
                 move_checked(node, plan.tcp_posx, cfg["catch_vel_mm_s"], cfg["catch_acc_mm_s2"],
-                             retarget=retarget if cfg["resend_enabled"] else None)
+                             retarget=retarget if resend else None)
                 plan, pred = sent["plan"], sent["pred"]
                 res.landing_predicted = _point(pred.point)
                 res.robot_travel_mm = float(np.hypot(plan.du, plan.dw) * 1000.0)
