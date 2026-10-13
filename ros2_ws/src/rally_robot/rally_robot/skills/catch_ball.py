@@ -70,7 +70,11 @@ DEFAULTS = dict(
     catch_overshoot_m=0.0,                              # 목표를 이동 방향으로 이만큼 더 (감속 구간을 예측점 뒤로, 10/13 정정인). catch_plan.intercept
     window_start_lag_s=0.15,                            # 받기 창 안에 끝나는지 볼 때 더하는 출발 지연 (10/10 실측 amovel 출발 148 ms)
     window_min_move_m=0.02,                             # 창 안에 갈 수 있는 거리가 이보다 짧으면 움직이지 않음 (too_late)
+    resend_max_jump_m=0.15,                             # 비행 중 갱신: 마지막 목표에서 이보다 크게 튄 예측은 무시 (10/13 21:14 교차 직전 33.6 cm 튐)
     resend_min_interval_s=0.3,                          # 비행 중 갱신: 직전 amovel 뒤 최소 이 간격 (10/13: 0.05 s 뒤 재전송이 첫 동작에 겹쳐 J1 150 °/s 초과·외력 103 N 보호 정지)
+    catch_move="amovel",                                # amovel(직선) | amovej(관절, 10/13 실측: 20/30 cm 0.40/0.51 s vs amovel 0.52/0.71 s, 힘 ≤ 88 N @400 °/s²)
+    catch_joint_vel_deg_s=120.0,                        #   amovej 관절 속도 (J1·J2 한계 150 의 80 %)
+    catch_joint_acc_deg_s2=400.0,                       #   amovej 관절 가속 (500 은 오른쪽 힘 94~106 N 으로 펜던트 96 N 근처)
     catch_vel_mm_s=450.0,                               # 위아래 730 mm/s 는 관절 속도 121 % 로 불가 (10/11 계산)
     catch_acc_mm_s2=2000.0,                             # #144 승인값 (받기 창 130 N, #165 와 함께). 1000 은 10/10 실측 20 cm 도착 0.85 s
     return_vel_mm_s=150.0,
@@ -153,6 +157,37 @@ class LandingListener:
 
 
 # ------------------------------------------------------------------ 정정인 자리 ① 패드 집기 (ready 전)
+def catch_posj(tcp_posx, max_dq_deg: float = 120.0, tol_mm: float = 5.0):
+    """요격 목표 posx → amovej 관절값 (10/13). 지금 관절에서 가장 가까운 IK 해(dsr_helpers.ik_nearest)를 고르고 fkin 으로 되돌려
+    목표와 tol_mm 안인지·관절 변화가 max_dq_deg 안인지 확인. 못 구하면 None → 부르는 쪽이 amovel 로."""
+    import DSR_ROBOT2
+    from rally_robot.dsr_helpers import J3_ABS_MAX_DEG, ik_nearest
+    if not hasattr(DSR_ROBOT2, "ikin") or not hasattr(DSR_ROBOT2, "fkin"):
+        return None
+    cur = [float(v) for v in DSR_ROBOT2.get_current_posj()]
+    q = None
+    if hasattr(DSR_ROBOT2, "get_current_solution_space"):      # 지금 자세의 해 번호로 ikin 1회 (서비스 호출 2회) — 요격은 자세가 안 바뀌므로 보통 이게 답
+        try:
+            r = DSR_ROBOT2.ikin([float(v) for v in tcp_posx], int(DSR_ROBOT2.get_current_solution_space()))
+            q0 = [float(v) for v in (r[0] if isinstance(r, tuple) else r)]
+            if len(q0) == 6 and abs(q0[2]) <= J3_ABS_MAX_DEG and max(abs(a - b) for a, b in zip(q0, cur)) <= max_dq_deg:
+                q = q0
+        except Exception:  # noqa: BLE001
+            q = None
+    if q is None:                                               # 아니면 8개 해 중 가장 가까운 것 (서비스 호출 최대 8회)
+        q = ik_nearest(tcp_posx, cur)
+    if q is None or max(abs(a - b) for a, b in zip(q, cur)) > max_dq_deg:
+        return None
+    try:
+        p = DSR_ROBOT2.fkin(q)
+        p = [float(v) for v in (p[0] if isinstance(p, tuple) else p)][:3]
+    except Exception:  # noqa: BLE001
+        return None
+    if np.linalg.norm(np.array(p) - np.array(tcp_posx[:3], float)) > tol_mm:
+        return None
+    return q
+
+
 def pickup_pad(node, goal_handle, cfg: dict) -> None:
     """goal 시작 직후, 대기 자세로 가기 전에 한 번 불린다. TODO(정정인): 패드 거치대에서 패드를 집는 동작.
 
@@ -399,7 +434,8 @@ def execute(node):
                 phase("intercept", pred)
                 res.reaction_time_s = float(time.monotonic() - t_detect)
                 log.info(f"[catch_ball] 요격 오른쪽 {plan.du * 100:.1f} · 아래 {plan.dw * 100:.1f} cm"
-                         f"{' (잘림)' if plan.clipped else ''}, 놓은 뒤 {pred.since_release:.2f} s, 교차까지 {pred.t_cross - ros_now():.2f} s")
+                         f"{' (잘림)' if plan.clipped else ''}, 놓은 뒤 {pred.since_release:.2f} s, 교차까지 {pred.t_cross - ros_now():.2f} s"
+                         f" · {cfg['catch_move']}")
                 sent = {"n": 0, "plan": plan, "pred": pred, "t_cmd": time.monotonic()}
 
                 def retarget():
@@ -424,6 +460,11 @@ def execute(node):
                     if time.monotonic() - sent["t_cmd"] < cfg["resend_min_interval_s"]:
                         why["interval"] += 1
                         return None
+                    # 10/13 21:14 실로봇: 교차 0.16 s 전에 예측이 33.6 cm 튀어 목표를 딴 데로 보냄 (공이 손목 카메라 가까이 오면 예측이 튐)
+                    # → 마지막 목표에서 resend_max_jump_m 넘게 바뀐 예측은 튄 값으로 보고 무시
+                    if float(np.linalg.norm(np.asarray(newer.point) - np.asarray(sent["pred"].point))) > cfg["resend_max_jump_m"]:
+                        why["jump"] += 1
+                        return None
                     if not should_resend(sent["pred"].point, newer.point, newer.since_release, sent["n"], cfg):
                         return None
                     if not quality_ok(newer.std, newer.n_obs, cfg["gate_std_max_m"], cfg["gate_n_obs_min"]):
@@ -444,17 +485,33 @@ def execute(node):
                              f"놓은 뒤 {newer.since_release:.2f} s, 새 요격 오른쪽 {new_plan.du * 100:.1f} · 아래 {new_plan.dw * 100:.1f} cm")
                     return new_plan.tcp_posx
 
-                why = dict(last_t=None, seen=0, late=0, near=0, quality=0, radius=0, interval=0, window=0)
+                why = dict(last_t=None, seen=0, late=0, near=0, quality=0, radius=0, interval=0, window=0, jump=0)
+                t_ik = time.monotonic()
+                posj = catch_posj(plan.tcp_posx) if cfg["catch_move"] == "amovej" else None
+                if cfg["catch_move"] == "amovej":
+                    t_ik = (time.monotonic() - t_ik) * 1000.0
+                    if posj is None:
+                        log.warning(f"[catch_ball] amovej 관절 해 없음(IK·fkin 확인 실패, {t_ik:.0f} ms) — 이번은 amovel 로")
+                    else:
+                        log.info(f"[catch_ball] amovej 관절 해 {t_ik:.0f} ms (컨트롤러 ikin·fkin)")        # 50 ms 넘으면 amovej 이득이 줄어듦
                 # 정책 보정점으로 출발했으면 재전송 안 함 — retarget 은 보정 없는 예측점으로 덮어쓴다 (#175 리뷰 2)
                 resend = cfg["resend_enabled"] and target is None
                 if cfg["resend_enabled"] and target is not None:
                     log.info("[catch_ball] 정책 보정점으로 출발 — 비행 중 갱신(resend) 끔")
-                move_checked(node, plan.tcp_posx, cfg["catch_vel_mm_s"], cfg["catch_acc_mm_s2"],
-                             retarget=retarget if resend else None)
+                if posj is not None:
+                    def retarget_j():
+                        p = retarget()
+                        return None if p is None else catch_posj(p)
+                    movej_checked(node, posj, cfg["catch_joint_vel_deg_s"], cfg["catch_joint_acc_deg_s2"],
+                                  retarget=retarget_j if resend else None)
+                else:
+                    move_checked(node, plan.tcp_posx, cfg["catch_vel_mm_s"], cfg["catch_acc_mm_s2"],
+                                 retarget=retarget if resend else None)
                 if resend:
                     log.info(f"[catch_ball] 비행 중 갱신 {sent['n']}회 — 이동 중 새 예측 {why['seen']}개: 창(놓은 뒤 {cfg['resend_until_release_s']:.2f} s) 지남 {why['late']} · "
                              f"3 cm 안 {why['near']} · 품질 미달 {why['quality']} · 반경 밖 {why['radius']} · 간격 {cfg['resend_min_interval_s']:.2f} s 안 {why['interval']}"
-                             f" · 받기 창 안에 못 멈춤 {why['window']}")
+                             f" · 받기 창 안에 못 멈춤 {why['window']}"
+                             f" · {cfg['resend_max_jump_m'] * 100:.0f} cm 넘게 튐 {why['jump']}")
                 plan, pred = sent["plan"], sent["pred"]
                 res.landing_predicted = _point(pred.point)
                 res.robot_travel_mm = float(np.hypot(plan.du, plan.dw) * 1000.0)
