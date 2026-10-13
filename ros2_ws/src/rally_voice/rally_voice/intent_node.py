@@ -8,8 +8,11 @@
   5. /rally/voice/intent 발행. header.stamp = 호출어 감지 시각 (brain 이 같은 발화를 한 번만 처리하는 기준)
 TTS 발화 중(/rally/voice/speaking=true)에도 듣는다. 그동안 들은 말은 비상어일 때만 발행하고 일반 명령은 버린다
   (INTERFACES 2.2, #45). 잔향 여유는 tts_node 가 false 를 늦게 보내는 것으로 처리 → 여기 speaking_tail_s 기본 0.
-아직 기획과 다른 점: 비상어도 호출어 다음에 말해야 하고 STT 를 거쳐 정지까지 약 6 s.
-  기획(CP9·FR-07)은 STT 없이 키워드 스팟팅으로 0.3 s 이내 → "그만/멈춰" openWakeWord 키워드 모델 학습 후 교체 예정 (todo/03 Day 2).
+비상어 상시 감지 (#50, 기획 CP9·FR-07): 호출어 없이 마이크 80 ms 마다 키워드 모델(rally_voice/kws.py,
+  models/kws/emergency_kws.joblib)을 돌려 "그만"·"멈춰"가 들리면 바로 /rally/safety/estop + VoiceIntent(stop, is_emergency).
+  STT·네트워크를 안 거친다. 로봇 발화 중에도, 호출어 뒤 녹음 중에도, STT 기다리는 중에도 계속 듣는다
+  (그래서 STT·LLM 은 별도 스레드에서). 녹음 중에 키워드가 울려도 녹음·STT 는 그대로 하고, STT 결과가 비상어인데
+  키워드로 이미 정지했으면 다시 발행하지 않는다. 모델 파일이 없으면 이 기능만 꺼지고 나머지는 그대로 (호출어 뒤 STT 비상어 규칙은 유지).
 음성 원본이 OpenAI 로 나간다 (선생님 방식). 로컬 STT(faster-whisper) 전환은 팀 결정 사항.
 """
 import io
@@ -32,6 +35,7 @@ from rally_voice.intent_rules import Intent  # noqa: F401 — 타입 표기용
 WHISPER_HINT = "랠리야. 공 굴리기, 캐치볼, 건네고 받기, 팔씨름. 훈련 시작, 그만, 멈춰, 잠깐, 다시, 쉽게, 어렵게, 천천히, 힘들어요."
 RATE = 16000
 FRAME = 1280                    # openWakeWord 80 ms
+ESTOP_CLEAR_S = 0.5             # 정지 요청(true) 뒤 이만큼 지나 false 를 한 번 보내 래치 값을 지운다 (#172 리뷰)
 
 
 def _package_resource() -> Path:
@@ -73,6 +77,10 @@ class IntentNode(Node):
         self.declare_parameter("llm_timeout_s", 3.0)
         self.declare_parameter("speaking_tail_s", 0.0)            # 잔향 여유는 tts_node 가 처리 (INTERFACES 2.2). 필요하면 추가로
         self.declare_parameter("speaking_max_s", 30.0)            # speaking=true 가 이보다 길면 tts_node 가 죽은 것으로 봄 (#53 리뷰)
+        self.declare_parameter("kws_enabled", True)               # 비상어 상시 감지 (#50)
+        self.declare_parameter("kws_model", "")                   # 비우면 /models/kws → ~/rally/models/kws 의 emergency_kws.joblib
+        self.declare_parameter("kws_threshold", float("nan"))     # NaN 이면 모델에 저장된 임계 (train.py --threshold)
+        self.declare_parameter("kws_refractory_s", 1.5)           # 한 번 울린 뒤 이 시간 동안 다시 안 울림
 
         reliable = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=10)
         latched = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -95,6 +103,10 @@ class IntentNode(Node):
             self.llm = LlmClassifier(self.api_key, self.get_parameter("llm_model").value,
                                      float(self.get_parameter("llm_timeout_s").value))
         self._stop = threading.Event()
+        self._kws_last_hit = -1.0                                  # 마지막 비상어 키워드 감지 시각 (monotonic)
+        self._kws = None                                           # 비상어 판별기 (마이크 스레드에서 만듦, 실패하면 None)
+        self._estop_clear_s = ESTOP_CLEAR_S
+        self._estop_clear_timer: threading.Timer | None = None
         self.thread = threading.Thread(target=self._audio_loop, daemon=True)
         self.thread.start()
 
@@ -132,28 +144,102 @@ class IntentNode(Node):
         except Exception as e:      # noqa: BLE001
             self.get_logger().error(f"마이크 열기 실패: {e}")
             return
+        self._kws = self._make_kws()
         self.get_logger().info(f"호출어 대기 ({name}, 임계 {thr})")
+
+        def read() -> np.ndarray:
+            """마이크 80 ms 를 읽고 비상어 감지에 먼저 넣는다 — 호출어·녹음·STT 와 무관하게 매 조각."""
+            chunk, _ = stream.read(FRAME)
+            chunk = chunk.flatten()
+            self._feed_kws(chunk)
+            return chunk
+
         with stream:
             while not self._stop.is_set() and rclpy.ok():
-                chunk, _ = stream.read(FRAME)
+                chunk = read()
                 # 로봇이 말하는 중에도 듣는다 (비상어는 살려 둬야 함). 들은 말을 거르는 건 _handle_audio 에서
-                if model.predict(chunk.flatten())[name] <= thr:
+                if model.predict(chunk)[name] <= thr:
                     continue
                 model.reset()
                 stamp = self.get_clock().now().to_msg()
+                rec_start = time.monotonic()
                 during_speech = self._robot_speaking()
                 self.get_logger().info("호출어 감지 → 녹음" + (" (로봇 발화 중: 비상어만 처리)" if during_speech else ""))
                 frames = []
                 for _ in range(rec_frames):
-                    c, _ = stream.read(FRAME)
+                    frames.append(read().copy())
                     during_speech = during_speech or self._robot_speaking()
-                    frames.append(c.copy())
-                self._handle_audio(np.concatenate(frames).flatten(), stamp, during_speech)
-                while stream.read_available >= FRAME:   # STT 하는 동안 쌓인 소리는 버림 (지난 말을 다시 듣지 않게)
-                    stream.read(FRAME)
+                # 녹음 중에 키워드가 울려도 녹음은 버리지 않는다 — 키워드 오탐("다음 거 하자" → 멈춰)이면 명령까지 잃으므로.
+                # 같은 비상어로 정지가 두 번 나가는 것만 _handle_audio 에서 막는다
+                # STT·LLM(1~6 s)은 다른 스레드에서 — 그동안에도 마이크를 계속 읽어 비상어·다음 호출어를 듣는다.
+                # 앞 말 처리 중에 들어온 호출어도 받아 따로 처리 (stamp 가 달라 brain 이 구분)
+                threading.Thread(target=self._handle_audio, args=(np.concatenate(frames), stamp, during_speech, rec_start),
+                                 daemon=True).start()
                 model.reset()
 
-    def _handle_audio(self, audio: np.ndarray, stamp, during_speech: bool = False) -> None:
+    def _make_kws(self):
+        if not self.get_parameter("kws_enabled").value:
+            self.get_logger().warn("비상어 상시 감지 꺼짐 (kws_enabled=false) — 비상어는 호출어 뒤 STT 로만")
+            return None
+        from rally_voice.kws import EmergencyKws, find_model
+        path = find_model(self.get_parameter("kws_model").value)
+        if path is None:
+            self.get_logger().warn("비상어 모델(emergency_kws.joblib) 없음 → 상시 감지 꺼짐. scripts/kws/train.py 로 만들기")
+            return None
+        try:
+            kws = EmergencyKws(path, float(self.get_parameter("kws_threshold").value),
+                               float(self.get_parameter("kws_refractory_s").value))
+        except Exception as e:      # noqa: BLE001 — 모델 문제로 노드 전체가 죽지 않게
+            self.get_logger().error(f"비상어 모델 읽기 실패 ({path}): {type(e).__name__}: {e} → 상시 감지 꺼짐")
+            return None
+        self.get_logger().info(f"비상어 상시 감지 켬 ({path.name}, 임계 {kws.threshold:.2f}, 연속 {kws.decider.consec} 프레임)")
+        return kws
+
+    def _feed_kws(self, chunk: np.ndarray) -> None:
+        """비상어 판별기에 80 ms 한 조각. 판별기 예외는 상시 감지만 끄고 마이크 스레드는 살린다
+        (안 그러면 _audio_loop 가 끝나 호출어·명령까지 조용히 멈춤 — #172 리뷰)."""
+        if self._kws is None:
+            return
+        try:
+            hit = self._kws.feed(chunk, time.monotonic())
+        except Exception as e:      # noqa: BLE001
+            self.get_logger().error(f"비상어 판별 실패: {type(e).__name__}: {e} → 상시 감지 꺼짐 (호출어 뒤 STT 비상어는 유지)")
+            self._kws = None
+            return
+        if hit is not None:
+            self._on_keyword(hit)
+
+    def _request_estop(self) -> None:
+        """/rally/safety/estop true. 이 토픽은 TransientLocal 이라 true 가 남으면 나중에 켜진 safety_monitor 가
+        켜자마자 STOP 된다 → ESTOP_CLEAR_S 뒤 false 를 한 번 보내 래치 값을 지운다. safety_monitor 는 false 를
+        무시하므로 이미 걸린 STOP 은 그대로 (해제는 reset 서비스로만, #172 리뷰)."""
+        self.pub_estop.publish(Bool(data=True))
+        if self._estop_clear_timer is not None:
+            self._estop_clear_timer.cancel()
+        self._estop_clear_timer = threading.Timer(self._estop_clear_s, self._clear_estop_latch)
+        self._estop_clear_timer.daemon = True
+        self._estop_clear_timer.start()
+
+    def _clear_estop_latch(self) -> None:
+        try:
+            self.pub_estop.publish(Bool(data=False))
+        except Exception as e:      # noqa: BLE001 — 종료 중이면 publisher 가 없을 수 있음
+            self.get_logger().warn(f"estop 래치 지우기 실패: {type(e).__name__}: {e}")
+
+    def _on_keyword(self, hit) -> None:
+        """비상어 감지 → 바로 정지 요청. LLM·STT 를 거치지 않는다."""
+        self._kws_last_hit = time.monotonic()
+        self._request_estop()
+        msg = VoiceIntent()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.text = hit.word
+        msg.intent = "stop"
+        msg.confidence = float(hit.score)
+        msg.is_emergency = True
+        self.pub_intent.publish(msg)
+        self.get_logger().warn(f'비상어 "{hit.word}" (점수 {hit.score:.2f}) → 정지 요청 [키워드, STT 없음]')
+
+    def _handle_audio(self, audio: np.ndarray, stamp, during_speech: bool = False, rec_start: float = -1.0) -> None:
         if not self.api_key:
             return
         t0 = time.perf_counter()
@@ -171,6 +257,9 @@ class IntentNode(Node):
         if result is None:
             self.get_logger().info(f'로봇 발화 중 일반 명령 무시: "{text}"')
             return
+        if result.is_emergency and rec_start >= 0 and self._kws_last_hit >= rec_start:
+            self.get_logger().info(f'"{text}" → stop — 키워드로 이미 정지 요청함, 중복 발행 생략')
+            return
         msg = VoiceIntent()
         msg.header.stamp = stamp
         msg.text = text
@@ -181,7 +270,7 @@ class IntentNode(Node):
         msg.is_emergency = result.is_emergency
         self.pub_intent.publish(msg)
         if result.is_emergency:
-            self.pub_estop.publish(Bool(data=True))
+            self._request_estop()
         self.get_logger().info(f'"{text}" → {result.intent} {result.slots or ""} ({result.source}, '
                                f'신뢰 {result.confidence:.2f}, STT {t_stt:.1f} s, 전체 {time.perf_counter() - t0:.1f} s)'
                                + (" [비상]" if result.is_emergency else ""))
@@ -194,6 +283,10 @@ class IntentNode(Node):
 
     def destroy_node(self) -> None:
         self._stop.set()
+        if self._estop_clear_timer is not None:   # 종료 직전 정지 요청이면 false 를 지금 보내고 끝냄
+            self._estop_clear_timer.cancel()
+            self._clear_estop_latch()
+        self.thread.join(timeout=1.0)    # 마이크 스레드가 끝난 뒤 종료 (안 기다리면 "terminate called without an active exception")
         super().destroy_node()
 
 

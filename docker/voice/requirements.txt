@@ -13,3 +13,6 @@ piper-tts
 openai>=1.40
 pydantic
 numpy<2  # 시스템(apt) numpy 1.26 을 그대로 사용 — pip 가 debian numpy 를 지우지 못함
+# 비상어 키워드 판별기(models/kws/emergency_kws.joblib) 읽기 — 학습한 PC(scripts/kws/train.py)와 같은 버전이어야 pickle 이 열림
+scikit-learn==1.9.1
+joblib

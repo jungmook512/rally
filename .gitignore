@@ -4,6 +4,7 @@ ros2_ws/install/
 ros2_ws/log/
 __pycache__/
 *.pyc
+.venv*/
 # 데이터·모델 (용량)
 models/*.pt
 models/*.npy
@@ -11,6 +12,7 @@ models/*.engine
 models/*.onnx
 models/*.npy
 models/**/*.task
+models/**/*.joblib
 data/datasets/
 data/bags/
 # 학습용 원본 사진 (scripts/capture_realsense.py 출력) — Roboflow 에 올리고 git 에는 넣지 않는다
