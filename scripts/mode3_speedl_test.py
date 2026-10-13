@@ -58,6 +58,7 @@ def main() -> int:
     ap.add_argument("--acc", type=float, default=2000.0, help="speedl 가속 mm/s²")
     ap.add_argument("--rate", type=float, default=30.0, help="명령 주기 Hz")
     ap.add_argument("--watchdog", type=float, default=0.2, help="speedl time 인자 s — 이 시간 안에 다음 명령이 없으면 로봇이 섬")
+    ap.add_argument("--stale", type=float, default=0.1, help="위치(joint_states) 표본이 이보다 오래되면 정지 [s] — 오래된 위치로 P 제어하면 오차가 안 줄어 계속 감 (#185 리뷰)")
     ap.add_argument("--hold", type=float, default=1.5, help="최대 시험 시간 s")
     ap.add_argument("--reps", type=int, default=2)
     ap.add_argument("--return-vel", type=float, default=100.0)
@@ -162,7 +163,14 @@ def main() -> int:
                             break
                         safe_or_stop()
                         with w.lock:
-                            p_now = w.samples[-1][1] if w.samples else p0
+                            last = w.samples[-1] if w.samples else None
+                        age = time.monotonic() - last[0] if last is not None else now
+                        if age > opt.stale:                                 # 위치가 안 들어오거나 멈춤 — 오래된 위치로 계속 밀지 않는다
+                            if last is None and now <= opt.stale:
+                                continue                                    # 시작 직후 첫 표본 기다림 (아직 명령 안 보냄)
+                            err = f"위치 수신 끊김 ({age * 1000:.0f} ms) — 정지"
+                            break
+                        p_now = last[1]
                         if np.linalg.norm(p_now - p0) > fence:
                             err = f"폭주 감지 (시작점에서 {np.linalg.norm(p_now - p0) * 100:.0f} cm) — 정지"
                             break
@@ -186,9 +194,14 @@ def main() -> int:
                             break
                         sent.append(time.monotonic())
                     zero()
+                    w.catch_window(False)                                   # 루프 끝나면 바로 끔 (nudge 끔을 길게 두지 않게)
                     wait_still()
                     time.sleep(0.3)
                 finally:
+                    try:
+                        zero()                                              # 예외로 빠져나가도 속도 0 (watchdog 전에)
+                    except Exception:                                       # noqa: BLE001 — 정지 시도가 원래 예외를 가리지 않게
+                        pass
                     w.catch_window(False)
                 state = get_robot_state()
                 if state not in ROBOT_OK:

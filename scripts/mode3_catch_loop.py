@@ -219,7 +219,7 @@ def main():
                   f"   로봇 이동 {r.robot_travel_mm:.0f} mm · 반응 {r.reaction_time_s:.2f} s{sp} · 단계 {' → '.join(phases)} · {time.monotonic() - t0:.0f} s")
             manual = None
             if moved and r.failure_reason != "timeout":
-                # 10/13: 측면 판정이 패드 가운데 붙은 공을 못 보는 경우가 있어 사람 판정도 같이 기록. 스킬이 접촉 예정 켜고 기다리는 8 s 안에
+                # 10/13: 측면 판정이 패드 가운데 붙은 공을 못 보는 경우가 있어 사람 판정도 같이 기록. 스킬이 접촉 예정 켜고 기다리는 ball_removal_wait_s(5 s) 안에
                 print("   ▶ 받았으면 y + Enter (4 s): ", end="", flush=True)
                 rd, _, _ = select.select([sys.stdin], [], [], 4.0)
                 ans = sys.stdin.readline().strip().lower() if rd else ""

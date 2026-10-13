@@ -125,9 +125,9 @@ def main() -> int:
         ex.shutdown(); rclpy.try_shutdown()
         return 0
 
-    from rally_robot.dsr_helpers import init_dsr
+    from rally_robot.dsr_helpers import init_dsr, stop_robot
     dsr = init_dsr("rally_mode3_resend")
-    from DSR_ROBOT2 import DR_MV_RA_DUPLICATE, DR_MV_RA_OVERRIDE, amovel, check_motion, get_current_posx, get_robot_state, movel, mwait  # noqa: E402
+    from DSR_ROBOT2 import DR_MV_RA_DUPLICATE, DR_MV_RA_OVERRIDE, amovel, check_motion, get_current_posx, get_robot_state, movel  # noqa: E402
     start6 = list(get_current_posx()[0])
     d = directions()[opt.dir]
 
@@ -136,6 +136,23 @@ def main() -> int:
         for i in range(3):
             t6[i] = start6[i] + d[i] * cm * 10.0
         return t6
+
+    def guard(label):
+        """이동 중 안전 STOP 이면 정지 명령 후 끝냄 (mode3_movej_test 와 같음, #185 리뷰)."""
+        s = w.safety
+        if s is not None and s.level == 2:
+            stopped = stop_robot(dsr, w.get_logger(), f"safety STOP {s.reason} ({label})")
+            raise SystemExit(f"{label} 중 안전 STOP ({s.reason}) — 정지 {'확인' if stopped else '실패! 펜던트 확인'}")
+
+    def wait_motion(t_cmd, label, limit_s, min_s=0.2):
+        while True:
+            time.sleep(0.01)
+            guard(label)
+            if time.monotonic() - t_cmd > min_s and check_motion() == 0:
+                return
+            if time.monotonic() - t_cmd > limit_s:
+                stop_robot(dsr, w.get_logger(), f"{label} 시간 초과")
+                raise SystemExit(f"{label}: {limit_s:.0f} s 안에 안 끝남 — 멈춤")
 
     def scale():
         s = w.wait_normal()
@@ -158,28 +175,25 @@ def main() -> int:
                     w.catch_window(True)                       # 받기 창 힘 한계 130 N (10/13, mode3_reach_test.Watch)
                     t_cmd = time.monotonic()
                     ret2, t2 = None, float("nan")
-                    if case == "single":
-                        ret1 = amovel(target(opt.second), vel=opt.vel * k, acc=opt.acc * k)
-                    else:
-                        ret1 = amovel(target(opt.first), vel=opt.vel * k, acc=opt.acc * k)
-                        while time.monotonic() - t_cmd < delay:
-                            time.sleep(0.001)
-                        if w.safety is None or w.safety.level != 0:     # 움직이는 중에는 기다리지 않음
-                            raise SystemExit("둘째 amovel 전 안전 상태가 NORMAL 아님 — 멈춤")
-                        t2 = time.monotonic() - t_cmd
-                        if case == "movel":
-                            ret2 = movel(target(opt.second), vel=opt.vel * k, acc=opt.acc * k)   # 도착(또는 거부)까지 블로킹
+                    try:                                       # 예외·STOP 에도 창을 끈다 (#185 리뷰)
+                        if case == "single":
+                            ret1 = amovel(target(opt.second), vel=opt.vel * k, acc=opt.acc * k)
                         else:
-                            ra = DR_MV_RA_OVERRIDE if case == "override" else DR_MV_RA_DUPLICATE
-                            ret2 = amovel(target(opt.second), vel=opt.vel * k, acc=opt.acc * k, ra=ra)
-                    while True:
-                        time.sleep(0.01)
-                        if time.monotonic() - t_cmd > 0.2 + (0 if case == "single" else delay) and check_motion() == 0:
-                            break
-                        if time.monotonic() - t_cmd > 10:
-                            raise SystemExit("10 s 안에 안 끝남 — 멈춤")
-                    time.sleep(0.3)
-                    w.catch_window(False)
+                            ret1 = amovel(target(opt.first), vel=opt.vel * k, acc=opt.acc * k)
+                            while time.monotonic() - t_cmd < delay:
+                                time.sleep(0.001)
+                            if w.safety is None or w.safety.level != 0:     # 움직이는 중에는 기다리지 않음
+                                raise SystemExit("둘째 amovel 전 안전 상태가 NORMAL 아님 — 멈춤")
+                            t2 = time.monotonic() - t_cmd
+                            if case == "movel":
+                                ret2 = movel(target(opt.second), vel=opt.vel * k, acc=opt.acc * k)   # 도착(또는 거부)까지 블로킹
+                            else:
+                                ra = DR_MV_RA_OVERRIDE if case == "override" else DR_MV_RA_DUPLICATE
+                                ret2 = amovel(target(opt.second), vel=opt.vel * k, acc=opt.acc * k, ra=ra)
+                        wait_motion(t_cmd, f"{case} 이동", 10.0, 0.2 + (0 if case == "single" else delay))
+                        time.sleep(0.3)
+                    finally:
+                        w.catch_window(False)
                     smp = w.take(t_cmd)
                     tgt = p0 + d * opt.second / 100.0
                     row = dict(case=case, dir=opt.dir, first_cm=opt.first, second_cm=opt.second, delay_s=delay,
@@ -196,8 +210,10 @@ def main() -> int:
                           f"끝 오차 {row.get('final_err_mm', float('nan')):.1f} mm · 힘 최대 {row.get('force_peak_n', float('nan')):.1f} N")
                     if row["robot_state"] not in (1, 2):
                         raise SystemExit(f"로봇 상태 {row['robot_state']} (알람·정지) — 펜던트에서 해제 후 대기 자세로")
-                    movel(start6, vel=opt.return_vel * scale(), acc=opt.return_vel * 2 * scale())
-                    mwait()
+                    k = scale()                                # 복귀도 amovel + 폴링 — 막는 movel·mwait 동안엔 STOP 을 못 본다 (mode3_reach_test 와 같음)
+                    t_ret = time.monotonic()
+                    amovel(start6, vel=opt.return_vel * k, acc=opt.return_vel * 2 * k)
+                    wait_motion(t_ret, "대기 자세 복귀", 15.0)
     finally:
         if rows:
             keys = list(dict.fromkeys(k for r in rows for k in r))
