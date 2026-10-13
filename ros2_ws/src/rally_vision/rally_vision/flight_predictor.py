@@ -69,8 +69,9 @@ class Crossing:
 
 class FlightPredictor:
     def __init__(self, k: float = 0.075, meas_std_m: float = 0.015, accel_std: float = 1.5,
-                 init_vel_std: float = 3.0):
+                 init_vel_std: float = 3.0, reject_reset: int = 0):
         self.k = k
+        self.reject_reset = int(reject_reset)
         self.R = np.eye(3) * meas_std_m ** 2
         self.q = accel_std ** 2          # 모델 밖 가속(회전·검출 흔들림)을 흡수하는 백색 가속 잡음
         self.init_vel_std = init_vel_std
@@ -82,6 +83,7 @@ class FlightPredictor:
         self.t = None
         self._first = None
         self.n = 0
+        self._rej, self._rej_pts = 0, []
 
     # ------------------------------------------------------------------ 갱신
     def update(self, t: float, p: np.ndarray) -> None:
@@ -112,14 +114,66 @@ class FlightPredictor:
         y = p - self.x[:3]
         S = H @ self.P @ H.T + self.R
         # 큰 잔차(검출 오류)는 버린다: 마할라노비스 거리 > 16 (3 자유도 99.9 %)
+        # 10/13 실로봇: 놓는 순간 손과 섞인 점으로 처음 5개 궤적이 틀어지면 이후 진짜 점이 전부 버려져 '관측 5' 에서 멈춤(투구 11 중 6).
+        # 연속 reject_reset 번 버려지면 필터 쪽이 틀린 것으로 보고 공분산을 처음 크기로 키운 뒤 받아들인다 (한두 번 튀는 점은 그대로 버림)
+        # 10/13 오후: 공분산만 키우고 틀린 속도를 그대로 두면 한 점으로 속도가 크게 꺾여 교차점이 −1 m 밖으로 튐 → 버려진 연속 점들로
+        # 처음처럼 다시 초기화 (버려진 첫·끝 두 점 차분 속도). 관측 수는 이어서 센다
         if float(y @ np.linalg.solve(S, y)) > 16.0 and self.n > 4:
-            self.t = t
+            self._rej = getattr(self, "_rej", 0) + 1
+            self._rej_pts = getattr(self, "_rej_pts", []) + [(t, p)]
+            if self.reject_reset <= 0 or self._rej < self.reject_reset:   # 0 = 끔 (10/13 오후: 투구 28 중 18 번 리셋돼 예측이 늦고 std 2 m — 아침 3/5·3/3 때처럼 끔)
+                self.t = t                                   # 상태는 이미 t 로 예측해 둠
+                return
+            pts, n_keep = self._rej_pts, self.n
+            self.reset()
+            self.update(*pts[0])
+            self.update(*pts[-1])
+            self.n = n_keep + len(pts)
+            self.n_resets = getattr(self, "n_resets", 0) + 1
             return
+        self._rej, self._rej_pts = 0, []
         Kg = self.P @ H.T @ np.linalg.inv(S)
         self.x = self.x + Kg @ y
         self.P = (np.eye(6) - Kg @ H) @ self.P
         self.t = t
         self.n += 1
+
+    def update_ray(self, t: float, P: np.ndarray, uv, pix_std: float = 3.0, gate: float = 13.8) -> bool:
+        """한 카메라 픽셀 관측 갱신 (10/13 정정인 B). P = 3x4 투영행렬(base → 픽셀), uv = 공 픽셀.
+        두 카메라가 같은 순간에 다 봐야 3D 점이 나오는 대신 카메라마다 프레임이 올 때 바로 '이 광선 위에 공' 으로 갱신한다.
+        깊이는 그 프레임만으로는 모르지만 운동 모델로 앞뒤 관측과 묶여 맞춰진다. 초기화 전(x 없음)이면 안 씀.
+        큰 잔차(마할라노비스 2 자유도 > gate, 99.9 %)는 버림 — 한 카메라 오검출. 반환: 받아들였는지."""
+        if self.x is None or self.t is None:
+            return False
+        dt = t - self.t
+        if dt < 0:
+            return False
+        if dt > 0:
+            F = _jac(self.x, self.k, dt)
+            x_pred = propagate(self.x, self.k, dt)
+            Gq = np.vstack([0.5 * dt ** 2 * np.eye(3), dt * np.eye(3)])
+            P_pred = F @ self.P @ F.T + self.q * Gq @ Gq.T
+        else:
+            x_pred, P_pred = self.x, self.P
+        P = np.asarray(P, float)
+        h = P @ np.r_[x_pred[:3], 1.0]
+        if h[2] <= 1e-6:
+            return False
+        z = np.array([h[0] / h[2], h[1] / h[2]])
+        J = np.zeros((2, 6))
+        J[0, :3] = (P[0, :3] * h[2] - h[0] * P[2, :3]) / h[2] ** 2
+        J[1, :3] = (P[1, :3] * h[2] - h[1] * P[2, :3]) / h[2] ** 2
+        y = np.asarray(uv, float) - z
+        S = J @ P_pred @ J.T + np.eye(2) * pix_std ** 2
+        if float(y @ np.linalg.solve(S, y)) > gate:
+            self.n_ray_rej = getattr(self, "n_ray_rej", 0) + 1
+            return False
+        Kg = P_pred @ J.T @ np.linalg.inv(S)
+        self.x = x_pred + Kg @ y
+        self.P = (np.eye(6) - Kg @ J) @ P_pred
+        self.t = t
+        self.n += 1
+        return True
 
     @property
     def ready(self) -> bool:
