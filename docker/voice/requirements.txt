@@ -1,4 +1,11 @@
-openwakeword
+# openwakeword 0.6.0 은 Dockerfile 에서 --no-deps 로 설치 (리눅스에서 tflite-runtime 을 요구하는데 py3.12 휠이 없어
+#   pip 가 0.4.0 으로 내려감 → intent_node Model(wakeword_models=...) TypeError, #174 코멘트). 아래는 0.6.0 이 실제로 쓰는 의존성
+onnxruntime>=1.10,<2
+scipy<2
+scikit-learn==1.9.1  # #172 비상어 판별기 pickle 과 같은 버전
+tqdm
+requests
+ai-edge-litert==2.3.0  # tflite-runtime 후속 (구글). Dockerfile 의 tflite_runtime 대체 모듈이 이걸 넘겨줌
 faster-whisper
 silero-vad
 sounddevice
