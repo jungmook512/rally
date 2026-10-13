@@ -10,6 +10,8 @@
 1. ready     : pickup_pad() — 패드 집기 (정정인 자리, 거치대 교시가 있으면 거치대에서 집어 대기 자세까지) → 대기 자세 posj 로 관절 이동
 2. tracking  : 이 goal 이후 첫 예측이 오면 투구 시작 → **받기 창** contact_expected ON (공이 맞아도 nudge STOP 안 나게. 힘 한계 130 N 도
                이 창에만 걸릴 예정 — #144). 공 놓은 뒤 decide_after_s(0.25 s, 10/12 밤 실투구 기준) 까지 최신 예측을 기다림
+   **정책 모드 (decide_mode: policy, 기본 rule)**: 놓은 뒤 policy_start_s~policy_max_s 동안 policy_hz 로 학습한 정책(ONNX,
+               catch_policy.py)이 출발 시점과 예측점 보정을 정한다. 출발이 안 나오거나 모델을 못 읽으면 규칙 결정으로 폴백. 아래 3 이후는 같다.
 3. intercept : 예측 품질(std·n_obs)이 기준 안이고 안전이 NORMAL 이면, 예측점으로 패드 중심을 옮기는 TCP 위치로 amovel 한 번
                (자세 고정, 왼쪽 안 감, 오른쪽·위 15 cm·아래 8 cm 까지 — catch_plan.intercept).
                **비행 중 갱신 (MODE3_PLAN ③, 기본 꺼짐 resend_enabled)**: 이동 중 새 예측이 처음 예측점에서 resend_threshold_m(3 cm) 넘게
@@ -44,6 +46,7 @@ from std_msgs.msg import Float64MultiArray
 
 from rally_interfaces.action import CatchBall
 from rally_robot.dsr_helpers import SkillAbort, move_checked, movej_checked, stop_robot
+from rally_robot.skills.catch_policy import OnnxPolicy, decide_with_policy, find_policy, policy_target
 from rally_robot.skills.catch_plan import (ContactWindow, Prediction, clamp_cross, intercept, judge_pad, pad_center, parse_info, quality_ok,
                                               should_resend, window_close_delay)
 
@@ -79,6 +82,14 @@ DEFAULTS = dict(
     resend_threshold_m=0.03,                            #   처음 예측점에서 이만큼 넘게 벗어나면
     resend_until_release_s=0.45,                        #   놓은 뒤 이 시각까지만 (결정 0.25~0.40 s 직후만 의미, 그 뒤는 가도 늦음)
     resend_max=1,                                       #   최대 횟수
+    decide_mode="rule",                                 # rule | policy — policy 면 학습한 정책(ONNX)이 출발 시점·보정을 정함 (catch_policy.py, 기본 rule)
+    policy_path="",                                     #   비면 /models · ~/rally/models · models 에서 policy_stage1.onnx
+    policy_hz=50.0,                                     #   정책 호출 주기 (시뮬 dt 0.02 s)
+    policy_start_s=0.10,                                #   놓은 뒤 이 시각부터 부름 (시뮬 첫 결정)
+    policy_max_s=0.40,                                  #   여기까지 출발이 안 나오면 규칙 결정으로 폴백
+    policy_std_source="sim_table",                      #   obs 오차 칸: sim_table(학습 표, 기본) | landing_info(칼만 std — 학습 분포와 달라 늦게 출발)
+    policy_corr_scale_m=0.05,                           #   action[1:3] × 이 값 = 보정 (시뮬과 같게)
+    policy_corr_max_m=0.10,                             #   보정 상한
     contact_window_max_s=1.5,                           # 받기 창 절대 상한 — 연 뒤 이 시간이면 교차 예측과 무관하게 닫음 (#171 리뷰. safety_monitor 상한 2 s 보다 짧게)
     contact_window_after_cross_s=0.5,                   # 받기 창(contact_expected) 닫는 시각 = 교차 + 이 값 (#144: 130 N 은 이 창에만. 판정은 창 뒤에도 계속)
 )
@@ -207,8 +218,26 @@ def _point(p) -> Point:
     return Point(x=float(p[0]), y=float(p[1]), z=float(p[2]))
 
 
+def _load_policy(node, cfg0: dict):
+    """decide_mode == policy 면 ONNX 정책을 한 번 읽는다. 못 읽으면 None (경고, 규칙으로 돈다)."""
+    if str(cfg0.get("decide_mode", "rule")) != "policy":
+        return None
+    path = find_policy(str(cfg0.get("policy_path", "") or ""))
+    if not path:
+        node.get_logger().error("[catch_ball] decide_mode=policy 인데 정책 파일 없음 (models/policy_stage1.onnx) — 규칙 결정으로 돎")
+        return None
+    try:
+        pol = OnnxPolicy(path)
+    except Exception as e:  # noqa: BLE001 — onnxruntime 없음·파일 깨짐
+        node.get_logger().error(f"[catch_ball] 정책 {path} 를 못 읽음 ({type(e).__name__}: {e}) — 규칙 결정으로 돎. 로봇 PC: pip install onnxruntime")
+        return None
+    node.get_logger().info(f"[catch_ball] 정책 모드 — {path}")
+    return pol
+
+
 def execute(node):
     landing = LandingListener(node)
+    policy = _load_policy(node, {**DEFAULTS, **(node.cfg.get("mode3") or {})})
 
     def _execute(goal_handle):
         from DSR_ROBOT2 import get_current_posx
@@ -289,11 +318,26 @@ def execute(node):
             node.set_catch_window(True)                        # 받기 창 동안만 힘 한계 catch_window_force_limit_n (130 N, #144)
             t_open["mono"] = time.monotonic()
             phase("tracking", pred)
-            pred = wait_decide(pred, t_goal)
+            target = None                                      # 정책 모드에서 출발이 나오면 보정한 점, 아니면 예측점 그대로
+            if policy is not None and cfg["decide_mode"] == "policy":
+                pred, action, calls = decide_with_policy(
+                    lambda: landing.latest(newer_than=t_goal, max_age_s=cfg["landing_max_age_s"]), policy, pad0, cfg["pad_normal"],
+                    ros_now, time.sleep, lambda: node.check_stop(goal_handle), cfg, pred)
+                if action is not None:
+                    target = policy_target(pred.point, action, cfg["pad_normal"], cfg["policy_corr_scale_m"], cfg["policy_corr_max_m"])
+                    log.info(f"[catch_ball] 정책 출발 — 놓은 뒤 {pred.since_release:.2f} s ({calls}회 호출), 보정 "
+                             f"u {float(np.clip(action[1] * cfg['policy_corr_scale_m'], -cfg['policy_corr_max_m'], cfg['policy_corr_max_m'])) * 100:+.1f} · "
+                             f"w {float(np.clip(action[2] * cfg['policy_corr_scale_m'], -cfg['policy_corr_max_m'], cfg['policy_corr_max_m'])) * 100:+.1f} cm")
+                else:
+                    log.info(f"[catch_ball] 정책이 놓은 뒤 {pred.since_release:.2f} s 까지 출발 안 함 ({calls}회 호출) — 규칙 결정으로")
+                    pred = wait_decide(pred, t_goal)
+            else:
+                pred = wait_decide(pred, t_goal)
             # 받기 창 닫기 타이머: 결정 시점 예측의 교차 시각 + 0.5 s. 요격 이동(move_checked, 0.5~0.8 s)이 끝나기를 기다리지 않는다
             window.schedule_close(window_close_delay(pred.t_cross, ros_now(), cfg["cross_max_after_s"], cfg["contact_window_after_cross_s"],
                                                      time.monotonic() - t_open["mono"], cfg["contact_window_max_s"]))
-            plan = intercept(ready, pad0, cfg["pad_normal"], pred.point, cfg["right_max_m"], cfg["updown_max_m"], cfg["down_max_m"])
+            plan = intercept(ready, pad0, cfg["pad_normal"], pred.point if target is None else target,
+                             cfg["right_max_m"], cfg["updown_max_m"], cfg["down_max_m"])
             res.landing_predicted = _point(pred.point)
 
             if goal.catch_radius > 0 and plan.offset_m > goal.catch_radius:

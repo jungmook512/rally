@@ -77,6 +77,15 @@ mode3:
   resend_until_release_s: 0.45                        #   놓은 뒤 이 시각까지만 (결정 0.25~0.40 s 바로 뒤. 교차 0.74 s, 15 cm 도착 0.52 s → 더 늦으면 못 감)
   resend_max: 1
   contact_window_after_cross_s: 0.5                   # 받기 창(contact_expected) 닫는 시각 = 교차 + 0.5 s (#144: 힘 한계 130 N 은 이 창에만. 비전 판정은 창이 닫힌 뒤에도 계속)
+  # 정책 모드 (10/13 박성현, catch_policy.py): Isaac 1단계 PPO 정책(ONNX)이 출발 시점·예측점 보정을 정함. 나머지(한계·게이트·창·판정)는 같음
+  #   rule 이 기본. policy 로 바꾸려면 로봇 PC models/policy_stage1.onnx + pip install onnxruntime. 못 읽으면 규칙으로 돎(에러 로그)
+  #   정책은 한계 오른쪽 15 · 위 15 · 아래 8 cm 로 학습 → 비교 시험 때는 right_max_m·updown_max_m 0.15 로 규칙·정책 둘 다 같게
+  decide_mode: rule
+  policy_path: ""                                     #   비면 /models · ~/rally/models · models 의 policy_stage1.onnx
+  policy_hz: 50.0                                     #   정책 호출 주기 (시뮬 dt 0.02 s)
+  policy_start_s: 0.10                                #   놓은 뒤 이때부터 (시뮬 첫 결정)
+  policy_max_s: 0.40                                  #   여기까지 출발 안 나오면 규칙 결정(decide_after_s·품질 기다림)으로
+  policy_std_source: sim_table                        #   정책 입력 오차 칸: sim_table(학습 표, 기본) | landing_info(칼만 std 6~8 cm 는 학습 표보다 커서 0.36 s+ 로 늦게 출발)
   contact_window_max_s: 1.5                           # 받기 창 절대 상한 — 연 뒤 1.5 s 면 교차 예측과 무관하게 닫음 (#171 리뷰 10/13. safety.yaml catch_window_max_s 2 s 보다 짧게)
 
 # mode1 (공 굴려주기) — 가이드 길 2개 (10/12: 3개 → 2개) (폭 10~12 cm, 높이 ≤ 공 반지름)
