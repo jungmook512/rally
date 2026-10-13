@@ -56,6 +56,26 @@ def load_api_key() -> str:
     return ""
 
 
+def pulse_input_device(sd) -> int | None:
+    """컨테이너가 호스트 PipeWire(펄스 소켓)로 소리를 낼 때(docker #183, PULSE_SERVER) VOICE_MIC_DEVICE 가 비면 'pulse' 입력 장치 번호.
+    선생님 코드 audio_device.resolve_input_device() 는 "기본 16 kHz 인 첫 입력"을 고르는데, /dev/snd 도 같이 들어오므로
+    C270 웹캠 마이크 같은 hw 장치를 직접 열거나 호스트가 잡고 있어 busy 가 될 수 있다 → 펄스(데스크톱 기본 입력)로 고정. 없으면 None."""
+    server = os.environ.get("PULSE_SERVER", "")
+    if os.environ.get("VOICE_MIC_DEVICE") or not server:
+        return None
+    # compose 는 PULSE_SERVER 를 늘 넣는다 — 소켓이 실제로 없으면(데스크톱 로그인 전 등) 'pulse' 를 열다 실패해 비상어 감지까지
+    # 꺼지므로 예전 방식으로 (#183 리뷰). 'pulse' 장치는 libasound2-plugins 설정만으로도 목록에 나올 수 있다
+    if server.startswith("unix:") and not os.path.exists(server[len("unix:"):]):
+        return None
+    try:
+        for idx, dev in enumerate(sd.query_devices()):
+            if dev["name"] == "pulse" and dev["max_input_channels"] > 0:
+                return idx
+    except Exception:           # noqa: BLE001 — 못 찾으면 예전 방식
+        pass
+    return None
+
+
 def to_wav_bytes(audio: np.ndarray) -> bytes:
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
@@ -139,7 +159,9 @@ class IntentNode(Node):
         name = Path(path).stem
         thr = float(self.get_parameter("wake_threshold").value)
         rec_frames = int(float(self.get_parameter("record_s").value) * RATE / FRAME)
-        mic = resolve_input_device()
+        mic = pulse_input_device(sd)                             # 장치 번호 0 도 유효 — `or` 로 넘기지 않는다 (#183 리뷰)
+        if mic is None:
+            mic = resolve_input_device()
         try:
             stream = sd.InputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=FRAME, device=mic)
             stream.start()

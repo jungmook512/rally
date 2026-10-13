@@ -23,5 +23,9 @@ RUN pip3 install --no-cache-dir --break-system-packages --no-deps openwakeword==
  && mkdir -p "$d/tflite_runtime" && touch "$d/tflite_runtime/__init__.py" \
  && echo "from ai_edge_litert.interpreter import Interpreter  # noqa: F401" > "$d/tflite_runtime/interpreter.py" \
  && python3 -c "from openwakeword.utils import download_models; download_models(['__features_only__'])"
+# 소리는 호스트 PipeWire(펄스 소켓)로 보낸다 — 데스크톱 PC 에서 /dev/snd 직접 출력은 오류 없이 무음 (10/13 서버 PC: done=True 인데 안 들림,
+#   펄스 경유 시험음은 들림). 맨 끝 층이라 이것만 바꿔도 pip 층은 캐시 그대로. compose 가 소켓이 있을 때만 asound.conf 로 켠다
+RUN apt-get update && apt-get install -y --no-install-recommends libasound2-plugins && rm -rf /var/lib/apt/lists/* \
+ && printf 'pcm.!default { type pulse }\nctl.!default { type pulse }\n' > /etc/asound.pulse.conf
 COPY docker/entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
