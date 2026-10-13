@@ -70,8 +70,9 @@ if [ "$MODE3" = 1 ]; then
   #   모드 3 은 두 카메라 컬러만 쓰므로 segmenter 빼고 손목 깊이 끔
   WRIST3_ARGS=$(echo "$WRIST_ARGS" | sed -e 's/enable_depth:=true/enable_depth:=false/' -e 's/ align_depth.enable:=true//' -e 's/ depth_module.depth_profile:=[^ ]*//')
   # FLIGHT_NATIVE=1: 예측 노드는 컨테이너에서 안 띄움 (호스트에서 직접 — 10/12 밤 컨테이너 안에서는 영상 콜백 20 Hz 뿐)
-  FLIGHT_ARG=""
-  [ -n "$FLIGHT_MODEL" ] && FLIGHT_ARG="--ros-args -p model_path:=/models/$FLIGHT_MODEL"
+  # 10/13 실로봇: 던지기 전 팔 동작(1.5~2 m/s)이 투구 시작으로 잡혀 진짜 투구를 막음 → 시작 속도 1.5 → 2.5 m/s (실제 투구는 놓는 순간 2.9~6 m/s)
+  FLIGHT_ARG="--ros-args -p min_speed_mps:=${FLIGHT_MIN_SPEED:-2.5}"
+  [ -n "$FLIGHT_MODEL" ] && FLIGHT_ARG="$FLIGHT_ARG -p model_path:=/models/$FLIGHT_MODEL"
   docker run -d --name $NAME --network host --ipc host --gpus all --privileged -v /dev:/dev \
     -v "$ROOT/models:/models:ro" -v "$ROOT/ros2_ws/src/rally_bringup/config:/ros2_ws/install/share/rally_bringup/config:ro" \
     -e ROS_DOMAIN_ID=$DOMAIN -e RMW_IMPLEMENTATION=rmw_fastrtps_cpp -e FASTDDS_BUILTIN_TRANSPORTS=${MODE3_TRANSPORT:-UDPv4} -e YOLO_CONFIG_DIR=/tmp/yolo \
