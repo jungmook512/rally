@@ -6,10 +6,10 @@ intent_node 와 같은 판정 코드(rally_voice/kws.py 의 EmergencyKws)를 그
     python scripts/kws/kws_live.py --trial 그만 --n 10            # 인식: "지금!" 에 맞춰 10 번 → 감지 수 · 말 끝 → 감지 지연
     python scripts/kws/kws_live.py --minutes 10                  # 오탐: 평소 대화, 그만·멈춰는 말하지 않기
     python scripts/kws/kws_live.py --wav 파일.wav --sweep         # 녹음 파일로 (마이크 없이) + 임계 × 연속 프레임 비교표
-울릴 때마다 시각·단어·점수를 찍고, 앞 1.5 s 소리를 data/datasets/kws/review/ 에 wav 로 남긴다 (--no-save 로 끔).
+울릴 때마다 시각·단어·점수를 찍고, 앞 3 s 소리를 data/datasets/kws/review/ 에 wav 로 남긴다 (--no-save 로 끔).
 마이크 오탐 측정은 들은 소리 전체를 data/datasets/kws/sessions/ 에 남긴다 → 같은 소리로 설정만 바꿔 --wav 로 다시 잴 수 있다.
 설정 고르기에 쓴 녹음과 최종 숫자를 내는 녹음은 따로 (같은 녹음이면 그 녹음에 맞춘 숫자가 나온다).
-오탐이면 그 wav 를 data/datasets/kws/other/ 로 옮기고 train.py 를 다시 돌린다.
+대화 중 그만·멈춰를 피할 필요는 없다: scripts/kws/review.py 로 들어 보고 진짜 말한 것은 빼고 오탐만 센다.
 목표 (기획 FR-07·CP9): 인식 9/10 이상, 오탐 시간당 6 회 이하(10 분에 1 회), 말 끝 → 감지 0.3 s 이내.
 """
 import argparse
@@ -101,7 +101,7 @@ def speech_span(rms: list[float]) -> tuple[int, int] | None:
 class Runner:
     def __init__(self, kws: EmergencyKws, save: bool) -> None:
         self.kws, self.save = kws, save
-        self.hist: deque[np.ndarray] = deque(maxlen=int(1.5 * RATE / FRAME))
+        self.hist: deque[np.ndarray] = deque(maxlen=int(3.0 * RATE / FRAME))   # 모델이 보는 약 2 s + 여유
         self.hits: list[tuple[float, str, float]] = []
         self.scores: list[float] = []                    # 프레임마다 비상 점수 (--sweep 용, 준비 2 s 동안은 0)
 
@@ -112,8 +112,9 @@ class Runner:
         if hit is None:
             return None
         self.hits.append((t, hit.word, hit.score))
-        if not quiet:
-            print(f"  [{t:7.1f} s] {hit.word}  점수 {hit.score:.2f}", flush=True)
+        if quiet:                                        # --trial: 일부러 말한 감지라 오탐 검토(review/) 대상이 아님
+            return hit
+        print(f"  [{t:7.1f} s] {hit.word}  점수 {hit.score:.2f}", flush=True)
         if self.save:
             save_wav(REVIEW / f"{datetime.now():%m%d_%H%M%S}_{hit.score:.2f}.wav", np.concatenate(list(self.hist)))
         return hit
@@ -287,7 +288,7 @@ def main() -> int:
     if a.trial and r.save:
         print(f"  회차별 소리: {REVIEW}\\trial_*.wav  — 놓친 회를 들어 보면 원인을 알 수 있음")
     elif r.hits and r.save:
-        print(f"  울린 순간 소리: {REVIEW}  — 오탐이면 other 폴더로 옮기고 train.py 다시")
+        print(f"  울린 순간 소리: {REVIEW}  → 진짜 말한 것 빼고 세기: python scripts/kws/review.py")
     return 0
 
 
