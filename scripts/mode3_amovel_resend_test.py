@@ -74,7 +74,9 @@ def resend_stats(samples, t_cmd, p0, d, first_m, second_m, stop_mps):
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--run", action="store_true", help="실제로 로봇을 움직임 (없으면 계획만)")
-    ap.add_argument("--cases", nargs="+", default=["single", "duplicate", "override"], choices=["single", "duplicate", "override", "movel"])
+    ap.add_argument("--cases", nargs="+", default=["single", "duplicate", "override"], choices=["single", "duplicate", "override", "movel", "jsingle", "jdup"])
+    ap.add_argument("--jvel", type=float, default=120.0, help="jsingle·jdup: amovej 관절 속도 °/s")
+    ap.add_argument("--jacc", type=float, default=400.0, help="jsingle·jdup: amovej 관절 가속 °/s²")
     ap.add_argument("--dir", type=str.strip, default="-y", choices=list(DIRS))
     ap.add_argument("--first", type=float, default=10.0, help="첫 목표 cm")
     ap.add_argument("--second", type=float, default=15.0, help="둘째 목표 cm")
@@ -127,7 +129,8 @@ def main() -> int:
 
     from rally_robot.dsr_helpers import init_dsr, stop_robot
     dsr = init_dsr("rally_mode3_resend")
-    from DSR_ROBOT2 import DR_MV_RA_DUPLICATE, DR_MV_RA_OVERRIDE, amovel, check_motion, get_current_posx, get_robot_state, movel  # noqa: E402
+    from DSR_ROBOT2 import DR_MV_RA_DUPLICATE, DR_MV_RA_OVERRIDE, amovej, amovel, check_motion, get_current_posj, get_current_posx, get_robot_state, movel  # noqa: E402
+    from rally_robot.dsr_helpers import ik_nearest                     # 받기 스킬(catch_posj)과 같은 해 선택
     start6 = list(get_current_posx()[0])
     d = directions()[opt.dir]
 
@@ -167,7 +170,7 @@ def main() -> int:
     rows = []
     try:
         for case in opt.cases:
-            for delay in ([0.0] if case == "single" else opt.delay):
+            for delay in ([0.0] if case in ("single", "jsingle") else opt.delay):
                 for rep in range(opt.reps):
                     k = scale()
                     time.sleep(opt.settle)
@@ -176,7 +179,18 @@ def main() -> int:
                     t_cmd = time.monotonic()
                     ret2, t2 = None, float("nan")
                     try:                                       # 예외·STOP 에도 창을 끈다 (#185 리뷰)
-                        if case == "single":
+                        if case in ("jsingle", "jdup"):                 # 10/13: amovej 로 출발 → (jdup) delay 뒤 amovej 재전송 — 겹침 확인
+                            q1 = ik_nearest(target(opt.first if case == "jdup" else opt.second), get_current_posj())
+                            ret1 = amovej(q1, vel=opt.jvel * k, acc=opt.jacc * k)
+                            if case == "jdup":
+                                while time.monotonic() - t_cmd < delay:
+                                    time.sleep(0.001)
+                                if w.safety is None or w.safety.level != 0:
+                                    raise SystemExit("둘째 amovej 전 안전 상태가 NORMAL 아님 — 멈춤")
+                                t2 = time.monotonic() - t_cmd
+                                q2 = ik_nearest(target(opt.second), get_current_posj())
+                                ret2 = amovej(q2, vel=opt.jvel * k, acc=opt.jacc * k)
+                        elif case == "single":
                             ret1 = amovel(target(opt.second), vel=opt.vel * k, acc=opt.acc * k)
                         else:
                             ret1 = amovel(target(opt.first), vel=opt.vel * k, acc=opt.acc * k)
@@ -190,7 +204,7 @@ def main() -> int:
                             else:
                                 ra = DR_MV_RA_OVERRIDE if case == "override" else DR_MV_RA_DUPLICATE
                                 ret2 = amovel(target(opt.second), vel=opt.vel * k, acc=opt.acc * k, ra=ra)
-                        wait_motion(t_cmd, f"{case} 이동", 10.0, 0.2 + (0 if case == "single" else delay))
+                        wait_motion(t_cmd, f"{case} 이동", 10.0, 0.2 + (0 if case in ("single", "jsingle") else delay))
                         time.sleep(0.3)
                     finally:
                         w.catch_window(False)

@@ -72,12 +72,28 @@ def main():
         steps = [("U (들어 올림)", U), ("경유 (팔만 대기 자세)", ready[:3] + U[3:]), ("대기 자세", ready)]
     else:
         steps = [("대기 자세", ready)]
-    prev = cur
-    for name, tgt in steps:
-        ok, bad = path_ok(chain, prev, tgt, ws)
-        if not ok:
-            raise SystemExit(f"{name} 로 가는 경로가 작업 공간 밖 (TCP {np.round(bad, 3).tolist()}) — 안 움직임. 직접교시로 옮겨 주세요")
-        prev = tgt
+    def legs_ok(seq):
+        prev = cur
+        for name, tgt in seq:
+            ok, bad = path_ok(chain, prev, tgt, ws)
+            if not ok:
+                return name, bad
+            prev = tgt
+        return None, None
+
+    bad_name, bad_p = legs_ok(steps)
+    if bad_name is not None and len(steps) == 1:
+        # 10/13: 모드 1 자세(J1 0·팔 앞으로)에서 대기 자세로 바로 가면 팔꿈치가 뒤집히며 TCP 가 x 0.67 까지 나감 → 팔을 위로 세운 뒤
+        # (J2·J3 0) 세운 채 J1·손목을 대기값으로 돌리고 내려온다. 세 구간 모두 순기구학으로 작업 공간 안 확인 (z 최대 1.26 m — 위쪽 여유 확인)
+        # J3 를 -15° 로 살짝 굽힘: 완전히 편 자세(J3 0)는 특이점이라 힘 값이 끊겨 5 s 넘으면 wrench_lost STOP (10/13 실측)
+        up = [cur[0], 0.0, -15.0, cur[3], cur[4], cur[5]]
+        turn = [ready[0], 0.0, -15.0, ready[3], ready[4], ready[5]]
+        alt = [("팔 위로 세움", up), ("세운 채 J1·손목 대기값", turn), ("대기 자세", ready)]
+        if legs_ok(alt)[0] is None:
+            print(f"바로 가는 경로가 작업 공간 밖 (TCP {np.round(bad_p, 3).tolist()}) → 팔을 위로 세워서 돌아가는 경로 (z 최대 약 1.3 m)")
+            steps, bad_name = alt, None
+    if bad_name is not None:
+        raise SystemExit(f"{bad_name} 로 가는 경로가 작업 공간 밖 (TCP {np.round(bad_p, 3).tolist()}) — 안 움직임. 직접교시로 옮겨 주세요")
     for name, tgt in steps:
         print(f"▶ {name}")
         movej_abs(n, tgt, opt.vel, fkin(n, tgt))
