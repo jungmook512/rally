@@ -155,6 +155,7 @@ def main() -> int:
                     k = scale()
                     time.sleep(opt.settle)
                     w.clear()
+                    w.catch_window(True)                       # 받기 창 힘 한계 130 N (10/13, mode3_reach_test.Watch)
                     t_cmd = time.monotonic()
                     ret2, t2 = None, float("nan")
                     if case == "single":
@@ -178,6 +179,7 @@ def main() -> int:
                         if time.monotonic() - t_cmd > 10:
                             raise SystemExit("10 s 안에 안 끝남 — 멈춤")
                     time.sleep(0.3)
+                    w.catch_window(False)
                     smp = w.take(t_cmd)
                     tgt = p0 + d * opt.second / 100.0
                     row = dict(case=case, dir=opt.dir, first_cm=opt.first, second_cm=opt.second, delay_s=delay,
