@@ -35,6 +35,7 @@ from rally_voice.intent_rules import Intent  # noqa: F401 — 타입 표기용
 WHISPER_HINT = "랠리야. 공 굴리기, 캐치볼, 건네고 받기, 팔씨름. 훈련 시작, 그만, 멈춰, 잠깐, 다시, 쉽게, 어렵게, 천천히, 힘들어요."
 RATE = 16000
 FRAME = 1280                    # openWakeWord 80 ms
+ESTOP_CLEAR_S = 0.5             # 정지 요청(true) 뒤 이만큼 지나 false 를 한 번 보내 래치 값을 지운다 (#172 리뷰)
 
 
 def _package_resource() -> Path:
@@ -103,6 +104,9 @@ class IntentNode(Node):
                                      float(self.get_parameter("llm_timeout_s").value))
         self._stop = threading.Event()
         self._kws_last_hit = -1.0                                  # 마지막 비상어 키워드 감지 시각 (monotonic)
+        self._kws = None                                           # 비상어 판별기 (마이크 스레드에서 만듦, 실패하면 None)
+        self._estop_clear_s = ESTOP_CLEAR_S
+        self._estop_clear_timer: threading.Timer | None = None
         self.thread = threading.Thread(target=self._audio_loop, daemon=True)
         self.thread.start()
 
@@ -140,17 +144,14 @@ class IntentNode(Node):
         except Exception as e:      # noqa: BLE001
             self.get_logger().error(f"마이크 열기 실패: {e}")
             return
-        kws = self._make_kws()
+        self._kws = self._make_kws()
         self.get_logger().info(f"호출어 대기 ({name}, 임계 {thr})")
 
         def read() -> np.ndarray:
             """마이크 80 ms 를 읽고 비상어 감지에 먼저 넣는다 — 호출어·녹음·STT 와 무관하게 매 조각."""
             chunk, _ = stream.read(FRAME)
             chunk = chunk.flatten()
-            if kws is not None:
-                hit = kws.feed(chunk, time.monotonic())
-                if hit is not None:
-                    self._on_keyword(hit)
+            self._feed_kws(chunk)
             return chunk
 
         with stream:
@@ -194,10 +195,41 @@ class IntentNode(Node):
         self.get_logger().info(f"비상어 상시 감지 켬 ({path.name}, 임계 {kws.threshold:.2f}, 연속 {kws.decider.consec} 프레임)")
         return kws
 
+    def _feed_kws(self, chunk: np.ndarray) -> None:
+        """비상어 판별기에 80 ms 한 조각. 판별기 예외는 상시 감지만 끄고 마이크 스레드는 살린다
+        (안 그러면 _audio_loop 가 끝나 호출어·명령까지 조용히 멈춤 — #172 리뷰)."""
+        if self._kws is None:
+            return
+        try:
+            hit = self._kws.feed(chunk, time.monotonic())
+        except Exception as e:      # noqa: BLE001
+            self.get_logger().error(f"비상어 판별 실패: {type(e).__name__}: {e} → 상시 감지 꺼짐 (호출어 뒤 STT 비상어는 유지)")
+            self._kws = None
+            return
+        if hit is not None:
+            self._on_keyword(hit)
+
+    def _request_estop(self) -> None:
+        """/rally/safety/estop true. 이 토픽은 TransientLocal 이라 true 가 남으면 나중에 켜진 safety_monitor 가
+        켜자마자 STOP 된다 → ESTOP_CLEAR_S 뒤 false 를 한 번 보내 래치 값을 지운다. safety_monitor 는 false 를
+        무시하므로 이미 걸린 STOP 은 그대로 (해제는 reset 서비스로만, #172 리뷰)."""
+        self.pub_estop.publish(Bool(data=True))
+        if self._estop_clear_timer is not None:
+            self._estop_clear_timer.cancel()
+        self._estop_clear_timer = threading.Timer(self._estop_clear_s, self._clear_estop_latch)
+        self._estop_clear_timer.daemon = True
+        self._estop_clear_timer.start()
+
+    def _clear_estop_latch(self) -> None:
+        try:
+            self.pub_estop.publish(Bool(data=False))
+        except Exception as e:      # noqa: BLE001 — 종료 중이면 publisher 가 없을 수 있음
+            self.get_logger().warn(f"estop 래치 지우기 실패: {type(e).__name__}: {e}")
+
     def _on_keyword(self, hit) -> None:
         """비상어 감지 → 바로 정지 요청. LLM·STT 를 거치지 않는다."""
         self._kws_last_hit = time.monotonic()
-        self.pub_estop.publish(Bool(data=True))
+        self._request_estop()
         msg = VoiceIntent()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.text = hit.word
@@ -238,7 +270,7 @@ class IntentNode(Node):
         msg.is_emergency = result.is_emergency
         self.pub_intent.publish(msg)
         if result.is_emergency:
-            self.pub_estop.publish(Bool(data=True))
+            self._request_estop()
         self.get_logger().info(f'"{text}" → {result.intent} {result.slots or ""} ({result.source}, '
                                f'신뢰 {result.confidence:.2f}, STT {t_stt:.1f} s, 전체 {time.perf_counter() - t0:.1f} s)'
                                + (" [비상]" if result.is_emergency else ""))
@@ -251,6 +283,9 @@ class IntentNode(Node):
 
     def destroy_node(self) -> None:
         self._stop.set()
+        if self._estop_clear_timer is not None:   # 종료 직전 정지 요청이면 false 를 지금 보내고 끝냄
+            self._estop_clear_timer.cancel()
+            self._clear_estop_latch()
         self.thread.join(timeout=1.0)    # 마이크 스레드가 끝난 뒤 종료 (안 기다리면 "terminate called without an active exception")
         super().destroy_node()
 
