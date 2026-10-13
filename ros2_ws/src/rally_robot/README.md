@@ -33,3 +33,7 @@ RMW_IMPLEMENTATION=rmw_fastrtps_cpp ROS_DOMAIN_ID=42 ros2 run rally_robot skill_
 # 다른 터미널: ros2 action send_goal /rally/skill/pick_compliant rally_interfaces/action/PickCompliant "{target: {pose: {position: {x: 0.45, y: 0.05, z: 0.255}}}, grip_force_n: 15.0}" --feedback
 ```
 가짜 DSR 은 테이블 Z 250 mm 아래로 내려가면 접촉 힘을, 정지 상태로 2 s 폴링하면 당김 힘을 흉내 낸다 (`RALLY_FAKE_TABLE_Z`, `RALLY_FAKE_PULL_S`).
+
+## 모드 3 정책 모드 (선택, 10/13)
+`skills.yaml mode3.decide_mode: policy` 일 때만 `onnxruntime` 이 필요하다 (`pip install onnxruntime`, CPU). 정책 파일 `models/policy_stage1.onnx` 는 git 제외 — 박성현이 드라이브로 전달.
+기본 `rule` 이면 import 하지 않는다. 입력·출력 정의는 `rally_robot/skills/catch_policy.py` 머리말.
