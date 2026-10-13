@@ -238,3 +238,15 @@ def test_overshoot_extends_along_move_and_respects_limits():
     assert far.du == pytest.approx(0.35)                                             # 오른쪽 한계
     still = intercept(READY, PAD, N45, PAD + 0.0 * u, 0.35, 0.35, down_max_m=0.08, reach_max_m=0.35, overshoot_m=0.05)
     assert still.du == pytest.approx(0.0) and still.dw == pytest.approx(0.0)         # 안 움직이는 공은 더 가지 않음
+
+
+def test_move_time_and_window_reach():
+    """#184 리뷰: 받기 창 안에 멈출 수 있는 거리 (450 mm/s · 가속 2000). 35 cm 는 1.0 s, 역함수와 맞음."""
+    from rally_robot.skills.catch_plan import max_dist_in, move_time_s
+    v, a = 0.45, 2.0
+    assert move_time_s(0.35, v, a) == pytest.approx(1.003, abs=0.01)
+    assert move_time_s(0.05, v, a) == pytest.approx(2 * (0.05 / a) ** 0.5)      # 삼각형 (최고 속도 못 닿음)
+    assert move_time_s(0.0, v, a) == 0.0
+    for d in (0.03, 0.10, 0.20, 0.35):
+        assert max_dist_in(move_time_s(d, v, a), v, a) == pytest.approx(d, abs=1e-6)
+    assert max_dist_in(-0.2, v, a) == 0.0                                            # 창이 이미 닫힘

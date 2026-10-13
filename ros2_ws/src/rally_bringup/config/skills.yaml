@@ -82,6 +82,8 @@ mode3:
   resend_threshold_m: 0.03                            #   마지막으로 보낸 예측에서 이만큼 넘게 바뀌면
   resend_until_release_s: 0.90                        #   ★ 10/13: 0.40 → 0.90 (높은 포물선 비행 0.9~1.4 s). 교차 직전은 resend_min_ttg_s 로 막음
   resend_max: 6                                       #   ★ 10/13: 2 → 6
+  window_start_lag_s: 0.15                            # ★ 10/13 #184 리뷰: 받기 창(130 N)이 닫히기 전에 멈출 수 있는 거리만 감 — 출발·재전송 둘 다. 출발 지연 0.15 s 포함
+  window_min_move_m: 0.02                             #   그 거리가 2 cm 도 안 되면 안 움직임 (failure_reason too_late). 창 닫힌 뒤 감속 관성 59~73 N > 25 N 이면 force_limit STOP
   resend_min_ttg_s: 0.12                              #   ★ 10/13: 예측 교차까지 이보다 적게 남으면 안 보냄
   resend_min_interval_s: 0.30                         #   ★ 10/13 정정인: 직전 amovel 뒤 최소 0.3 s (10/12 측정: 0.15 s 뒤 재전송은 속도 겹침 0.39 → 0.52 m/s, 0.30 s 는 안 겹침 — 단 가속 1000·오른쪽 10 cm 조건. 가속 2000·위쪽은 공 없이 확인 뒤 resend_enabled 켬)
   contact_window_after_cross_s: 0.5                   # 받기 창(contact_expected) 닫는 시각 = 교차 + 0.5 s (#144: 힘 한계 130 N 은 이 창에만. 비전 판정은 창이 닫힌 뒤에도 계속)

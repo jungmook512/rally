@@ -213,3 +213,21 @@ def window_close_delay(t_cross_ros: float, now_ros: float, cross_max_after_s: fl
     (#171 리뷰: cross_max_after_s 로만 자르면 최대 약 2.3 s — #144 "창 약 1 s"). 0 이하면 바로 닫는다."""
     by_cross = clamp_cross(t_cross_ros, now_ros, cross_max_after_s) + after_cross_s - now_ros
     return max(0.0, min(by_cross, window_max_s - opened_for_s))
+
+
+def move_time_s(dist_m: float, vel_mps: float, acc_mps2: float) -> float:
+    """정지 → 정지 직선 이동 시간 (사다리꼴 속도, 짧으면 삼각형). amovel 의 vel·acc 와 같은 단위 [m/s, m/s²]."""
+    d, v, a = max(0.0, float(dist_m)), float(vel_mps), float(acc_mps2)
+    if d <= 0.0:
+        return 0.0
+    if d <= v * v / a:                                   # 최고 속도에 못 닿음 — 삼각형
+        return 2.0 * (d / a) ** 0.5
+    return v / a + d / v
+
+
+def max_dist_in(t_s: float, vel_mps: float, acc_mps2: float) -> float:
+    """t_s 안에 정지 → 정지로 갈 수 있는 최대 거리 [m] (move_time_s 의 역)."""
+    t, v, a = max(0.0, float(t_s)), float(vel_mps), float(acc_mps2)
+    if t <= 2.0 * v / a:
+        return a * t * t / 4.0
+    return v * (t - v / a)

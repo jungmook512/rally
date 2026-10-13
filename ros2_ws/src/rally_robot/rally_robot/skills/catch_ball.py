@@ -47,7 +47,8 @@ from std_msgs.msg import Float64MultiArray
 from rally_interfaces.action import CatchBall
 from rally_robot.dsr_helpers import SkillAbort, move_checked, movej_checked, stop_robot
 from rally_robot.skills.catch_policy import OnnxPolicy, decide_with_policy, find_policy, policy_target
-from rally_robot.skills.catch_plan import (ContactWindow, Prediction, clamp_cross, intercept, judge_pad, pad_center, parse_info, quality_ok,
+from rally_robot.skills.catch_plan import (ContactWindow, Prediction, clamp_cross, intercept, judge_pad, max_dist_in, move_time_s, pad_center,
+                                              parse_info, quality_ok,
                                               should_resend, window_close_delay)
 
 LANDING_TOPIC = "/rally/perception/landing"
@@ -67,6 +68,8 @@ DEFAULTS = dict(
     down_max_m=0.08,                                    # 아래(투구자 쪽): 대기 자세 −9.4 cm 에 자기충돌 (10/11 실측)
     reach_max_m=0.35,                                   # 두 축 합 이동 상한 — 대각선(오른쪽 32·위 35 cm)은 두산 NOT REACHABLE (10/13)
     catch_overshoot_m=0.0,                              # 목표를 이동 방향으로 이만큼 더 (감속 구간을 예측점 뒤로, 10/13 정정인). catch_plan.intercept
+    window_start_lag_s=0.15,                            # 받기 창 안에 끝나는지 볼 때 더하는 출발 지연 (10/10 실측 amovel 출발 148 ms)
+    window_min_move_m=0.02,                             # 창 안에 갈 수 있는 거리가 이보다 짧으면 움직이지 않음 (too_late)
     resend_min_interval_s=0.3,                          # 비행 중 갱신: 직전 amovel 뒤 최소 이 간격 (10/13: 0.05 s 뒤 재전송이 첫 동작에 겹쳐 J1 150 °/s 초과·외력 103 N 보호 정지)
     catch_vel_mm_s=450.0,                               # 위아래 730 mm/s 는 관절 속도 121 % 로 불가 (10/11 계산)
     catch_acc_mm_s2=2000.0,                             # #144 승인값 (받기 창 130 N, #165 와 함께). 1000 은 10/10 실측 20 cm 도착 0.85 s
@@ -356,10 +359,22 @@ def execute(node):
             else:
                 pred = wait_decide(pred, t_goal)
             # 받기 창 닫기 타이머: 결정 시점 예측의 교차 시각 + 0.5 s. 요격 이동(move_checked, 0.5~0.8 s)이 끝나기를 기다리지 않는다
-            window.schedule_close(window_close_delay(pred.t_cross, ros_now(), cfg["cross_max_after_s"], cfg["contact_window_after_cross_s"],
-                                                     time.monotonic() - t_open["mono"], cfg["contact_window_max_s"]))
+            close_in = window_close_delay(pred.t_cross, ros_now(), cfg["cross_max_after_s"], cfg["contact_window_after_cross_s"],
+                                          time.monotonic() - t_open["mono"], cfg["contact_window_max_s"])
+            window.schedule_close(close_in)
+            t_close = time.monotonic() + close_in
+            v_mps, a_mps2 = cfg["catch_vel_mm_s"] / 1000.0, cfg["catch_acc_mm_s2"] / 1000.0
+
+            def window_reach(now: float) -> float:
+                """지금 출발해 받기 창이 닫히기 전에 멈출 수 있는 최대 거리 [m]. 창이 닫힌 뒤 감속 관성(59~73 N)이 힘 한계 25 N 을 넘어
+                force_limit STOP 이 나지 않게 (#184 리뷰 — 창 길이는 #144 승인 범위라 늘리지 않는다)."""
+                return max_dist_in(t_close - now - cfg["window_start_lag_s"], v_mps, a_mps2)
+
+            reach_now = window_reach(time.monotonic())
             plan = intercept(ready, pad0, cfg["pad_normal"], pred.point if target is None else target,
-                             cfg["right_max_m"], cfg["updown_max_m"], cfg["down_max_m"], cfg["reach_max_m"], cfg["catch_overshoot_m"])
+                             cfg["right_max_m"], cfg["updown_max_m"], cfg["down_max_m"], min(cfg["reach_max_m"], reach_now), cfg["catch_overshoot_m"])
+            if reach_now < cfg["reach_max_m"]:
+                log.info(f"[catch_ball] 받기 창이 {close_in:.2f} s 뒤 닫힘 → 이동 최대 {reach_now * 100:.0f} cm (창 안에 멈추게)")
             res.landing_predicted = _point(pred.point)
 
             if goal.catch_radius > 0 and plan.offset_m > goal.catch_radius:
@@ -369,6 +384,10 @@ def execute(node):
                 log.info(f"[catch_ball] 예측점이 대기 위치에서 {plan.offset_m:.2f} m — 반경 밖, 움직이지 않음 · 예측 교차점 "
                          f"({pred.point[0]:.3f}, {pred.point[1]:.3f}, {pred.point[2]:.3f}) m, 패드 중심 ({pad0[0]:.3f}, {pad0[1]:.3f}, {pad0[2]:.3f}) m, "
                          f"차이 x {d[0] * 100:+.0f} y {d[1] * 100:+.0f} z {d[2] * 100:+.0f} cm (std {pred.std[0] * 100:.1f}·{pred.std[1] * 100:.1f} cm, 관측 {pred.n_obs})")
+            elif reach_now < cfg["window_min_move_m"] and float(np.hypot(plan.du, plan.dw)) > 0.0:
+                res.failure_reason = "too_late"
+                node.set_catch_window(False)                   # 안 움직임 — 바로 25 N
+                log.info(f"[catch_ball] 받기 창 안에 {cfg['window_min_move_m'] * 100:.0f} cm 도 못 감 (창 {close_in:.2f} s 뒤 닫힘) — 움직이지 않음")
             elif not quality_ok(pred.std, pred.n_obs, cfg["gate_std_max_m"], cfg["gate_n_obs_min"]):
                 res.failure_reason = "low_confidence"
                 node.set_catch_window(False)                   # 위와 같음
@@ -413,13 +432,19 @@ def execute(node):
                     if goal.catch_radius > 0 and new_plan.offset_m > goal.catch_radius:
                         why["radius"] += 1
                         return None
+                    # 지금 자리에서 새 목표까지 받기 창 안에 멈출 수 있을 때만 (정지 출발로 보수적으로 계산, #184 리뷰)
+                    cur_rt = get_current_posx()[0]
+                    d_rt = float(np.linalg.norm(np.asarray(new_plan.tcp_posx[:3]) - np.asarray(cur_rt[:3]))) / 1000.0
+                    if d_rt > window_reach(time.monotonic()):
+                        why["window"] += 1
+                        return None
                     sent["n"] += 1
                     sent["plan"], sent["pred"], sent["t_cmd"] = new_plan, newer, time.monotonic()
                     log.info(f"[catch_ball] 비행 중 갱신 {sent['n']}회 — 예측 {np.linalg.norm(newer.point - pred.point) * 100:.1f} cm 이동, "
                              f"놓은 뒤 {newer.since_release:.2f} s, 새 요격 오른쪽 {new_plan.du * 100:.1f} · 아래 {new_plan.dw * 100:.1f} cm")
                     return new_plan.tcp_posx
 
-                why = dict(last_t=None, seen=0, late=0, near=0, quality=0, radius=0, interval=0)
+                why = dict(last_t=None, seen=0, late=0, near=0, quality=0, radius=0, interval=0, window=0)
                 # 정책 보정점으로 출발했으면 재전송 안 함 — retarget 은 보정 없는 예측점으로 덮어쓴다 (#175 리뷰 2)
                 resend = cfg["resend_enabled"] and target is None
                 if cfg["resend_enabled"] and target is not None:
@@ -428,7 +453,8 @@ def execute(node):
                              retarget=retarget if resend else None)
                 if resend:
                     log.info(f"[catch_ball] 비행 중 갱신 {sent['n']}회 — 이동 중 새 예측 {why['seen']}개: 창(놓은 뒤 {cfg['resend_until_release_s']:.2f} s) 지남 {why['late']} · "
-                             f"3 cm 안 {why['near']} · 품질 미달 {why['quality']} · 반경 밖 {why['radius']} · 간격 {cfg['resend_min_interval_s']:.2f} s 안 {why['interval']}")
+                             f"3 cm 안 {why['near']} · 품질 미달 {why['quality']} · 반경 밖 {why['radius']} · 간격 {cfg['resend_min_interval_s']:.2f} s 안 {why['interval']}"
+                             f" · 받기 창 안에 못 멈춤 {why['window']}")
                 plan, pred = sent["plan"], sent["pred"]
                 res.landing_predicted = _point(pred.point)
                 res.robot_travel_mm = float(np.hypot(plan.du, plan.dw) * 1000.0)
