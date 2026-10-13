@@ -67,6 +67,8 @@ webcam_link          측면 대각 웹캠, 높이 약 2 m (table_link 기준 sta
 
 **TTS 발화 중 마이크** (#45): `/rally/voice/speaking` 은 `Speak.block_mic=true` 발화가 시작되면 `true`, 끝나고 잔향 여유(약 0.3 s) 뒤 `false`. intent_node 는 `true` 동안 **일반 명령만 무시**하고 비상 키워드("그만/멈춰" → `is_emergency`)는 계속 듣는다 — 로봇이 말하는 동안에도 음성 정지가 살아 있어야 한다. 그래서 TTS 문구에는 "그만"·"멈춰"를 쓰지 않는다 (에코로 정지 오인식 방지).
 
+**비상어 상시 감지** (#50, 기획 CP9·FR-07): intent_node 는 호출어 없이 마이크를 80 ms 마다 키워드 모델(`models/kws/emergency_kws.joblib`)로 판정해 "그만"·"멈춰"가 들리면 **바로** `/rally/safety/estop`(true) 와 `VoiceIntent`(`intent=stop`, `is_emergency=true`, `text`=들은 단어, `confidence`=점수, `header.stamp`=감지 시각)를 낸다. STT·네트워크를 안 거치고, 로봇 발화 중·호출어 뒤 녹음 중·STT 처리 중에도 계속 듣는다. 비상 점수(P(그만)+P(멈춰))가 모델에 저장된 임계를 연속 프레임 수(`consec`, 지금 0.7·3 프레임 = 0.24 s)만큼 넘어야 울린다 (순간 소음 오탐 억제, 말 끝 → 감지 약 0.4~0.6 s). 한 번 울린 뒤 `kws_refractory_s`(1.5 s) 동안은 다시 안 울림. 모델 파일이 없으면 이 감지만 꺼지고 호출어 뒤 STT 비상어 규칙은 그대로.
+
 **음성으로 훈련 고르기** (`VoiceIntent` 슬롯 약속, 메시지 변경 없음): "공 굴리기 하자"처럼 훈련 이름을 말하면 `intent: next_mode` + `slot_keys: [mode]`, `slot_values: ["1"]` (1 공 굴리기 · 3 캐치볼 · 5 건네고 받기 · 7 팔씨름). 세션 시작과 같이 말하면 `start_session` 에 같은 슬롯. 슬롯이 없으면 순서상 다음 모드. 모드 3 이 꺼져 있으면(`mode3_challenge.enabled: false`) brain 이 거절하고 로그·`SetMode` 응답 message 로 알린다 (TTS 안내는 Speak 연결 뒤). 같은 발화(`header.stamp` 같음)는 한 번만 처리한다.
 
 ### 2.3 판단·안전·기록 (커스텀)
