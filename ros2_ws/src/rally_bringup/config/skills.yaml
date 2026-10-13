@@ -288,6 +288,11 @@ pick:
   z_stiffness_default: 300.0
   tool_down_zyz: [174.8, -177.0, 175.1]   # 집는 자세 기준(툴 수직 아래, 10/6 실측). 마스크 주축 yaw → 손가락이 주축에 수직이 되게 베이스 Z 회전
   finger_axis_deg: 0.0            # 위 자세에서 손가락 닫힘 방향의 베이스 각도 (0 = x). 10/8 수동: 막대를 y 로 눕히면 yaw 0 으로 집힘 → 0. 비전 집기 첫 시험에서 확인
+  # ★ 10/12 컵은 세워 두고 입구 테두리(벽)를 손가락 하나는 안, 하나는 밖으로 집는다 (정정인). 10/12 실로봇: 열림 90 mm 로 가운데 내려가니
+  #   손가락이 컵 안으로 들어가 빈손(폭 12 mm). 목표를 컵 중심에서 손가락 방향으로 rim_pinch_radius_m(로봇 쪽 벽)만큼 옮기고 open_mm 으로 연다.
+  #   벽은 얇아 폭이 빈손과 몇 mm 차이 → 접근 때 빈손으로 닫아 잰 폭 + min_gap_mm 이상이면 쥔 것. TODO 컵 입구 지름 실측 → 반지름
+  by_class:
+    cup: {rim_pinch_radius_m: 0.042, open_mm: 50.0, min_gap_mm: 1.0}
 
 # handover (모드 5) — present_pose 는 티칭 후 기입 (posx mm·deg, 중앙선 앞 · 환자 팔 높이). 없으면 현재 자세에서 제시
 handover:
@@ -308,6 +313,7 @@ handover:
   receive_tilt_deg: 0.0           # RECEIVE 때 그리퍼 자세 (돌려받을 땐 똑바로)
   receive_at_retreat: true        # ★ 10/11: 받기는 건네기 후퇴 자리(제시 위치에서 3 cm 뒤·6 cm 위)에서 — 방금 받은 손 쪽으로 다시 다가가지 않음
                                   #   (다가가면 손 근접 STOP 으로 찔끔찔끔). 기울기만 바로 세우고 환자가 넣어 줌. 대기 중엔 환자 접촉이라 손 STOP → SLOW
+  receive_compliance: true        # 대기는 순응, 회전·다가가기 때만 순응 해제 (#142 조건 · #164 리뷰 10/13 정정인). 10/12 밤 false(받기 내내 딱딱)였던 것을 되돌림
   receive_threshold_n: 4.0        # 받기 판정 ①: 그리퍼에 밀어 넣는 힘 (건네기 당김 6 N 보다 작게 — 10/11 실로봇 20 s × 2 못 느낌)
   # ★ 10/12 받기 판정 ②: 그리퍼 사이 깊이 감지 — 손목 RealSense 화면 아래 가운데(그리퍼 사이를 투영한 영역)에서 깊이 0(28 cm 안은 못 잼)
   #   또는 near_mm 보다 가까운 픽셀 비율이 받기 시작 때보다 trigger_frac 넘게 hold_s 동안 늘면 닫음. 닫았는데 빈손이면 다시 열고 계속(max_regrasps)
@@ -316,17 +322,45 @@ handover:
   #   require_object (10/12 #142 리뷰 (b)): 받을 물체가 비전에 최근 object_recent_s 안에 보였을 때만 깊이로 닫음 — 손가락만 들어와도 20 N 으로
   #   닫히지 않게. 손에 든 막대 인식 모델(박성현 재학습 중) 전에는 사실상 힘(receive_threshold_n)으로만 받는다.
   #   실로봇에서 힘만으로 못 받으면 모델 전까지 require_object: false + 받기 닫는 힘을 낮춰서 쓴다
-  receive_depth: {enabled: true, near_mm: 300.0, trigger_frac: 0.30, hold_s: 0.3, freeze_frac: 0.10, max_regrasps: 3,
+  #   10/12 저녁 새 모델(yolov8n-seg_cupstick_v2_scratch, 손에 든 막대 사진 21장 중 16장 0.9 안팎): 막대를 든 손이 그리퍼 앞에 오면
+  #   85~94 % 로 빈손 닫기를 반복 → hold_s 0.3 → 0.8, 영역 위쪽 6 → 3 cm(코드 box_mm), 빈손 뒤엔 한 번 비워져야 다시 닫음
+  #   10/12 밤 정정인: 받기 흐름 = 막대 각도 맞춤 → 막대로 다가감(receive_approach) → 닫기. 깊이 근접으로는 안 닫음(close_on_depth: false) —
+  #   깊이는 '그리퍼 사이가 비었나'(회전·다가가기 조건)에만. 밀어 넣는 힘(receive_threshold_n)으로는 여전히 닫힘
+  receive_depth: {enabled: true, close_on_depth: false, near_mm: 300.0, trigger_frac: 0.30, hold_s: 0.8, freeze_frac: 0.10, max_regrasps: 3,
                   require_object: true, object_recent_s: 1.0, object_min_conf: 0.25}
   # ★ 10/12 받기 기울기 = 손에 든 막대의 화면 각도(비전 /rally/perception/objects/image_axis, 신뢰도 min_conf 이상) 1 s 중앙값에 맞춤.
   #   제자리 손목 회전만 (10° 넘게 다를 때, 한 번에 20° 까지, 모드 5 속도 × speed_scale). 그리퍼 사이에 뭔가 들어오기 시작했거나 힘 2 N 넘으면 안 돌림.
   #   손목 각도·손가락 뿌리 줄로는 막대 기울기와 안 맞았다 (10/12 실로봇) → 장갑 끼고 막대만 본다 (HAND=0). 반대로 돌면 sign: -1, 끄기 enabled: false
   #   10/12 #142 리뷰: 기본 끔 — 손에 든 막대 인식 모델이 아직 없고, 켜면 받기 대기가 순응 없이(딱딱하게) 돈다. 다시 켜기 전에:
   #   회전할 때만 순응 해제·대기는 순응, 손에 든 막대 인식 확인. 깊이가 없으면 켜져 있어도 돌리지 않는다
-  receive_tilt_follow: {enabled: false, class_name: rod, min_conf: 0.25, sign: 1.0, deadband_deg: 10.0, max_step_deg: 20.0, speed_scale: 0.5, max_force_n: 2.0}
+  #   → 10/12 저녁 다시 켬 (정정인): 두 조건 충족 — 대기는 순응, 돌릴 때만 해제(handover.receive_wait) · 새 모델로 손에 든 막대 인식
+  #   10/12 저녁 실로봇: 기본 자세에서 먼저 닫음 → 기울기 맞추기 전엔 깊이로 안 닫음(align_before_close). 가로 막대(±90°)에서 안 돎 → 2θ 원형 평균.
+  #   한 번에 20° · 1 s 면 느려 손이 다가오면 멈춤 → 45° · 0.5 s, 손 가까움 판단(freeze_frac)은 0.10 → 0.20
+  receive_tilt_follow: {enabled: true, class_name: rod, min_conf: 0.25, sign: 1.0, deadband_deg: 10.0, max_step_deg: 45.0, speed_scale: 0.5, max_force_n: 2.0,
+                        freeze_frac: 0.20, align_before_close: true}
+  # ★ 10/12 받기 다가가기 (정정인 결정 — #134 '손 쪽으로 안 감'을 이 범위로 좁혀 뒤집음): 기울기를 맞춘 뒤 받을 물체 3D 위치(비전, 0.6 s 중앙값)가
+  #   그리퍼 줄 위(손가락 닫히는 방향 ±finger_max_m)에 있으면 툴 z(그리퍼가 향한 쪽)로만 최대 max_m, x 는 보라색 선 − line_margin_m 까지,
+  #   speed_mm_s 로 다가가 손가락 끝이 물체를 jaw_depth_m 지나게 → 닫기. 툴 힘 stop_force_n 넘으면 그 자리에서 멈추고 닫음.
+  #   다가가는 동안만 환자 접촉 플래그를 내림 → 손 STOP 규칙(hand_stop_mode)이 그대로. 빈손이면 열고 받기 자리로 되돌아감. 끄기 enabled: false
+  #   10/12 저녁 실로봇: 한 번도 안 다가감 — 받기 자리(선 − 9 cm)에선 선 근처 막대가 카메라(TCP 뒤 23 cm)에서 28 cm 안이라 깊이 0 → 3D 위치 없음.
+  #   → 선 − wait_line_gap_m(20 cm)에서 기다림(ikin: J3 124°, J5 84°, 기울기 ±90° 는 J6 만), 다가가기 최대 10 → 20 cm (정정인: 알아서 거리 맞춰 집기).
+  #   위치는 출발 전에 한 번 정하고 이동 중엔 안 바꿈 → 환자는 막대를 선 근처에 들고 가만히. 회전·다가가기는 그리퍼 사이가 clear_s 동안 비어 있을 때만
+  #   10/12 밤 실로봇: 순응 상태로 다가가니 출발 0.4 s 만에 끌림 힘 3 N → 1~3 mm 만 가고 닫음(3회) → 다가갈 땐 순응 끔, 출발 ignore_s 동안 힘 안 봄
+  #   10/12 밤 2차: 순응 끄고도 접촉 없이 출발 1 s 안에 툴 힘 7.9~9.5 N (관절 토크 추정값 — 움직이기 시작할 때 출렁임) → 3 N 이면 7 mm 만 가고 멈춤(3회).
+  #   → stop_force_n 3 → 12 N (안전 감시 힘 한계 25 N 은 그대로)
+  #   10/12 밤 3차 (정정인 "앞으로만 가서는 안 잡힘, 위아래도"): 막대 3D 중심으로 감 — 옆(손가락 방향) finger_max_m 0.03 → 0.05, 위아래(막대 방향) along_rod_max_m 0.10 안
+  #   10/12 밤 4차: 대각선 한 번에 가면 손가락이 막대를 비스듬히 쓸고 지나감 → ① 막대 pre_back_m 앞에서 옆·위아래 맞춤 ② 앞으로만 들어가 닫기
+  receive_approach: {enabled: true, wait_line_gap_m: 0.20, clear_s: 0.5, ignore_s: 0.5, pre_back_m: 0.03, max_m: 0.20, min_m: 0.01, jaw_depth_m: 0.02, finger_max_m: 0.05,
+                     along_rod_max_m: 0.10, line_margin_m: 0.03, speed_mm_s: 40.0, stop_force_n: 12.0,
+                     hand_recent_s: 1.0, allow_without_hand_guard: false, jaw_check_s: 0.3}
+  #   10/13 정정인 결정 (#164 리뷰, 동결 예외 승인): ① stop_force_n 으로 멈추면 닫지 않고 연 채 받기 자리로 물러남
+  #   ② 끝까지 가도 그리퍼 사이가 깊이(jaw_check_s 중앙값 ≥ 기준 + receive_depth.trigger_frac)로 확인될 때만 닫음 — 손가락이 막대 가운데를 쥔 경우 끼임 방지
+  #   ③ 손 보호가 있을 때만 다가감: 손 입력이 hand_recent_s 안에 옴 · hand_stop_mode ≠ off. allow_without_hand_guard: true 는 장갑 시험(HAND=0) 전용 —
+  #      ★ 경고 로그. 커밋하지 말 것
   place_after_receive: true       # RECEIVE 성공 후 마지막 PickCompliant 자리에 내려놓기
   place_above_m: 0.08
   place_drop_m: 0.01              # ★ 10/12: 실제로 쥐었던 높이 + 이만큼 위에서 그리퍼를 열어 놓음 (정확히 제자리일 필요 없음). 3 cm(실제 4 cm)는 너무 높았음. 0 = 예전처럼 테이블 닿을 때까지 순응 하강
+  place_drop_m_by_class: {cup: 0.0}   # 10/12: 컵은 집을 때(입구 벽)와 돌려받을 때(몸통) 쥔 자리가 달라 순응 하강 → 테이블 닿으면 놓기
   place_contact_force_n: 6.0      # 내려놓으며 테이블 접촉 판정 (Z 힘 변화)
   place_below_m: 0.02             # 집었던 높이보다 이만큼 아래를 향해 순응 하강 (접촉에서 멈춤)
   stiffness: [2000, 2000, 2000, 200, 200, 200]
@@ -350,10 +384,10 @@ mode5:
   retry_prompt: "한 번 더 해 볼게요"   # TTS 문구에 '그만'·'멈춰' 금지 (INTERFACES #45)
   # 집기 → 건네기 → 받기 (#57). 기울기 범위는 로봇과 같은 handover.tilt_range_deg 를 쓴다 (여기 두지 않음)
   object_class: rod
-  object_classes: [rod, cup]      # ★ 10/11: 보이는 것 중 시도마다 무작위 (둘 다 보이면 랜덤, 하나만 보이면 그것)
+  object_classes: [rod]           # ★ 10/12 정정인: 일단 막대만 (컵은 돌려받을 때도 입구 벽을 안·밖으로 끼워야 해 기울기 맞추기가 의미 없음). 컵 다시 넣기 [rod, cup]
   object_wait_s: 5.0              # 비전에서 이 시간 안에 물체가 안 보이면 이번 시도 실패(notes=object_not_found)
   object_min_confidence: 0.5
-  grasp_height_m: {rod: 0.007, cup: 0.035}   # ★ 물체별 파지 높이 (테이블 면 위, m) = 두께·지름의 절반. 10/11 실측: 막대 두께 14.5 mm → 7 mm. 컵(길이 94.9 mm) 누운 지름 TODO
+  grasp_height_m: {rod: 0.007, cup: 0.080}   # ★ 물체별 파지 높이 (테이블 면 위, m). 막대 = 두께 14.5 mm 의 절반. 컵 = 세운 높이 94.9 mm − 15 mm (입구 벽 집기, 10/12 — pick.by_class.cup)
   pick_view_posx: [352.6, -139.3, 481.6, 146.9, -169.3, 147.3]   # ★ 물체 보기 자세 (mm·ZYZ deg) = 관측 자세 posx 에서 y −110 mm. 10/11 jog 로 정함:
                                   #   흰 배경(막대·컵 자리)이 화면에 다 들어옴. 세션 5 의 집기 전 /rally/robot/go_pick_view 가 관측 자세 → 여기 (직선)
   pick_x_range_m: [0.15, 0.55]    # 이 x 범위의 물체만 집는다 — 환자 손에 든 물체(중앙선 근처)를 집으러 가지 않게

@@ -61,7 +61,7 @@ webcam_link          측면 대각 웹캠, 높이 약 2 m (table_link 기준 sta
 
 **HandState 거리 NaN** (#44): `detected=true` 인데 손 위치를 못 구하면(정렬 깊이 없음·컬러와 시각이 맞는 깊이 없음·`base_link` tf 없음) `distance_to_centerline = NaN` = "손은 보이는데 거리 모름". 가짜 거리를 만들지 않는다. safety_monitor 는 `detected && NaN` 이면 SLOW. tf 가 없을 때는 `header.frame_id` 가 카메라 프레임.
 
-**safety_monitor 손 거리·입력 끊김** (#59, #14, #98, #95): 손 없음 → NORMAL / NaN → SLOW(`hand_distance_unknown`, 직전 판정이 STOP 이었으면 놓침과 같이 `hand_lost_stop_s` STOP(`hand_lost_near`) 유지 — 깊이는 카메라 30 cm 안에서 빠진다) / 중앙선 너머 `hand_deep_stop_m`(−0.15) 보다 깊이 → STOP(`hand_near_centerline`) / **손 관절 21점 ↔ 로봇 끝 선분(TCP → 플랜지 `robot_segment_m`)** 최소 거리(선분 중심축까지 — 그리퍼·카메라 표면까지 실제 여유는 더 작다)가 `hand_stop_robot_m`(0.20) 안 → STOP(`hand_near_robot`), `hand_slow_robot_m`(0.35) 안 → SLOW(`hand_near_robot`) / 중앙선에서 `slow_distance_m`(0.10) 안 → SLOW(`hand_near_centerline`). 로봇 위치(tf·`tcp_pose` 둘 다)를 모르거나 손 좌표가 base_link 가 아니면 로봇 거리를 모르므로 예전 선 기준 `stop_distance_m`(0.15) 안 → STOP(`hand_near_centerline`). 보이던 손을 놓치면(`detected=false`) 직전 판정이 STOP 이었으면 `hand_lost_stop_s` STOP → `hand_lost_slow_s` 까지 SLOW, SLOW 였거나 환자 접촉 중이면 SLOW(`hand_lost_near`). 손 거리 STOP 사유(`hand_near_centerline`·`hand_near_robot`·`hand_lost_near`)는 래치가 아니다. 손 관절이 전부 테이블 y 범위(`table_y_min_m`~`table_y_max_m`) 밖이면(옆 사람 손) 선 기준 판정 없이 로봇 거리로만 (로봇 위치를 모르면 선 기준). 단 `/rally/safety/patient_contact` 동안은 근접 STOP 대신 SLOW(`hand_near_patient_contact`) — 건네기·저항 밀기에서 손이 물체·손잡이를 잡는 순간. 손이 `hand_deep_stop_m` 보다 깊이 들어오거나 손 메시지가 끊겼으면 STOP. 치기·집기·놓기의 `contact_expected` 는 완화 대상이 아니다. 손·wrench·tcp_pose 를 받다가 `*_timeout_s` 넘게 끊기면 SLOW(`hand_stale`·`wrench_stale`·`tcp_stale`). 힘·tcp_pose(`required_inputs`)를 시작 후 `required_grace_s`(5 s) 넘게 한 번도 못 받으면 STOP(`wrench_missing`·`tcp_missing`, 받으면 풀림, 시뮬 `RALLY_SIM=1` 은 제외), 손은 한 번도 못 받아도 경고 로그만. 힘(`stale_stop_inputs`)은 받다가 `stale_stop_s`(5 s, 10/11 2 → 5 s: 특이점 근처를 지나가기만 해도 1~3 s 끊김) 넘게 끊겨도 STOP(`wrench_lost`, 받으면 풀림). 로봇 위치는 tf(`base_link → link_6`)로도 보며, tf 가 살아 있으면 손 ↔ 로봇 거리는 tf 로 재고 `tcp_pose` 짧은 끊김(`robot_tf_tcp_cover_s` 2 s 안)은 SLOW 가 아니다 (`robot_tf_*`). tf 신선도는 `header.stamp` 로 본다(얼어붙은 tf 는 `tcp_timeout_s` 뒤 안 씀). tf TCP 로도 작업 공간을 검사한다(`workspace_limit`). `SafetyStatus.min_hand_distance` 는 손 없음 9.9, 거리 모름 NaN(rally_db 에는 null). 값은 모두 `safety.yaml`.
+**safety_monitor 손 거리·입력 끊김** (#59, #14, #98, #95): 손 없음 → NORMAL / NaN → SLOW(`hand_distance_unknown`, 직전 판정이 STOP 이었으면 놓침과 같이 `hand_lost_stop_s` STOP(`hand_lost_near`) 유지 — 깊이는 카메라 30 cm 안에서 빠진다) / 중앙선 너머 `hand_deep_stop_m`(−0.15) 보다 깊이 → STOP (접촉 중이어도. 사유는 `hand_deep_end_m`(−0.30) 보다 얕으면 `hand_near_centerline` — 손 빼면 이어 감, 더 깊으면 `hand_deep_intrusion` — 세션 종료, 10/12) / **손 관절 21점 ↔ 로봇 끝 선분(TCP → 플랜지 `robot_segment_m`)** 최소 거리(선분 중심축까지 — 그리퍼·카메라 표면까지 실제 여유는 더 작다)가 `hand_stop_robot_m`(0.20) 안 → STOP(`hand_near_robot`), `hand_slow_robot_m`(0.35) 안 → SLOW(`hand_near_robot`) / 중앙선에서 `slow_distance_m`(0.10) 안 → SLOW(`hand_near_centerline`). 로봇 위치(tf·`tcp_pose` 둘 다)를 모르거나 손 좌표가 base_link 가 아니면 로봇 거리를 모르므로 예전 선 기준 `stop_distance_m`(0.15) 안 → STOP(`hand_near_centerline`). 보이던 손을 놓치면(`detected=false`) 직전 판정이 STOP 이었으면 `hand_lost_stop_s` STOP → `hand_lost_slow_s` 까지 SLOW, SLOW 였거나 환자 접촉 중이면 SLOW(`hand_lost_near`). 손 거리 STOP 사유(`hand_near_centerline`·`hand_near_robot`·`hand_lost_near`)는 래치가 아니다. 손 관절이 전부 테이블 y 범위(`table_y_min_m`~`table_y_max_m`) 밖이면(옆 사람 손) 선 기준 판정 없이 로봇 거리로만 (로봇 위치를 모르면 선 기준). 단 `/rally/safety/patient_contact` 동안은 근접 STOP 대신 SLOW(`hand_near_patient_contact`) — 건네기·저항 밀기에서 손이 물체·손잡이를 잡는 순간. 손이 `hand_deep_stop_m` 보다 깊이 들어오거나 손 메시지가 끊겼으면 STOP. 치기·집기·놓기의 `contact_expected` 는 완화 대상이 아니다. 손·wrench·tcp_pose 를 받다가 `*_timeout_s` 넘게 끊기면 SLOW(`hand_stale`·`wrench_stale`·`tcp_stale`). 힘·tcp_pose(`required_inputs`)를 시작 후 `required_grace_s`(5 s) 넘게 한 번도 못 받으면 STOP(`wrench_missing`·`tcp_missing`, 받으면 풀림, 시뮬 `RALLY_SIM=1` 은 제외), 손은 한 번도 못 받아도 경고 로그만. 힘(`stale_stop_inputs`)은 받다가 `stale_stop_s`(5 s, 10/11 2 → 5 s: 특이점 근처를 지나가기만 해도 1~3 s 끊김) 넘게 끊겨도 STOP(`wrench_lost`, 받으면 풀림). 로봇 위치는 tf(`base_link → link_6`)로도 보며, tf 가 살아 있으면 손 ↔ 로봇 거리는 tf 로 재고 `tcp_pose` 짧은 끊김(`robot_tf_tcp_cover_s` 2 s 안)은 SLOW 가 아니다 (`robot_tf_*`). tf 신선도는 `header.stamp` 로 본다(얼어붙은 tf 는 `tcp_timeout_s` 뒤 안 씀). tf TCP 로도 작업 공간을 검사한다(`workspace_limit`). `SafetyStatus.min_hand_distance` 는 손 없음 9.9, 거리 모름 NaN(rally_db 에는 null). 값은 모두 `safety.yaml`.
 
 **HandState 손목 각도** (`wrist_angle_deg`): 0° 손바닥 아래 · 90° 옆(엄지 위) · 180° 위. **안정화된 값** — 최근 0.5 s 의 좋은 프레임(카메라에서 너무 가깝지 않음: 깊이가 있으면 손바닥 거리 ≥ 0.30 m, 손은 보이는데 손바닥 깊이가 비면 가까움으로 봄, 깊이가 아예 없으면 화면 속 손 크기로 대신) 중간값. 손이 너무 가까우면 직전 값을 유지(잡는 순간에도 다가올 때의 값), 손이 1 s 넘게 안 보이면 NaN. 0 은 "모름" 이 아니다 — 모르면 NaN. 중간값이라 손목을 돌리면 약 0.25 s 늦게 따라온다 (잡는 순간 기록용. 실시간 제어에 쓰려면 이 지연을 감안). 파라미터 `wrist_window_s`·`wrist_lost_s`·`wrist_near_m`·`wrist_max_hand_frac` (hand_pose).
 
@@ -115,7 +115,7 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 | `/rally/skill/catch_ball` | `rally_interfaces/CatchBall` | 3 (챌린지) | 패드 집기(`catch_ball.pickup_pad()`, 정정인 자리) → 대기 자세 → 공 놓은 뒤 0.16 s 예측점으로 amovel 한 번(TCP 자세 고정, 왼쪽 안 감, 오른쪽·위 15 cm, 아래 8 cm — 대기 자세 −9.4 cm 자기충돌). 예측 std > 10 cm·관측 < 4 면 안 움직임(`low_confidence`), 안전 SLOW 면 `slow_at_catch` 중단 → **비전 판정**: `/rally/perception/ball_on_pad` 가 3 s 연속이면 `caught` (힘 판정 없음, 10/12) → 판정 뒤 로직(`catch_ball.after_catch()`, 정정인 자리) → 복귀. `contact_expected`(받기 창)는 투구 감지부터 **교차 시각 + 0.5 s**(`skills.yaml mode3.contact_window_after_cross_s`)까지만 — 판정은 창이 닫힌 뒤에도 계속. 같은 창 동안 `/rally/safety/catch_window` 도 켜서 힘 한계 130 N (#144, 창 밖 25 N. 반경 밖·저신뢰로 안 움직이면 그 자리에서 끔). servol 보정은 나중 |
 | `/rally/skill/move_target` | `rally_interfaces/MoveTarget` | 3 (Phase 2) | movec / movesx / moveb 궤적, 환자가 맞혀야 하는 후기 단계 |
 | `/rally/skill/detach_ball` | `rally_interfaces/DetachBall` | 3 | 힘 제어 당김, 힘 급락으로 떼어짐 판정 |
-| `/rally/skill/handover` | `rally_interfaces/Handover` | 5 | 기울여 제시, 당김 힘 감지 해제 / 받기: 후퇴 자리에서 열고 대기 → 밀어 넣는 힘 감지 → 잡기 → 제자리. `follow_hand` 는 쓰지 않음 (#134) |
+| `/rally/skill/handover` | `rally_interfaces/Handover` | 5 | 기울여 제시, 당김 힘 감지 해제 / 받기: 보라색 선 − 20 cm 에서 열고 대기(막대 화면 기울기에 손목만 맞춤) → 막대 3D 위치로 다가가기(막대 앞에서 옆·위아래 맞춘 뒤 툴 z 로 ≤ 20 cm, 보라색 선 3 cm 앞까지, 40 mm/s, phase `approach`) 또는 밀어 넣는 힘 → 잡기 → 제자리. **다가가기 조건 (#164, 10/13 정정인 — #134 를 이 범위로 좁혀 바꿈)**: 손 인식 입력이 있고 `hand_stop_mode` ≠ off 일 때만(아니면 대기만), 툴 힘 12 N 으로 멈추면 닫지 않고 연 채 물러남, 그리퍼 사이가 깊이로 확인될 때만 닫음. 대기는 순응, 회전·다가가기 때만 해제. `follow_hand`(손 추종 servol)는 쓰지 않음 (#134) |
 | `/rally/skill/resist_push` | `rally_interfaces/ResistPush` | 7 | 환자가 로봇 손목(J5·J6)을 직접 민다(10/12, 손잡이 없음). 제시 x 고정·y 만 손에 맞춤 → 순응 강성으로 버티기, 목표 힘 유지 시 −x 로 져주기, 손 뗀 뒤 저속 복귀. 로봇은 절대 밀지 않음. `handle_pose` 는 쓰지 않음 |
 | `/rally/session/run` | `rally_interfaces/RunSession` | 전체 | brain 최상위 action |
 
@@ -151,7 +151,7 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 
 - `hand_eye.yaml` — `tcp_T_camera_optical`(TCP ← camera_color_optical_frame, xyz m + 쿼터니언), `depth_scale`, `tcp_offset_from_flange_m`. 10/8 ArUco 터치 재맞춤 값(`scripts/fit_hand_eye.py`, 평균 6 mm·최대 9 mm). 재검증은 `scripts/aruco_detect.py --json` → `scripts/verify_calibration.py --depth-scale 0.971`
 - `table.yaml` — table_link 원점, 중앙선 위치, 작업 공간 한계(x,y,z min/max)
-- `safety.yaml` — 손 근접(손 ↔ 로봇 끝 선분 `hand_slow_robot_m` 0.35 m 안 → SLOW(`slow_override` 50 %), `hand_stop_robot_m` 0.20 m 안 → STOP, 중앙선 `slow_distance_m` 0.10 m 안 → SLOW. 개발용 `hand_stop_mode` stop·slow·off — #118), 힘 한계(기본 25 N, 항상 적용. 모드 3 받기 창 `/rally/safety/catch_window` 동안만 `catch_window_force_limit_n` 130 N, 창 한 번 최대 `catch_window_max_s` 2 s — #144·#165), nudge 임계(한 샘플 |Δ|F|| `nudge_dfdt_n` 5 N — 로봇 정지 중이고 `/rally/safety/contact_expected` 가 아닐 때만 판정), 작업 공간(x·y·z min/max → 밖이면 STOP. TCP 한 점 기준. 10/11: 환자 쪽 x_max 0.57 m(보라색 선)가 주된 제한, y ±0.60 은 테이블 옆으로 크게 나가지 않게 남김, x_min −2.0 · z 0~2.0 은 자세 전환 경로를 위해 사실상 열어 둠)
+- `safety.yaml` — 손 근접(손 ↔ 로봇 끝 선분 `hand_slow_robot_m` 0.35 m 안 → SLOW(`slow_override` 50 %), `hand_stop_robot_m` 0.20 m 안 → STOP, 중앙선 `slow_distance_m` 0.10 m 안 → SLOW. `hand_stop_mode` stop·slow·off — #118, 기본 slow #158. slow 는 근접 STOP 을 SLOW 로 낮추되 `hand_deep_intrusion` 은 STOP 유지 #160, off 는 개발 시험 전용), 힘 한계(기본 25 N, 항상 적용. 모드 3 받기 창 `/rally/safety/catch_window` 동안만 `catch_window_force_limit_n` 130 N, 창 한 번 최대 `catch_window_max_s` 2 s — #144·#165), nudge 임계(한 샘플 |Δ|F|| `nudge_dfdt_n` 5 N — 로봇 정지 중이고 `/rally/safety/contact_expected` 가 아닐 때만 판정), 작업 공간(x·y·z min/max → 밖이면 STOP. TCP 한 점 기준. 10/11: 환자 쪽 x_max 0.57 m(보라색 선)가 주된 제한, y ±0.60 은 테이블 옆으로 크게 나가지 않게 남김, x_min −2.0 · z 0~2.0 은 자세 전환 경로를 위해 사실상 열어 둠)
 - `skills.yaml` — 관측 자세, 모드별 기본 파라미터와 허용 범위(LLM 클램핑 범위와 동일), `gripper.<class>` 열림 폭·힘, `pick.*`, `handover.*`(제시 자세·당김 임계)
 - `table.yaml` — `table.z_m` 테이블 면 높이: 집기 Z 는 비전 깊이가 아니라 이 평면 + 물체 반지름으로 계산
 - `llm.yaml` — 모델, 타임아웃(3 s), 프롬프트 템플릿 경로, 전송 필드 화이트리스트(익명화)
@@ -251,14 +251,14 @@ STOP·취소는 기존 세션 중단 처리. 타격 action 실패 시에도 다�
 | `reason` | 래치 | Brain 처리 |
 |---|---|---|
 | `hand_near_robot` · `hand_near_centerline`(얕은 근접) · `hand_lost_near` | 아님 | **손 근접 대기** (모드 1·5, 아래 조건) |
-| `hand_deep_intrusion` (로봇 쪽 분리 예정) | 아님 | **자동 재진행 대상 아님** — 대기 목록에 넣지 않는다 (세션 종료) |
+| `hand_deep_intrusion` (중앙선 너머 `hand_deep_end_m` 30 cm 보다 깊이, 10/12 분리. 15~30 cm 는 STOP 이지만 사유 `hand_near_centerline` → 대기. `hand_stop_mode=slow` 에서도 STOP — #160 10/13) | 아님 | **자동 재진행 대상 아님** — 대기 목록에 넣지 않는다 (세션 종료) |
 | `wrench_missing` · `tcp_missing` · `wrench_lost` | 아님 | 손 대기 아님 — 세션 종료 (운영자 확인) |
 | `force_limit` · `nudge` · `workspace_limit` · `estop` · `voice_stop` · `fist_gesture` | 래치 | 세션 종료 (`reset_safety` 수동) |
 | SLOW 사유 (`hand_distance_unknown` · `hand_near_patient_contact` · `*_stale` 등) | — | STOP 아님, 대기 대상 아님 |
 
 - 대기 목록은 `skills.yaml brain.hand_stop_wait_reasons` 의 **정확한 문자열**만 (`hand_*` 접두사 허용 없음), 대상 모드는 `hand_stop_wait_modes: [1, 5]` (모드 5 는 10/11 추가).
 - 복수 원인이면 safety_monitor 는 가장 심한 레벨의 첫 사유 하나만 낸다. 래치 STOP 중에는 손 판정을 하지 않으므로 손 사유가 래치 STOP 을 가리지 않는다.
-- **주의**: 지금 main 의 safety_monitor 는 중앙선 너머 깊은 침입도 `hand_near_centerline` 으로 낸다. `hand_deep_intrusion` 분리(정정인)가 들어가기 전까지는 깊은 침입도 대기 대상이 된다. 분리 PR 이 들어오면 대기 목록은 그대로 두면 된다 (새 이름은 목록에 없으므로 세션 종료).
+- 10/12 분리 완료 (정정인 결정): 중앙선 너머 15 cm(`hand_deep_stop_m`)부터 접촉 중이어도 STOP 하는 건 그대로. 그 STOP 의 사유가 30 cm(`hand_deep_end_m`)보다 얕으면 `hand_near_centerline`(손 빼면 이어 감), 더 깊으면 `hand_deep_intrusion`(대기 목록에 없는 이름 → 세션 종료).
 
 ### 대기·재진행 조건 (구현된 동작)
 
@@ -297,7 +297,7 @@ STOP·취소는 기존 세션 중단 처리. 타격 action 실패 시에도 다�
 
 ### 남은 것
 
-1. 로봇 쪽: `hand_deep_intrusion` 분리 (정정인), action 취소·정지 확인 계약 (9절 계약 2번, 정정인 별도 정리)
+1. ~~로봇 쪽: `hand_deep_intrusion` 분리~~ (10/12 완료), action 취소·정지 확인 계약 (9절 계약 2번, 정정인 별도 정리)
 2. 2단계: 위 '세션 종료' 단계의 이어 가기 — 로봇 스킬 옵션 (#117)
 3. 로봇·인식 PC 실기 확인: 움직이는 중 손 STOP → 손 빼기 → 같은 시도 이어 감. 문서 갱신을 실물 검증 완료로 보지 않는다.
 

@@ -14,6 +14,6 @@ float32 wrist_angle_at_grasp_deg      # 환자 손목 각도 (HandState에서). 
 float32 handover_time_s
 string failure_reason
 ---
-string phase                          # present | wait | follow | release | grasp | retreat
+string phase                          # present | wait | approach | follow | release | grasp | retreat | place
 float32 tool_force_n
 float32 hand_distance_m

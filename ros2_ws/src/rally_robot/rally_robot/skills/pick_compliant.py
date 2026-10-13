@@ -14,6 +14,11 @@ Z 처리
   XY 는 goal.target (base_link, m). goal Z 가 0 보다 크면 그 높이(호출자가 테이블 + 물체별 파지 높이로 계산, 모드 5 brain)를 쓴다.
   0 이면 table.yaml 의 table.z_m 이 있으면 "테이블 평면 + pick.grasp_above_table_m(공 반지름)" 을 쓴다
   (비전 깊이 Z 는 믿지 않는다 — 윗면/깊이 바이어스 문제. 어차피 접촉 감지가 Z 오차를 흡수한다). table.z_m 이 없으면 goal Z.
+컵 테두리 집기 (10/12 정정인: 컵은 세워 두고 입구를 잡는다)
+  pick.by_class.<클래스>.rim_pinch_radius_m 가 있으면 목표(컵 중심)에서 손가락 닫히는 방향으로 반지름만큼(로봇 쪽) 옮겨 벽 하나를
+  손가락 하나는 안, 하나는 밖으로 집는다 (열림 open_mm). 10/12 실로봇: 컵 지름이 열림 90 mm 보다 커 손가락이 컵 안으로 들어가 빈손(폭 12 mm).
+  벽을 집으면 폭이 빈손과 몇 mm 차이라 gripper_node 의 물체 판정(폭 ≥ 20 mm)이 거짓 → 접근 때 빈손으로 한 번 닫아 잰 폭 + min_gap_mm 이상이면 쥔 것.
+  클래스는 goal 에 없어서 목표 xy 에서 class_near_m 안 가장 가까운 비전 물체로 정한다.
 공통 규칙
 - 매 단계 사이 node.check_stop(goal_handle) → STOP/취소면 SkillAbort → 순응 해제(컨텍스트) → abort. 이동은 move_checked.
 - 속도는 skills.yaml motion: (접근 = 관절 이동, 하강 = contact, 들기 = move) × 안전 속도 배율 (move_checked 안에서).
@@ -27,7 +32,28 @@ from rally_robot.dsr_helpers import SkillAbort, compliance, motion_speeds, move_
 DEFAULTS = dict(approach_height_m=0.08, below_target_m=0.015, lift_m=0.10, contact_force_n=8.0, open_mm=90.0,
                 z_from_table=True, grasp_above_table_m=0.03, z_stiffness_default=300.0,
                 tool_down_zyz=None,   # 집는 자세 기준(툴 수직 아래). 없으면 현재 자세 — 관측 자세(11° 기울어짐)에서 부르면 기울어진 채 집는다
-                finger_axis_deg=0.0)  # tool_down_zyz 자세에서 손가락이 닫히는 방향의 베이스 각도 (0 = 베이스 x). 실측: 막대를 y 로 눕히면 집힘
+                finger_axis_deg=0.0,  # tool_down_zyz 자세에서 손가락이 닫히는 방향의 베이스 각도 (0 = 베이스 x). 실측: 막대를 y 로 눕히면 집힘
+                by_class={}, class_near_m=0.06)
+
+
+def class_near(objects, x_m, y_m, max_m):
+    """비전 objects(base_link) 중 (x, y) 에서 max_m 안 가장 가까운 물체 클래스. 없으면 ""."""
+    if objects is None or objects.header.frame_id != "base_link":
+        return ""
+    best = None
+    for o in objects.objects:
+        d = math.hypot(o.position.x - x_m, o.position.y - y_m)
+        if d <= max_m and (best is None or d < best[0]):
+            best = (d, o.class_name)
+    return "" if best is None else best[1]
+
+
+def rim_point(x_mm, y_mm, radius_mm, finger_dir_deg):
+    """컵 중심에서 손가락 닫히는 방향(베이스 각도)으로 radius 만큼 — 두 쪽 중 베이스 원점에 가까운 쪽 (로봇 쪽 벽)."""
+    ux, uy = math.cos(math.radians(finger_dir_deg)), math.sin(math.radians(finger_dir_deg))
+    a = (x_mm + ux * radius_mm, y_mm + uy * radius_mm)
+    b = (x_mm - ux * radius_mm, y_mm - uy * radius_mm)
+    return a if math.hypot(*a) <= math.hypot(*b) else b
 
 
 def grip_rotation_deg(mask_yaw_rad, finger_axis_deg=0.0):
@@ -66,6 +92,14 @@ def execute(node):
                 z, z_src = goal.target.pose.position.z * 1000.0, "goal"
             base = [*cur[:3], *cfg["tool_down_zyz"]] if cfg["tool_down_zyz"] else list(cur)
             rot = grip_rotation_deg(goal.yaw, cfg["finger_axis_deg"]) if abs(goal.yaw) > 1e-3 else 0.0
+            cls = class_near(node.objects[1] if node.objects is not None else None, x / 1000.0, y / 1000.0, cfg["class_near_m"])
+            bc = (cfg.get("by_class") or {}).get(cls) or {}
+            open_mm = float(bc.get("open_mm", cfg["open_mm"]))
+            rim_mm = float(bc.get("rim_pinch_radius_m") or 0.0) * 1000.0
+            if rim_mm > 0.0:
+                cx_, cy_ = x, y
+                x, y = rim_point(x, y, rim_mm, cfg["finger_axis_deg"] + rot)
+                log.info(f"[pick_compliant] {cls} 테두리 집기: 중심 ({cx_:.0f},{cy_:.0f}) → 벽 ({x:.0f},{y:.0f}) mm, 열림 {open_mm:.0f} mm")
             orient = rotate_base(base, (0, 0, 1), rot)[3:] if rot else base[3:]
             above = [x, y, z + cfg["approach_height_m"] * 1000.0, *orient]
             below = [x, y, z - cfg["below_target_m"] * 1000.0, *orient]
@@ -75,7 +109,12 @@ def execute(node):
             log.info(f"[pick_compliant] target xy=({x:.0f},{y:.0f}) z={z:.0f} mm ({z_src}) yaw={math.degrees(goal.yaw):.0f}° → 툴 회전 {rot:+.0f}° force={grip_force:.0f} N z_st={z_st:.0f}")
 
             phase("approach", 0.1)
-            ok, _, _ = node.gripper(cfg["open_mm"], grip_force)
+            empty_mm = None
+            if rim_mm > 0.0 and not node.fake:          # 벽 집기 판정 기준: 빈손으로 닫은 폭 (힘마다 10.7~12.4 mm)
+                ok, empty_mm, _ = node.gripper(0.0, grip_force)
+                if not ok:
+                    raise SkillAbort("gripper_unavailable")
+            ok, _, _ = node.gripper(open_mm, grip_force)
             if not ok:
                 raise SkillAbort("gripper_unavailable")
             tv, ta, cv, ca, jv, ja = motion_speeds(node, "mode5")          # skills.yaml motion: (모든 스킬 공통)
@@ -110,6 +149,12 @@ def execute(node):
 
             phase("lift", 0.9)
             move_checked(node, lift, tv, ta)
+            if ok and not detected and empty_mm is not None and width >= empty_mm + float(bc.get("min_gap_mm", 1.0)):
+                detected = True                     # 벽 집기: 빈손 폭보다 벌어져 멈춤 = 쥠
+                node.holding = True
+                log.info(f"[pick_compliant] {cls} 벽 집음 — 폭 {width:.1f} mm (빈손 {empty_mm:.1f} mm)")
+            elif empty_mm is not None:
+                log.info(f"[pick_compliant] {cls} 폭 {width:.1f} mm · 빈손 {empty_mm:.1f} mm (쥠 판정 차 {float(bc.get('min_gap_mm', 1.0)):.1f} mm)")
             res.success, res.grip_width_mm = bool(ok and detected), float(width)
             if res.success:                      # 모드 5: 건네받은 물체를 이 자리에 다시 내려놓는다 (handover RECEIVE 후)
                 node.last_pick = dict(pose=[x, y, z, *orient], grip_force=grip_force, grasp_z=float(z_now))   # grasp_z: 실제 쥔 TCP 높이 mm

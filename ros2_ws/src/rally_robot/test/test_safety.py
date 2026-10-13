@@ -9,7 +9,7 @@ from rally_robot.safety_monitor import (force_limit_for, hand_level, hand_lost_l
                                         input_level, point_segment_dist, robot_segment, worst)
 
 NORMAL, SLOW, STOP = SafetyStatus.LEVEL_NORMAL, SafetyStatus.LEVEL_SLOW, SafetyStatus.LEVEL_STOP
-CFG = {"slow_distance_m": 0.25, "stop_distance_m": 0.15, "hand_deep_stop_m": -0.15,
+CFG = {"slow_distance_m": 0.25, "stop_distance_m": 0.15, "hand_deep_stop_m": -0.15, "hand_deep_end_m": -0.30,
        "hand_stop_robot_m": 0.20, "hand_slow_robot_m": 0.35, "hand_lost_stop_s": 1.0, "hand_lost_slow_s": 3.0}
 CFG_98 = {**CFG, "slow_distance_m": 0.10}       # safety.yaml 10/8 값
 
@@ -42,7 +42,8 @@ def test_near_with_patient_contact_is_slow():
 
 
 def test_deep_intrusion_is_stop_even_with_patient_contact():
-    assert hand_level(-0.20, True, CFG) == (STOP, "hand_near_centerline")
+    assert hand_level(-0.20, True, CFG) == (STOP, "hand_near_centerline")      # 15~30 cm: STOP, 손 빼면 이어 감
+    assert hand_level(-0.35, True, CFG) == (STOP, "hand_deep_intrusion")       # 30 cm 넘게: 세션 종료 사유
     assert hand_level(-0.15, True, CFG)[0] == SLOW        # 경계는 완화 쪽 (>= hand_deep_stop_m)
 
 
@@ -64,6 +65,7 @@ def test_hand_near_robot_is_stop_unless_patient_contact():
 def test_deep_intrusion_is_stop_even_if_robot_far():
     assert hand_level(-0.20, False, CFG_98, robot_dist=0.60) == (STOP, "hand_near_centerline")
     assert hand_level(-0.20, True, CFG_98, robot_dist=0.60) == (STOP, "hand_near_centerline")
+    assert hand_level(-0.31, True, CFG_98, robot_dist=0.60) == (STOP, "hand_deep_intrusion")
 
 
 def test_unknown_robot_distance_falls_back_to_line_stop():
@@ -205,6 +207,10 @@ def test_hand_mode_level():
     assert hand_mode_level((S.LEVEL_STOP, "hand_near_robot"), "slow") == (S.LEVEL_SLOW, "hand_near_robot")
     assert hand_mode_level((S.LEVEL_SLOW, "hand_near_centerline"), "slow") == (S.LEVEL_SLOW, "hand_near_centerline")
     assert hand_mode_level((S.LEVEL_STOP, "hand_near_centerline"), "off") == (S.LEVEL_NORMAL, "")
+    # #160: slow 라도 선 너머 30 cm 넘는 깊은 침입은 STOP 유지 (15~30 cm 는 SLOW)
+    assert hand_mode_level(hand_level(-0.35, False, CFG), "slow") == (S.LEVEL_STOP, "hand_deep_intrusion")
+    assert hand_mode_level(hand_level(-0.20, False, CFG), "slow") == (S.LEVEL_SLOW, "hand_near_centerline")
+    assert hand_mode_level(hand_level(-0.35, False, CFG), "off") == (S.LEVEL_NORMAL, "")
 
 
 def make_monitor(*extra):
