@@ -5,8 +5,10 @@ intent_node 와 같은 판정 코드(rally_voice/kws.py 의 EmergencyKws)를 그
     python scripts/kws/kws_live.py --list                        # 마이크 장치 번호
     python scripts/kws/kws_live.py --trial 그만 --n 10            # 인식: "지금!" 에 맞춰 10 번 → 감지 수 · 말 끝 → 감지 지연
     python scripts/kws/kws_live.py --minutes 10                  # 오탐: 평소 대화, 그만·멈춰는 말하지 않기
-    python scripts/kws/kws_live.py --wav 파일.wav                 # 녹음 파일로 (마이크 없이)
+    python scripts/kws/kws_live.py --wav 파일.wav --sweep         # 녹음 파일로 (마이크 없이) + 임계 × 연속 프레임 비교표
 울릴 때마다 시각·단어·점수를 찍고, 앞 1.5 s 소리를 data/datasets/kws/review/ 에 wav 로 남긴다 (--no-save 로 끔).
+마이크 오탐 측정은 들은 소리 전체를 data/datasets/kws/sessions/ 에 남긴다 → 같은 소리로 설정만 바꿔 --wav 로 다시 잴 수 있다.
+설정 고르기에 쓴 녹음과 최종 숫자를 내는 녹음은 따로 (같은 녹음이면 그 녹음에 맞춘 숫자가 나온다).
 오탐이면 그 wav 를 data/datasets/kws/other/ 로 옮기고 train.py 를 다시 돌린다.
 목표 (기획 FR-07·CP9): 인식 9/10 이상, 오탐 시간당 6 회 이하(10 분에 1 회), 말 끝 → 감지 0.3 s 이내.
 """
@@ -27,6 +29,8 @@ from rally_voice.kws import FRAME, EmergencyKws  # noqa: E402  (ROS 없이 impor
 RATE = 16000
 CHUNK_S = FRAME / RATE
 REVIEW = ROOT / "data" / "datasets" / "kws" / "review"
+SESSIONS = ROOT / "data" / "datasets" / "kws" / "sessions"
+REFRACTORY_FRAMES = 19                                   # kws.py refractory 1.5 s ÷ 80 ms, 올림
 
 
 def save_wav(path: Path, samples: np.ndarray) -> None:
@@ -99,10 +103,12 @@ class Runner:
         self.kws, self.save = kws, save
         self.hist: deque[np.ndarray] = deque(maxlen=int(1.5 * RATE / FRAME))
         self.hits: list[tuple[float, str, float]] = []
+        self.scores: list[float] = []                    # 프레임마다 비상 점수 (--sweep 용, 준비 2 s 동안은 0)
 
     def feed(self, chunk: np.ndarray, t: float, quiet: bool = False):
         self.hist.append(chunk)
         hit = self.kws.feed(chunk, t)
+        self.scores.append(self.kws.decider.score)
         if hit is None:
             return None
         self.hits.append((t, hit.word, hit.score))
@@ -122,14 +128,48 @@ def run_free(r: Runner, a) -> float:
             for n, c in enumerate(wav_chunks(Path(a.wav)), start=1):
                 r.feed(c, n * CHUNK_S)
             return n * CHUNK_S
-        with Mic(a.mic) as m:
-            while (elapsed := time.monotonic() - t0) < a.minutes * 60:
-                r.feed(m.read(), elapsed)
-            if m.overflows:
-                print(f"  (입력 넘침 {m.overflows} 번 — 처리가 밀려 프레임 일부 놓침)", flush=True)
+        session = None
+        if r.save:
+            SESSIONS.mkdir(parents=True, exist_ok=True)
+            a.session_path = SESSIONS / f"{datetime.now():%m%d_%H%M%S}_{a.label}.wav"
+            session = wave.open(str(a.session_path), "wb")
+            session.setnchannels(1)
+            session.setsampwidth(2)
+            session.setframerate(RATE)
+        try:
+            with Mic(a.mic) as m:
+                while (elapsed := time.monotonic() - t0) < a.minutes * 60:
+                    c = m.read()
+                    if session:
+                        session.writeframes(c.astype(np.int16).tobytes())
+                    r.feed(c, elapsed)
+                if m.overflows:
+                    print(f"  (입력 넘침 {m.overflows} 번 — 처리가 밀려 프레임 일부 놓침)", flush=True)
+        finally:
+            if session:
+                session.close()
     except KeyboardInterrupt:
         print()
     return time.monotonic() - t0 if not a.wav else elapsed
+
+
+def sweep_hits(scores: list[float], thr: float, consec: int) -> int:
+    """kws.py KwsDecider 와 같은 규칙: consec 프레임 연속 임계 이상, 울린 뒤 1.5 s 는 다시 안 울림."""
+    hits, run, last = 0, 0, -10 ** 9
+    for i, s in enumerate(scores):
+        run = run + 1 if s >= thr else 0
+        if run >= consec and i - last >= REFRACTORY_FRAMES:
+            hits += 1
+            last = i
+    return hits
+
+
+def print_sweep(scores: list[float], mins: float, label: str) -> None:
+    print(f"\n[{label} 비교표] 같은 소리 {mins:.1f} 분으로 설정만 바꿔 울린 횟수 (시간당)")
+    print("  임계 |  연속 1    연속 2    연속 3")
+    for thr in (0.7, 0.8, 0.9, 0.95):
+        cells = [sweep_hits(scores, thr, c) for c in (1, 2, 3)]
+        print(f"  {thr:.2f} | " + "  ".join(f"{n:3d} ({n / mins * 60:4.0f})" for n in cells))
 
 
 def run_trial(r: Runner, a) -> None:
@@ -205,6 +245,7 @@ def main() -> int:
     ap.add_argument("--n", type=int, default=10, help="--trial 횟수")
     ap.add_argument("--window", type=float, default=2.5, help="--trial 한 번에 듣는 시간 (s)")
     ap.add_argument("--label", default="오탐", help="결과 줄에 붙일 이름")
+    ap.add_argument("--sweep", action="store_true", help="끝에 임계 × 연속 프레임 조합별 울린 횟수 표")
     ap.add_argument("--no-save", action="store_true")
     ap.add_argument("--list", action="store_true")
     a = ap.parse_args()
@@ -238,6 +279,11 @@ def main() -> int:
                 print(f"  0 회여도 {mins:.0f} 분으로는 '시간당 {3 / mins * 60:.0f} 회 이하' 까지만 말할 수 있음 (95 %). 길게 켤수록 정확")
         else:
             print(f"\n[{a.label}] {mins:.1f} 분 동안 {len(r.hits)} 회   {counts}")
+        if a.sweep:
+            print_sweep(r.scores, mins, a.label)
+        if getattr(a, "session_path", None):
+            print(f"  들은 소리 전체: {a.session_path}\n"
+                  f"  → 설정 비교: --wav \"{a.session_path}\" --sweep --no-save")
     if a.trial and r.save:
         print(f"  회차별 소리: {REVIEW}\\trial_*.wav  — 놓친 회를 들어 보면 원인을 알 수 있음")
     elif r.hits and r.save:
