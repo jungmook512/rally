@@ -40,7 +40,7 @@ brain 모드 1 이 `/rally/perception/hand`(HandState)를 이렇게 쓴다 (`ral
 - [x] 웹캠 60 fps 확인(`v4l2-ctl`), 환자 측면 위치 가설정 — C270 640×480 은 약 20 fps (이슈 #38)
 - [x] MediaPipe Hands·Pose 단독 실행, RealSense 컬러에서 손 검출 확인 — `scripts/check_mediapipe.py`. 손은 잘 잡힘. 전신은 카메라에 바짝 붙으면 약하고, **1 m 이상 떨어지면 잘 잡힘** (10/8 노트북 웹캠: 1~1.5 m, 책상 뒤에 앉아 골반이 가려져도 어깨·팔꿈치 안정, 몸통을 기울이면 어깨선이 같이 기울어짐)
 - [ ] USB 마이크·스피커 장치 확인(`arecord -l`, `aplay -l`), 컨테이너 `/dev/snd` 패스스루 테스트 — USB 마이크 없음 → 시연은 로봇·인식 PC 내장 마이크로 결정 (10/7). 컨테이너 `/dev/snd` 는 #50 녹음 때 그 PC 에서 확인
-  - 10/13: **시연 마이크 = 맥스틸 C타입 게이밍 이어셋** (USB-C) — 이어폰 스펙: 드라이버 10 mm · 감도 96 ± 3 dB · 임피던스 16 Ω · 20 Hz~20 kHz · USB-C · 케이블 1.2 m (마이크 스펙은 따로 없음). intent_node 는 `VOICE_MIC_DEVICE`(이름 일부나 번호)로 고름. 남은 것(통합 때 로봇 PC): `arecord -l` 에 잡히는지, compose voice `/dev/snd` 로 들어가는지, `kws_live.py --list` 이름으로 지정
+  - 10/13: **시연 마이크 = 맥스틸 C타입 게이밍 이어셋** (USB-C) — 이어폰 스펙: 드라이버 10 mm · 감도 96 ± 3 dB · 임피던스 16 Ω · 20 Hz~20 kHz · USB-C · 케이블 1.2 m (마이크 스펙은 모름 — 제품 표기·검색에 없음). intent_node 는 `VOICE_MIC_DEVICE`(이름 일부나 번호)로 고름. 남은 것(통합 때 로봇 PC): `arecord -l` 에 잡히는지, compose voice `/dev/snd` 로 들어가는지, `kws_live.py --list` 이름으로 지정
 - [x] openWakeWord·faster-whisper·Piper 설치, 한국어 Piper 음성 모델 다운로드 → `models/` — openWakeWord·Piper(`models/piper/ko_KR-kss-medium`) 완료. faster-whisper(로컬 STT)는 팀 결정 전까지 보류
 - [ ] 웨이크워드 "랠리야" 녹음 샘플 수집 시작 (팀원 4명 × 20회) — 비상어 녹음(#50)에 합침: 1인 랠리야 30회. 로봇·인식 PC 녹음은 조정묵 진행 (10/8)
 
