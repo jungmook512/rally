@@ -69,7 +69,9 @@ def to_wav_bytes(audio: np.ndarray) -> bytes:
 class IntentNode(Node):
     def __init__(self) -> None:
         super().__init__("rally_intent")
-        self.declare_parameter("wake_model", "")                  # 비우면 resource/hello_rokey_8332_32.tflite
+        self.declare_parameter("wake_source", "kws")              # kws = "랠리야"(emergency_kws.joblib, 10/13) · openwakeword = wake_model(hello rokey)
+        self.declare_parameter("wake_kws_threshold", float("nan"))  # NaN 이면 모델에 저장된 임계 (비상어와 같은 값)
+        self.declare_parameter("wake_model", "")                  # 비우면 resource/hello_rokey_8332_32.tflite (wake_source=openwakeword 또는 랠리야 모델 없을 때)
         self.declare_parameter("wake_threshold", 0.3)
         self.declare_parameter("record_s", 5.0)
         self.declare_parameter("use_llm", True)
@@ -150,7 +152,13 @@ class IntentNode(Node):
             mic_name = "?"
         self.get_logger().info(f"마이크: {mic_name} (장치 {stream.device}, VOICE_MIC_DEVICE={os.environ.get('VOICE_MIC_DEVICE', '')!r})")
         self._kws = self._make_kws()
-        self.get_logger().info(f"호출어 대기 ({name}, 임계 {thr})")
+        want_kws_wake = self.get_parameter("wake_source").value == "kws"
+        if want_kws_wake and (self._kws is None or self._kws.wake is None):
+            self.get_logger().warn("랠리야 호출어 모델 없음(키워드 모델 없음·랠리야 라벨 없음) → hello rokey 로")
+        if want_kws_wake and self._kws is not None and self._kws.wake is not None:
+            self.get_logger().info(f"호출어 대기 (랠리야, 임계 {self._kws.wake.threshold:.2f}, 연속 {self._kws.wake.consec} 프레임)")
+        else:
+            self.get_logger().info(f"호출어 대기 ({name}, 임계 {thr})")
 
         def read() -> np.ndarray:
             """마이크 80 ms 를 읽고 비상어 감지에 먼저 넣는다 — 호출어·녹음·STT 와 무관하게 매 조각."""
@@ -163,7 +171,11 @@ class IntentNode(Node):
             while not self._stop.is_set() and rclpy.ok():
                 chunk = read()
                 # 로봇이 말하는 중에도 듣는다 (비상어는 살려 둬야 함). 들은 말을 거르는 건 _handle_audio 에서
-                if model.predict(chunk)[name] <= thr:
+                # 랠리야: 비상어와 같은 판별기(read() 안에서 이미 판정). 판별기가 꺼지면(예외) hello rokey 로 넘어감
+                if want_kws_wake and self._kws is not None and self._kws.wake is not None:
+                    if not self._kws.pop_wake():
+                        continue
+                elif model.predict(chunk)[name] <= thr:
                     continue
                 model.reset()
                 stamp = self.get_clock().now().to_msg()
@@ -181,6 +193,8 @@ class IntentNode(Node):
                 threading.Thread(target=self._handle_audio, args=(np.concatenate(frames), stamp, during_speech, rec_start),
                                  daemon=True).start()
                 model.reset()
+                if self._kws is not None:
+                    self._kws.pop_wake()                       # 녹음 중에 들린 랠리야는 버림 (명령 안의 말로 다시 녹음하지 않게)
 
     def _make_kws(self):
         if not self.get_parameter("kws_enabled").value:
@@ -193,7 +207,8 @@ class IntentNode(Node):
             return None
         try:
             kws = EmergencyKws(path, float(self.get_parameter("kws_threshold").value),
-                               float(self.get_parameter("kws_refractory_s").value))
+                               float(self.get_parameter("kws_refractory_s").value),
+                               wake_threshold=float(self.get_parameter("wake_kws_threshold").value))
         except Exception as e:      # noqa: BLE001 — 모델 문제로 노드 전체가 죽지 않게
             self.get_logger().error(f"비상어 모델 읽기 실패 ({path}): {type(e).__name__}: {e} → 상시 감지 꺼짐")
             return None

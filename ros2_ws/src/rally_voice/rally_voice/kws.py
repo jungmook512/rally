@@ -7,6 +7,8 @@
       80 ms(1280 샘플)마다 feed(). 점수가 임계를 넘으면 한 번 울리고 refractory_s 동안은 다시 안 울린다
       (한 번 말한 "그만" 으로 정지 요청이 여러 번 나가지 않게). 켜자마자 warmup_s 동안은 특징이 덜 차서 판정하지 않는다.
 기획 CP9 · FR-07: STT·네트워크 없이 0.3 s 이내 정지.
+호출어 "랠리야" (기획 FR-06, 10/13 정동휘 결정): 같은 판별기 확률의 P(랠리야)를 같은 임계·연속 프레임으로 본다
+      (train.py 가 비상·호출을 같은 임계로 평가). 감지되면 pop_wake() 가 한 번 참 — intent_node 가 녹음을 시작한다.
 """
 from __future__ import annotations
 
@@ -19,6 +21,7 @@ import numpy as np
 FRAME = 1280                     # 80 ms @ 16 kHz — openWakeWord 와 같은 단위
 SAY = {"geuman": "그만", "meomchwo": "멈춰", "rally": "랠리야"}
 MODEL_NAME = "emergency_kws.joblib"
+WAKE_REFRACTORY_S = 1.5          # "랠리야" 한 번에 녹음이 두 번 시작되지 않게
 # 컨테이너는 ../models 를 /models 로 마운트, 네이티브는 저장소의 models/
 MODEL_CANDIDATES = (Path("/models/kws") / MODEL_NAME, Path.home() / "rally/models/kws" / MODEL_NAME)
 
@@ -67,13 +70,18 @@ class EmergencyKws:
     """마이크 80 ms 조각을 넣으면 비상어를 감지. openWakeWord·joblib 이 필요해 노드 안에서만 만든다."""
 
     def __init__(self, path: Path, threshold: float | None = None, refractory_s: float = 1.5,
-                 warmup_s: float = 2.0) -> None:
+                 warmup_s: float = 2.0, wake_threshold: float | None = None) -> None:
         import joblib
         from openwakeword.utils import AudioFeatures
         m = joblib.load(path)
         self.clf, self.win = m["clf"], int(m["win"])
         thr = m["threshold"] if threshold is None or not math.isfinite(threshold) else threshold
         self.decider = KwsDecider(m["labels"], m["emergency"], thr, refractory_s, consec=m.get("consec", 1))
+        wake = [k for k in m.get("wake", []) if k in m["labels"]]
+        wthr = m["threshold"] if wake_threshold is None or not math.isfinite(wake_threshold) else wake_threshold
+        self.wake = (KwsDecider(m["labels"], wake, wthr, WAKE_REFRACTORY_S, consec=m.get("consec", 1))
+                     if wake else None)   # 랠리야 녹음 없이 학습한 모델이면 None → intent_node 가 hello rokey 로
+        self._wake_hit = False
         self.feat = AudioFeatures()
         self.warmup = int(warmup_s * 16000 / FRAME)
 
@@ -87,4 +95,12 @@ class EmergencyKws:
             self.warmup -= 1
             return None
         f = self.feat.get_features(self.win)
-        return self.decider.update(self.clf.predict_proba(f.reshape(1, -1))[0], t)
+        proba = self.clf.predict_proba(f.reshape(1, -1))[0]
+        if self.wake is not None and self.wake.update(proba, t) is not None:
+            self._wake_hit = True
+        return self.decider.update(proba, t)
+
+    def pop_wake(self) -> bool:
+        """마지막 pop_wake() 뒤로 "랠리야" 가 들렸으면 참 (한 번만)."""
+        hit, self._wake_hit = self._wake_hit, False
+        return hit
