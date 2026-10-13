@@ -153,6 +153,7 @@ class ThrowSession:
     max_cross_dist: float = 0.6
     lost_s: float = 0.25
     end_margin_s: float = 0.1
+    max_flight_s: float = 1.2       # 10/13 실로봇: 4 m 밖에서 손에 든 공(3D 흔들림)이 시작으로 잡힌 뒤 점이 계속 와서 비행이 안 끝남 → 진짜 투구 무시
     state: str = "idle"
     fp: FlightPredictor | None = None
     last: Crossing | None = None
@@ -173,6 +174,8 @@ class ThrowSession:
         """점이 없어도 주기적으로 불러 끝을 판정."""
         if self.state == "flight":
             if now - self._t_last > self.lost_s or (self.last is not None and now > self.last.t + self.end_margin_s):
+                self.reset()
+            elif self.t_release is not None and now - self.t_release > self.max_flight_s:
                 self.reset()
 
     def add(self, t: float, p: np.ndarray) -> Crossing | None:
@@ -214,6 +217,75 @@ class ThrowSession:
                 return False
         # 투구자 쪽에서 시작하고, 패드 평면 앞(투구자 쪽)에 있어야 함
         return pts[0][1][0] >= self.min_start_x and float((pts[-1][1] - self.plane_p) @ self.plane_n) > 0.0
+
+
+class MonoThrowSession(ThrowSession):
+    """ThrowSession + 한 카메라 픽셀 관측 (10/13 정정인 B).
+
+    투구 시작 판정·초기 속도는 지금처럼 두 카메라 3D 점(add)으로 한다. 비행이 시작되면 3D 점 대신 카메라마다 프레임 픽셀을
+    광선 관측(FlightPredictor.update_ray)으로 넣는다 — 두 카메라가 같은 순간에 다 봐야 하는 3D 점보다 관측이 2~6 배 많다
+    (10/13 실로봇: 던지는 순간 손목 카메라가 공을 놓쳐 3D 점이 결정 시점까지 5~6 개).
+    놓음 시각: 시작 판정 직전 측면 픽셀이 프레임마다 ray_onset_px 넘게 움직이기 시작한 시각까지 앞당김 (최대 back_max_s).
+    측면 카메라는 던지는 순간에도 공을 보고 있어 3D 점보다 0.04~0.18 s 먼저 움직임을 본다 (10/13 투구 19회).
+    """
+
+    def __init__(self, *a, pix_std: float = 3.0, ray_onset_px: float = 6.0, back_max_s: float = 0.25, side_name: str = "side", **kw):
+        kw.pop("P_side", None)
+        super().__init__(*a, **kw)
+        self.pix_std, self.ray_onset_px, self.back_max_s, self.side_name = float(pix_std), float(ray_onset_px), float(back_max_s), side_name
+        self._side_hist: deque = deque(maxlen=40)
+        self.t_start: float | None = None
+        self.n_rays = 0
+
+    def reset(self) -> None:
+        super().reset()
+        self.t_start = None
+
+    def add_ray(self, t: float, P: np.ndarray, uv, cam: str) -> list:
+        """한 카메라 픽셀. 비행 중이면 EKF 갱신, 대기 중이면 측면 픽셀만 놓음 시각용으로 모아 둠."""
+        if uv is None:
+            return []
+        if cam == self.side_name:
+            self._side_hist.append((t, (float(uv[0]), float(uv[1]))))
+        if self.state == "flight" and self.fp is not None and self.fp.x is not None:
+            self.tick(t)
+            if self.state == "flight" and self.fp.update_ray(t, P, uv, self.pix_std):
+                self._t_last = max(self._t_last, t)
+                self.n_rays += 1
+        return []
+
+    def add(self, t: float, p: np.ndarray) -> Crossing | None:
+        if self.state == "flight":                    # 비행 중 3D 점은 광선 관측과 겹치므로 안 씀 (끝 판정 시각만)
+            self.tick(t)
+            return None
+        st0 = self.state
+        c = super().add(t, p)
+        if st0 == "idle" and self.state == "flight":
+            self.t_start = self.t_release
+            self.t_release = self._onset(self.t_release)
+        return c
+
+    def _onset(self, t_start: float) -> float:
+        """시작 판정 첫 점 시각에서 거꾸로, 측면 픽셀이 계속 빠르게 움직인 구간의 처음."""
+        h = [x for x in self._side_hist if t_start - self.back_max_s - 0.02 <= x[0] <= t_start + 0.02]
+        onset = t_start
+        for (ta, a), (tb, b) in reversed(list(zip(h, h[1:]))):
+            if tb > t_start + 0.02:
+                continue
+            if tb - ta > 0.04 or np.hypot(b[0] - a[0], b[1] - a[1]) < self.ray_onset_px:
+                break
+            onset = min(onset, ta)
+        return max(onset, t_start - self.back_max_s)
+
+    def latest(self) -> Crossing | None:
+        """지금 상태의 교차점 (관측 min_obs 이상·발행 거리 안). 프레임 묶음마다 한 번 부른다."""
+        if self.state != "flight" or self.fp is None or self.fp.n < self.min_obs:
+            return None
+        c = self.fp.predict_crossing(self.plane_p, self.plane_n)
+        if c is None or np.linalg.norm(c.point - self.plane_p) > self.max_cross_dist:
+            return None
+        self.last = c
+        return c
 
 
 # ---------------------------------------------------------------- 검출 고르기 · 패드 위 공 (10/12 실제 받기 시도 뒤 추가)

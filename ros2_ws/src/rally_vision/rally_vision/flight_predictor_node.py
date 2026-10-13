@@ -148,6 +148,10 @@ class FlightPredictorNode(Node):
         d("static_cell_px", 24.0)                  # 고정 물체 오검출 제외: 격자 칸
         d("static_window", 120)                    #   최근 프레임 수 (60 Hz → 2 s)
         d("static_frac", 0.5)                      #   그중 이 비율 넘게 같은 칸이면 고정 물체
+        # 10/13 정정인 B: "stereo"(기본, 측면 시각에 손목 보간 → 3D 점) | "rays"(3D 점 없이 카메라별 픽셀·시각으로 궤적 맞춤, flight_rays.py)
+        #   bag 비교(scripts/mode3_mono_lab.py): 손목이 드문드문 볼 때 rays 는 0.25 s 에 6/6 예측(stereo 0/6), 다 볼 때 0.30 s 오차 5.6 vs 8.0 cm
+        d("estimator", "stereo")
+        d("debug_log", False)                      # 프레임·점마다 [진단] 로그 (공이 보이는 동안 ≤ 60/s + 교차 계산 한 번 더). 기본 끔 — #182 리뷰
         g = lambda k: self.get_parameter(k).value  # noqa: E731
 
         self.imgsz, self.conf, self.device = int(g("imgsz")), float(g("conf")), str(g("device"))
@@ -188,6 +192,16 @@ class FlightPredictorNode(Node):
 
         plane_p, plane_n, plane_src = self._pad_plane(np.array(g("plane_p"), float), np.array(g("plane_n"), float), str(g("skills_path")))
         self.get_logger().info(f"패드 평면 ({plane_src}): 중심 {np.round(plane_p, 3).tolist()} m · 법선 {np.round(plane_n, 3).tolist()}")
+        self.estimator = str(g("estimator"))
+        self.debug_log = bool(g("debug_log"))
+        self._last_rays_fit_t = None                 # rays: 마지막으로 발행한 맞춤의 시각 — 새 관측이 없으면 다시 발행하지 않음
+        if self.estimator not in ("stereo", "rays"):
+            raise RuntimeError(f"estimator 는 stereo | rays (받은 값 {self.estimator})")
+        if self.estimator == "rays":
+            from rally_vision.flight_rays import RayThrowSession
+            self.rays = RayThrowSession(plane_p=plane_p, plane_n=plane_n, k_drag=k_drag,
+                                        min_start_x=float(g("min_start_x_m")), max_cross_dist=float(g("max_cross_dist_m")))
+            self.get_logger().info("예측 방식: rays (3D 점 없이 카메라별 픽셀·시각으로 궤적 맞춤)")
         self.session = ThrowSession(plane_p=plane_p, plane_n=plane_n,
                                     k_drag=k_drag, meas_std_m=float(g("meas_std_m")),
                                     min_speed=float(g("min_speed_mps")), min_obs=int(g("min_obs")),
@@ -346,8 +360,14 @@ class FlightPredictorNode(Node):
         uv_s, uv_w = self.static["side"].pick(cands_s), self.static["wrist"].pick(cands_w)
         self._dbg[0] += uv_s is not None
         self._dbg[1] += uv_w is not None
+        if self.debug_log and (uv_s is not None or uv_w is not None):   # 10/13 진단: 카메라별 검출 (비행 중 어느 쪽이 놓치는지)
+            self.get_logger().info(f"[진단] t {ts % 1000:7.3f} 검출 측면 {None if uv_s is None else [round(v) for v in uv_s]} "
+                                   f"손목 {None if uv_w is None else [round(v) for v in uv_w]} (측면 후보 {len(cands_s)} 손목 후보 {len(cands_w)})")
         self._judge_pad(ts, cands_s)
 
+        if self.estimator == "rays":
+            self._tick_rays(ts, tw, uv_s, uv_w)
+            return
         pts = []
         if tw != self._last_wrist_t:
             self._last_wrist_t = tw
@@ -359,10 +379,55 @@ class FlightPredictorNode(Node):
         pts += self.assoc.add_side(ts, uv_s)
         self._dbg[2] += len(pts)
         for t, X in sorted(pts, key=lambda a: a[0]):
+            st0 = self.session.state
             c = self.session.add(t, X)
             if c is not None and c.time_to_go > 0:
                 self._publish(t, c)
+            # 10/13 진단: 3D 점은 있는데 예측이 안 나올 때 — 점 위치·속도·상태·교차 거리를 0.5 s 마다
+            prev = getattr(self, "_dbg_prev", None)
+            v = None if prev is None or t - prev[0] <= 0 or t - prev[0] > 0.1 else (X - prev[1]) / (t - prev[0])
+            self._dbg_prev = (t, X)
+            if self.session.state != st0:
+                self.get_logger().info(f"[진단] 상태 {st0} → {self.session.state} (놓음 {self.session.t_release})")
+            if self.debug_log:                                  # 10/13: 공이 보일 때만 점이 오므로 점마다 (≤ 60/s) — 교차 계산을 한 번 더 하므로 기본 끔
+                vs = "-" if v is None else f"{np.linalg.norm(v):.2f} m/s (vx {v[0]:+.2f})"
+                cs = ""
+                if self.session.state == "flight" and self.session.fp is not None:
+                    cc = self.session.fp.predict_crossing(self.session.plane_p, self.session.plane_n) if self.session.fp.n >= 1 else None
+                    cs = " · 교차 없음" if cc is None else f" · 교차점 {np.round(cc.point, 2).tolist()} 패드에서 {np.linalg.norm(cc.point - self.session.plane_p):.2f} m · 관측 {self.session.fp.n}"
+                self.get_logger().info(f"[진단] t {t % 1000:7.3f} 3D 점 {np.round(X, 2).tolist()} 속도 {vs} · 상태 {self.session.state}{cs}")
         self.session.tick(ts + self.dt_side)
+
+    def _tick_rays(self, ts: float, tw: float, uv_s, uv_w) -> None:
+        """rays: 측면(시각 + dt → 손목 시계)·새 손목 프레임 픽셀을 시각 순서로 RayThrowSession 에, 프레임 묶음마다 교차점 한 번."""
+        r = self.rays
+        ev = [(ts + self.dt_side, "side", self.assoc.P_side, uv_s)]
+        if tw != self._last_wrist_t:
+            self._last_wrist_t = tw
+            T = self._wrist_cam_from_base(tw)
+            if T is None:
+                self.get_logger().warn("손목 카메라 자세 없음 (tf base_link←link_6 · tcp_pose 둘 다 없음/오래됨)", throttle_duration_sec=5.0)
+            else:
+                ev.append((tw, "wrist", projection_matrix(self.K_wrist, T), uv_w))
+        st0 = r.state
+        for t, cam, P, uv in sorted(ev, key=lambda e: e[0]):
+            r.add(t, cam, P, uv)
+            self._dbg[2] += uv is not None
+        # 새 관측으로 맞춤이 바뀐 때만 교차점 계산·발행 (#182 리뷰): 같은 예측을 매 tick 다시 보내면 catch_ball 이 받은 시각으로
+        # 신선도를 봐서 공을 놓친 뒤에도 '새 예측'으로 받는다. predict_crossing(10~27 ms)도 매 tick 하지 않게
+        fit_t = r.fp.t if r.state == "flight" and r.fp is not None else None
+        c = None
+        if fit_t is not None and fit_t != self._last_rays_fit_t:
+            self._last_rays_fit_t = fit_t
+            c = r.latest()
+        if r.state != st0:
+            self.get_logger().info(f"[진단] 상태 {st0} → {r.state} (놓음 {r.t_release}{'' if r.state == 'flight' else ' · 끝 ' + r.end_reason})")
+        if c is not None and c.time_to_go > 0:
+            t_obs = r.fp.t
+            self._publish(t_obs, c, n_obs=r.fp.n, t_release=r.t_release)
+            if self.debug_log:
+                self.get_logger().info(f"[진단] rays 교차점 {np.round(c.point, 3).tolist()} 패드에서 {np.linalg.norm(c.point - r.plane_p):.2f} m · "
+                                       f"std {np.round(c.std_m * 100, 1).tolist()} cm · 관측 {r.fp.n} · 놓은 뒤 {t_obs - r.t_release:.3f} s")
 
     @staticmethod
     def _cands(r) -> list[tuple[float, float, float]]:
@@ -381,6 +446,12 @@ class FlightPredictorNode(Node):
             return
         pad_center = T_base_tcp[:3, :3] @ self.pad_offset + T_base_tcp[:3, 3]
         hit = self.judge.check(cands_s, pad_center, self.plane_n)
+        if time.monotonic() - getattr(self, "_jdbg_t", 0.0) >= 0.5:         # 10/13 진단: 판정 — 패드 중심 픽셀·후보 픽셀·거리
+            self._jdbg_t = time.monotonic()
+            x = self.judge.T[:3, :3] @ pad_center + self.judge.T[:3, 3]
+            uvp = (self.judge.K @ x)[:2] / x[2]
+            self.get_logger().info(f"[판정] 패드 중심 {np.round(pad_center, 3).tolist()} → 측면 픽셀 {[round(v) for v in uvp]} 반경 {self.judge.K[0, 0] * self.judge.radius_m / x[2]:.0f} px"
+                                   f" · 후보 {[(round(u), round(v), round(c, 2)) for u, v, c in cands_s]} · 판정 {'없음' if hit is None else f'{hit[1] * 100:.1f} cm'}")
         if hit is None:
             return
         p, _ = hit
@@ -391,7 +462,7 @@ class FlightPredictorNode(Node):
         self.pub_pad.publish(m)
         self._n_pad += 1
 
-    def _publish(self, t_obs: float, c):
+    def _publish(self, t_obs: float, c, n_obs: int | None = None, t_release: float | None = None):
         m = PointStamped()
         m.header.stamp = to_stamp(t_obs)
         m.header.frame_id = self.base_frame
@@ -399,7 +470,8 @@ class FlightPredictorNode(Node):
         self.pub.publish(m)
         info = Float64MultiArray()
         info.data = [float(c.t), float(c.t - t_obs), float(c.std_m[0]), float(c.std_m[1]),
-                     float(self.session.fp.n), float(t_obs - (self.session.t_release or t_obs))]
+                     float(self.session.fp.n if n_obs is None else n_obs),
+                     float(t_obs - ((self.session.t_release if t_release is None else t_release) or t_obs))]
         self.pub_info.publish(info)
         self._n_pub += 1
 
