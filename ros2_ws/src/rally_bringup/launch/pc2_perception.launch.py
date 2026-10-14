@@ -40,6 +40,11 @@ def _params(context, executable: str) -> list[dict]:
                  "info_topic": "/camera/color/camera_info"}]
     if executable == "body_pose":
         return [{"arm": LaunchConfiguration("body_arm").perform(context)}]   # 시연은 왼팔 (10/8 결정, 웹캠이 환자 왼쪽)
+    if executable == "segmenter":
+        # 10/14: compose 경로도 scripts/vision_local.sh 의 HAND_EYE 와 같은 선택을 할 수 있게. none = hand_eye.yaml 안 쓰고 선생님 npy
+        # (#66 과 같은 좌표 — mode1.vision_offset_m 이 10/7 그 좌표 기준으로 맞춰져 있어, yaml 과 겹치면 약 1 cm 어긋남)
+        he = LaunchConfiguration("segmenter_hand_eye").perform(context).strip()
+        return [{"hand_eye_path": he}] if he else []
     return []
 
 
@@ -137,5 +142,7 @@ def generate_launch_description():
         DeclareLaunchArgument("video_server", default_value="true", description="대시보드 카메라 화면용 web_video_server (포트 8080)"),
         DeclareLaunchArgument("webcam_device", default_value="/dev/video0", description="측면 웹캠 장치"),
         DeclareLaunchArgument("body_arm", default_value="left", description="body_pose 뻗는 팔: left | right | auto (시연은 왼팔)"),
+        DeclareLaunchArgument("segmenter_hand_eye", default_value="",
+                              description="segmenter hand_eye_path: 비우면 hand_eye.yaml, none = 옛 T_gripper2camera.npy (#66 좌표, vision_offset_m 기준)"),
         OpaqueFunction(function=_launch_part),
     ])

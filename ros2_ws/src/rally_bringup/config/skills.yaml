@@ -203,7 +203,7 @@ mode1:
   pickup_view_posj: [28.0, 15.0, 43.0, -2.0, 120.0, 28.0]
   # 비전 좌표 보정 (base, m, 더함). 10/7: 레인 입구 실측 공을 두 자세(관측·거치대)에서 비교 → 둘 다 x +9.5, y −9.2 mm 치우침.
   #   segmenter 가 T_gripper2camera.npy 대신 bringup URDF 의 카메라 브래킷 설계 치수(tf)를 쓰는 탓으로 추정 (박성현 확인 필요)
-  vision_offset_m: [-0.0095, 0.0092, 0.0]
+  vision_offset_m: [0.0, 0.0, 0.0]   # ★ 10/14 정정인: 손목 카메라 고정 뒤 수동 보정 끄고 확인 (직전 [-0.0025, 0.0015] — hand_eye.yaml 기준 눈대중)
   pickup_posx: null               # (pickup_source: posx 일 때만) 공을 쥔 자세 posx
   pickup_approach_m: 0.08         # 집는 자리 위 접근 높이
   place_open_mm: 80.0             # 레인 입구에 놓을 때 여는 폭 (레인 안쪽 폭 ≈ 87 mm 보다 작게)
@@ -367,7 +367,7 @@ handover:
   #   require_object (10/12 #142 리뷰 (b)): 받을 물체가 비전에 최근 object_recent_s 안에 보였을 때만 깊이로 닫음 — 손가락만 들어와도 20 N 으로
   #   닫히지 않게. 손에 든 막대 인식 모델(박성현 재학습 중) 전에는 사실상 힘(receive_threshold_n)으로만 받는다.
   #   실로봇에서 힘만으로 못 받으면 모델 전까지 require_object: false + 받기 닫는 힘을 낮춰서 쓴다
-  #   10/12 저녁 새 모델(yolov8n-seg_cupstick_v2_scratch, 손에 든 막대 사진 21장 중 16장 0.9 안팎): 막대를 든 손이 그리퍼 앞에 오면
+  #   10/12 저녁 새 모델(yolov8n-seg_cupstick_v2_scratch → models/yolov8n-seg_cupstick.pt 이름으로 배치, 손에 든 막대 사진 21장 중 16장 0.9 안팎): 막대를 든 손이 그리퍼 앞에 오면
   #   85~94 % 로 빈손 닫기를 반복 → hold_s 0.3 → 0.8, 영역 위쪽 6 → 3 cm(코드 box_mm), 빈손 뒤엔 한 번 비워져야 다시 닫음
   #   10/12 밤 정정인: 받기 흐름 = 막대 각도 맞춤 → 막대로 다가감(receive_approach) → 닫기. 깊이 근접으로는 안 닫음(close_on_depth: false) —
   #   깊이는 '그리퍼 사이가 비었나'(회전·다가가기 조건)에만. 밀어 넣는 힘(receive_threshold_n)으로는 여전히 닫힘

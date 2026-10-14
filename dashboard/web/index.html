@@ -172,7 +172,16 @@
   .camera .frame .empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:8px; color:#bbb; background:#111; font-weight:600; letter-spacing:.04em; }
   .camera .frame .empty[hidden] { display:none; }
   .camera figcaption { margin-top:6px; font-size:.9em; }
-  #report { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.6; max-height:520px; overflow:auto; }
+  #report { overflow-wrap:anywhere; line-height:1.6; max-height:520px; overflow:auto; }
+  #report h4 { margin:16px 0 8px; font-size:16px; font-weight:750; color:var(--text); }
+  #report h4:first-child { margin-top:0; }
+  #report h5 { margin:12px 0 6px; font-size:14px; font-weight:700; color:var(--muted); }
+  #report table { margin:6px 0 10px; }
+  #report th, #report td { white-space:normal; vertical-align:top; }
+  #report ul { margin:4px 0 10px 20px; padding:0; }
+  #report li { margin:2px 0; }
+  #report p { margin:6px 0; }
+  #report p.note { color:var(--muted); font-size:13px; }
   table { width:100%; border-collapse:collapse; font-size:14px; }
   th,td { text-align:left; padding:8px; border-bottom:1px solid var(--line); white-space:nowrap; }
   th { color:var(--muted); font-weight:700; font-size:13px; }
@@ -628,13 +637,51 @@ function cameraFigure(cam, why = "") {
   return fig;
 }
 
+// 세션 리포트 마크다운(rally_brain session_report.py: ## 제목 · 표 · - 목록 · _참고_) → HTML.
+// 외부 라이브러리 없이 필요한 문법만. 모든 글자는 먼저 이스케이프하므로 리포트 안의 <·& 가 HTML 로 해석되지 않는다
+function renderReportMd(md) {
+  const esc = t => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const inline = t => esc(t).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[\s(])_([^_]+?)_(?=[\s).,:;]|$)/g, "$1<em>$2</em>").replace(/`([^`]+)`/g, "<code>$1</code>");
+  const lines = String(md || "").split(/\r?\n/);
+  const block = l => /^(#{1,4}\s|\||\s*[-*]\s)/.test(l);
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) { i++; continue; }
+    const h = line.match(/^(#{1,4})\s+(.*)$/);
+    if (h) { const lv = Math.min(h[1].length + 2, 6); out.push(`<h${lv}>${inline(h[2])}</h${lv}>`); i++; continue; }
+    if (/^\|/.test(line)) {
+      const rows = [];
+      while (i < lines.length && /^\|/.test(lines[i])) rows.push(lines[i++]);
+      const cells = r => r.replace(/^\|/, "").replace(/\|\s*$/, "").split("|").map(c => c.trim());
+      const [head, ...body] = rows.filter(r => !/^\|\s*:?-{2,}/.test(r)).map(cells);
+      out.push("<table><thead><tr>" + (head || []).map(c => `<th>${inline(c)}</th>`).join("") + "</tr></thead><tbody>"
+        + body.map(r => "<tr>" + r.map(c => `<td>${inline(c)}</td>`).join("") + "</tr>").join("") + "</tbody></table>");
+      continue;
+    }
+    if (/^\s*[-*]\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) items.push(lines[i++].replace(/^\s*[-*]\s+/, ""));
+      out.push("<ul>" + items.map(t => `<li>${inline(t)}</li>`).join("") + "</ul>");
+      continue;
+    }
+    const para = [];
+    while (i < lines.length && lines[i].trim() && !block(lines[i])) para.push(lines[i++]);
+    const text = para.join(" ").trim();
+    out.push(`<p${/^_.*_$/.test(text) ? ' class="note"' : ""}>${inline(text)}</p>`);
+  }
+  return out.join("");
+}
+
 async function loadReport() {
   try {
     const r = await fetch("/api/report/latest");
     if (!r.ok) throw new Error(await r.text());
     const rep = await r.json();
     $("report-empty").hidden = !!rep;
-    $("report").textContent = rep ? rep.report_md : "";     // 글자 그대로 (HTML 해석 안 함)
+    $("report").innerHTML = rep ? renderReportMd(rep.report_md) : "";   // 마크다운 → 표·제목·목록 (본문은 먼저 이스케이프)
     if (rep) $("report-meta").textContent = `세션 ${rep.session_id.slice(0, 8)} · 끝난 시각 ${rep.ended_at ? clock(rep.ended_at) : "—"}`;
   } catch (e) { console.warn(e); }
 }

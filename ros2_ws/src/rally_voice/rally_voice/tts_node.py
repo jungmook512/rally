@@ -66,6 +66,7 @@ class TtsNode(Node):
         self.declare_parameter("length_scale", 1.1)         # 1 보다 크면 느리게. 어르신 대상이라 약간 천천히
         self.declare_parameter("tail_s", 0.3)               # 재생 끝 → speaking=false 까지 잔향 여유
         self.declare_parameter("output_device", "")         # 번호 또는 이름 일부. 비우면 환경변수 VOICE_SPEAKER_DEVICE, 그것도 없으면 기본 장치
+        self.declare_parameter("output_latency", "high")    # PortAudio 출력 지연: high(큰 버퍼) | low | 초(예 "0.2"). 10/14 로봇 PC: 펄스 경유 기본(low)은 CPU 가 바쁘면 underrun 으로 뚝뚝 끊김
 
         latched = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL,
                              history=HistoryPolicy.KEEP_LAST, depth=1)
@@ -131,7 +132,8 @@ class TtsNode(Node):
         t_syn = time.perf_counter() - t0
         if block_mic:
             self.set_speaking(True)
-        sd.play(audio, rate, device=self.device, blocking=True)
+        lat = str(self.get_parameter("output_latency").value or "high")
+        sd.play(audio, rate, device=self.device, blocking=True, latency=float(lat) if lat.replace(".", "", 1).isdigit() else lat)
         res.done, res.duration_s = True, len(audio) / rate
         self.get_logger().info(f'"{text}" ({res.duration_s:.1f} s, 합성 {t_syn:.2f} s'
                                + (", 마이크 차단)" if block_mic else ")"))
