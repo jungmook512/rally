@@ -4,12 +4,13 @@
 단계 (기하·판정은 rally_robot/detach.py 순수 함수)
 1. view     : 그리퍼 열고 공 보기 자세(mode3.detach_ball_view_posj)로 관절 이동 → 비전 velcro_ball 을 ball_obs_s 동안 모아 중앙값
               (goal.ball_pose 가 0 이 아니면 그 값). 거치대 G 에서 ball_search_m 밖의 검출은 무시
-2. approach : 패드 면 정면(툴 z = −n)·손가락 세로(base z) 자세로 공 앞 approach_m 까지 관절 이동 → 접촉 예정 ON → 순응으로 공까지
+2. approach : 위에서 수직으로 — 툴 아래·손가락 패드 면과 나란히(옆) 닫는 자세로 공 위 approach_m 까지 관절 이동 → 접촉 예정 ON
+              → 순응으로 공 중심 grasp_below_m 아래까지 (공 높이는 ball_z_m 이 있으면 그 값 — 비전 깊이 +24 mm 오차)
 3. grasp    : 닫기 → 폭이 공 지름 ± grip_tol_mm 아니면 열고 물러나 실패(detach_grip_fail)
-4. peel     : 순응(이동 무르게·회전 단단히) 상태로 접촉점 아래 pivot 을 중심으로 peel_step_deg 씩 돌리며(위부터 벗김) 스텝마다 n 방향으로
+4. peel     : 순응(이동 무르게·회전 단단히) 상태로 접촉점 옆 pivot 을 지나는 수직축으로 peel_step_deg 씩 돌리며(한쪽 옆부터 벗김) 스텝마다 n 방향으로
               조금씩 후퇴. 힘(쥔 직후 영점 기준 합력)이 limit_n 넘으면 그 자리에서 멈춰 놓고 물러남(detach_force_limit). 최대값 뒤 drop_n
               급락 = 떼어짐. peel_max_deg 까지 급락이 없으면 n 방향 pull_extra_m 당겨 보고 힘이 풀렸으면 떼어진 것
-5. retreat  : n 방향 retreat_m 후퇴 → 접촉 예정 OFF
+5. retreat  : n 방향 retreat_m 후퇴 + 위로 lift_after_m → 접촉 예정 OFF
 6. box      : 아직 쥐고 있으면 작업 공간 x 확장 ON → 박스 위(detach_box_drop_posj) 관절 이동 → 열기 → 공 보기 자세로 복귀 → 확장 OFF
 공통 규칙
 - 단계 사이 check() (STOP·취소 → SkillAbort). 순응은 compliance() 컨텍스트, 접촉 예정·작업 공간 확장은 try/finally 로 반드시 끔
@@ -22,7 +23,7 @@ import numpy as np
 
 from rally_interfaces.action import DetachBall
 from rally_robot import detach, pad_rack
-from rally_robot.dsr_helpers import SkillAbort, compliance, motion_speeds, move_checked, movej_checked, movej_to_pose, stop_robot
+from rally_robot.dsr_helpers import SkillAbort, compliance, ik_nearest, motion_speeds, move_checked, movej_checked, stop_robot
 
 
 def _observe_ball(node, cfg, check, near_m):
@@ -103,7 +104,7 @@ def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=N
         log.error(f"[detach_ball] {msg} → 열고 물러남")
         node.gripper(open_mm, force)
         here = list(get_current_posx()[0])
-        move_checked(node, detach.along(here, n, cfg["approach_m"]), tv, ta)
+        move_checked(node, detach.up(detach.along(here, n, 0.01), cfg["approach_m"]), tv, ta)   # 패드에서 1 cm 떼고 위로
         raise SkillAbort(reason)
 
     # 1. 공 보기 자세 → 비전
@@ -119,14 +120,20 @@ def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=N
         near = [v / 1000.0 for v in G[:3]] if G is not None else None
         ball_m, n_obs = _observe_ball(node, cfg, check, near)
         log.info(f"[detach_ball] 공 {np.round(ball_m, 3).tolist()} m (관측 {n_obs}, 거치대 G 기준 {cfg['ball_search_m']} m 안)")
+    if float(cfg["ball_z_m"]) > 0.0:                                 # 거치대 높이는 고정 — 비전 깊이 오차(+24 mm) 대신 실측
+        log.info(f"[detach_ball] 공 높이 비전 {ball_m[2] * 1000:.0f} mm → 설정 {cfg['ball_z_m'] * 1000:.0f} mm (ball_z_m)")
+        ball_m = [ball_m[0], ball_m[1], float(cfg["ball_z_m"])]
     out["ball_m"] = [float(v) for v in ball_m]
 
-    # 2. 접근 자세: 패드 정면·손가락 세로
-    orient = detach.grasp_orientation(n, cfg["finger_axis_tool"])
-    grasp6 = detach.grasp_pose(ball_m, n, cfg["grasp_depth_m"], orient)
-    pre = detach.along(grasp6, n, cfg["approach_m"])
+    # 2. 접근 자세: 위에서 수직으로 — 툴 아래, 손가락은 패드 면과 나란히(옆) 닫힘 (10/14: 정면 수평 쥐기는 IK 없음)
+    grasp6 = detach.top_grasp_pose(ball_m, cfg["grasp_below_m"], cfg["top_down_zyz"], cfg["finger_rot_deg"])
+    pre = detach.up(grasp6, cfg["approach_m"])
     phase("approach")
-    movej_to_pose(node, pre, jv, ja)
+    from DSR_ROBOT2 import get_current_posj
+    q_pre = ik_nearest(pre, get_current_posj())                      # 공 보기 자세에서 관절 차 가장 작은 해 (10/14 확인: J1 153, 경로 x ≤ 0.33)
+    if q_pre is None:
+        raise SkillAbort("ik_failed (공 위 접근 자세)")
+    movej_planned(node, log, cfg, q_pre, jv, ja, cfg["path_x_max_m"], "공 위 접근")
     node.set_contact(True)                                           # 손가락이 패드에 닿을 수 있음 — nudge 쉼, 힘 한계 25 N 그대로
     try:
         with compliance(cfg["stiffness"], log):
@@ -149,7 +156,7 @@ def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=N
         with compliance(cfg["stiffness"], log):
             for deg, back in detach.peel_schedule(cfg["peel_step_deg"], cfg["peel_max_deg"], cfg["peel_retreat_per_step_m"]):
                 check()
-                target = detach.peel_pose(grasp_now, ball_m, n, r, cfg["pivot_down_r"], deg, back)
+                target = detach.peel_pose_vertical(grasp_now, ball_m, n, r, cfg["pivot_side_r"], deg, back)
                 how = move_checked(node, target, cfg["peel_vel_mm_s"], ca, on_poll=poll, stall_ok=True)
                 if feedback:
                     feedback("pull", watch.last)
@@ -174,7 +181,7 @@ def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=N
         # 5. 후퇴
         phase("detached", watch.last)
         here = list(get_current_posx()[0])
-        move_checked(node, detach.along(here, n, cfg["retreat_m"]), tv, ta)
+        move_checked(node, detach.up(detach.along(here, n, cfg["retreat_m"]), cfg["lift_after_m"]), tv, ta)
     finally:
         node.set_contact(False)
 

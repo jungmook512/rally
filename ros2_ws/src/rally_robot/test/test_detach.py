@@ -149,3 +149,28 @@ def test_plan_joint_path_uses_via_poses_when_two_stage_fails():
     via = [0.0, -300.0, 0, 0, 0, 0]
     plan = d.plan_joint_path(q0, q1, fk, 450.0, 580.0, 30.0, vias=[[[150.0, 0, 0, 0, 0, 0]], [via]])   # 첫 후보는 튀는 자리
     assert plan == [via, q1]
+
+
+
+def test_top_grasp_pose_fingers_along_pad_face_and_up():
+    g = d.top_grasp_pose(BALL, 0.010, [174.8, -177.0, 175.1], 90.0)
+    assert g[:3] == pytest.approx([300.0, -150.0, 390.0])                     # 공 중심 10 mm 아래
+    Rm = Rotation.from_euler("ZYZ", g[3:], degrees=True).as_matrix()
+    assert Rm[2, 2] == pytest.approx(-1.0, abs=0.01)                            # 툴 z 아래
+    assert abs(Rm[:, 0] @ np.array([0.0, 1.0, 0.0])) == pytest.approx(1.0, abs=0.01)   # 손가락 닫힘(툴 x) = base y (패드 면과 나란히)
+    assert d.up(g, 0.08)[2] == pytest.approx(470.0) and d.up(g, 0.08)[3:] == pytest.approx(g[3:])
+
+
+def test_peel_pose_vertical_peels_far_side_first():
+    g = d.top_grasp_pose(BALL, 0.0, [174.8, -177.0, 175.1], 90.0)
+    assert d.peel_pose_vertical(g, BALL, N, R, 0.5, 0.0, 0.0) == pytest.approx(g, abs=1e-6)
+    p = d.peel_pose_vertical(g, BALL, N, R, 0.5, 10.0, 0.0)
+    assert p[0] > g[0] and p[2] == pytest.approx(g[2])                          # 공(=TCP) 중심이 +n(+x) 쪽으로, 높이 그대로
+    pivot = np.array(BALL) * 1000 - np.array(N) * R * 1000 - np.array([0, 1.0, 0]) * R * 0.5 * 1000
+    assert math.dist(p[:3], pivot) == pytest.approx(math.dist(g[:3], pivot), abs=1e-6)
+    # 접촉점(c − r n)은 패드에서 떨어지고(+x), 반대쪽(+y) 옆 끝이 공 중심보다 더 많이 +x 로 — 그쪽부터 벗겨짐
+    Rz = Rotation.from_rotvec(np.deg2rad(-10.0) * np.array([0, 0, 1.0]))
+    moved = lambda q: (pivot + Rz.apply(np.asarray(q) - pivot))[0] - q[0]
+    c = np.array(BALL) * 1000
+    contact, far = c - np.array([R * 1000, 0, 0]), c + np.array([0, R * 1000, 0])
+    assert moved(contact) > 0 and moved(far) > moved(c) > 0

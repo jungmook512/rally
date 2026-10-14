@@ -39,7 +39,15 @@ DEFAULTS = dict(
     grasp_depth_m=0.0,                      # 쥘 때 TCP 가 공 중심에서 n 방향으로 몇 m 앞 (0 = 손가락 중심이 공 중심. 손가락 길이 보정은 실측 뒤)
     finger_axis_tool=[1.0, 0.0, 0.0],       # RG2 손가락이 닫히는 툴 축 (10/14 추정 — 실로봇 확인)
     grip_tol_mm=10.0,                       # 쥔 폭이 공 지름 ± 이 밖이면 잘못 쥔 것
-    pivot_down_r=0.5,                       # 회전 중심 = 접촉점에서 아래로 r × 이 값
+    pivot_down_r=0.5,                       # (옛 수평 쥐기) 회전 중심 = 접촉점에서 아래로 r × 이 값
+    # ★ 10/14 위에서 쥐기 (정정인): 수평으로 패드 정면에서 쥐는 자세는 IK 8해 모두 J5 ±168° (한계 133) → 툴 수직 아래로 내려와
+    #   손가락을 패드 면과 나란히(옆, base y) 닫고, 수직축(z)으로 돌려 한쪽 옆부터 벗긴다
+    top_down_zyz=[174.8, -177.0, 175.1],    # 툴 수직 아래 자세 (skills.yaml pick.tool_down_zyz, 손가락 닫힘 = base x)
+    finger_rot_deg=90.0,                    # 위 자세를 base z 로 이만큼 돌려 손가락을 패드 면과 나란히 (90 → 닫힘 = base y). IK 확인 ±90 둘 다 해 4개
+    grasp_below_m=0.010,                    # 쥘 때 TCP(손가락 끝)를 공 중심보다 이만큼 아래 — 손가락 패드가 공 가장 넓은 곳에
+    ball_z_m=0.0,                           # 0 이 아니면 공 중심 높이를 이 값으로 (비전 z 대신). 10/14 실측 95 mm, 비전은 119 mm (+24 mm, 알려진 깊이 오차)
+    pivot_side_r=0.5,                       # 수직축 회전 중심 = 접촉점에서 옆(−l)으로 r × 이 값 → 반대쪽(+l) 옆부터 벗겨짐
+    lift_after_m=0.05,                      # 떼어지고 n 방향 후퇴 뒤 위로
     peel_step_deg=5.0,                      # 한 스텝 회전각
     peel_max_deg=40.0,                      # 이 각까지 급락 없으면 n 방향 pull_extra_m 당겨 보고 판정
     peel_retreat_per_step_m=0.002,          # 스텝마다 n 방향으로 더 후퇴
@@ -249,3 +257,34 @@ def plan_joint_path(q0, q1, fk, x_max_mm, y_abs_max_mm, z_min_mm, vias=()):
         if all(path_inside(a, b, fk, x_max_mm, y_abs_max_mm, z_min_mm) for a, b in zip(pts, pts[1:])):
             return pts[1:]
     return None
+
+
+def lateral(normal) -> np.ndarray:
+    """패드 면 안 수평 방향 l = ẑ × n (n = +x 면 +y). 위에서 쥘 때 손가락 닫힘 방향."""
+    return peel_axis(normal)
+
+
+def top_grasp_pose(ball_m, below_m, zyz_down, finger_rot_deg) -> list[float]:
+    """위에서 쥐는 자세 posx [mm·deg]: TCP = 공 중심 바로 위 축에서 below_m 아래, 툴 수직 아래를 base z 로 finger_rot_deg 돌림. 순수 함수."""
+    c = np.asarray(ball_m, float) * 1000.0
+    rot = Rotation.from_euler("z", finger_rot_deg, degrees=True) * Rotation.from_euler("ZYZ", zyz_down, degrees=True)
+    return [float(c[0]), float(c[1]), float(c[2] - below_m * 1000.0)] + [float(v) for v in rot.as_euler("ZYZ", degrees=True)]
+
+
+def up(pose6, dist_m) -> list[float]:
+    """pose6 를 base z 로 dist_m 올린 posx. 순수 함수."""
+    return [float(pose6[0]), float(pose6[1]), float(pose6[2] + dist_m * 1000.0)] + [float(v) for v in pose6[3:6]]
+
+
+def peel_pose_vertical(grasp6, ball_m, normal, r_m, pivot_side_r, deg, retreat_m) -> list[float]:
+    """수직축(base z) 벗기기: 회전 중심 pivot = 접촉점(c − r·n) − l·r·pivot_side_r (l = ẑ × n). +deg 면 반대쪽(+l) 옆이 먼저 +n 쪽
+    (패드에서 떨어지는 쪽)으로 — pivot 쪽 옆은 붙은 채 경첩. TCP 는 공과 한 몸으로 같이 돌고, n 방향 retreat_m 더. 순수 함수."""
+    n = _unit(normal)
+    l = lateral(n)
+    c = np.asarray(ball_m, float) * 1000.0
+    pivot = c - n * r_m * 1000.0 - l * r_m * pivot_side_r * 1000.0
+    R = Rotation.from_rotvec(np.deg2rad(-deg) * np.array([0.0, 0.0, 1.0]) * float(np.sign(np.cross(n, l)[2]) or 1.0))
+    p0 = np.asarray(grasp6[:3], float)
+    p = pivot + R.apply(p0 - pivot) + n * retreat_m * 1000.0
+    rot = R * Rotation.from_euler("ZYZ", grasp6[3:6], degrees=True)
+    return [float(v) for v in p] + [float(v) for v in rot.as_euler("ZYZ", degrees=True)]
