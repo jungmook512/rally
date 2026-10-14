@@ -41,17 +41,6 @@ def test_intercept_never_moves_left_and_clips():
     assert far.offset_m == pytest.approx(0.5)                 # 반경 판정은 자르기 전 거리
 
 
-def test_intercept_left_allowed_with_left_max():
-    """10/14 Y0: left_max_m 을 주면 왼쪽(u < 0)도 그만큼, 기본(0)은 그대로 안 감."""
-    _, u, _ = plane_axes(N45)
-    left = intercept(READY, PAD, N45, PAD - 0.10 * u, 0.15, 0.15, left_max_m=0.25)
-    assert abs(left.du + 0.10) < 1e-6 and not left.clipped
-    far = intercept(READY, PAD, N45, PAD - 0.40 * u, 0.15, 0.15, left_max_m=0.25)
-    assert abs(far.du + 0.25) < 1e-6 and far.clipped
-    over = intercept(READY, PAD, N45, PAD - 0.22 * u, 0.15, 0.15, left_max_m=0.25, overshoot_m=0.05)
-    assert abs(over.du + 0.25) < 1e-6                      # 지나치기도 left_max 안에서
-
-
 def test_intercept_ignores_normal_component():
     n, _, _ = plane_axes(N45)
     plan = intercept(READY, PAD, N45, PAD + 0.05 * n, 0.15, 0.15)

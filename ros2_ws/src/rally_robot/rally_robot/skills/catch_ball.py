@@ -66,8 +66,6 @@ DEFAULTS = dict(
     right_max_m=0.15,
     updown_max_m=0.15,
     down_max_m=0.08,                                    # 아래(투구자 쪽): 대기 자세 −9.4 cm 에 자기충돌 (10/11 실측)
-    left_max_m=0.0,                                     # 왼쪽(+y 쪽). 0 = 안 감 (기존 자세). 10/14 Y0 자세는 0.25 — skills.yaml
-    ready_via_posj=None,                                # 거치대(U) ↔ 대기 자세 경유 관절값 (팔 세움) — pad_rack.ready_route 가 씀. Y0 처럼 팔꿈치가 반대로 접힌 자세는 팔만 먼저 돌리면 TCP x 0.6 m 로 작업 공간 밖 (10/14 계산)
     reach_max_m=0.35,                                   # 두 축 합 이동 상한 — 대각선(오른쪽 32·위 35 cm)은 두산 NOT REACHABLE (10/13)
     catch_overshoot_m=0.0,                              # 목표를 이동 방향으로 이만큼 더 (감속 구간을 예측점 뒤로, 10/13 정정인). catch_plan.intercept
     window_start_lag_s=0.15,                            # 받기 창 안에 끝나는지 볼 때 더하는 출발 지연 (10/10 실측 amovel 출발 148 ms)
@@ -409,8 +407,7 @@ def execute(node):
 
             reach_now = window_reach(time.monotonic())
             plan = intercept(ready, pad0, cfg["pad_normal"], pred.point if target is None else target,
-                             cfg["right_max_m"], cfg["updown_max_m"], cfg["down_max_m"], min(cfg["reach_max_m"], reach_now), cfg["catch_overshoot_m"],
-                             left_max_m=cfg["left_max_m"])
+                             cfg["right_max_m"], cfg["updown_max_m"], cfg["down_max_m"], min(cfg["reach_max_m"], reach_now), cfg["catch_overshoot_m"])
             if reach_now < cfg["reach_max_m"]:
                 log.info(f"[catch_ball] 받기 창이 {close_in:.2f} s 뒤 닫힘 → 이동 최대 {reach_now * 100:.0f} cm (창 안에 멈추게)")
             res.landing_predicted = _point(pred.point)
@@ -472,8 +469,7 @@ def execute(node):
                         return None
                     if not quality_ok(newer.std, newer.n_obs, cfg["gate_std_max_m"], cfg["gate_n_obs_min"]):
                         return None
-                    new_plan = intercept(ready, pad0, cfg["pad_normal"], newer.point, cfg["right_max_m"], cfg["updown_max_m"], cfg["down_max_m"], cfg["reach_max_m"], cfg["catch_overshoot_m"],
-                                         left_max_m=cfg["left_max_m"])
+                    new_plan = intercept(ready, pad0, cfg["pad_normal"], newer.point, cfg["right_max_m"], cfg["updown_max_m"], cfg["down_max_m"], cfg["reach_max_m"], cfg["catch_overshoot_m"])
                     if goal.catch_radius > 0 and new_plan.offset_m > goal.catch_radius:
                         why["radius"] += 1
                         return None

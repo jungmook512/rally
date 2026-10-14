@@ -55,13 +55,11 @@ class Intercept:
 
 
 def intercept(ready_tcp_posx, pad_center_m, normal, predicted_m, right_max_m, updown_max_m,
-              down_max_m: float | None = None, reach_max_m: float | None = None, overshoot_m: float = 0.0,
-              left_max_m: float = 0.0) -> Intercept:
+              down_max_m: float | None = None, reach_max_m: float | None = None, overshoot_m: float = 0.0) -> Intercept:
     """예측점으로 패드 중심을 옮기는 TCP 목표. TCP 자세 고정·위치만 이동 (10/11 결정).
 
     - 패드 면 안 두 축으로 분해해 면 수직 성분은 버린다(예측점은 이미 면 위).
-    - 왼쪽(u < 0)은 left_max_m 까지 (기본 0 = 안 감, 10/11 결정: 기존 대기 자세는 왼쪽이 어깨 특이점·J3 한계).
-      10/14 대기 자세 Y0(skills.yaml) 는 전 방향 25 cm 가 되므로 left_max_m 0.25 (docs/mode3/MODE3_READY_POSE_Y0.md).
+    - 왼쪽(u < 0)으로는 가지 않는다: 왼쪽 공은 '환자 투구 실패'로 성공률에서 뺀다 (10/11 결정).
     - 오른쪽 right_max_m, 위 updown_max_m, 아래(+w, 투구자 쪽) down_max_m(없으면 updown_max_m) 로 자른다 (어깨 특이점·작업 공간 여유).
       아래는 대기 자세에서 약 9.4 cm 에 두산 자기충돌 정지 (10/11 실측) → skills.yaml mode3.down_max_m 0.08.
     - overshoot_m: 10/13 정정인 — 목표를 이동 방향으로 이만큼 더 둔다. 로봇은 목표 앞에서 감속하므로 예측점에 정확히 서려 하면
@@ -73,13 +71,13 @@ def intercept(ready_tcp_posx, pad_center_m, normal, predicted_m, right_max_m, up
     _, u, w = plane_axes(normal)
     d = np.asarray(predicted_m, float) - np.asarray(pad_center_m, float)
     du0, dw0 = float(d @ u), float(d @ w)
-    du = min(max(du0, -float(left_max_m)), right_max_m)
+    du = min(max(du0, 0.0), right_max_m)
     dw = min(max(dw0, -updown_max_m), updown_max_m if down_max_m is None else down_max_m)
     r = float(np.hypot(du, dw))
     clipped = abs(du - du0) > 1e-9 or abs(dw - dw0) > 1e-9           # '잘림' 표시는 한계에 걸린 것만 (더 가기 전에 판정)
     if overshoot_m > 0 and r > 1e-3:                                     # 실제 이동 방향(잘린 뒤)으로 더 간 뒤 한계를 다시 적용
         du, dw = du + overshoot_m * du / r, dw + overshoot_m * dw / r
-        du = min(max(du, -float(left_max_m)), right_max_m)
+        du = min(max(du, 0.0), right_max_m)
         dw = min(max(dw, -updown_max_m), updown_max_m if down_max_m is None else down_max_m)
         r = float(np.hypot(du, dw))
     if reach_max_m is not None and r > reach_max_m > 0:

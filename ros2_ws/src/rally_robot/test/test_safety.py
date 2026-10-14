@@ -5,7 +5,7 @@ import math
 import pytest
 
 from rally_interfaces.msg import SafetyStatus
-from rally_robot.safety_monitor import (force_limit_for, workspace_relax_active, hand_level, hand_lost_level, hand_robot_dist, hand_unknown_level, in_workspace,
+from rally_robot.safety_monitor import (force_limit_for, hand_level, hand_lost_level, hand_robot_dist, hand_unknown_level, in_workspace,
                                         input_level, point_segment_dist, robot_segment, worst)
 
 NORMAL, SLOW, STOP = SafetyStatus.LEVEL_NORMAL, SafetyStatus.LEVEL_SLOW, SafetyStatus.LEVEL_STOP
@@ -395,54 +395,6 @@ def test_catch_window_max_s_caps_stuck_heartbeat(catch_monitor):
     catch_monitor.on_catch_window(Bool(data=False))              # 창이 꺼졌다 새로 열리면 다시 130 N
     catch_monitor.on_catch_window(Bool(data=True))
     assert catch_monitor.force_limit_now() == 130.0
-
-
-def test_workspace_relax_active_only_when_wider():
-    """10/14 Y0: 받기 창 x 완화는 설정값이 평소 상한보다 클 때만 (음수·작은 값 = 기능 없음)."""
-    assert workspace_relax_active(0.57, 0.78)
-    assert not workspace_relax_active(0.57, -1.0)
-    assert not workspace_relax_active(0.57, 0.50)
-
-
-@pytest.fixture
-def ws_monitor(monitor_with):
-    node = monitor_with("-p", "workspace_x_max_m:=0.57", "-p", "workspace_catch_x_max_m:=0.78", "-p", "workspace_catch_hold_s:=10.0")
-    return node
-
-
-def test_workspace_x_relaxed_in_catch_window_and_until_tcp_returns(ws_monitor):
-    """10/14 Y0: 받기 창 동안 x 0.73 은 STOP 아님. 창이 꺼진 뒤에도 TCP 가 0.57 안으로 돌아올 때까지 유지, 돌아오면 평소값."""
-    from std_msgs.msg import Bool
-    ws_monitor.check_workspace((0.73, 0.0, 0.4))
-    assert ws_monitor.latched_stop                                # 창 없이는 평소 0.57
-    ws_monitor.latched_stop, ws_monitor.reason = False, ""
-    ws_monitor.on_catch_window(Bool(data=True))
-    ws_monitor.check_workspace((0.73, 0.0, 0.4))
-    assert not ws_monitor.latched_stop
-    ws_monitor.catch_until = 0.0                                  # 창 신호 끊김 — 로봇은 아직 받은 자리
-    ws_monitor.check_workspace((0.73, 0.0, 0.4))
-    assert not ws_monitor.latched_stop and ws_monitor.workspace_x_max_now(0.73) == 0.78
-    ws_monitor.check_workspace((0.56, 0.0, 0.4))                  # 대기 자세로 복귀 → 완화 끝
-    assert ws_monitor.ws_relax_until == 0.0 and ws_monitor.workspace_x_max_now(0.56) == 0.57
-    ws_monitor.check_workspace((0.73, 0.0, 0.4))
-    assert ws_monitor.latched_stop
-
-
-def test_workspace_relax_expires_after_hold(ws_monitor):
-    from std_msgs.msg import Bool
-    ws_monitor.on_catch_window(Bool(data=True))
-    ws_monitor.catch_until = 0.0
-    ws_monitor.ws_relax_until -= 11.0                             # 창 꺼진 뒤 hold_s(10 s) 지남, TCP 는 아직 밖
-    ws_monitor.check_workspace((0.73, 0.0, 0.4))
-    assert ws_monitor.latched_stop and ws_monitor.reason == "workspace_limit"
-
-
-def test_workspace_relax_off_when_not_configured(monitor_with):
-    from std_msgs.msg import Bool
-    node = monitor_with("-p", "workspace_x_max_m:=0.57")       # catch 값 기본 -1 → 기능 없음
-    node.on_catch_window(Bool(data=True))
-    node.check_workspace((0.73, 0.0, 0.4))
-    assert node.latched_stop
 
 
 def test_safety_yaml_force_limits_144():

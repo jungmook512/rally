@@ -53,15 +53,6 @@ def test_config_and_rack_points():
         pr.rack_points(lambda q: -1, cfg)                       # fkin 실패
 
 
-def test_ready_route_uses_via_posj_when_given():
-    """10/14 Y0: ready_via_posj 가 있으면 그 경유 자세 → 대기 자세 (팔만 먼저 돌리는 기본 경로 대신)."""
-    VIA = [-58.7, 0.0, 0.0, 98.8, 63.6, -100.3]
-    Y0 = [-58.7, 7.0, 100.2, 98.8, 63.6, -100.3]
-    via, end = pr.ready_route(U, Y0, VIA)
-    assert via == VIA and end == Y0
-    assert pr.ready_route(U, Y0)[0][:3] == Y0[:3]               # 없으면 기본 그대로
-
-
 def test_ready_route_moves_arm_first_then_wrist():
     U = [91.7, -7.9, -103.8, -109.3, 132.7, -31.8]
     READY = [89.8, 30.0, -121.7, 90.2, -80.2, 88.3]
