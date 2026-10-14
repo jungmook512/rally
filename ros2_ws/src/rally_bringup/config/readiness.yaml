@@ -12,12 +12,12 @@
 
 safety:
   topics:
-    - {name: /rally/safety/status, type: rally_interfaces/msg/SafetyStatus, max_age_s: 0.5}   # 100 Hz
+    - {name: /rally/safety/status, type: rally_interfaces/msg/SafetyStatus, max_age_s: 1.5}   # 100 Hz. 0.5 → 1.5 s (10/14, 와이파이 끊김 0.8~1.8 s — 실제 정지는 safety_monitor 가 로봇 PC 에서)
 
 robot:
   include: [safety]
   topics:
-    - {name: /rally/robot/wrench, type: geometry_msgs/msg/WrenchStamped, max_age_s: 0.5}
+    - {name: /rally/robot/wrench, type: geometry_msgs/msg/WrenchStamped, max_age_s: 1.5}   # 안전 상태와 같게 (10/14)
   services:
     - {name: /rally/gripper/command, type: rally_interfaces/srv/GripperCommand}
     - {name: /rally/robot/go_hand_view, type: std_srvs/srv/Trigger}          # 모드 1 시도 전 손 보기 자세 (10/8)
