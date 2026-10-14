@@ -80,16 +80,14 @@ python3 scripts/mode3_movej_test.py --posj -58.7 7.0 100.2 98.8 63.6 -100.3 --an
 python3 scripts/mode3_reach_test.py --run --posj -58.7 7.0 100.2 98.8 63.6 -100.3 --angles 135 150 165 180 --dist 25 --vel 100 --acc 500 --reps 1 --ws-x-max 0.78
 ```
 
-**2. 이동 측정 — amovej 72회** (박성현 #196 코멘트 구성). 핵심. 받기와 같은 120/400. 방향별 도착(`t_arrive_s`)·5 cm 안 진입(`t_near5_s`)·힘 최대. **5절 4번 이동 측정 bag 을 켠 채로.** 왼쪽 180° 25 cm 가 되는지가 범위 확인의 핵심. (`--posj` 는 처음 한 번만 — 이미 Y0 면 빼도 같음)
+**2. 이동 측정 — amovej 72회 (40 + 32)** (박성현 #196 코멘트 구성). 핵심. 받기와 같은 120/400. 방향별 도착(`t_arrive_s`)·5 cm 안 진입(`t_near5_s`)·힘 최대. **5절 4번 이동 측정 bag 을 켠 채로.** 왼쪽 180° 25 cm 가 되는지가 범위 확인의 핵심. (`--posj` 는 처음 한 번만 — 이미 Y0 면 빼도 같음)
 ```bash
 # a) 4축(0·90·180·270°) × 5·10·15·20·25 cm × 2회 = 40
 python3 scripts/mode3_movej_test.py --run --posj -58.7 7.0 100.2 98.8 63.6 -100.3 --angles 0 90 180 270 --dist 5 10 15 20 25 --cases amovej --jvel 120 --jacc 400 --reps 2 --ws-x-max 0.78
-# b) 대각선(45·135·225·315°) × 15·25 cm × 2회 = 16  — 4축 15·25 cm 는 a 에 이미 있으므로 8방향 중 나머지 4방향만
-python3 scripts/mode3_movej_test.py --run --angles 45 135 225 315 --dist 15 25 --cases amovej --jvel 120 --jacc 400 --reps 2 --ws-x-max 0.78
-# c) 8방향 15·25 cm 한 번 더 (a·b 와 합쳐 8방향 × 2거리 × 2회 = 32 를 채움 — 반복이 방향마다 붙지 않게 따로)
-python3 scripts/mode3_movej_test.py --run --angles $(seq 0 45 315) --dist 15 25 --cases amovej --jvel 120 --jacc 400 --reps 1 --ws-x-max 0.78
+# b) 8방향(45° 간격) × 15·25 cm × 2회 = 32
+python3 scripts/mode3_movej_test.py --run --angles $(seq 0 45 315) --dist 15 25 --cases amovej --jvel 120 --jacc 400 --reps 2 --ws-x-max 0.78
 ```
-스크립트는 방향 순서대로 돈다 (섞는 옵션 없음). a·b·c 를 나눠 돌리는 것으로 같은 방향이 연달아 몰리는 것만 줄인다.
+스크립트는 방향 순서대로 돈다 (섞는 옵션 없음 — 박성현 제안의 "순서 섞기"는 아직 미반영).
 
 **3. 이동 중 재전송 — amovej 12회** (박성현 구성: 3쌍 × 4회). 받기 스킬의 비행 중 갱신(0.3 s 간격)과 같은 조건. Y0 에서 시작(2단계 끝 자세 그대로).
 ```bash
