@@ -424,13 +424,16 @@ class SegmenterNode(Node):
             self._n, self._t_infer = 0, 0.0
 
 
+DEBUG_COLOR = (255, 96, 0)      # BGR 파란색 — 마스크 칠·상자. 10/14 조정묵: 대시보드 인식 화면에서 노란색 대신 파란색으로
+
+
 def draw_debug(img, objs, frame):
     vis = img.copy()
     for o in objs:
         m = o["mask"]
-        vis[m] = (0.55 * vis[m] + 0.45 * np.array([0, 200, 255])).astype(np.uint8)
+        vis[m] = (0.55 * vis[m] + 0.45 * np.array(DEBUG_COLOR)).astype(np.uint8)
         x, y, w, h = o["bbox"]
-        cv2.rectangle(vis, (x, y), (x + w, y + h), (0, 200, 255), 1)
+        cv2.rectangle(vis, (x, y), (x + w, y + h), DEBUG_COLOR, 1)
         c = o["center"]
         cv2.putText(vis, f"{o['class_name']}#{o.get('track_id', 0)} {o['confidence']:.2f} ({c[0]:.2f},{c[1]:.2f},{c[2]:.2f}) yaw{np.degrees(o['yaw']):.0f}"
                     + (f" img{np.degrees(o['image_axis']):+.0f}" if o.get("image_axis") is not None else ""),
