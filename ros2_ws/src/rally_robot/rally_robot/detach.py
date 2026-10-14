@@ -30,7 +30,8 @@ DEFAULTS = dict(
     box_drop_posj=[],                       # ★ 교시 필요: 뗀 공을 놓을 박스 위 관절값
     pad_normal=[1.0, 0.0, 0.0],             # 거치대에 꽂힌 패드의 공 붙은 면 법선 (base). 10/14 정정인: 로봇 반대쪽 +x
     ball_radius_m=0.031,                    # 벨크로 공 지름 62 mm (10/14 정정인)
-    ball_class=["velcro_ball", "ball"],     # /rally/perception/objects 에서 고를 클래스 (앞이 그리퍼 설정 기준). 10/14: segmenter 모델이 ball·cup·rod 뿐이라 ball 도 받음
+    ball_class=["velcro_ball", "ball"],     # /rally/perception/objects 에서 고를 클래스, 앞이 우선. velcro_ball = segmenter 에 모드 3 모델
+                                            #   velcro_ball_yolo11n-seg_1024_rot_v2.pt 를 넣었을 때 (10/14 정정인). 없으면 ball(모드 1 모델)
     ball_min_conf=0.4,
     ball_obs_s=1.0,                         # 이 시간 동안 본 위치의 중앙값
     ball_obs_min=5,                         # 최소 관측 프레임 수
@@ -120,17 +121,19 @@ def ball_classes(cls) -> tuple:
 def pick_ball(objects, cls, min_conf: float, near_m=None, radius_m: float = 0.0):
     """TrackedObjectArray 한 프레임에서 공 하나 고르기 → (x, y, z) [m] 또는 None. cls 는 이름 하나 또는 목록.
     near_m 에서 radius_m 안의 것 중 신뢰도 최고. 순수 함수."""
-    best = None
-    classes = ball_classes(cls)
-    for o in objects:
-        if o.class_name not in classes or o.confidence < min_conf:
-            continue
-        p = (float(o.position.x), float(o.position.y), float(o.position.z))
-        if near_m is not None and radius_m > 0 and math.dist(p, near_m) > radius_m:
-            continue
-        if best is None or o.confidence > best[0]:
-            best = (float(o.confidence), p)
-    return best[1] if best else None
+    for c in ball_classes(cls):                       # 목록 앞 클래스 우선 (10/14: velcro_ball(모드 3 v2 모델) → 없을 때만 ball)
+        best = None
+        for o in objects:
+            if o.class_name != c or o.confidence < min_conf:
+                continue
+            p = (float(o.position.x), float(o.position.y), float(o.position.z))
+            if near_m is not None and radius_m > 0 and math.dist(p, near_m) > radius_m:
+                continue
+            if best is None or o.confidence > best[0]:
+                best = (float(o.confidence), p)
+        if best:
+            return best[1]
+    return None
 
 
 def grasp_orientation(normal, finger_axis_tool) -> list[float]:

@@ -85,7 +85,8 @@ def test_pick_ball_filters_class_conf_and_radius():
     assert d.pick_ball(objs, "velcro_ball", 0.4, [0.24, -0.14, 0.22], 0.25) == (0.29, -0.14, 0.40)
     assert d.pick_ball(objs, "velcro_ball", 0.4) == (0.9, 0.0, 0.2)   # 반경 제한 없으면 신뢰도 최고
     assert d.pick_ball([], "velcro_ball", 0.4) is None
-    assert d.pick_ball(objs, ["velcro_ball", "ball"], 0.4, [0.24, -0.14, 0.22], 0.25) == (0.31, -0.15, 0.40)   # 목록이면 ball(0.95) 도 후보
+    assert d.pick_ball(objs, ["velcro_ball", "ball"], 0.4, [0.24, -0.14, 0.22], 0.25) == (0.29, -0.14, 0.40)   # 앞 클래스(velcro_ball) 우선
+    assert d.pick_ball(objs, ["ball", "velcro_ball"], 0.4, [0.24, -0.14, 0.22], 0.25) == (0.31, -0.15, 0.40)
     assert d.ball_classes("ball") == ("ball",) and d.ball_classes(["a", "b"]) == ("a", "b")
 
 
