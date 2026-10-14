@@ -351,8 +351,6 @@
           <div class="name">캐치볼</div><div class="sub" id="card-sub-3">시도 0회</div><div class="bar"><i id="card-bar-3"></i></div><div class="card-slot" id="card-slot-3"></div></div>
         <div class="mode-card" id="card-5" role="link" tabindex="0"><div class="top"><span class="num">5</span><span class="state" id="card-state-5">대기</span></div>
           <div class="name">건네고 받기</div><div class="sub" id="card-sub-5">시도 0회</div><div class="bar"><i id="card-bar-5"></i></div><div class="card-slot" id="card-slot-5"></div></div>
-        <div class="mode-card" id="card-7" role="link" tabindex="0"><div class="top"><span class="num">7</span><span class="state" id="card-state-7">대기</span></div>
-          <div class="name">저항 밀기</div><div class="sub" id="card-sub-7">시도 0회</div><div class="bar"><i id="card-bar-7"></i></div><div class="card-slot" id="card-slot-7"></div></div>
       </div></div>
     </div>
     <div id="mode-right">
@@ -388,7 +386,7 @@
     </div>
   </section>
   <section id="trials-view" class="panel" hidden>
-      <div class="panel-top list-head"><h2>최근 시도</h2><div class="chips" id="trial-filter"><button type="button" data-f="" class="on">전체</button><button type="button" data-f="1">1 공 굴리기</button><button type="button" data-f="3">3 캐치볼</button><button type="button" data-f="5">5 건네고 받기</button><button type="button" data-f="7">7 저항 밀기</button></div><span class="stat-line" id="trials-sum"></span></div>
+      <div class="panel-top list-head"><h2>최근 시도</h2><div class="chips" id="trial-filter"><button type="button" data-f="" class="on">전체</button><button type="button" data-f="1">1 공 굴리기</button><button type="button" data-f="3">3 캐치볼</button><button type="button" data-f="5">5 건네고 받기</button></div><span class="stat-line" id="trials-sum"></span></div>
       <div class="scroll">
         <table>
           <thead><tr><th>회차</th><th>모드</th><th>결과</th><th>오차</th><th>걸린 시간</th><th>메모</th></tr></thead>
@@ -405,7 +403,7 @@
 </main>
 <script src="/images/training-scenes.js"></script>
 <script>
-const MODES = {1: "공 굴리기", 3: "캐치볼", 5: "건네고 받기", 7: "저항 밀기"};
+const MODES = {1: "공 굴리기", 3: "캐치볼", 5: "건네고 받기"};   // 모드 7(저항 밀기)은 10/14 시연에서 제외 — 화면에서 뺌
 const LEVELS = {normal: ["normal", "정상"], slow: ["slow", "느리게"], stop: ["stop", "정지"]};   // rally_db convert.SAFETY_LEVELS
 const REASONS = {hand_near_robot: "손이 로봇 가까이", hand_lost_near: "가까이서 손이 사라짐", hand_near_centerline: "손이 중앙선을 넘음", hand_deep_intrusion: "손이 로봇 구역 깊이 들어옴",
   hand_near_patient_contact: "손 근접(접촉 구간)", hand_distance_unknown: "손 거리 모름",
@@ -423,7 +421,7 @@ const clock = (iso) => iso ? new Date(iso).toLocaleTimeString("en-GB", {hour12: 
 const pct = (x) => x == null ? "—" : `${Math.round(x * 100)}%`;
 const seenTrials = new Set();
 const recentTrials = [];   // 받은 시도 (최신이 앞) — 모드 화면 '최근 시도' 칸
-const modeTally = {1: {n: 0, ok: 0}, 3: {n: 0, ok: 0}, 5: {n: 0, ok: 0}, 7: {n: 0, ok: 0}};   // 받은 시도 기록으로 카드에 표시
+const modeTally = {1: {n: 0, ok: 0}, 3: {n: 0, ok: 0}, 5: {n: 0, ok: 0}};   // 받은 시도 기록으로 카드에 표시
 let selectedMode = null, selectedPage = 'overview';
 let control = null, controlReceived = 0, resuming = false, switching = false, stateTime = 0;
 let sceneSafety = null, sceneKey = null, previewStage = null, previewTimer = null;
@@ -443,7 +441,7 @@ function renderControl(s) {
     $("proposal-message").textContent = "";
   }
   control = s;
-  if (s && [1, 3, 5, 7].includes(Number(s.mode))) $('nav-mode').setAttribute('href', `#mode${s.mode}`);   // '훈련' 탭 = 지금 진행 중인 모드
+  if (s && [1, 3, 5].includes(Number(s.mode))) $('nav-mode').setAttribute('href', `#mode${s.mode}`);   // '훈련' 탭 = 지금 진행 중인 모드
   renderModePage();
   controlReceived = performance.now();
   renderProposal();
@@ -613,6 +611,7 @@ function showCameras() {
   }
 }
 
+const CAMERA_FALLBACK_S = 8;   // 인식 화면이 이만큼 안 오면 원본 카메라로
 function cameraFigure(cam, why = "") {
   // 영상은 로봇·인식 PC 의 web_video_server 에서 브라우저가 직접 받는다. 끊기면 5 s 뒤 다시 연결
   const fig = document.createElement("figure"); fig.className = "camera";
@@ -624,12 +623,19 @@ function cameraFigure(cam, why = "") {
   if (!cam.url) { msg.title = why; frame.append(msg); fig.append(frame, cap); return fig; }
   // MJPEG(multipart)는 브라우저마다 load 이벤트가 다르게 와서, 실제로 그림이 한 장 들어왔는지(naturalWidth)로 본다.
   // 서버는 있는데 카메라 토픽이 없으면 그림이 안 들어오므로 계속 No Image
-  let failed = false;
-  const open = () => { if (fig.hidden) return; failed = false; img.src = `${cam.url}&t=${Date.now()}`; };
+  // 손목은 인식 결과 화면(세그먼트 마스크·신뢰도가 그려진 debug_image)을 먼저 받고, FALLBACK_S 동안 그림이 안 오면(비전 꺼짐) 원본 카메라로
+  let failed = false, usingFallback = false, blank = 0;
+  const src = () => usingFallback ? cam.fallback : cam.url;
+  const open = () => { if (fig.hidden) return; failed = false; img.src = `${src()}&t=${Date.now()}`; };
   fig.toggle = (show) => { if (show) open(); else { img.removeAttribute("src"); msg.hidden = false; } };
   const check = setInterval(() => {
     if (!fig.isConnected) { clearInterval(check); return; }
-    msg.hidden = !failed && img.naturalWidth > 0;
+    const ok = !failed && img.naturalWidth > 0;
+    msg.hidden = ok;
+    blank = ok ? 0 : blank + 1;
+    if (!ok && cam.fallback && !usingFallback && blank >= CAMERA_FALLBACK_S) {
+      usingFallback = true; cap.textContent = `${cam.name} · 원본 (인식 화면 없음)`; open();
+    }
   }, 1000);
   img.onload = () => { msg.hidden = true; };
   img.onerror = () => { failed = true; msg.hidden = false; setTimeout(open, 5000); };   // 카메라·web_video_server 없음 → No Image, 5 s 뒤 다시
@@ -757,10 +763,6 @@ const PAGES = {
       steps:['손·물체 확인','집기','건네기','돌려받기','시도 기록'],
       match:[/손 대기|물체 대기/,/집기/,/GIVE/,/RECEIVE/,/기록/],
       help:['손과 훈련 물체를 확인합니다.','로봇이 훈련 물체를 집습니다.','환자에게 물체를 제시하고 파지를 기다립니다.','환자가 돌려주는 물체를 받습니다.','건네기와 돌려받기의 결과를 기록합니다.']},
-  7: {title:'저항 밀기', subtitle:'팔씨름처럼 팔을 세우고 로봇팔을 밉니다. 로봇은 버티다가 물러납니다.',diagram:'팔씨름형 저항 훈련',
-      caption:'내 손으로 로봇팔 끝의 접촉부를 직접 밉니다. 그림은 단계 설명용이며 실측 움직임은 아닙니다. 환자가 밀면 로봇이 버티다가 목표 달성 후 져줍니다. 로봇이 환자 쪽으로 능동적으로 밀지는 않습니다.',
-      steps:['손 확인','저항 훈련','시도 기록'],match:[/손 대기/,/저항 밀기/,/기록/],
-      help:['손이 보이는지 확인합니다.','저항·힘 유지·져주기·복귀를 포함한 스킬이 실행 중입니다.','최대 힘과 유지 시간 등 시도 결과를 기록합니다.']}
 };
 function selectPage() {
   const hash=location.hash.slice(1);
@@ -782,7 +784,7 @@ function selectPage() {
   if ($('progress-panel').parentNode !== progressHome) progressHome.append($('progress-panel'));
   const stepsHome = selectedMode !== null ? $(`card-slot-${selectedMode}`) : $('steps-home');
   if ($('steps-panel').parentNode !== stepsHome) stepsHome.append($('steps-panel'));
-  for (const m of [1, 3, 5, 7]) $(`card-${m}`).className = `mode-card${m === selectedMode ? ' selected' : ''}`;
+  for (const m of [1, 3, 5]) $(`card-${m}`).className = `mode-card${m === selectedMode ? ' selected' : ''}`;
   $('v-rail').hidden = $('v-track').hidden = selectedMode === null;
   showCameras();
   $('trials-view').hidden=selectedPage!=='trials';
@@ -817,7 +819,7 @@ function renderVariants(page, index, preview, fresh) {
   const cls = (i) => `${index >= 0 && i < index ? 'done' : ''} ${i === index ? 'now' : ''} ${preview && i === previewStage ? 'pv' : ''}`;
   const [, word] = modeStatus(selectedMode, fresh);
   const shown = preview ? previewStage : index;
-  $('v-rail').innerHTML = [1, 3, 5, 7].map((m) => { const [st, w] = modeStatus(m, fresh), k = modeTally[m];
+  $('v-rail').innerHTML = [1, 3, 5].map((m) => { const [st, w] = modeStatus(m, fresh), k = modeTally[m];
     return `<div class="rail-m ${m === selectedMode ? 'sel' : ''} ${st}" data-mode="${m}" role="link" tabindex="0" title="모드 ${m} 화면"><div class="n">${m}</div><div class="t">${MODES[m]}</div><div class="s">${w} · ${k.n}회</div><div class="mini"><i style="width:${k.n ? Math.round(k.ok / k.n * 100) : 0}%"></i></div></div>`; }).join('');
   $('v-track').innerHTML = `<div class="v-head"><span class="track-title">${shown >= 0 ? `${shown + 1} / ${steps.length} · ${esc(steps[shown])}` : `단계 ${steps.length}개`}<small>${preview ? '미리보기' : `${word} · ${t.n ? `시도 ${t.n}회 · 성공 ${t.ok}` : '시도 0회'}`}</small></span>
     <button type="button" class="ghost" data-play>${preview ? '■ 실시간 보기' : '▶ 단계 미리보기'}</button></div>
@@ -835,7 +837,7 @@ function renderRecent() {
     <span class="r-note">${esc(NOTES[r.notes] ?? r.notes ?? '')}</span></li>`).join('');
 }
 function renderModeCards(fresh){
-  for (const m of [1, 3, 5, 7]) {
+  for (const m of [1, 3, 5]) {
     const live = fresh && Number(control.mode) === m;
     const off = m === 3 && fresh && control.mode3_enabled === false;
     const [cls, word] = off ? ['off', '꺼짐'] : live && ['running', 'pause_pending'].includes(control.phase) ? ['running', '진행 중']
@@ -905,7 +907,7 @@ $('steps-play').onclick=()=>{
   showPreview(0);
   previewTimer=setInterval(()=>showPreview((previewStage+1)%PAGES[selectedMode].steps.length),3000);
 };
-for (const m of [1, 3, 5, 7]) {
+for (const m of [1, 3, 5]) {
   const go = (e) => { if (e?.target?.closest?.('#steps-panel') || selectedMode === m) return; location.hash = `#mode${m}`; };
   $(`card-${m}`).onclick = go; $(`card-${m}`).onkeydown = (e) => { if (e.key === 'Enter') go(e); };
 }

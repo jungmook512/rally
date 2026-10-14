@@ -8,7 +8,7 @@
   WS   /ws            {"type": "state", "data": …} 0.5 s 마다 바뀌었을 때 / {"type": "event", "data": …} rally:events 그대로
   GET /api/session · POST /api/session/resume — Redis를 통해 brain 상태 조회·재개 승인 요청
   POST /api/session/mode — 모드 전환 요청 (1·3·5·7 또는 null = 다음 모드). brain 이 확인하고 지금 시도가 끝나면 바꾼다
-  GET  /api/cameras   카메라 화면 주소 — 로봇·인식 PC 의 web_video_server(ROBOT_VIDEO_URL) MJPEG. 브라우저가 거기서 직접 받는다
+  GET  /api/cameras   카메라 화면 주소 — 로봇·인식 PC 의 web_video_server(ROBOT_VIDEO_URL) MJPEG. 브라우저가 거기서 직접 받는다 (손목은 인식 결과 화면, 안 오면 원본)
                       (영상은 대시보드 서버를 거치지 않고, 저장하지 않는다 — 같은 네트워크 안 화면 표시만)
 대시보드는 ROS 를 쓰지 않는다. 휴식 재개·휴식 제안 응답·모드 전환을 Redis로 연결하며 안전 reset과 구분한다.
 로봇을 직접 움직이는 명령은 없다 — brain 이 현재 상태(휴식·손 대기·안전 정지)를 다시 확인한 뒤 행동 트리가 적용한다.
@@ -44,7 +44,9 @@ STATE_PERIOD_S = 0.5
 # 로봇·인식 PC 의 web_video_server (pc2_perception.launch part:=vision, 포트 8080). 예: http://192.168.0.10:8080. 비우면 카메라 칸 꺼짐
 ROBOT_VIDEO_URL = os.environ.get("ROBOT_VIDEO_URL", "").strip().rstrip("/")
 # 보여 줄 카메라 (INTERFACES 2.1). 작게·낮은 화질로 — 로봇 PC 의 압축 부담과 네트워크를 줄인다
-CAMERAS = [("손목", "/camera/color/image_raw"), ("측면", "/side/side/color/image_raw")]
+# (이름, 토픽, 대신 쓸 토픽). 손목은 세그먼터의 인식 결과 화면(마스크·신뢰도·3D 좌표가 그려진 debug_image, 구독자가 있을 때만 10 Hz 발행)을
+#   먼저 쓰고, 안 오면(비전 컨테이너 꺼짐) 브라우저가 원본 카메라로 바꾼다. 측면은 원본만
+CAMERAS = [("손목", "/rally/perception/objects/debug_image", "/camera/color/image_raw"), ("측면", "/side/side/color/image_raw", None)]
 STREAM_QUERY = "type=mjpeg&quality=50&width=424&height=240&qos_profile=sensor_data"
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 
@@ -223,8 +225,9 @@ def camera_streams(base: str) -> dict[str, Any]:
     if not base.startswith(("http://", "https://")):
         return {"enabled": False, "reason": "ROBOT_VIDEO_URL 미설정 (docker/.env, 예: http://로봇PC주소:8080)", "streams": []}
     return {"enabled": True, "reason": "",
-            "streams": [{"name": name, "topic": topic, "url": f"{base}/stream?topic={topic}&{STREAM_QUERY}"}
-                        for name, topic in CAMERAS]}
+            "streams": [{"name": name, "topic": topic, "url": f"{base}/stream?topic={topic}&{STREAM_QUERY}",
+                         "fallback": None if alt is None else f"{base}/stream?topic={alt}&{STREAM_QUERY}"}
+                        for name, topic, alt in CAMERAS]}
 
 
 @app.get("/api/cameras")
