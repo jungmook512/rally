@@ -37,6 +37,7 @@ from rally_interfaces.action import CatchBall, DetachBall, Handover, MoveTarget,
 from rally_interfaces.msg import HandState, SafetyStatus, TrackedObjectArray
 from rally_interfaces.srv import GripperCommand
 from rally_robot.dsr_helpers import OBSERVE_POS, ROBOT_ID, SkillAbort, init_dsr, motion_speeds
+from rally_robot import pad_rack
 
 CONTACT_HZ = 5.0
 CONFIG_FILES = ("skills.yaml", "table.yaml")
@@ -331,6 +332,7 @@ class SkillServer(Node):
             return res
         posj = (self.cfg.get("observe_pose") or {}).get("posj") or OBSERVE_POS   # skills.yaml 티칭 값 우선
         tv, ta, _, _, jv, ja = motion_speeds(self)                                 # skills.yaml motion: joint_vel_deg_s
+        jv, ja = pad_rack.joint_speeds_here(self, jv, ja, self.get_logger())       # 거치대 근처에서 출발하면 30/60 (10/14 관성 힘 STOP)
         try:
             movej_safe(self, [float(v) for v in posj], jv, ja, tv, ta, self.observe_x_max_mm())
         except SkillAbort as e:
@@ -350,6 +352,7 @@ class SkillServer(Node):
         pose = (self.cfg.get("mode5") or {}).get("pick_view_posx")
         posj = (self.cfg.get("observe_pose") or {}).get("posj") or OBSERVE_POS
         tv, ta, _, _, jv, ja = motion_speeds(self, "mode5")
+        jv, ja = pad_rack.joint_speeds_here(self, jv, ja, self.get_logger())
         try:
             movej_safe(self, [float(v) for v in posj], jv, ja, tv, ta, self.observe_x_max_mm())
             if pose:
@@ -399,7 +402,7 @@ class SkillServer(Node):
             res.success, res.message = False, "no_lanes (skills.yaml mode1.lanes)"
             return res
         try:
-            movej_to_pose(self, pose, *hand_view_joint(self, cfg))
+            movej_to_pose(self, pose, *pad_rack.joint_speeds_here(self, *hand_view_joint(self, cfg), self.get_logger()))
         except SkillAbort as e:
             res.success, res.message = False, e.reason
             return res

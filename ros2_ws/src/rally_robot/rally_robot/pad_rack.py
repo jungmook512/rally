@@ -25,6 +25,8 @@ from __future__ import annotations
 
 import time
 
+import math
+
 import numpy as np
 
 from rally_robot.dsr_helpers import SkillAbort, compliance, motion_speeds, move_checked, movej_checked
@@ -53,6 +55,9 @@ DEFAULTS = dict(
     pad_lift_stiffness=[1000, 1000, 3000, 50, 50, 50],      # 빼기 순응 — 홈에 걸려도 옆으로 따라가게
     pad_move_vel_mm_s=40.0,                                 # A↔G·G↔U 직선 속도 상한 (접촉 하강 속도와 작은 쪽)
     pad_joint_vel_deg_s=30.0, pad_joint_acc_deg_s2=60.0,    # A·U 로 가는 관절 이동 상한 — 거치대 공·손 보기와 같은 이유(60/120 에서 관성 힘 25 N 초과)
+    pad_rack_slow_radius_m=0.35,                            # ★ 10/14: TCP 가 거치대 G 에서 이 안에 있을 때 출발하는 관측·손 보기 관절 이동도 위 속도로.
+                                                            #   세션 시작 '관측 자세로'(go_observe_pose, 60/120)가 거치대 자세에서 출발하며 가속 관성 힘으로
+                                                            #   force_limit STOP 3회 (아무것도 안 걸림, 5 cm 만 가고 멈춤). 0 = 안 낮춤
 )
 
 
@@ -68,6 +73,39 @@ def joint_speeds(node):
     _, _, _, _, jv, ja = motion_speeds(node)
     return (min(float(jv), float(m3.get("pad_joint_vel_deg_s", DEFAULTS["pad_joint_vel_deg_s"]))),
             min(float(ja), float(m3.get("pad_joint_acc_deg_s2", DEFAULTS["pad_joint_acc_deg_s2"]))))
+
+
+def near_rack(tcp_mm, g_mm, radius_m: float) -> bool:
+    """TCP 가 거치대 G 에서 radius_m 안인가 (mm 입력). radius_m ≤ 0 이면 항상 False. 순수 함수."""
+    if radius_m <= 0:
+        return False
+    return math.dist([float(v) for v in tcp_mm[:3]], [float(v) for v in g_mm[:3]]) <= radius_m * 1000.0
+
+
+def slow_speeds(cfg, jv, ja, near: bool):
+    """거치대 근처(near)면 관절 속도·가속을 pad_joint_* 이하로. 순수 함수."""
+    if not near:
+        return float(jv), float(ja)
+    return min(float(jv), float(cfg["pad_joint_vel_deg_s"])), min(float(ja), float(cfg["pad_joint_acc_deg_s2"]))
+
+
+def joint_speeds_here(node, jv, ja, log=None):
+    """지금 TCP 가 거치대 G 에서 pad_rack_slow_radius_m 안이면 (jv, ja) 를 pad_joint 속도로 낮춰 돌려준다 (10/14 — 관측·손 보기
+    자세로 가는 관절 이동이 거치대 자세에서 출발할 때 가속 관성 힘 25 N 초과). 교시가 없거나 fkin·posx 를 못 읽으면 그대로."""
+    if not taught(node) or getattr(node, "fake", False):
+        return float(jv), float(ja)
+    try:
+        from DSR_ROBOT2 import fkin, get_current_posx
+        cfg = config(node)
+        G = rack_points(fkin, cfg)["G"]
+        cur = get_current_posx()[0]
+    except Exception:  # noqa: BLE001 — 속도 판단 실패는 이동을 막지 않는다 (기존 속도)
+        return float(jv), float(ja)
+    near = near_rack(cur, G, float(cfg["pad_rack_slow_radius_m"]))
+    out = slow_speeds(cfg, jv, ja, near)
+    if near and log is not None and (out[0] < float(jv) or out[1] < float(ja)):
+        log.info(f"[pad_rack] 거치대 G 에서 {math.dist(cur[:3], G[:3]):.0f} mm — 관절 이동 {out[0]:.0f}°/s·{out[1]:.0f}°/s² 로 (관성 힘 25 N 방지)")
+    return out
 
 
 def config(node) -> dict:

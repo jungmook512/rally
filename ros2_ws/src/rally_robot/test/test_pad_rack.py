@@ -130,3 +130,14 @@ def test_shifted_rz_is_rotation_about_base_z():
     got = Rotation.from_euler("ZYZ", s[3:6], degrees=True)
     assert (want.inv() * got).magnitude() == pytest.approx(0.0, abs=1e-9)
     assert pr.shifted(G, [1.0, 0.0, 0.0])[3:] == G[3:]                 # 세 값이면 회전 없음
+
+
+def test_near_rack_and_slow_speeds():
+    """10/14: 거치대 G 근처에서 출발하는 관절 이동은 pad_joint 속도로 (관측 자세로 가다 관성 힘 force_limit STOP)."""
+    cfg = {**pr.DEFAULTS}
+    assert pr.near_rack([84, -310, 252, 0, 0, 0], G, 0.35)          # 20:41 실제 정지 자세 (G 위 4 cm)
+    assert not pr.near_rack([600.0, 100.0, 480.0, 0, 0, 0], G, 0.35)   # 테이블 가운데 쪽 (G 에서 50 cm 넘게)
+    assert not pr.near_rack([84, -310, 252], G, 0.0)                 # 0 = 끔
+    assert pr.slow_speeds(cfg, 60.0, 120.0, True) == (30.0, 60.0)
+    assert pr.slow_speeds(cfg, 60.0, 120.0, False) == (60.0, 120.0)
+    assert pr.slow_speeds(cfg, 20.0, 40.0, True) == (20.0, 40.0)     # 이미 느리면 그대로
