@@ -7,7 +7,7 @@
   GET  /api/events    최근 사건 — DB events (안전·음성·모드 바뀜)
   WS   /ws            {"type": "state", "data": …} 0.5 s 마다 바뀌었을 때 / {"type": "event", "data": …} rally:events 그대로
   GET /api/session · POST /api/session/resume — Redis를 통해 brain 상태 조회·재개 승인 요청
-  POST /api/session/mode — 모드 전환 요청 (1·3·5·7 또는 null = 다음 모드). brain 이 확인하고 지금 시도가 끝나면 바꾼다
+  POST /api/session/mode — 모드 전환 요청 (1·3·5 또는 null = 다음 모드). brain 이 확인하고 지금 시도가 끝나면 바꾼다
   GET  /api/cameras   카메라 화면 주소 — 로봇·인식 PC 의 web_video_server(ROBOT_VIDEO_URL) MJPEG. 브라우저가 거기서 직접 받는다
                       (영상은 대시보드 서버를 거치지 않고, 저장하지 않는다 — 같은 네트워크 안 화면 표시만)
 대시보드는 ROS 를 쓰지 않는다. 휴식 재개·휴식 제안 응답·모드 전환을 Redis로 연결하며 안전 reset과 구분한다.
@@ -131,7 +131,7 @@ async def respond_proposal(body: ProposalResponse) -> dict[str, Any]:
 
 class ModeRequest(BaseModel):
     session_id: uuid.UUID
-    mode: Literal[1, 3, 5, 7] | None = None   # None = 다음 모드
+    mode: Literal[1, 3, 5] | None = None   # None = 다음 모드. 7(저항 밀기)은 10/14 시연 제외로 화면에서 뺌
 
 
 @app.post("/api/session/mode")
