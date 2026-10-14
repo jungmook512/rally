@@ -35,7 +35,7 @@
 
 | 항목 | 다시 하나 | 방법 |
 |---|---|---|
-| **로봇 이동 측정 bag** (공 없이, 영상 없음, 10~15 분) | **필수** | 학습 환경의 로봇 응답표가 출발 관절값에 묶여 있음. 아래 4절 2·3단계를 `IMAGES=0 DURATION=900 OUT=~/bags/motion_<자세> scripts/record_mode3_bag.sh` 로 녹화하면서. CSV 의 `t_cmd_wall`(실제 시각, 이 PR 에서 추가)과 `/rosout` 의 "amovej 명령 …" 줄로 bag 과 맞춘다 |
+| **로봇 이동 측정 bag** (공 없이, 영상 없음, 10~15 분) | **필수** | 학습 환경의 로봇 응답표가 출발 관절값에 묶여 있음. 아래 6절 2·3단계(**약 84회, 15 분 — 박성현 #196 코멘트 구성**)를 `IMAGES=0 DURATION=900 OUT=~/bags/motion_<자세> scripts/record_mode3_bag.sh` 로 녹화하면서. 실제 요격 대부분이 15 cm 안이라 5·10 cm 짧은 거리 점이 꼭 필요(학습표가 거리별 보간). CSV 의 `t_cmd_wall`(실제 시각, 이 PR 에서 추가)과 `/rosout` 의 "amovej 명령 …" 줄로 bag 과 맞춘다 |
 | 투구 bag (영상 포함) | 학습 시작엔 불필요, 확정엔 **20~30 회 권장** | 패드 위치가 바뀌면 조준 편향(10/12 +19 cm 위)이 달라질 수 있음. 4절 6단계 받기 시험을 겸해서 |
 | 측면 카메라 캘리브레이션 | 불필요 | 카메라는 안 움직임. 새 패드가 측면 화면 안에 들어오는지만 |
 | 예측 오차표 | 불필요 | 자세와 무관 |
@@ -80,15 +80,24 @@ python3 scripts/mode3_movej_test.py --posj -58.7 7.0 100.2 98.8 63.6 -100.3 --an
 python3 scripts/mode3_reach_test.py --run --posj -58.7 7.0 100.2 98.8 63.6 -100.3 --angles 135 150 165 180 --dist 25 --vel 100 --acc 500 --reps 1 --ws-x-max 0.78
 ```
 
-**2. amovej 15 cm 12방향** — 핵심. 받기와 같은 120/400. 방향별 도착(`t_arrive_s`)·5 cm 안 진입(`t_near5_s`)·힘 최대. 이동 측정 bag 이 돌아가는 동안.
+**2. 이동 측정 — amovej 72회** (박성현 #196 코멘트 구성). 핵심. 받기와 같은 120/400. 방향별 도착(`t_arrive_s`)·5 cm 안 진입(`t_near5_s`)·힘 최대. **5절 4번 이동 측정 bag 을 켠 채로.** 왼쪽 180° 25 cm 가 되는지가 범위 확인의 핵심. (`--posj` 는 처음 한 번만 — 이미 Y0 면 빼도 같음)
 ```bash
-python3 scripts/mode3_movej_test.py --run --posj -58.7 7.0 100.2 98.8 63.6 -100.3 --angles $(seq 0 30 330) --dist 15 --cases amovej --jvel 120 --jacc 400 --reps 2 --ws-x-max 0.78
+# a) 4축(0·90·180·270°) × 5·10·15·20·25 cm × 2회 = 40
+python3 scripts/mode3_movej_test.py --run --posj -58.7 7.0 100.2 98.8 63.6 -100.3 --angles 0 90 180 270 --dist 5 10 15 20 25 --cases amovej --jvel 120 --jacc 400 --reps 2 --ws-x-max 0.78
+# b) 대각선(45·135·225·315°) × 15·25 cm × 2회 = 16  — 4축 15·25 cm 는 a 에 이미 있으므로 8방향 중 나머지 4방향만
+python3 scripts/mode3_movej_test.py --run --angles 45 135 225 315 --dist 15 25 --cases amovej --jvel 120 --jacc 400 --reps 2 --ws-x-max 0.78
+# c) 8방향 15·25 cm 한 번 더 (a·b 와 합쳐 8방향 × 2거리 × 2회 = 32 를 채움 — 반복이 방향마다 붙지 않게 따로)
+python3 scripts/mode3_movej_test.py --run --angles $(seq 0 45 315) --dist 15 25 --cases amovej --jvel 120 --jacc 400 --reps 1 --ws-x-max 0.78
 ```
+스크립트는 방향 순서대로 돈다 (섞는 옵션 없음). a·b·c 를 나눠 돌리는 것으로 같은 방향이 연달아 몰리는 것만 줄인다.
 
-**3. amovej 25 cm 12방향** — 범위 상한 확인 (왼쪽 180° 가 되는지가 핵심).
+**3. 이동 중 재전송 — amovej 12회** (박성현 구성: 3쌍 × 4회). 받기 스킬의 비행 중 갱신(0.3 s 간격)과 같은 조건. Y0 에서 시작(2단계 끝 자세 그대로).
 ```bash
-python3 scripts/mode3_movej_test.py --run --posj -58.7 7.0 100.2 98.8 63.6 -100.3 --angles $(seq 0 30 330) --dist 25 --cases amovej --jvel 120 --jacc 400 --reps 2 --ws-x-max 0.78
+python3 scripts/mode3_amovel_resend_test.py --run --cases jdup --dir -y --first 10 --second 15 --delay 0.3 --jvel 120 --jacc 400 --reps 4
+python3 scripts/mode3_amovel_resend_test.py --run --cases jdup --dir -y --first 15 --second 25 --delay 0.3 --jvel 120 --jacc 400 --reps 4
+python3 scripts/mode3_amovel_resend_test.py --run --cases jdup --dir +u --first 10 --second 20 --delay 0.3 --jvel 120 --jacc 400 --reps 4
 ```
+재전송 스크립트의 `-y`·`+u` 는 45° 고정 면 기준 방향(Y0 실제 법선과 4° 차이). 계획 모드(`--run` 빼고)로 먼저 판정이 OK 인지.
 
 **4. (선택) amovel 비교** — IK 실패 때 폴백 경로. 가속 2000 → 3000 차이(시뮬 −14 %)도 여기서. 힘 80 N 시험값은 정정인 확인 후.
 ```bash
