@@ -484,6 +484,7 @@ class BtRunner(Node):
                 "mode": session.current_mode if session else None,
                 "difficulty": session.difficulty.get(session.current_mode, 0) if session else None,
                 "trial_index": len(session.trials) if session else 0,
+                "lane": session.lane if session else None,           # 모드 1 레인(0·1), 아니면 None — 대시보드 그림
                 "can_resume": self.control.phase == "paused" and not blocked,
                 "blocked_reason": blocked, "updated_at": time.time(),
                 "hand_wait": self.control.hand_wait,

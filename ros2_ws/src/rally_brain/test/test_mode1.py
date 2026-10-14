@@ -126,6 +126,8 @@ def test_lane_waits_for_hand_to_stay(monkeypatch):
     session.get_context().hand = hand(y=y1)
     tree.tick_once()
     assert client.sent == 1 and client.goals[-1].lane == 1
+    assert session.lane == 1                            # 대시보드 그림용 레인 (치기 시작)
+    assert run(tree) == Status.SUCCESS and session.lane is None   # 시도가 끝나면 비움
 
 
 @pytest.mark.parametrize('bad', ['missing', 'nan', 'negative', 'range', 'speed_range', 'lane', 'table', 'unreachable'])

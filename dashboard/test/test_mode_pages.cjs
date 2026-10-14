@@ -50,6 +50,15 @@ for(const mode of [1,3,5,7]) {
 }
 // 모드 1 레인은 2개 (#142 레인 3 제거) — 레일 2개 × 레인 2개
 assert.equal((run('topLanes()').match(/url\(#t-rail\)/g) || []).length, 4, 'mode 1 scene must draw exactly 2 lanes');
+// brain 이 고른 레인으로 공이 굴러간다 (control.lane 0 → 거치대 쪽 x 630, 1 → 가운데 x 480, 없으면 가운데)
+const ballAt = (lane) => { const svg = run(`renderTrainingScene(1,1,'running',{lane:${lane}})`); const m = svg.match(/class="ball-roll"><circle cx="(\d+)"/); return m && Number(m[1]); };
+assert.equal(ballAt(0), 630, 'lane 0 rolls on the rack-side lane');
+assert.equal(ballAt(1), 480, 'lane 1 rolls on the middle lane');
+assert.equal(ballAt(null), 480, 'unknown lane keeps the middle lane');
+run("location.hash='#mode1';selectPage();renderState({time:new Date().toISOString(),safety:{level:'normal'}});renderControl({mode:1,phase:'running',bt_node:'밀기',updated_at:Date.now()/1000,trial_index:1,lane:0});");
+assert(get('mode-diagram').innerHTML.includes('class="ball-roll"><circle cx="630"'), 'page scene follows control.lane');
+run("renderControl({...control,lane:1});");
+assert(get('mode-diagram').innerHTML.includes('class="ball-roll"><circle cx="480"'), 'lane change redraws the scene');
 // 세션 리포트 마크다운 → HTML (표·제목·목록·참고 문장), 본문의 HTML 은 글자로
 const rep = run(String.raw`renderReportMd("## 세션 요약 (취소)\n\n| 모드 | 시도 |\n|---|---|\n| 5 건네고 받기 | 4 |\n\n지표에서 뺀 시도:\n- 모드 5: interrupted 1회 <b>x</b>\n\n### 지식 그래프 근거\n\n_이 해석은 참고용입니다._")`);
 assert(rep.includes('<h4>세션 요약 (취소)</h4>') && rep.includes('<h5>지식 그래프 근거</h5>'), 'headings');

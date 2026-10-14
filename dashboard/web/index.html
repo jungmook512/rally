@@ -871,9 +871,10 @@ function renderModePage(){
   }
   if (!['running','pause_pending','paused','ended','stopped','stale','inactive','waiting'].includes(sceneStatus)) sceneStatus='waiting';
   const preview=previewStage!==null&&previewStage<page.steps.length;
-  const nextSceneKey=preview?`${selectedMode}:preview:${previewStage}`:`${selectedMode}:${index}:${sceneStatus}`;
+  const lane=active&&Number.isInteger(control.lane)?control.lane:null;     // 모드 1: brain 이 고른 레인 (control.lane)
+  const nextSceneKey=preview?`${selectedMode}:preview:${previewStage}`:`${selectedMode}:${index}:${sceneStatus}:${lane}`;
   if (sceneKey!==nextSceneKey) {
-    $('mode-diagram').innerHTML=preview?renderTrainingScene(selectedMode,previewStage,'running',{preview:true}):renderTrainingScene(selectedMode,index,sceneStatus);
+    $('mode-diagram').innerHTML=preview?renderTrainingScene(selectedMode,previewStage,'running',{preview:true}):renderTrainingScene(selectedMode,index,sceneStatus,{lane});
     sceneKey=nextSceneKey;
   }
   $('view-status').hidden=!active;$('view-status').textContent='지금 진행 중';

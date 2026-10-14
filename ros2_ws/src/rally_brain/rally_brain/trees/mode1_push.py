@@ -323,10 +323,12 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
             record()
             return False
         state.data.update(plan)
+        session.lane = lane                                   # 대시보드 그림이 이 레인으로 공을 굴린다
         log.info(f"[모드 1] 손 확인 (지금 레인 {lane}) — 손이 {cfg['hand_hold_s']:.1f} s 머물면 그 레인으로")
         return True
 
     def record() -> None:
+        session.lane = None
         d = state.data
         caught = bool(d.get("caught"))
         notes = d.get("notes") or ("" if caught else "not_caught")
@@ -357,6 +359,7 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
                 lane = lane_for_hand(cfg, ctx.hand)
                 plan = plan_push(ctx.hand, lane, session.difficulty.get(1, 0), cfg, session.table_cfg)
                 state.data.update(plan)
+                session.lane = lane
                 ready = plan["reach_actual"] >= plan["reach_requested"]
                 if ready and state.data.get("logged_lane") != lane:   # ready_to_push 는 대기·전송 확인에서 두 번 불린다
                     state.data["logged_lane"] = lane
