@@ -46,6 +46,28 @@ def _observe_ball(node, cfg, check, near_m):
     return c, len(obs)
 
 
+def movej_planned(node, log, cfg, posj, jv, ja, x_max_m, what):
+    """관절 이동 — 경로 TCP 가 작업 공간 밖으로 휘면 두 단계(손목/팔/J1 먼저)로 (detach.plan_joint_path). 경로가 없으면 SkillAbort."""
+    import DSR_ROBOT2
+    from DSR_ROBOT2 import get_current_posj
+    fk = getattr(DSR_ROBOT2, "fkin", None)
+    if fk is None or getattr(node, "fake", False):
+        return movej_checked(node, posj, jv, ja)
+    try:
+        q0 = [float(v) for v in get_current_posj()]
+        path = detach.plan_joint_path(q0, posj, fk, x_max_m * 1000.0, cfg["path_y_abs_max_m"] * 1000.0, cfg["path_z_min_m"] * 1000.0)
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[detach_ball] 경로 확인 실패 ({e}) — 바로 이동")
+        path = [posj]
+    if path is None:
+        raise SkillAbort(f"detach_path_outside_workspace ({what})")
+    if len(path) > 1:
+        log.info(f"[detach_ball] {what}: 바로 가면 경로가 작업 공간 밖 (x ≤ {x_max_m:.2f}) → 두 단계 경유 {np.round(path[0], 1).tolist()}")
+    for q in path:
+        movej_checked(node, q, jv, ja)
+    return "done"
+
+
 def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=None) -> dict:
     """공 떼기 → 박스. 반환 {success, peak_n, drop_n, detached, boxed, ball_m}. 실패는 SkillAbort (자기 정리 뒤).
     feedback(phase, force_n) 이 있으면 단계마다 부른다 (action 피드백)."""
@@ -82,7 +104,7 @@ def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=N
     ok, _, _ = node.gripper(open_mm, force)
     if not ok:
         raise SkillAbort("gripper_unavailable")
-    movej_checked(node, cfg["ball_view_posj"], jv, ja)
+    movej_planned(node, log, cfg, cfg["ball_view_posj"], jv, ja, cfg["path_x_max_m"], "공 보기 자세")
     if ball_m is None:
         time.sleep(0.5)                                              # tcp_pose(10 Hz) 가 멈춘 자세를 반영한 뒤 (segmenter tcp_npy 변환)
         G = pad_rack.rack_points(fkin, pad_rack.config(node))["G"] if pad_rack.taught(node) else None
@@ -152,17 +174,17 @@ def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=N
     phase("retreat")
     if not node.holding_now():
         log.warning("[detach_ball] 후퇴 뒤 빈손 — 공이 떨어짐. 박스 생략, 공 보기 자세로")
-        movej_checked(node, cfg["ball_view_posj"], jv, ja)
+        movej_planned(node, log, cfg, cfg["ball_view_posj"], jv, ja, cfg["path_x_max_m"], "공 보기 자세")
         out["success"] = True                                        # 패드에서는 떼어짐
         return out
     node.set_workspace_extend(True)                                  # 박스 x 0.595 > 평소 상한 0.57 — 이 구간만 (10/14 정정인)
     try:
-        movej_checked(node, cfg["box_drop_posj"], jv, ja)
+        movej_planned(node, log, cfg, cfg["box_drop_posj"], jv, ja, cfg["path_x_max_box_m"], "박스")
         check()
         node.gripper(open_mm, force)
         time.sleep(cfg["place_release_s"])
         out["boxed"] = True
-        movej_checked(node, cfg["ball_view_posj"], jv, ja)
+        movej_planned(node, log, cfg, cfg["ball_view_posj"], jv, ja, cfg["path_x_max_box_m"], "공 보기 자세(복귀)")
     finally:
         node.set_workspace_extend(False)
     out["success"] = True

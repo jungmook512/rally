@@ -106,3 +106,33 @@ def test_config_requires_both_teach_points():
     assert d.taught(node)
     cfg = d.config(node)
     assert cfg["limit_n"] == 12.0 and cfg["ball_radius_m"] == R      # detach_ 접두 키만 덮어씀, 나머지 기본
+
+
+def _fk_linear(q):
+    """시험용 가짜 fkin: TCP x = 2·J1, y = J2, z = 400 + J3 (mm). 관절 보간 경로의 극값이 쉽게 보인다."""
+    return [2.0 * q[0], q[1], 400.0 + q[2], 0.0, 0.0, 0.0]
+
+
+def test_joint_path_extent_and_inside():
+    lo, hi = d.joint_path_extent([0, 0, 0, 0, 0, 0], [100, -50, 20, 0, 0, 0], _fk_linear)
+    assert lo == pytest.approx([0.0, -50.0, 400.0]) and hi == pytest.approx([200.0, 0.0, 420.0])
+    assert d.path_inside([0] * 6, [100, -50, 20, 0, 0, 0], _fk_linear, 250.0, 100.0, 300.0)
+    assert not d.path_inside([0] * 6, [300, 0, 0, 0, 0, 0], _fk_linear, 540.0, 580.0, 30.0)        # x 600 > 540
+    assert d.path_inside([0] * 6, [1] * 6, lambda q: None, 1, 1, 1) is None                      # fkin 실패 = 모름
+
+
+def test_plan_joint_path_direct_or_two_stage():
+    fk = _fk_linear
+    assert d.plan_joint_path([0] * 6, [100, 0, 0, 0, 0, 0], fk, 540.0, 580.0, 30.0) == [[100.0, 0, 0, 0, 0, 0]]   # 바로
+    # x 가 J1 로 결정되는데 목표 J1 = 300 → 어떤 경로든 x 600 > 540 → 계획 없음
+    assert d.plan_joint_path([0] * 6, [300, 0, 0, 0, 0, 0], fk, 540.0, 580.0, 30.0) is None
+    # fk 실패면 확인 없이 바로
+    assert d.plan_joint_path([0] * 6, [300, 0, 0, 0, 0, 0], lambda q: None, 540.0, 580.0, 30.0) == [[300.0, 0, 0, 0, 0, 0]]
+
+    def fk_bulge(q):
+        # 손목(J4)이 45° 넘게 돌아간 채 J1 이 20~60° 구간을 지나면 TCP 가 x +400 mm 튀어나오는 가짜 기구학 (손목이 풀리며 휘는 경우)
+        bulge = 400.0 if abs(q[3]) > 45 and 20 < q[0] < 60 else 0.0
+        return [2.0 * q[0] + bulge, q[1], 400.0 + q[2], 0, 0, 0]
+    # 바로 가면 J1 42·J4 54 쯤에서 x 484 > 450. '손목 먼저'(J4 90 뒤 J1 0→70)도 J1 20~60 에서 튐. '팔 먼저'(J1 70 뒤 J4 0→90)는 J1 70 이라 안 튐
+    plan = d.plan_joint_path([0] * 6, [70, 0, 0, 90, 0, 0], fk_bulge, 450.0, 580.0, 30.0)
+    assert plan == [[70.0, 0.0, 0.0, 0.0, 0.0, 0.0], [70.0, 0.0, 0.0, 90.0, 0.0, 0.0]]
