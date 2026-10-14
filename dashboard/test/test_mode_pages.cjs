@@ -41,6 +41,14 @@ for(const mode of [1,3,5,7]) {
   assert.equal(get('events-view').hidden,true);
   assert.equal(nav.find(a=>a.attributes['aria-current']==='page').dataset.page,'mode');
 }
+// 모드 1 레인은 2개 (#142 레인 3 제거) — 레일 2개 × 레인 2개
+assert.equal((run('topLanes()').match(/url\(#t-rail\)/g) || []).length, 4, 'mode 1 scene must draw exactly 2 lanes');
+// 세션 리포트 마크다운 → HTML (표·제목·목록·참고 문장), 본문의 HTML 은 글자로
+const rep = run(String.raw`renderReportMd("## 세션 요약 (취소)\n\n| 모드 | 시도 |\n|---|---|\n| 5 건네고 받기 | 4 |\n\n지표에서 뺀 시도:\n- 모드 5: interrupted 1회 <b>x</b>\n\n### 지식 그래프 근거\n\n_이 해석은 참고용입니다._")`);
+assert(rep.includes('<h4>세션 요약 (취소)</h4>') && rep.includes('<h5>지식 그래프 근거</h5>'), 'headings');
+assert(rep.includes('<th>모드</th>') && rep.includes('<td>4</td>') && !rep.includes('---'), 'table without separator row');
+assert(rep.includes('<li>모드 5: interrupted 1회 &lt;b&gt;x&lt;/b&gt;</li>'), 'list items escaped');
+assert(rep.includes('<p class="note"><em>이 해석은 참고용입니다.</em></p>'), 'closing note');
 run("location.hash='#mode1';selectPage();renderControl({mode:1,phase:'running',bt_node:'손 이탈 확인 대기',updated_at:Date.now()/1000,trial_index:2,difficulty:1});");
 assert.equal(get('step-title').textContent,'손 이탈 대기');
 assert.match(get('steps').innerHTML,/aria-current="step"/);

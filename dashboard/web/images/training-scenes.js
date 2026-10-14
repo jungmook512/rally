@@ -131,7 +131,8 @@ function topRack(n) {
     ${Array.from({length: n}, (_, i) => topBall([690 + i * 28, 62])).join('')}<text x="714" y="100" text-anchor="middle" class="note small">거치대</text>`;
 }
 function topLanes() {
-  return [330, 480, 630].map(x => `<rect x="${x - 26}" y="126" width="52" height="222" fill="#d9e3d6" opacity=".7"/>
+  // 레인 2개 (10/12 #142: 레인 3 은 모드 3 패드 거치대 자리라 제거). 공은 가운데 x 480 레인으로, 거치대 쪽이 레인 1
+  return [480, 630].map(x => `<rect x="${x - 26}" y="126" width="52" height="222" fill="#d9e3d6" opacity=".7"/>
     <g filter="url(#t-sh2)"><rect x="${x - 30}" y="126" width="7" height="222" rx="3" fill="url(#t-rail)"/><rect x="${x + 23}" y="126" width="7" height="222" rx="3" fill="url(#t-rail)"/></g>`).join('');
 }
 
