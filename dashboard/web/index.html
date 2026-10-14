@@ -273,6 +273,13 @@
   .chips { display:flex; gap:6px; flex-wrap:wrap; margin-right:auto; }
   .chips button { margin:0; padding:5px 12px; font-size:12.5px; border-radius:999px; background:#eef3ef; border:1px solid transparent; color:var(--muted); font-weight:600; }
   .chips button.on { background:var(--accent); color:#fff; }
+  /* 모드 전환 (10/14) — 진행 중일 때만. 지금 모드 = on, 접수된 전환 = pending */
+  #mode-switch { grid-column:1/-1; align-items:center; margin:2px 0 0; }
+  #mode-switch[hidden] { display:none; }
+  #mode-switch .label { font-size:12px; color:var(--muted); margin-right:4px; }
+  #mode-switch button:disabled:not(.on) { opacity:.45; }
+  #mode-switch button.on:disabled { background:var(--accent); color:#fff; opacity:1; cursor:default; }
+  #mode-switch button.pending { border-color:#c5ab72; background:var(--cream); color:var(--text); }
   #trials-view table { font-size:14px; }
   #trials-view thead { background:var(--panel); }
   #trials-view th { font-size:12px; font-weight:650; color:var(--muted); border-bottom:1px solid var(--line); padding:8px 10px; }
@@ -310,6 +317,8 @@
     <p id="phase" role="status">연결 대기</p></div>
     <button id="resume" type="button" disabled>훈련 재개</button>
     <div class="badges"><label>진행 단계<output id="badge-step">—</output></label><label>안전<output id="badge-safety">모름</output></label></div>
+    <div id="mode-switch" class="chips" role="group" aria-label="모드 전환" hidden><span class="label">모드 전환</span>
+      <button type="button" data-mode="1">1 공 굴리기</button><button type="button" data-mode="3">3 캐치볼</button><button type="button" data-mode="5">5 건네고 받기</button><button type="button" data-mode="7">7 저항 밀기</button><button type="button" data-mode="">다음 모드 ▶</button></div>
     <p id="control-message" role="status" aria-live="polite"></p>
   </section>
   <section id="proposal-panel" class="panel" hidden aria-label="휴식 제안">
@@ -407,7 +416,7 @@ const seenTrials = new Set();
 const recentTrials = [];   // 받은 시도 (최신이 앞) — 모드 화면 '최근 시도' 칸
 const modeTally = {1: {n: 0, ok: 0}, 3: {n: 0, ok: 0}, 5: {n: 0, ok: 0}, 7: {n: 0, ok: 0}};   // 받은 시도 기록으로 카드에 표시
 let selectedMode = null, selectedPage = 'overview';
-let control = null, controlReceived = 0, resuming = false, stateTime = 0;
+let control = null, controlReceived = 0, resuming = false, switching = false, stateTime = 0;
 let sceneSafety = null, sceneKey = null, previewStage = null, previewTimer = null;
 let lastProposalId = null, lastProposalSessionId = null;
 const PHASES = {idle: "대기", running: "진행 중", pause_pending: "현재 시도 완료 후 휴식 예정",
@@ -433,7 +442,47 @@ function renderControl(s) {
     + (s.phase === "paused" && s.blocked_reason ? ` · ${s.blocked_reason}` : "")
     + (s.hand_wait ? " · 손 근접 정지 대기" : "") : "연결 대기";
   $("resume").disabled = resuming || !s?.can_resume || s.phase !== "paused";
+  renderModeSwitch(s);
 }
+
+// 모드 전환 버튼 — 진행 중(running)일 때만 보임. 실제 확인(손 대기·안전 정지·모드 3 꺼짐)과 전환 시점(시도 경계)은 brain
+function renderModeSwitch(s) {
+  const box = $("mode-switch");
+  box.hidden = !s || s.phase !== "running";
+  if (box.hidden) return;
+  const pending = s.pending_switch;
+  for (const b of box.querySelectorAll("button")) {
+    const m = b.dataset.mode ? Number(b.dataset.mode) : null;
+    const current = m !== null && m === Number(s.mode);
+    b.classList.toggle("on", current);
+    b.classList.toggle("pending", !!pending && (pending.mode ?? null) === m);
+    b.disabled = switching || current || !!s.hand_wait || (m === 3 && !s.mode3_enabled);
+    b.title = m === 3 && !s.mode3_enabled ? "모드 3 캐치볼은 꺼져 있음" : s.hand_wait ? "손 근접 정지 대기 중" : "";
+  }
+}
+
+$("mode-switch").onclick = async (e) => {
+  const b = e.target.closest("button");
+  if (!b || b.disabled || switching || control?.phase !== "running") return;
+  const mode = b.dataset.mode ? Number(b.dataset.mode) : null;
+  const what = mode === null ? "다음 모드" : `모드 ${modeName(mode)}`;
+  if (!confirm(`${what}(으)로 바꿀까요?\n지금 시도가 끝나면 바뀝니다.`)) return;
+  const body = {session_id: control.session_id, mode};
+  switching = true;
+  renderModeSwitch(control);
+  $("control-message").textContent = "모드 전환 요청 확인 중…";
+  try {
+    const r = await fetch("/api/session/mode", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body), signal: AbortSignal.timeout(5000)});
+    const result = await r.json();
+    $("control-message").textContent = r.ok ? result.message : result.detail;
+  } catch (e) {
+    $("control-message").textContent = "모드 전환 결과 미확인 — 상태 갱신 후 확인해 주세요";
+  } finally {
+    switching = false;
+    renderModeSwitch(control);
+  }
+};
 
 $("resume").onclick = async () => {
   if (!control?.can_resume || resuming) return;

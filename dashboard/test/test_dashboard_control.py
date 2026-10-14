@@ -181,3 +181,38 @@ def test_camera_streams_point_to_robot_pc():
 def test_camera_panel_on_page():
     html = (Path(__file__).parents[1] / "web" / "index.html").read_text(encoding="utf-8")
     assert 'id="camera-view"' in html and "/api/cameras" in html
+
+
+def post_mode(monkeypatch, store, body):
+    monkeypatch.setattr(web, "_redis", store)
+
+    async def call():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url="http://test") as client:
+            return await client.post("/api/session/mode", json=body)
+    return asyncio.run(call())
+
+
+@pytest.mark.parametrize("mode", [5, None])
+def test_mode_switch_sends_command_and_waits_for_brain(monkeypatch, mode):
+    state = snapshot() | {"phase": "running"}
+    store = FakeRedis(state)
+    r = post_mode(monkeypatch, store, {"session_id": state["session_id"], "mode": mode})
+    assert r.status_code == 200 and r.json()["success"]
+    assert store.command["command"] == "set_mode" and store.command["mode"] == mode
+    assert store.command["session_id"] == state["session_id"]
+
+
+@pytest.mark.parametrize("case, expected", [("paused", 409), ("other_session", 409), ("bad_mode", 422),
+                                           ("brain_reject", 409), ("stale", 503)])
+def test_mode_switch_failures(monkeypatch, case, expected):
+    state = snapshot() | {"phase": "paused" if case == "paused" else "running"}
+    if case == "stale":
+        state["updated_at"] -= 10
+    body = {"session_id": state["session_id"], "mode": 4 if case == "bad_mode" else 7}
+    if case == "other_session":
+        body["session_id"] = str(uuid.uuid4())
+    store = FakeRedis(state, reply=case != "brain_reject")
+    r = post_mode(monkeypatch, store, body)
+    assert r.status_code == expected
+    if case != "brain_reject":
+        assert store.command is None
