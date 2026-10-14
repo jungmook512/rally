@@ -14,8 +14,8 @@
 #   측면 카메라는 기본으로 띄우지 않는다. CAM_CFG 로 다른 yaml 지정 가능.
 #   모드 3 (10/12): MODE3=1 → 이미지 rally/vision:mode3 (main 으로 빌드: docker build -f docker/vision/Dockerfile -t rally/vision:mode3 .)
 #     손목(컬러만, 노출 고정) + 측면 RealSense(노출 고정) + camera_tf + flight_predictor 를 로컬 모드로 (segmenter 없음 — 예측 노드 속도). compose pc2 와 같은 노드지만
-#     Discovery Server 없이 로봇 노드와 붙는다. 필요 파일: models/velcro_ball_yolo11n-seg_1024_rot_final.(engine|pt) · models/mode3_side_calib.json.
-#     FLIGHT_MODEL=velcro_ball_yolo11n-seg_1024_rot_final.pt 처럼 주면 예측 모델 지정 (.engine 이 컨테이너 TensorRT 와 안 맞을 때).
+#     Discovery Server 없이 로봇 노드와 붙는다. 필요 파일: models/velcro_ball_yolo11n-seg_1024_rot_v2.(engine|pt) (10/14 v2) · models/mode3_side_calib.json.
+#     FLIGHT_MODEL=velcro_ball_yolo11n-seg_1024_rot_v2.pt 처럼 주면 예측 모델 지정 (.engine 이 컨테이너 TensorRT 와 안 맞을 때).
 #     설정(config/)은 이 저장소 것을 읽기 전용으로 끼운다 — skills.yaml mode3 패드 평면·cameras.yaml·hand_eye.yaml 을 이미지 다시 빌드 없이.
 #     MODE3=1 HAND=0 HAND_STOP=slow scripts/robot.sh nodes
 # models/ 에 yolov8n-seg_ball.pt · T_gripper2camera.npy 가 있어야 한다 (segmenter 가 /models 에서 찾음, git 제외).

@@ -106,7 +106,7 @@ flowchart LR
 |---|---|
 | 구독 | `/camera/color/image_raw`·`camera_info`(손목), `/side/side/color/image_raw`·`camera_info`(측면), `/rally/robot/tcp_pose`, tf |
 | 발행 | `/rally/perception/landing` `PointStamped`(교차점, base_link, stamp = 마지막 관측 센서 시각) · **새** `/rally/perception/landing_info` `Float64MultiArray` [교차 시각, 남은 시간, 표준편차 u·w, 관측 수, 릴리스 후 시간] |
-| 필요 파일 | `models/velcro_ball_yolo11n-seg_1024_rot_final.(engine\|pt)`, `models/mode3_side_calib.json` (git 제외, USB 로 전달) |
+| 필요 파일 | `models/velcro_ball_yolo11n-seg_1024_rot_v2.(engine\|pt)` (10/14, 이전 `rot_final`), `models/mode3_side_calib.json` (git 제외, USB 로 전달) |
 | 실행 | `ros2 run rally_vision flight_predictor` (측면 카메라는 BRIEF 7절 명령으로 따로 띄움 — pc2 launch 에 아직 없음) |
 | 검증 | 단위 테스트 `test/test_flight_tracking.py`. 10/10 bag 재생: 잘못된 투구 시작 0건, 0.16 s 중앙 약 3 cm, 추론 13 ms |
 
