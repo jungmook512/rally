@@ -25,15 +25,19 @@ def handle_command(node, data: str) -> tuple[str, dict] | None:
             target_id = command.get("mode")   # 1·3·5·7 또는 None(다음 모드). 값 범위는 brain _request_switch 가 확인
             if target_id is not None and type(target_id) is not int:
                 raise ValueError("mode")
+        elif kind == "end_session":           # 현재 세션 종료 (10/14) — 대상은 세션뿐
+            target_id = None
         else:
             target_id = str(uuid.UUID(command["pause_id" if kind == "resume" else "proposal_id"]))
         remaining = float(command["expires_at"]) - time.time()
     except (ValueError, TypeError, KeyError, AttributeError):
         return None
-    if kind not in ("resume", "proposal_accept", "proposal_reject", "set_mode") or not 0 < remaining <= 3.0:
+    if kind not in ("resume", "proposal_accept", "proposal_reject", "set_mode", "end_session") or not 0 < remaining <= 3.0:
         ok, message = False, "요청이 만료됐거나 허용되지 않은 명령입니다"
     elif kind == "set_mode":
         ok, message = node._dashboard_set_mode(session_id, target_id)
+    elif kind == "end_session":
+        ok, message = node._dashboard_end_session(session_id)
     elif kind == "resume":
         ok, message = node._resume(session_id, target_id)
     else:

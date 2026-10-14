@@ -296,6 +296,24 @@ async function testProposalResponses() {
   assert.equal(btn(1).disabled, false);
   assert(btn(3).classList.contains('pending') && !btn(1).classList.contains('pending'));
   assert.equal(btn(7), undefined, 'mode 7 button removed (10/14)');
+  // 세션 종료 버튼 (10/14): 진행·휴식 중에만 누를 수 있고, 확인 뒤 POST /api/session/end
+  assert.equal(get('end-session').disabled, false, 'end button enabled while running');
+  receive({phase:'ended',session_id:'s-mode',mode:5,updated_at:Date.now()/1000,proposal:null,pending_switch:null});
+  assert.equal(get('end-session').disabled, true, 'end button disabled after session end');
+  receive({phase:'running',session_id:'s-mode',mode:null,mode_select:true,mode3_enabled:false,hand_wait:'',updated_at:Date.now()/1000,proposal:null,pending_switch:null});
+  assert.match(get('phase').textContent, /모드 선택 대기/);
+  assert.equal(btn(null).hidden, true, 'no next-mode button while selecting');
+  assert.equal(btn(1).disabled, false);
+  {
+    let endSent = null;
+    context.confirm = () => true;
+    context.fetch = async (url, options) => { endSent = {url, body:JSON.parse(options.body)}; return {ok:true,json:async()=>({message:'세션 종료 접수'})}; };
+    await get('end-session').onclick();
+    assert.equal(endSent.url, '/api/session/end');
+    assert.deepEqual(endSent.body, {session_id:'s-mode'});
+    assert.equal(get('control-message').textContent, '세션 종료 접수');
+  }
+  receive({phase:'running',session_id:'s-mode',mode:5,mode3_enabled:false,hand_wait:'',updated_at:Date.now()/1000,proposal:null,pending_switch:{mode:3}});
   let sent = null, asked = 0;
   context.confirm = () => { asked++; return false; };
   await get('mode-switch').onclick({target:{closest:()=>btn(1)}});

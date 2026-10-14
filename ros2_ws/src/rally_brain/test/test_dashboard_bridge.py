@@ -108,3 +108,14 @@ def test_set_mode_rejects_bad_or_expired(bad):
     node = NS(_dashboard_set_mode=lambda *a: calls.append(a) or (True, ""))
     result = handle_command(node, json.dumps(mode_command(7) | bad))
     assert calls == [] and (result is None or not result[1]["success"])
+
+
+def test_end_session_goes_to_brain():
+    calls = []
+    node = NS(_dashboard_end_session=lambda sid: calls.append(sid) or (True, "세션 종료 접수"))
+    command = {"command": "end_session", "request_id": str(uuid.uuid4()), "session_id": str(uuid.uuid4()),
+               "expires_at": time.time() + 2}
+    request_id, reply = handle_command(node, json.dumps(command))
+    assert reply["success"] and calls == [command["session_id"]] and request_id == command["request_id"]
+    command["expires_at"] = time.time() - 1
+    assert not handle_command(node, json.dumps(command))[1]["success"] and len(calls) == 1

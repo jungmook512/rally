@@ -67,6 +67,8 @@
   .control-status h2,.control-status p { margin:0; }
   #phase { font-size:18px; font-weight:750; line-height:1.5; overflow-wrap:anywhere; }
   .control-bar small { color:var(--muted); font-size:12px; }
+  #end-session { margin-left:8px; border:1px solid #c98a8a; background:#fff3f3; color:#8a2525; border-radius:10px; padding:7px 12px; font-weight:700; cursor:pointer; }
+  #end-session:disabled { opacity:.45; cursor:default; }
   #control-message { grid-column:1/-1; margin:0; color:var(--muted); }
   #control-message:empty,#proposal-message:empty { display:none; }
   #proposal-panel { background:var(--cream); border-color:#c5ab72; }
@@ -324,7 +326,7 @@
   <section id="control-bar" class="panel control-bar" aria-label="훈련 휴식과 재개">
     <div class="control-status"><h2><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4H19V20H5ZM9 8H15M9 12H15M9 16H12"/></svg>훈련 상태</h2>
     <p id="phase" role="status">연결 대기</p></div>
-    <button id="resume" type="button" disabled>훈련 재개</button>
+    <button id="resume" type="button" disabled>훈련 재개</button><button id="end-session" type="button" class="end" disabled title="현재 세션을 끝냅니다 (시도 중이면 그 시도를 마친 뒤)">세션 종료</button>
     <div class="badges"><label>진행 단계<output id="badge-step">—</output></label><label>안전<output id="badge-safety">모름</output></label></div>
     <div id="mode-switch" class="chips" role="group" aria-label="모드 전환" hidden><span class="label">모드 전환</span>
       <button type="button" data-mode="1">1 공 굴리기</button><button type="button" data-mode="3">3 캐치볼</button><button type="button" data-mode="5">5 건네고 받기</button><button type="button" data-mode="">다음 모드 ▶</button></div>
@@ -428,6 +430,9 @@ let sceneSafety = null, sceneKey = null, previewStage = null, previewTimer = nul
 let lastProposalId = null, lastProposalSessionId = null;
 const PHASES = {idle: "대기", running: "진행 중", pause_pending: "현재 시도 완료 후 휴식 예정",
                 paused: "휴식 중", ended: "세션 종료"};
+const phaseText = (s) => s.mode_select && s.phase === "running" ? "모드 선택 대기 · 어떤 모드를 할지 말씀하거나 아래 버튼을 누르세요"
+  : `${PHASES[s.phase] ?? s.phase} · 모드 ${modeName(s.mode)}`;   // 모드 선택 대기(brain mode_select, 10/14)
+let ending = false;
 
 function renderControl(s) {
   if (s && s.session_id !== lastProposalSessionId) {
@@ -445,10 +450,11 @@ function renderControl(s) {
   renderModePage();
   controlReceived = performance.now();
   renderProposal();
-  $("phase").textContent = s ? `${PHASES[s.phase] ?? s.phase} · 모드 ${modeName(s.mode)}`
+  $("phase").textContent = s ? phaseText(s)
     + (s.phase === "paused" && s.blocked_reason ? ` · ${s.blocked_reason}` : "")
     + (s.hand_wait ? " · 손 근접 정지 대기" : "") : "연결 대기";
   $("resume").disabled = resuming || !s?.can_resume || s.phase !== "paused";
+  $("end-session").disabled = ending || !s || !["running", "pause_pending", "paused"].includes(s.phase);
   renderModeSwitch(s);
 }
 
@@ -463,6 +469,7 @@ function renderModeSwitch(s) {
     const current = m !== null && m === Number(s.mode);
     b.classList.toggle("on", current);
     b.classList.toggle("pending", !!pending && (pending.mode ?? null) === m);
+    b.hidden = m === null && !!s.mode_select;                       // 대기 중엔 '다음 모드' 없음 — 모드를 골라야 함
     b.disabled = switching || current || !!s.hand_wait || (m === 3 && !s.mode3_enabled);
     b.title = m === 3 && !s.mode3_enabled ? "모드 3 캐치볼은 꺼져 있음" : s.hand_wait ? "손 근접 정지 대기 중" : "";
   }
@@ -473,7 +480,7 @@ $("mode-switch").onclick = async (e) => {
   if (!b || b.disabled || switching || control?.phase !== "running") return;
   const mode = b.dataset.mode ? Number(b.dataset.mode) : null;
   const what = mode === null ? "다음 모드" : `모드 ${modeName(mode)}`;
-  if (!confirm(`${what}(으)로 바꿀까요?\n지금 시도가 끝나면 바뀝니다.`)) return;
+  if (!confirm(control.mode_select ? `${what}을(를) 시작할까요?` : `${what}(으)로 바꿀까요?\n지금 시도가 끝나면 바뀝니다.`)) return;
   const body = {session_id: control.session_id, mode};
   switching = true;
   renderModeSwitch(control);
@@ -488,6 +495,25 @@ $("mode-switch").onclick = async (e) => {
   } finally {
     switching = false;
     renderModeSwitch(control);
+  }
+};
+
+$("end-session").onclick = async () => {
+  if (!control || ending || !["running", "pause_pending", "paused"].includes(control.phase)) return;
+  if (!confirm("현재 세션을 끝낼까요?\n시도 중이면 그 시도를 마친 뒤 끝납니다.")) return;
+  ending = true;
+  $("end-session").disabled = true;
+  $("control-message").textContent = "세션 종료 요청 확인 중…";
+  try {
+    const r = await fetch("/api/session/end", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({session_id: control.session_id}), signal: AbortSignal.timeout(5000)});
+    const result = await r.json();
+    $("control-message").textContent = r.ok ? result.message : result.detail;
+  } catch (e) {
+    $("control-message").textContent = "세션 종료 결과 미확인 — 상태 갱신 후 확인해 주세요";
+  } finally {
+    ending = false;
+    renderControl(control);
   }
 };
 

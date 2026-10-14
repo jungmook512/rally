@@ -217,3 +217,32 @@ def test_mode_switch_failures(monkeypatch, case, expected):
     assert r.status_code == expected
     if case != "brain_reject":
         assert store.command is None
+
+
+def post_end(monkeypatch, store, body):
+    monkeypatch.setattr(web, "_redis", store)
+
+    async def call():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url="http://test") as client:
+            return await client.post("/api/session/end", json=body)
+    return asyncio.run(call())
+
+
+@pytest.mark.parametrize("phase", ["running", "paused"])
+def test_end_session_sends_command_and_waits_for_brain(monkeypatch, phase):
+    state = snapshot() | {"phase": phase}
+    store = FakeRedis(state)
+    r = post_end(monkeypatch, store, {"session_id": state["session_id"]})
+    assert r.status_code == 200 and r.json()["success"]
+    assert store.command["command"] == "end_session" and store.command["session_id"] == state["session_id"]
+
+
+@pytest.mark.parametrize("case, expected", [("ended", 409), ("other_session", 409), ("brain_reject", 409), ("stale", 503)])
+def test_end_session_failures(monkeypatch, case, expected):
+    state = snapshot() | {"phase": "ended" if case == "ended" else "running"}
+    if case == "stale":
+        state["updated_at"] -= 10
+    body = {"session_id": str(uuid.uuid4()) if case == "other_session" else state["session_id"]}
+    store = FakeRedis(state, reply=case != "brain_reject")
+    r = post_end(monkeypatch, store, body)
+    assert r.status_code == expected and store.command is None if case != "brain_reject" else r.status_code == expected
