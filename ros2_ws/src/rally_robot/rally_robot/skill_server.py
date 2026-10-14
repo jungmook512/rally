@@ -80,6 +80,7 @@ class SkillServer(Node):
         self._contact = False
         self._patient_contact = False
         self._catch_window = False
+        self._workspace_extend = False       # 모드 3 공 떼기 → 박스 (작업 공간 x 상한 확장 하트비트)
         self._cm_client = None
         self.last_pick = None                # PickCompliant 성공 자세 {pose(mm·deg), grip_force} — 모드 5 내려놓기 자리
         self.holding = False                 # 물체를 쥐고 있는지 — gripper() 가 닫힘+감지면 True, 열면 False
@@ -102,6 +103,7 @@ class SkillServer(Node):
         self.pub_contact = self.create_publisher(Bool, "/rally/safety/contact_expected", reliable1)
         self.pub_patient_contact = self.create_publisher(Bool, "/rally/safety/patient_contact", reliable1)
         self.pub_catch_window = self.create_publisher(Bool, "/rally/safety/catch_window", reliable1)
+        self.pub_workspace_extend = self.create_publisher(Bool, "/rally/safety/workspace_extend", reliable1)
         self.create_timer(1.0 / CONTACT_HZ, self._contact_tick, callback_group=self.cb_state)
         self.gripper_cli = self.create_client(GripperCommand, "/rally/gripper/command", callback_group=self.cb_state)
         self.create_service(Trigger, "/rally/robot/go_observe_pose", self._go_observe, callback_group=self.cb_skill)
@@ -249,9 +251,17 @@ class SkillServer(Node):
         self._catch_window = bool(on)
         self.pub_catch_window.publish(Bool(data=self._catch_window))
 
+    def set_workspace_extend(self, on: bool):
+        """모드 3 공 떼기 → 박스 놓기 (10/14): 켠 동안 safety_monitor 작업 공간 x 상한이 workspace_x_max_extended_m.
+        detach_ball 만 쓴다. 하트비트가 끊기거나 workspace_extend_max_s 를 넘으면 safety_monitor 가 평소 상한으로 되돌린다."""
+        self._workspace_extend = bool(on)
+        self.pub_workspace_extend.publish(Bool(data=self._workspace_extend))
+
     def _contact_tick(self):
         if self._catch_window:
             self.pub_catch_window.publish(Bool(data=True))
+        if self._workspace_extend:
+            self.pub_workspace_extend.publish(Bool(data=True))
         if self._contact:
             self.pub_contact.publish(Bool(data=True))
         if self._patient_contact:
