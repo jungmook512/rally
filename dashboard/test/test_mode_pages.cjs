@@ -30,7 +30,7 @@ vm.runInContext(fs.readFileSync(path.join(__dirname,'../web/images/training-scen
 vm.runInContext(html.split('<script>')[1].split('</script>')[0].replace('load().then(connect);',''),context);
 function run(code){return vm.runInContext(code,context);}
 const get = id => elements.get(id);
-for(const mode of [1,3,5,7]) {
+for(const mode of [1,3,5]) {
   run(`location.hash='#mode${mode}';selectPage();`);
   assert.match(get('page-title').textContent,new RegExp(`모드 ${mode}`));
   const picture = get('mode-diagram').innerHTML;
@@ -44,6 +44,7 @@ for(const mode of [1,3,5,7]) {
 // 모드 1 레인은 2개 (#142 레인 3 제거) — 레일 2개 × 레인 2개
 assert.equal((run('topLanes()').match(/url\(#t-rail\)/g) || []).length, 4, 'mode 1 scene must draw exactly 2 lanes');
 // brain 이 고른 레인으로 공이 굴러간다 (control.lane 0 → 거치대 쪽 x 630, 1 → 가운데 x 480, 없으면 가운데)
+assert.equal(run('renderTrainingScene(7,0,"running")'), '', 'mode 7 has no scene any more');
 const ballAt = (lane) => { const svg = run(`renderTrainingScene(1,1,'running',{lane:${lane}})`); const m = svg.match(/class="ball-roll"><circle cx="(\d+)"/); return m && Number(m[1]); };
 assert.equal(ballAt(0), 630, 'lane 0 rolls on the rack-side lane');
 assert.equal(ballAt(1), 480, 'lane 1 rolls on the middle lane');
@@ -148,7 +149,7 @@ for (const [hash,title,trialVisible,eventVisible] of [
 }
 visit('#trials');
 assert.equal(get('trials').children.filter(r=>!r.hidden).length,2);
-run("addTrial({trial_id:'seven',mode:7},true);addTrial({trial_id:'seven',mode:7},true);");
+run("addTrial({trial_id:'five2',mode:5},true);addTrial({trial_id:'five2',mode:5},true);");
 assert.equal(get('trials').children.filter(r=>!r.hidden).length,3);
 visit('#mode1');
 assert.equal(get('trials-view').hidden,true);

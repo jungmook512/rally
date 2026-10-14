@@ -4,7 +4,6 @@ const SCENE_STAGES = {
   1: ['손 시작 위치 확인', '공 보내기', '받기 관측', '손 이탈 대기', '공 회수', '시도 기록'],
   3: ['준비', '던지기·받기', '결과 기록'],
   5: ['손·물체 확인', '물체 집기', '물체 건네기', '물체 돌려받기', '시도 기록'],
-  7: ['손 확인', '저항 훈련', '시도 기록'],
 };
 const SCENE_STATUS = {paused:'휴식 중', ended:'세션 종료', stopped:'안전 정지'};
 const sceneEscape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -190,17 +189,7 @@ function topMode5(stage) {
   if (stage === 4) Object.assign(s, {front: topRecord, patient: topPatient([600, 336], {fade: true})});
   return s;
 }
-function topMode7(stage) {
-  // 팔씨름형: 로봇이 든 손잡이를 환자가 감싸 쥐고 민다. 로봇은 버티다 물러날 뿐 환자 쪽으로 밀지 않음
-  const handle = topHeldRod(-46, 46);
-  const s = {arm: [480, 206], grip: 'closed', tool: handle, patient: topPatient([480, 344], {ang: 0})};
-  if (stage === 0) Object.assign(s, {back: topView([480, 206], [480, 330], 46), front: topRing([480, 318], 44) + topNote([540, 304], '손이 보이는지 확인')});
-  if (stage === 1) Object.assign(s, {patient: '', front: topRodGrip([480, 206], 0, 0) + topArrow('M570 330L570 262', 'flow-run') + topNote([590, 300], '환자가 밀기')
-    + `<path d="M390 232L390 192" stroke="#8aa0ad" stroke-width="4" stroke-linecap="round" stroke-dasharray="6 6" marker-end="url(#scene-arrow-grey)"/>` + topNote([378, 214], '로봇은 버티다 물러남', 'end')});
-  if (stage === 2) Object.assign(s, {patient: topPatient([480, 344], {ang: 0, fade: true}), front: topRecord});
-  return s;
-}
-const TOP_BUILDERS = {1: topMode1, 3: topMode3, 5: topMode5, 7: topMode7};
+const TOP_BUILDERS = {1: topMode1, 3: topMode3, 5: topMode5};   // 모드 7 은 10/14 시연 제외로 뺌
 
 function renderTrainingScene(mode, stageIndex, status, opts = {}) {
   if (!Object.hasOwn(SCENE_STAGES, mode)) return '';
