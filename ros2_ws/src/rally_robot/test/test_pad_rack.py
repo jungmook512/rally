@@ -75,3 +75,58 @@ def test_above_seat_along_slot_axis():
     assert pr.above_seat(P, G, U) == pytest.approx(80.0)
     assert pr.above_seat(B, G, U) == pytest.approx(-10.0)
     assert pr.above_seat([G[0] + 3.0, G[1] - 2.0, G[2], *G[3:]], G, U) == pytest.approx(0.0, abs=0.1)   # 옆으로 비켜도 높이는 그대로
+
+
+def test_search_offsets_pattern_around_shift():
+    cfg = {**pr.DEFAULTS, "pad_insert_shift_m": [0.006, -0.004, 0.0],
+           "pad_insert_search_pattern_m": [[0.0, -0.003, 0.0], [0.003, 0.0, 0.0]]}
+    offs = pr.search_offsets(cfg)
+    assert len(offs) == 3                                       # 첫 시도 + 패턴 2자리
+    assert offs[0].tolist() == pytest.approx([6.0, -4.0, 0.0, 0.0])  # 첫 시도는 고정 보정만 [mm…, rz°]
+    assert offs[1].tolist() == pytest.approx([6.0, -7.0, 0.0, 0.0])
+    assert offs[2].tolist() == pytest.approx([9.0, -4.0, 0.0, 0.0])
+    assert len(pr.search_offsets({**cfg, "pad_insert_search_pattern_m": []})) == 1
+
+
+def test_lift_goes_out_of_slot_before_side_move():
+    assert pr.lift_height_mm(21.0, 45.0, 8.0) == 45.0          # 홈 안에서 걸림 (10/14 G 위 21 mm) → 홈 밖까지
+    assert pr.lift_height_mm(59.0, 45.0, 8.0) == 67.0          # 입구 위쪽에서 걸림 (10/13 59 mm) → 걸린 자리 + 8 mm
+
+
+def test_defaults_keep_old_behaviour_first_try():
+    assert pr.search_offsets(pr.DEFAULTS)[0].tolist() == [0.0, 0.0, 0.0, 0.0]   # 고정 보정 0 → 첫 시도는 예전과 같은 경로
+
+
+def test_shifted_moves_position_only():
+    s = pr.shifted(G, [3.0, -1.0, 0.0])
+    assert s[:3] == pytest.approx([G[0] + 3.0, G[1] - 1.0, G[2]]) and s[3:] == G[3:]
+    assert pr.slot_axis(G, U) @ [0, 0, 1] > 0.99                # 홈 축은 거의 수직 위
+
+
+def test_slow_point_sits_between_entry_and_seat():
+    P, _ = pr.insert_points(G, U, 0.08, 0.01)
+    S, _ = pr.insert_points(G, U, pr.DEFAULTS["pad_insert_slow_from_m"], 0.01)
+    assert pr.above_seat(S, G, U) == pytest.approx(20.0)
+    assert pr.above_seat(P, G, U) > pr.above_seat(S, G, U) > 0.0
+    assert pr.DEFAULTS["pad_insert_abs_stop_n"] < 25.0          # safety force_limit_n 보다 먼저 멈춰야 함
+
+
+def test_search_offsets_with_base_z_rotation():
+    cfg = {**pr.DEFAULTS, "pad_insert_shift_m": [0.006, -0.004, 0.0],
+           "pad_insert_search_pattern_m": [[0.0, 0.0, 0.0, 2.0], [0.0, 0.0, 0.0, -4.0], [0.0, -0.003, 0.0]]}
+    offs = pr.search_offsets(cfg)
+    assert offs[0].tolist() == pytest.approx([6.0, -4.0, 0.0, 0.0])
+    assert offs[1].tolist() == pytest.approx([6.0, -4.0, 0.0, 2.0])
+    assert offs[2].tolist() == pytest.approx([6.0, -4.0, 0.0, -4.0])
+    assert offs[3].tolist() == pytest.approx([6.0, -7.0, 0.0, 0.0])   # 회전 생략 = 0
+    assert "회전 +2.0°" in pr.offset_text(offs[1]) and "옆 [6.0, -4.0, 0.0] mm" in pr.offset_text(offs[1])
+
+
+def test_shifted_rz_is_rotation_about_base_z():
+    from scipy.spatial.transform import Rotation
+    s = pr.shifted(G, [0.0, 0.0, 0.0, 3.0])
+    assert s[:3] == pytest.approx(G[:3]) and s[4:] == G[4:]           # 위치·B·C 그대로
+    want = Rotation.from_euler("z", 3.0, degrees=True) * Rotation.from_euler("ZYZ", G[3:6], degrees=True)
+    got = Rotation.from_euler("ZYZ", s[3:6], degrees=True)
+    assert (want.inv() * got).magnitude() == pytest.approx(0.0, abs=1e-9)
+    assert pr.shifted(G, [1.0, 0.0, 0.0])[3:] == G[3:]                 # 세 값이면 회전 없음
