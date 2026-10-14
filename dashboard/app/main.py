@@ -47,7 +47,8 @@ ROBOT_VIDEO_URL = os.environ.get("ROBOT_VIDEO_URL", "").strip().rstrip("/")
 # 보여 줄 카메라 (INTERFACES 2.1). 작게·낮은 화질로 — 로봇 PC 의 압축 부담과 네트워크를 줄인다
 # (이름, 토픽, 대신 쓸 토픽). 손목은 세그먼터의 인식 결과 화면(마스크·신뢰도·3D 좌표가 그려진 debug_image, 구독자가 있을 때만 10 Hz 발행)을
 #   먼저 쓰고, 안 오면(비전 컨테이너 꺼짐) 브라우저가 원본 카메라로 바꾼다. 측면은 원본만
-CAMERAS = [("손목", "/rally/perception/objects/debug_image", "/camera/color/image_raw"), ("측면", "/side/side/color/image_raw", None)]
+CAMERAS = [("손목", "/rally/perception/objects/debug_image", "/camera/color/image_raw"),
+           ("측면", "/rally/perception/side/debug_image", "/side/side/color/image_raw")]   # 측면도 인식 화면(flight_predictor), 안 오면 원본 (10/14)
 STREAM_QUERY = "type=mjpeg&quality=50&width=424&height=240&qos_profile=sensor_data"
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 
