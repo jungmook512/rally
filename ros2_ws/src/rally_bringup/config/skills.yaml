@@ -67,6 +67,7 @@ mode3:
   detach_after_place: true          # ★ 10/14 정정인: 패드 꽂은 뒤 공 떼기 → 박스. 교시 둘이 없으면 자동으로 건너뜀
   detach_ball_view_posj: [158.8, -7.9, -71.0, -8.3, -119.5, -114.1]   # ★ 10/14 20:0x 정정인 직접교시: 거치대에 꽂힌 패드의 공 붙은 면(+x)을 손목 카메라로 보는 자세. posx [345.5, -156.6, 500.9, 180.0, 160.0, -90.0] (두산 fkin)
   detach_ball_z_m: 0.095            # ★ 10/14 정정인 실측: 거치대 패드의 공 중심 높이 95 mm (비전은 119 — 깊이 +24 mm 오차). 0 = 비전 z
+  detach_ball_offset_m: [0.0, 0.0, 0.0]   # 시선 보정 뒤 남는 쥐는 위치 고정 오차 [m, base]. 예: x 로 5 mm 더 로봇 쪽이면 [-0.005, 0, 0]
   detach_box_drop_posj: [166.2, -36.9, -52.6, -0.0, -90.3, -108.2]    # ★ 10/14 20:1x 정정인 직접교시: 박스 위 수직 약 6 cm, 툴 아래 향함. posx [595.0, -152.7, 119.6, 154.3, -179.8, -120.0] (URDF 계산, fkin 무응답). x 0.595 m 는 평소 상한 0.57 밖 → 박스 구간만 safety.yaml workspace_x_max_extended_m(0.65) 로 확장 (/rally/safety/workspace_extend)
   pad_place_after_catch: true     # ★ 10/12 정정인: 요격 판정 뒤 패드를 거치대에 꽂고 끝냄 (catch_ball.after_catch). 다음 시도는 pickup_pad 가 다시 집음
   pad_place_only_if_caught: true  # ★ 10/12 밤 정정인: 놓쳤으면 꽂지 않고 패드를 쥔 채 대기 자세로 (다음 투구 바로). 받았을 때만 꽂음

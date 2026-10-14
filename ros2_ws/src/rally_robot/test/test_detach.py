@@ -174,3 +174,22 @@ def test_peel_pose_vertical_peels_far_side_first():
     c = np.array(BALL) * 1000
     contact, far = c - np.array([R * 1000, 0, 0]), c + np.array([0, R * 1000, 0])
     assert moved(contact) > 0 and moved(far) > moved(c) > 0
+
+
+
+def test_slide_along_ray_and_camera_pos():
+    # 10/14 실측: 공 보기 자세 카메라 (413, −120, 452) mm, 비전 점 (333, −159, 119) → 높이 95 로 시선 따라 → x 327
+    p = d.slide_along_ray([0.333, -0.159, 0.119], [0.413, -0.120, 0.452], 0.095)
+    assert p[2] == pytest.approx(0.095) and p[0] == pytest.approx(0.3272, abs=1e-3) and p[1] < -0.159
+    assert d.slide_along_ray([0.3, 0, 0.1], [0.5, 0, 0.1], 0.08) == pytest.approx([0.3, 0.0, 0.08])   # 수평 시선이면 높이만
+    cam = d.camera_pos_m([267.4, -157.0, 287.0, 0.1, -160.1, 90.2], [0.03728, 0.08087, -0.20500])
+    assert cam == pytest.approx([0.413, -0.120, 0.452], abs=0.002)
+
+
+def test_top_grasp_pose_like_keeps_camera_side():
+    view = [0.1, -160.1, 90.2]                                       # 공 보기 자세 (툴 y = base +x, 카메라가 +x 쪽)
+    g = d.top_grasp_pose_like(BALL, 0.01, [174.8, -177.0, 175.1], view)
+    Rg = Rotation.from_euler("ZYZ", g[3:], degrees=True).as_matrix()
+    assert Rg[2, 2] == pytest.approx(-1.0, abs=0.01)                 # 툴 아래
+    assert Rg[0, 1] > 0.99                                           # 툴 y 가 그대로 base +x (카메라 안 돎)
+    assert abs(Rg[1, 0]) > 0.99                                      # 손가락(툴 x) = base y

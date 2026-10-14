@@ -47,6 +47,20 @@ def _observe_ball(node, cfg, check, near_m):
     return c, len(obs)
 
 
+def _camera_pos(tcp6):
+    """hand_eye.yaml(TCP ← 카메라) 로 지금 카메라 위치 base [m]. 못 읽으면 None (시선 보정 안 함)."""
+    try:
+        import os
+
+        import yaml
+        from ament_index_python.packages import get_package_share_directory
+        path = os.path.join(get_package_share_directory("rally_bringup"), "config", "hand_eye.yaml")
+        xyz = (yaml.safe_load(open(path)) or {})["tcp_T_camera_optical"]["xyz_m"]
+        return detach.camera_pos_m(tcp6, xyz)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def movej_planned(node, log, cfg, posj, jv, ja, x_max_m, what):
     """관절 이동 — 경로 TCP 가 작업 공간 밖으로 휘면 두 단계(손목/팔/J1 먼저)로 (detach.plan_joint_path). 경로가 없으면 SkillAbort."""
     import DSR_ROBOT2
@@ -114,19 +128,34 @@ def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=N
     if not ok:
         raise SkillAbort("gripper_unavailable")
     movej_planned(node, log, cfg, cfg["ball_view_posj"], jv, ja, cfg["path_x_max_m"], "공 보기 자세")
+    seen_given = ball_m is not None                                   # goal 로 받은 공 위치는 보정하지 않음
     if ball_m is None:
         time.sleep(0.5)                                              # tcp_pose(10 Hz) 가 멈춘 자세를 반영한 뒤 (segmenter tcp_npy 변환)
         G = pad_rack.rack_points(fkin, pad_rack.config(node))["G"] if pad_rack.taught(node) else None
         near = [v / 1000.0 for v in G[:3]] if G is not None else None
         ball_m, n_obs = _observe_ball(node, cfg, check, near)
         log.info(f"[detach_ball] 공 {np.round(ball_m, 3).tolist()} m (관측 {n_obs}, 거치대 G 기준 {cfg['ball_search_m']} m 안)")
-    if float(cfg["ball_z_m"]) > 0.0:                                 # 거치대 높이는 고정 — 비전 깊이 오차(+24 mm) 대신 실측
-        log.info(f"[detach_ball] 공 높이 비전 {ball_m[2] * 1000:.0f} mm → 설정 {cfg['ball_z_m'] * 1000:.0f} mm (ball_z_m)")
-        ball_m = [ball_m[0], ball_m[1], float(cfg["ball_z_m"])]
+    view6 = list(get_current_posx()[0])                              # 공 보기 자세 TCP (카메라 위치·쥐는 방향 기준)
+    if float(cfg["ball_z_m"]) > 0.0:                                 # 거치대 높이는 고정 — 비전 깊이 오차 대신 실측
+        before = list(ball_m)
+        cam = _camera_pos(view6) if cfg["ray_correct"] and not seen_given else None
+        if cam is not None:
+            ball_m = detach.slide_along_ray(ball_m, cam, float(cfg["ball_z_m"]))   # 시선 따라 → x·y 도 같이 고침
+        else:
+            ball_m = [ball_m[0], ball_m[1], float(cfg["ball_z_m"])]
+        log.info(f"[detach_ball] 공 비전 {np.round(np.array(before) * 1000).tolist()} mm → {'시선 따라' if cam is not None else '높이만'} "
+                 f"{np.round(np.array(ball_m) * 1000).tolist()} mm (ball_z_m {cfg['ball_z_m'] * 1000:.0f})")
+    off = [float(v) for v in cfg["ball_offset_m"]]
+    if any(abs(v) > 1e-6 for v in off):
+        ball_m = [ball_m[i] + off[i] for i in range(3)]
+        log.info(f"[detach_ball] 고정 보정 ball_offset_m {np.round(np.array(off) * 1000).tolist()} mm → {np.round(np.array(ball_m) * 1000).tolist()} mm")
     out["ball_m"] = [float(v) for v in ball_m]
 
     # 2. 접근 자세: 위에서 수직으로 — 툴 아래, 손가락은 패드 면과 나란히(옆) 닫힘 (10/14: 정면 수평 쥐기는 IK 없음)
-    grasp6 = detach.top_grasp_pose(ball_m, cfg["grasp_below_m"], cfg["top_down_zyz"], cfg["finger_rot_deg"])
+    if cfg["keep_view_yaw"]:                                         # 카메라 방향 그대로 (10/14: 180° 돌고 내려가던 것)
+        grasp6 = detach.top_grasp_pose_like(ball_m, cfg["grasp_below_m"], cfg["top_down_zyz"], view6[3:6])
+    else:
+        grasp6 = detach.top_grasp_pose(ball_m, cfg["grasp_below_m"], cfg["top_down_zyz"], cfg["finger_rot_deg"])
     pre = detach.up(grasp6, cfg["approach_m"])
     phase("approach")
     from DSR_ROBOT2 import get_current_posj

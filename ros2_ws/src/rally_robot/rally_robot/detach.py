@@ -48,6 +48,12 @@ DEFAULTS = dict(
     ball_z_m=0.0,                           # 0 이 아니면 공 중심 높이를 이 값으로 (비전 z 대신). 10/14 실측 95 mm, 비전은 119 mm (+24 mm, 알려진 깊이 오차)
     pivot_side_r=0.5,                       # 수직축 회전 중심 = 접촉점에서 옆(−l)으로 r × 이 값 → 반대쪽(+l) 옆부터 벗겨짐
     lift_after_m=0.05,                      # 떼어지고 n 방향 후퇴 뒤 위로
+    # ★ 10/14 실로봇: 위에서 쥐러 내려갈 때 공 보기 자세의 카메라 방향(+x 쪽)을 그대로 — 툴 아래 자세 두 후보(±90°) 중 지금 자세와 가까운 것
+    keep_view_yaw=True,
+    # ★ 10/14: 비전 점 = 카메라 쪽 공 표면(+ 깊이 오차) → 카메라(+x 위)에서 본 시선 방향으로 밀려 z +24 mm·x + 쪽. z 만 95 로 바꾸면 x 는
+    #   카메라 쪽으로 남음 → 시선(카메라 → 비전 점)을 따라 ball_z_m 높이까지 밀어 x·y 도 같이 고침 (ray_correct)
+    ray_correct=True,
+    ball_offset_m=[0.0, 0.0, 0.0],          # 위 보정 뒤 남는 고정 오차 [m, base] — 실로봇에서 쥐는 위치 보고 맞춤
     peel_step_deg=5.0,                      # 한 스텝 회전각
     peel_max_deg=40.0,                      # 이 각까지 급락 없으면 n 방향 pull_extra_m 당겨 보고 판정
     peel_retreat_per_step_m=0.002,          # 스텝마다 n 방향으로 더 후퇴
@@ -288,3 +294,34 @@ def peel_pose_vertical(grasp6, ball_m, normal, r_m, pivot_side_r, deg, retreat_m
     p = pivot + R.apply(p0 - pivot) + n * retreat_m * 1000.0
     rot = R * Rotation.from_euler("ZYZ", grasp6[3:6], degrees=True)
     return [float(v) for v in p] + [float(v) for v in rot.as_euler("ZYZ", degrees=True)]
+
+
+def slide_along_ray(meas_m, cam_m, z_true_m):
+    """카메라 → 비전 점 시선을 따라 높이가 z_true_m 인 점까지 민 위치 [m]. 시선이 거의 수평이면 그대로. 순수 함수.
+    비전 점은 카메라 쪽 공 표면(깊이 중앙값)이라 시선 방향으로 카메라 쪽에 치우친다 — 실측 높이를 알면 같은 시선 위에서 고칠 수 있다."""
+    m, c = np.asarray(meas_m, float), np.asarray(cam_m, float)
+    d = m - c
+    if abs(d[2]) < 1e-6 * max(1.0, float(np.linalg.norm(d))):
+        return [float(m[0]), float(m[1]), float(z_true_m)]
+    t = (float(z_true_m) - m[2]) / d[2]
+    p = m + t * d
+    return [float(v) for v in p]
+
+
+def camera_pos_m(tcp6_mm, xyz_tcp_cam_m) -> list[float]:
+    """TCP posx(mm·ZYZ) 와 TCP ← 카메라 위치(m, hand_eye.yaml tcp_T_camera_optical.xyz_m) → 카메라 위치 base [m]. 순수 함수."""
+    R = Rotation.from_euler("ZYZ", tcp6_mm[3:6], degrees=True)
+    p = np.asarray(tcp6_mm[:3], float) / 1000.0 + R.apply(np.asarray(xyz_tcp_cam_m, float))
+    return [float(v) for v in p]
+
+
+def top_grasp_pose_like(ball_m, below_m, zyz_down, cur_zyz):
+    """위에서 쥐는 자세 중 툴 z 둘레 방향(손가락 ±90° 두 후보)을 지금 자세(cur_zyz)와 가까운 쪽으로 — 카메라가 돌지 않게. 순수 함수."""
+    R0 = Rotation.from_euler("ZYZ", cur_zyz, degrees=True)
+    best = None
+    for rot in (90.0, -90.0):
+        g = top_grasp_pose(ball_m, below_m, zyz_down, rot)
+        ang = (Rotation.from_euler("ZYZ", g[3:6], degrees=True) * R0.inv()).magnitude()
+        if best is None or ang < best[0]:
+            best = (ang, g)
+    return best[1]
