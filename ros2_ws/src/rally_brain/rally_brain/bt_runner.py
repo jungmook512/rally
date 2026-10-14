@@ -81,6 +81,7 @@ def default_modes(include_mode3: bool) -> list[int]:
 # 모드 선택 대기 (10/14 조정묵): goal.modes 가 비어 있으면 모드를 순서대로 돌지 않고, 대기 → 음성·대시보드로 고른 모드 N회 → 다시 대기.
 #   종료는 음성 stop(비상 아님: "여기까지 하자"·"세션 끝내자")·대시보드 종료 버튼. skills.yaml brain.mode_select
 MODE_SELECT_DEFAULTS = {"enabled": False, "prompt": "어떤 모드를 진행할지 말씀해 주세요", "prompt_interval_s": 10.0,
+                        "start_prompt": "{mode} 진행하겠습니다.",   # 고른 모드가 시작될 때 (빈 문자열이면 말하지 않음)
                         "done_prompt": "{mode} 모드가 끝났습니다. 다음으로 진행할 모드를 말씀해 주세요",
                         "end_prompt": "오늘 훈련을 마칠게요. 수고하셨어요"}
 
@@ -659,6 +660,8 @@ class BtRunner(Node):
                     if pend is not None and pend[0] is not None:
                         target = pend[0]
                         self.get_logger().info(f"[모드 선택] {pend[1]}: 모드 {target} {MODE_NAMES.get(target, '?')} 시작")
+                        if start := str(select["start_prompt"] or ""):   # "공 굴리기 진행하겠습니다." — 모드 자체 intro 보다 먼저 (tts 는 순서대로 재생)
+                            self._say(start.format(mode=MODE_NAMES.get(target, f"{target}")))
                         tree = py_trees.trees.BehaviourTree(build_session_tree(session, [target], n))
                         with self._switch_lock:
                             self._selecting = False

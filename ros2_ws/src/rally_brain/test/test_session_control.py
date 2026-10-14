@@ -321,7 +321,8 @@ def test_mode_select_waits_runs_chosen_mode_then_waits_until_end(node, monkeypat
     built, said, outcomes = [], [], []
     node._say = said.append
     node._skills_cfg = {**node._skills_cfg, "brain": {**(node._skills_cfg.get("brain") or {}), "mode_select": {
-        "enabled": True, "prompt": "어떤 모드", "prompt_interval_s": 0.3, "done_prompt": "{mode} 끝", "end_prompt": "마침"}}}
+        "enabled": True, "prompt": "어떤 모드", "prompt_interval_s": 0.3, "start_prompt": "{mode} 시작", "done_prompt": "{mode} 끝",
+        "end_prompt": "마침"}}}
 
     def build(session, modes, n):
         built.append(list(modes))
@@ -368,6 +369,7 @@ def test_mode_select_waits_runs_chosen_mode_then_waits_until_end(node, monkeypat
     assert outcomes == ["success"] and node.control.phase == "ended"
     assert built == [[5], [1]]
     assert "건네고 받기 끝" in said and "공 굴리기 끝" in said and said[-1] == "마침"
+    assert said.index("건네고 받기 시작") < said.index("건네고 받기 끝") < said.index("공 굴리기 시작") < said.index("공 굴리기 끝")   # 시작 멘트 → 모드 → 끝 멘트
     assert said.count("어떤 모드") <= 4                      # 0.3 s 간격 — 연속으로 떠들지 않음
     assert not node._selecting and node._end_requested is None
 

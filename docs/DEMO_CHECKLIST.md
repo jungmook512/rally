@@ -101,7 +101,8 @@ ros2 run rally_bringup wait_ready --group session --once
 **시작** (로봇·인식 PC 네이티브 터미널, `source scripts/env_robot_pc.sh` 후)
 ```bash
 # 시연 (10/14 부터, skills.yaml brain.mode_select.enabled): modes 를 비우면 '모드 선택 대기' — 10 s 마다 "어떤 모드를 진행할지 말씀해 주세요",
-#   음성("랠리야 → 공 굴리기 하자"·"모드 5")이나 대시보드 모드 버튼으로 고른 모드만 N회 → "○○ 모드가 끝났습니다. 다음으로 진행할 모드를 말씀해 주세요" → 다시 대기
+#   음성("랠리야 → 공 굴리기 하자"·"모드 5")이나 대시보드 모드 버튼으로 고르면 "○○ 진행하겠습니다." → 그 모드만 N회 → "○○ 모드가 끝났습니다. 다음으로 진행할 모드를 말씀해 주세요" → 다시 대기
+#   (문구는 모두 skills.yaml brain.mode_select — prompt·start_prompt·done_prompt·end_prompt. 바꾸면 brain 재빌드)
 ros2 action send_goal /rally/session/run rally_interfaces/action/RunSession "{patient_id: demo, modes: [], trials_per_mode: 0}" --feedback
 # 예전처럼 순서대로 돌리려면 modes 를 적는다 (모드 3 은 mode3_challenge.enabled 일 때만)
 ros2 action send_goal /rally/session/run rally_interfaces/action/RunSession "{patient_id: demo, modes: [1, 5], trials_per_mode: 0}" --feedback
