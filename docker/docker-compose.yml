@@ -27,7 +27,9 @@ services:
       - ../models:/models:ro
     deploy: { resources: { reservations: { devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }] } } }
     # segmenter_hand_eye:=none — 옛 npy 보정 (#66 좌표). mode1.vision_offset_m 이 그 기준이라 hand_eye.yaml 과 겹치면 약 1 cm 어긋남 (10/14 정정인 결정)
-    command: ros2 launch rally_bringup pc2_perception.launch.py part:=vision   # segmenter_hand_eye:=none 이면 옛 npy 보정 (10/14: 거치대 밖에서 2.5 cm 넘게 틀어져 hand_eye.yaml 로 복귀)
+    # segmenter_conf 0.25 (10/14 실로봇): 받기 때 손에 든 막대 점수가 0.1~0.49 라 0.5 에선 전부 버려져 "rod 안 보임" → 기울기·다가가기 안 됨.
+    #   로봇 받기는 원래 0.25 로 설계(skills.yaml receive_depth·receive_tilt_follow), 테이블 집기는 brain 이 object_min_confidence 0.5 로 다시 거름
+    command: ros2 launch rally_bringup pc2_perception.launch.py part:=vision segmenter_conf:=0.25   # segmenter_hand_eye:=none 이면 옛 npy 보정 (10/14: 거치대 밖에서 2.5 cm 넘게 틀어져 hand_eye.yaml 로 복귀)
 
   hand_pose:
     <<: *ros
