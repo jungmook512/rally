@@ -14,7 +14,7 @@
 - [ ] 서버 PC `docker/.env`
   - `PC3_IP` = 서버 PC IP, `ROS_DOMAIN_ID` 두 PC 같게
   - `OPENAI_API_KEY` 한도 남아 있는지 (없어도 리포트는 수치만으로 나옴)
-  - `ROBOT_VIDEO_URL=http://<로봇·인식 PC IP>:8080` (대시보드 카메라 칸, #140)
+  - `ROBOT_VIDEO_URL=http://<로봇·인식 PC IP>:8080` (대시보드 카메라 칸, #140). **10/14 서버 PC 에 이 줄이 없어 카메라 칸이 꺼져 있었음** — `.env.example` 에 추가했으니 없으면 넣고, `.env` 를 바꿨으면 `docker compose --profile pc3 up -d --force-recreate dashboard` (재시작만으로는 환경변수가 안 바뀜)
 - [ ] 운영 DB에 그래프 표 있음: `docker exec docker-db-1 psql -U rally -d rally -c "\dt kg_*"` → `kg_edge`·`kg_node`
 - [ ] 소품: 공(모드 1 거치대 4개), 벨크로 공·패드(모드 3), 막대·컵(모드 5, 흰 배경 위), (모드 7 은 소품 없음 — 로봇 손목을 민다), 바닥 중앙선
 - [ ] 카메라 2대 연결: 손목 RealSense(시리얼 `140122076335`), 측면 RealSense(`147122075430`)
@@ -58,6 +58,7 @@ docker compose --profile pc2 logs -f vision   # 아래 로그 확인 후 Ctrl+C
 - [ ] 카메라 주기 (네이티브 터미널, `source scripts/env_robot_pc.sh` 후)
   - `ros2 topic hz /camera/color/image_raw` ≈ 60 (손목)
   - `ros2 topic hz /side/side/color/image_raw` ≈ 60 (측면, 모드 3)
+- [ ] 영상 서버에 스트림 목록: `curl -s http://localhost:8080/ | grep -c image_raw` → 2 이상 (대시보드 카메라 칸이 여기서 받음). 0 이면 vision 컨테이너가 카메라를 못 연 것 — RealSense USB 확인 후 `docker compose --profile pc2 restart vision`
 
 ## 3. 서버 PC — brain·대시보드
 
@@ -75,7 +76,7 @@ ros2 run rally_bringup wait_ready --group session --once
 ```
 - [ ] 전부 준비 (관측 자세·물체 보기 서비스 포함). 안 된 항목이 있으면 그 노드부터
 - [ ] 대시보드 안전 띠 **NORMAL** (STOP 이면 아래 7절)
-- [ ] 대시보드 카메라 칸: 손목·측면 두 화면 (안 되면 `No Image` — 영상만 안 보이는 것, 훈련은 됨)
+- [ ] 대시보드 카메라 칸: 손목·측면 두 화면 (안 되면 `No Image` — 영상만 안 보이는 것, 훈련은 됨). 칸 자체가 없으면 서버 PC `.env` 의 `ROBOT_VIDEO_URL`(0절), 칸은 있는데 검으면 로봇·인식 PC 영상 서버 스트림(2절 터미널 3)
 - [ ] brain 로그 `세션 시작 조건 충족`
 
 ## 5. 시연 직전 안전 점검 (3중 정지)
@@ -127,6 +128,7 @@ ros2 action send_goal /rally/session/run rally_interfaces/action/RunSession "{pa
 | STOP — `hand_near_*`·`hand_lost_near` (stop 모드, 모드 1·5) | 손을 빼면 1 s 뒤 같은 동작을 이어 감. 계속 멈추면 손이 로봇 20 cm 안에 남아 있는 것 |
 | STOP — `wrench_missing`·`tcp_missing`·`wrench_lost` | 터미널 1·2 로그 확인 (두산 연결·force_publisher). 특이점 근처면 관측 자세로: `ros2 service call /rally/robot/go_observe_pose std_srvs/srv/Trigger` |
 | 세션이 시작 안 됨 (`세션 시작 불가 — 준비 안 됨: …`) | 4절 `wait_ready` 로 빠진 노드 찾기 → 그 터미널부터 다시 |
+| 대시보드 카메라 칸이 없음 / 검음 | 없음: 서버 PC `docker/.env` 에 `ROBOT_VIDEO_URL` 넣고 `docker compose --profile pc3 up -d --force-recreate dashboard`. 검음: 로봇·인식 PC 에서 `curl -s http://localhost:8080/ \| grep image_raw` 가 비면 vision 컨테이너·RealSense 부터 (`docker compose --profile pc2 restart vision`) |
 | 비전이 물체를 못 찾음 | 대시보드 카메라 칸 / `ros2 topic hz /rally/perception/objects`. vision 컨테이너 `docker compose --profile pc2 restart vision` |
 | 모드 3 이 계속 실패 | 세션 취소(터미널 Ctrl+C) → `modes: [5, 7]` 로 이어서, 모드 3 은 따로 시연 |
 | 꼬여서 처음부터 | 로봇·인식 PC: 터미널 2 → 1 순서로 Ctrl+C, `docker compose --profile pc2 down` → 2절부터. 서버 PC는 그대로 둬도 됨 |
