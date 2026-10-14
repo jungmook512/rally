@@ -65,7 +65,9 @@ class ContextBuilder(Node):
         self.declare_parameter("rate_hz", 5.0)
         self.declare_parameter("recent_n", 5)
         self.declare_parameter("stale_s", 1.0)            # 손·몸·물체
-        self.declare_parameter("stale_safety_s", 0.5)     # 안전 상태는 100 Hz 라 짧게
+        # 안전 상태(100 Hz)가 이만큼 안 오면 STOP 으로 보고 세션을 끝낸다. 0.5 → 3.0 s (10/14): 와이파이로 0.8 s~1.5 s 넘는 끊김이 나
+        # 세션이 끊김. 진짜 STOP 은 로봇 PC safety_monitor 가 스스로 즉시 멈추므로 brain 이 0.5 s 만에 반응할 필요가 없다
+        self.declare_parameter("stale_safety_s", 3.0)
         self.declare_parameter("intent_hold_s", 3.0)
         p = self.get_parameter
         self.rate_hz = float(p("rate_hz").value)
