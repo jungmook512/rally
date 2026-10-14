@@ -143,7 +143,7 @@ function topMode1(stage, lane = null) {
   const L = Object.hasOwn(LANE_X, lane) ? LANE_X[lane] : 480;
   const right = L >= 600;                                  // 거치대 쪽 레인이면 메모를 왼쪽에 (화면 밖으로 안 나가게)
   const note = ([dx, y], text) => right ? topNote([L - dx, y], text, 'end') : topNote([L + dx, y], text);
-  const palm = {pose: 'palm'}, handAt = [L, 330], view = [L, 152], away = [690, 336];
+  const palm = {pose: 'palm'}, handAt = [L, 330], view = [L, 152], away = [right ? 770 : 690, 336];   // 손을 빼는 자리는 레인 오른쪽
   const s = {arm: [560, 124], back: topLanes() + topRack(2), patient: topPatient(handAt, palm)};
   if (stage === 0) Object.assign(s, {arm: view, back: topLanes() + topRack(2) + topRing([L, 314], 44) + topView(view, [L, 318]),
     front: note([60, 290], '손바닥을 위로, 레인 끝에')});
@@ -152,7 +152,7 @@ function topMode1(stage, lane = null) {
   if (stage === 2) Object.assign(s, {arm: view, back: topLanes() + topRack(1) + topView(view, [L, 318]),
     front: topBall([L + 1, 318]) + note([60, 250], '손목 카메라로 받기 확인')});
   if (stage === 3) Object.assign(s, {arm: view, back: topLanes() + topRack(1) + topView(view, [L, 306]), patient: topPatient(away),
-    front: topBall([L, 296]) + topArrow(`M${L + 35} 318L640 328`) + note([right ? 30 : 120, 286], '손을 빼면 회수 시작')});
+    front: topBall([L, 296]) + topArrow(`M${L + 35} 318L${away[0] - 50} 328`) + note([right ? 30 : 120, 286], '손을 빼면 회수 시작')});
   if (stage === 4) Object.assign(s, {arm: [L, 236], grip: 'closed', back: topLanes() + topRack(1), patient: topPatient(away, {fade: true}),
     front: topBall([L, 266]) + topArrow(`M${L + 28} 226Q${Math.round((L + 686) / 2) + 20} 160 686 92`, 'flow-run') + note([80, 214], '공을 거치대로')});
   if (stage === 5) Object.assign(s, {arm: [560, 124], back: topLanes() + topRack(2), patient: topPatient(away, {fade: true}), front: topRecord});
