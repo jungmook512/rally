@@ -209,7 +209,7 @@ def test_mode_switch_failures(monkeypatch, case, expected):
     state = snapshot() | {"phase": "paused" if case == "paused" else "running"}
     if case == "stale":
         state["updated_at"] -= 10
-    body = {"session_id": state["session_id"], "mode": 4 if case == "bad_mode" else 7}
+    body = {"session_id": state["session_id"], "mode": 4 if case == "bad_mode" else 1}
     if case == "other_session":
         body["session_id"] = str(uuid.uuid4())
     store = FakeRedis(state, reply=case != "brain_reject")

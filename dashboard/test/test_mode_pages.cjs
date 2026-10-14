@@ -289,12 +289,13 @@ async function testProposalResponses() {
   const btn = m => modeButtons.find(b => b.dataset.mode === String(m ?? ''));
   receive({phase:'paused',session_id:'s-mode',mode:5,updated_at:Date.now()/1000,proposal:null});
   assert.equal(get('mode-switch').hidden, true);
-  receive({phase:'running',session_id:'s-mode',mode:5,mode3_enabled:false,hand_wait:'',updated_at:Date.now()/1000,proposal:null,pending_switch:{mode:7}});
+  receive({phase:'running',session_id:'s-mode',mode:5,mode3_enabled:false,hand_wait:'',updated_at:Date.now()/1000,proposal:null,pending_switch:{mode:3}});
   assert.equal(get('mode-switch').hidden, false);
   assert(btn(5).classList.contains('on') && btn(5).disabled);
   assert.equal(btn(3).disabled, true);
   assert.equal(btn(1).disabled, false);
-  assert(btn(7).classList.contains('pending') && !btn(1).classList.contains('pending'));
+  assert(btn(3).classList.contains('pending') && !btn(1).classList.contains('pending'));
+  assert.equal(btn(7), undefined, 'mode 7 button removed (10/14)');
   let sent = null, asked = 0;
   context.confirm = () => { asked++; return false; };
   await get('mode-switch').onclick({target:{closest:()=>btn(1)}});
