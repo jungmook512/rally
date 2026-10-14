@@ -383,13 +383,15 @@ def main():
                     time.sleep(opt.settle)
                     w.clear()
                     t_cmd = time.monotonic()
+                    t_wall = time.time()                       # bag 과 맞추는 실제 시각 (#195)
                     amovel(tgt6, vel=opt.vel * k, acc=acc * k)
                     wait_motion(t_cmd, "시험 이동", 10.0)
                     time.sleep(0.3)
                     r = analyse(w.take(t_cmd), t_cmd, p0, s["target"], d)
                     r.update(w.force_stats(t_cmd, time.monotonic()))
                     r["robot_state"] = get_robot_state()      # 1 STANDBY · 2 MOVING 아니면 두산 알람·정지 (10/11 −u 자기충돌)
-                    row = dict(dir=s["dir"], dist_cm=s["dist_cm"], acc=acc, vel=opt.vel * k, rep=rep + 1, **r)
+                    row = dict(dir=s["dir"], dist_cm=s["dist_cm"], acc=acc, vel=opt.vel * k, rep=rep + 1, t_cmd_wall=f"{t_wall:.3f}", **r)
+                    w.get_logger().info(f"amovel 명령 {t_wall:.3f} {s['dir']} {s['dist_cm']:.0f} cm acc {acc:.0f}")   # /rosout 에도 (#195)
                     rows.append(row)
                     print(f"{s['dir']} {s['dist_cm']:.0f} cm acc {acc:.0f} #{rep + 1}: 시작 {r.get('t_start_ms') or float('nan'):.0f} ms · "
                           f"도착 {r.get('t_arrive_s') or float('nan'):.3f} s · 지나침 {r.get('overshoot_mm', 0):.1f} mm · "
