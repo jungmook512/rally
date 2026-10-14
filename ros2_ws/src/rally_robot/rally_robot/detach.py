@@ -226,9 +226,11 @@ def path_inside(q0, q1, fk, x_max_mm, y_abs_max_mm, z_min_mm) -> bool | None:
     return hi[0] <= x_max_mm and max(abs(lo[1]), abs(hi[1])) <= y_abs_max_mm and lo[2] >= z_min_mm
 
 
-def plan_joint_path(q0, q1, fk, x_max_mm, y_abs_max_mm, z_min_mm):
+def plan_joint_path(q0, q1, fk, x_max_mm, y_abs_max_mm, z_min_mm, vias=()):
     """q0 → q1 관절 이동 경로 계획: 바로 가는 경로가 상자 안이면 [q1], 아니면 두 단계 후보(손목 먼저 · 팔 먼저 · J1 먼저 · J1+손목 먼저)
-    중 두 구간 다 안에 드는 첫 것 [mid, q1]. 없으면 None. fk 를 못 쓰면 [q1] (확인 없이). 순수 함수."""
+    중 두 구간 다 안에 드는 첫 것 [mid, q1], 그래도 없으면 vias(경유 자세 목록들, 예: [[대기 자세], [관측 자세, 대기 자세]]) 중
+    모든 구간이 안에 드는 첫 것 [*via, q1]. 없으면 None. fk 를 못 쓰면 [q1] (확인 없이). 순수 함수.
+    10/14 실로봇: 홈 자세(J1 0°) → 공 보기(J1 159°) 는 바로·두 단계 모두 x 0.56~0.71 로 휨, 관측 → 대기 → 공 보기 는 x ≤ 0.49."""
     q0, q1 = [float(v) for v in q0], [float(v) for v in q1]
     ok = path_inside(q0, q1, fk, x_max_mm, y_abs_max_mm, z_min_mm)
     if ok is None or ok:
@@ -242,4 +244,8 @@ def plan_joint_path(q0, q1, fk, x_max_mm, y_abs_max_mm, z_min_mm):
     for name, mid in cands:
         if path_inside(q0, mid, fk, x_max_mm, y_abs_max_mm, z_min_mm) and path_inside(mid, q1, fk, x_max_mm, y_abs_max_mm, z_min_mm):
             return [mid, q1]
+    for seq in vias:
+        pts = [q0] + [[float(v) for v in w] for w in seq] + [q1]
+        if all(path_inside(a, b, fk, x_max_mm, y_abs_max_mm, z_min_mm) for a, b in zip(pts, pts[1:])):
+            return pts[1:]
     return None

@@ -55,14 +55,22 @@ def movej_planned(node, log, cfg, posj, jv, ja, x_max_m, what):
         return movej_checked(node, posj, jv, ja)
     try:
         q0 = [float(v) for v in get_current_posj()]
-        path = detach.plan_joint_path(q0, posj, fk, x_max_m * 1000.0, cfg["path_y_abs_max_m"] * 1000.0, cfg["path_z_min_m"] * 1000.0)
+        # 경유 후보: 모드 3 대기 자세 · (지금 손목 그대로 팔만 대기 자세 → 대기 자세 — pad_rack 거치대↔대기 와 같은 방식) · 관측 자세 → 대기 자세
+        ready = pad_rack._ready_posj(node)
+        observe = (node.cfg.get("observe_pose") or {}).get("posj")
+        vias = []
+        if ready is not None:
+            vias += [[ready], [ready[:3] + q0[3:6], ready]]
+            if observe:
+                vias.append([[float(v) for v in observe], ready])
+        path = detach.plan_joint_path(q0, posj, fk, x_max_m * 1000.0, cfg["path_y_abs_max_m"] * 1000.0, cfg["path_z_min_m"] * 1000.0, vias)
     except Exception as e:  # noqa: BLE001
         log.warning(f"[detach_ball] 경로 확인 실패 ({e}) — 바로 이동")
         path = [posj]
     if path is None:
         raise SkillAbort(f"detach_path_outside_workspace ({what})")
     if len(path) > 1:
-        log.info(f"[detach_ball] {what}: 바로 가면 경로가 작업 공간 밖 (x ≤ {x_max_m:.2f}) → 두 단계 경유 {np.round(path[0], 1).tolist()}")
+        log.info(f"[detach_ball] {what}: 바로 가면 경로가 작업 공간 밖 (x ≤ {x_max_m:.2f}) → 경유 {[np.round(q, 1).tolist() for q in path[:-1]]}")
     for q in path:
         movej_checked(node, q, jv, ja)
     return "done"

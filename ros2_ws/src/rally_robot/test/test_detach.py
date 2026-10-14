@@ -136,3 +136,16 @@ def test_plan_joint_path_direct_or_two_stage():
     # 바로 가면 J1 42·J4 54 쯤에서 x 484 > 450. '손목 먼저'(J4 90 뒤 J1 0→70)도 J1 20~60 에서 튐. '팔 먼저'(J1 70 뒤 J4 0→90)는 J1 70 이라 안 튐
     plan = d.plan_joint_path([0] * 6, [70, 0, 0, 90, 0, 0], fk_bulge, 450.0, 580.0, 30.0)
     assert plan == [[70.0, 0.0, 0.0, 0.0, 0.0, 0.0], [70.0, 0.0, 0.0, 90.0, 0.0, 0.0]]
+
+
+
+def test_plan_joint_path_uses_via_poses_when_two_stage_fails():
+    # J1 50~200 구간을 J2 > −50 으로 지나면 x 가 +400 튐 → 직접·두 단계(J1 먼저 등) 모두 실패. 먼저 J2 를 −300 으로 내린 경유 자세를 거치면 안
+    def fk(q):
+        bulge = 400.0 if 50 < q[0] < 200 and q[1] > -50 else 0.0
+        return [q[0] + bulge, 0.0, 400.0, 0, 0, 0]
+    q0, q1 = [0.0] * 6, [250.0, -100.0, 0, 0, 0, 0]
+    assert d.plan_joint_path(q0, q1, fk, 450.0, 580.0, 30.0) is None
+    via = [0.0, -300.0, 0, 0, 0, 0]
+    plan = d.plan_joint_path(q0, q1, fk, 450.0, 580.0, 30.0, vias=[[[150.0, 0, 0, 0, 0, 0]], [via]])   # 첫 후보는 튀는 자리
+    assert plan == [via, q1]
