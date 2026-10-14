@@ -30,7 +30,7 @@ DEFAULTS = dict(
     box_drop_posj=[],                       # ★ 교시 필요: 뗀 공을 놓을 박스 위 관절값
     pad_normal=[1.0, 0.0, 0.0],             # 거치대에 꽂힌 패드의 공 붙은 면 법선 (base). 10/14 정정인: 로봇 반대쪽 +x
     ball_radius_m=0.031,                    # 벨크로 공 지름 62 mm (10/14 정정인)
-    ball_class="velcro_ball",               # /rally/perception/objects 에서 고를 클래스
+    ball_class=["velcro_ball", "ball"],     # /rally/perception/objects 에서 고를 클래스 (앞이 그리퍼 설정 기준). 10/14: segmenter 모델이 ball·cup·rod 뿐이라 ball 도 받음
     ball_min_conf=0.4,
     ball_obs_s=1.0,                         # 이 시간 동안 본 위치의 중앙값
     ball_obs_min=5,                         # 최소 관측 프레임 수
@@ -93,11 +93,17 @@ def ball_median(observations, min_n: int):
     return [float(v) for v in np.median(np.asarray(observations, float), axis=0)]
 
 
-def pick_ball(objects, cls: str, min_conf: float, near_m=None, radius_m: float = 0.0):
-    """TrackedObjectArray 한 프레임에서 공 하나 고르기 → (x, y, z) [m] 또는 None. near_m 에서 radius_m 안의 것 중 신뢰도 최고. 순수 함수."""
+def ball_classes(cls) -> tuple:
+    return (cls,) if isinstance(cls, str) else tuple(cls)
+
+
+def pick_ball(objects, cls, min_conf: float, near_m=None, radius_m: float = 0.0):
+    """TrackedObjectArray 한 프레임에서 공 하나 고르기 → (x, y, z) [m] 또는 None. cls 는 이름 하나 또는 목록.
+    near_m 에서 radius_m 안의 것 중 신뢰도 최고. 순수 함수."""
     best = None
+    classes = ball_classes(cls)
     for o in objects:
-        if o.class_name != cls or o.confidence < min_conf:
+        if o.class_name not in classes or o.confidence < min_conf:
             continue
         p = (float(o.position.x), float(o.position.y), float(o.position.z))
         if near_m is not None and radius_m > 0 and math.dist(p, near_m) > radius_m:

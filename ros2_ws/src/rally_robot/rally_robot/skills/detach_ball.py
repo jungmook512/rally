@@ -54,7 +54,7 @@ def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=N
     n = cfg["pad_normal"]
     r = float(cfg["ball_radius_m"])
     limit = float(limit_n) if limit_n and limit_n > 0 else float(cfg["limit_n"])
-    open_mm, force = node.gripper_cfg(cfg["ball_class"])
+    open_mm, force = node.gripper_cfg(detach.ball_classes(cfg["ball_class"])[0])
     if grip_force_n and grip_force_n > 0:
         force = float(grip_force_n)
     tv, ta, cv, ca, _, _ = motion_speeds(node)
