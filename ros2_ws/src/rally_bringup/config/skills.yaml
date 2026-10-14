@@ -258,11 +258,11 @@ mode1:
 # mode7 (저항 밀기) — 로봇은 버티거나 져주기만, 절대 밀지 않음
 mode7:
   stiffness_range: [200, 1500]      # N/m, 낮을수록 쉬움
-  target_force_start_n: 5.0
+  target_force_start_n: 10.0
   target_force_range_n: [3.0, 12.0]
   hold_time_s: 2.0
   yield_distance_m: 0.05
-  force_limit_n: 15.0               # safety.yaml 25 N 보다 낮음
+  force_limit_n: 20.0               # safety.yaml 25 N 보다 낮음
   # brain (trees/mode7_resist.py) — 목표 힘 = target_force_start_n × (1 + level_step_ratio)^난이도, target_force_range_n 으로 자름
   stiffness_default: 700.0          # 고정 (강성 3단계 200/700/1500 중 가운데). 리허설 느낌 보고 조정
   level_step_ratio: 0.10            # 난이도 한 단계 = 목표 힘 ±10 %
@@ -281,6 +281,8 @@ brain:
   llm_signal_count: 2               # 애매한 신호(보상 동작·성공률 하락·시도 시간 증가)가 이만큼 겹치면 ask_llm
   success_drop_rate: 0.4            # 최근 시도 성공률이 이 이하면 '성공률 하락' 신호 (최소 3회)
   slowing_ratio: 1.5                # 마지막 시도 시간이 앞선 시도 평균의 이 배 이상이면 '시도 시간 증가' 신호
+  compensation_window: 5            # 같은 모드 최근 이만큼의 시도 중
+  compensation_min_trials: 3        # 이 횟수 이상 보상 동작(몸통 기울임·어깨 으쓱)이 보였으면 '보상 동작 반복' 신호
   difficulty_range: [-3, 3]
   # 음성 피드백 (#119, 10/11) — 난이도가 실제로 바뀐 때만, 보상 동작은 연속 posture_repeat 시도면 한 번 (posture_coach.py)
   harder_prompt: "잘하고 계세요. 조금 더 어렵게 해 볼게요"
