@@ -15,6 +15,8 @@
 import argparse
 import math
 import os
+import select
+import subprocess
 import sys
 import threading
 import time
@@ -28,7 +30,7 @@ from rclpy.action import ActionClient
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
-from std_msgs.msg import Float64MultiArray
+from std_msgs.msg import Bool, Float64MultiArray
 
 from rally_interfaces.action import CatchBall
 from rally_interfaces.msg import SafetyStatus
@@ -61,6 +63,9 @@ class Loop(Node):
         self.recording = False
         self.create_subscription(JointState, "/dsr01/joint_states", self._on_js, qos_profile_sensor_data)
         self.create_subscription(WrenchStamped, "/rally/robot/wrench", self._on_wrench, qos_profile_sensor_data)
+        # 10/13: 공 떼기 안내를 스킬이 접촉 예정을 켠 순간(판정 뒤 대기 자세 5 s)에 띄움 — goal 이 끝난 뒤 띄우면 이미 창이 닫혀 nudge STOP
+        self.judged, self.remove_told = False, False
+        self.create_subscription(Bool, "/rally/safety/contact_expected", self._on_contact, QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE))
 
     def _on_js(self, m):
         if not self.recording:
@@ -71,6 +76,11 @@ class Loop(Node):
         _, T = self.chain.fk_frames(np.array([d[k] for k in JOINTS]))
         with self.lock:
             self.samples.append((time.monotonic(), T[:3, 3] + T[:3, :3] @ self.off))
+
+    def _on_contact(self, m):
+        if m.data and self.judged and not self.remove_told:
+            self.remove_told = True
+            print("   ▶ 지금 붙은 공 떼기 (5 s, 이 동안만 nudge 쉼)", flush=True)
 
     def _on_wrench(self, m):
         if self.recording:
@@ -116,11 +126,13 @@ class Loop(Node):
 
     def run_once(self, goal):
         phases = []
+        self.judged, self.remove_told = False, False
 
         def fb(m):
             f = m.feedback
             if not phases or phases[-1] != f.phase:
                 phases.append(f.phase)
+                self.judged = f.phase in ("caught", "missed")
                 extra = f" (예측 ({f.current_prediction.x:.2f}, {f.current_prediction.y:.2f}, {f.current_prediction.z:.2f}) m, 도착까지 {f.time_to_impact_s:.2f} s)" \
                     if f.phase in ("tracking", "intercept") else ""
                 print(f"   [{f.phase}]{extra}", flush=True)
@@ -146,7 +158,14 @@ def main():
     ap.add_argument("--count", type=int, default=0, help="반복 횟수 (0 = Ctrl+C 까지)")
     ap.add_argument("--radius", type=float, default=None, help="받으러 가는 반경 m (기본 skills.yaml mode3.catch_radius_m)")
     ap.add_argument("--timeout", type=float, default=30.0, help="투구 기다리는 시간 s")
+    ap.add_argument("--after-catch-wait", type=float, default=0.0,
+                    help="받은 뒤 다음 goal 전에 더 기다리는 시간 s. 10/13 부터 스킬이 받은 뒤 접촉 예정을 켜고 기다리므로(skills.yaml mode3.ball_removal_wait_s) 기본 0")
     opt = ap.parse_args([a for a in sys.argv[1:] if not a.startswith("--ros-args")])
+    # 10/13 실로봇: 터미널 2 재시작 뒤 손목 카메라 노출이 자동으로 남아(컨테이너 안 고정이 카메라보다 먼저 돌아 실패한 것으로 봄)
+    # 날아가는 공이 번져 손목 검출이 드묾 → 3D 점 5개에서 예측이 엉뚱 (피구 궤적). 시작할 때마다 두 카메라 노출을 다시 고정
+    for cam in ("/camera", "/side/side"):
+        r = subprocess.run(["ros2", "run", "rally_bringup", "set_camera_params", "--node", cam, "--fixed"], capture_output=True, text=True, timeout=60)
+        print(f"노출 고정 {cam}: {'ok' if r.returncode == 0 and '노출 고정' in r.stdout + r.stderr else '실패 — ' + (r.stdout + r.stderr).strip()[-200:]}")
     cfg = mode3_cfg()
     radius = opt.radius if opt.radius is not None else float(cfg.get("catch_radius_m", 0.35))
     pad = [float(v) for v in (cfg.get("pad_center_base_m") or [math.nan] * 3)]
@@ -198,7 +217,18 @@ def main():
             print(f"   결과: {verdict} · 예측 {n.n_pred}개{fg}\n"
                   f"   예측 교차점 ({p.x:.3f}, {p.y:.3f}, {p.z:.3f}) m{d}\n"
                   f"   로봇 이동 {r.robot_travel_mm:.0f} mm · 반응 {r.reaction_time_s:.2f} s{sp} · 단계 {' → '.join(phases)} · {time.monotonic() - t0:.0f} s")
-            results.append((verdict, moved, r.caught))
+            manual = None
+            if moved and r.failure_reason != "timeout":
+                # 10/13: 측면 판정이 패드 가운데 붙은 공을 못 보는 경우가 있어 사람 판정도 같이 기록. 스킬이 접촉 예정 켜고 기다리는 ball_removal_wait_s(5 s) 안에
+                print("   ▶ 받았으면 y + Enter (4 s): ", end="", flush=True)
+                rd, _, _ = select.select([sys.stdin], [], [], 4.0)
+                ans = sys.stdin.readline().strip().lower() if rd else ""
+                manual = ans.startswith("y")
+                print(f"   사람 판정: {'받음' if manual else '놓침'} · 비전 판정: {'받음' if r.caught else '놓침'}")
+            results.append((verdict, moved, r.caught, manual))
+            if r.caught and opt.after_catch_wait > 0:
+                print(f"   ★ 공을 패드에서 떼 주세요 — {opt.after_catch_wait:.0f} s 뒤 다음 투구 (떼는 힘이 nudge STOP 으로 잡히지 않게 goal 밖에서)", flush=True)
+                time.sleep(opt.after_catch_wait)
             if n.level() == SafetyStatus.LEVEL_STOP:
                 print(f"\n안전 STOP ({n.safety.reason}) — 반복 멈춤. 로봇 상태 확인 뒤 scripts/robot.sh reset")
                 break
@@ -208,9 +238,10 @@ def main():
         nt = len(results)
         if nt:
             th = [x for x in results if not x[0].startswith("투구 없음")]
-            print(f"\n===== 요약: goal {nt}회 · 투구 {len(th)}회 · 받으러 이동 {sum(1 for x in th if x[1])}회 · 받음 {sum(1 for x in th if x[2])}회")
-            for k, (v, _, _) in enumerate(results, 1):
-                print(f"  {k}: {v}")
+            print(f"\n===== 요약: goal {nt}회 · 투구 {len(th)}회 · 받으러 이동 {sum(1 for x in th if x[1])}회 · 비전 받음 {sum(1 for x in th if x[2])}회"
+                  f" · 사람 판정 받음 {sum(1 for x in th if x[3])}회")
+            for k, (v, _, c, m) in enumerate(results, 1):
+                print(f"  {k}: {v}" + ("" if m is None else f" · 사람 판정 {'받음' if m else '놓침'}"))
         n.destroy_node()
         rclpy.try_shutdown()
 

@@ -147,6 +147,32 @@ class Watch(Node):
         from rally_interfaces.msg import SafetyStatus
         self.create_subscription(SafetyStatus, "/rally/safety/status", lambda m: setattr(self, "safety", m),
                                  QoSProfile(reliability=ReliabilityPolicy.RELIABLE, depth=10))
+        # 받기 창 흉내 (10/13): 받기 스킬은 투구 감지 ~ 교차 + 0.5 s 동안 contact_expected + catch_window 하트비트(5 Hz)를 켜
+        # 힘 한계가 130 N(safety.yaml catch_window_force_limit_n)이 된다. 가속 2000 시험 이동은 관성 가짜 힘이 25 N 을 넘어
+        # 그 창 없이는 force_limit STOP (10/13 실측) → 시험 이동 동안만 같은 하트비트를 낸다. 복귀 이동은 끈다.
+        from std_msgs.msg import Bool
+        reliable1 = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, depth=1)
+        self._pub_contact = self.create_publisher(Bool, "/rally/safety/contact_expected", reliable1)
+        self._pub_window = self.create_publisher(Bool, "/rally/safety/catch_window", reliable1)
+        self._window_on = False
+        threading.Thread(target=self._beat_loop, daemon=True).start()   # rclpy 타이머는 joint_states 100 Hz 콜백에 밀려 0.5 s 넘게 늦어
+                                                                        # 창이 잠깐 닫혔다(10/13 실측: 25 N 복귀 직후 force_limit STOP) → 별도 스레드 10 Hz
+
+    def _beat_loop(self):
+        from std_msgs.msg import Bool
+        while rclpy.ok():
+            if self._window_on:
+                self._pub_contact.publish(Bool(data=True))
+                self._pub_window.publish(Bool(data=True))
+            time.sleep(0.1)
+
+    def catch_window(self, on: bool):
+        from std_msgs.msg import Bool
+        self._window_on = bool(on)
+        self._pub_contact.publish(Bool(data=self._window_on))
+        self._pub_window.publish(Bool(data=self._window_on))
+        if on:
+            time.sleep(0.25)                                   # safety_monitor 가 하트비트를 한 번 받은 뒤 출발
 
     def on_js(self, m):
         d = dict(zip(m.name, m.position))
