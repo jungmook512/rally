@@ -123,6 +123,22 @@ python3 scripts/mode3_reach_test.py --run --posj -58.7 7.0 100.2 98.8 63.6 -100.
 
 두산 관절 가속 한계·자기충돌(기둥 7 cm)·케이블·툴 힘 추정의 자세 의존 오차·명령 지연(시뮬 0.11~0.33 s, 실로봇 0.1 s)·amovej 중 패드 기울기 변화(movej_test 가 `tilt_deg` 로 계산해 줌).
 
+## 9. 적용본 검증 — 금요일(10/16) 시연을 Y0 로 (10/14 정동휘 결정, PR 적용본)
+
+적용 PR(`feat/rally_robot/mode3-ready-y0`)에 들어간 것: `skills.yaml mode3` Y0 값(`ready_posj`·`ready_via_posj`·`pad_center_base_m`·`pad_normal`·범위 0.25·`left_max_m`·`reach_max_m`·`catch_radius_m` 0.30), `catch_plan.intercept` 왼쪽 허용, `pad_rack.ready_route` 경유 자세, `safety_monitor` 받기 창 동안 x 상한 `workspace_catch_x_max_m`(0.78, `safety.yaml`, **정정인 승인**). 코드 바꾼 데 없이 실로봇에서 아래 순서로 — 모두 `source scripts/robot.sh env`, bringup·nodes 떠 있는 상태, 비상정지 손 닿는 곳.
+
+| # | 무엇 | 명령 | 통과 |
+|---|---|---|---|
+| 1 | 빌드·값 확인 | `cd ros2_ws && colcon build --packages-select rally_robot rally_bringup && cd ..` → `ros2 param get /rally_safety_monitor workspace_catch_x_max_m` = 0.78 | 값이 나옴 (−1 이면 빌드·재시작 안 됨) |
+| 2 | **경유 경로** (가장 먼저, 저속) | 관측 자세에서 `python3 scripts/mode3_go_ready.py --vel 10` 가 Y0 로 가는지. 그다음 패드 집기 단독: `ros2 service call /rally/robot/pad_pick std_srvs/srv/Trigger` → U → 팔 세움(경유, 최고 0.97 m) → Y0 | 작업 공간 STOP 없음, 천장·거치대 안 닿음, 끝 TCP ≈ (0.56, −0.32, 0.43) |
+| 3 | **꽂기 경로** | `python3 scripts/pad_rack_loop.py` 1회 (Y0 → 경유 → U → 꽂기) | 작업 공간 STOP 없음, 꽂힘 |
+| 4 | 요격 이동 + x 완화 | `python3 scripts/mode3_movej_test.py --run --angles $(seq 0 30 330) --dist 15 25 --cases amovej --jvel 120 --jacc 400 --reps 1` (스크립트가 받기 창을 켜므로 x 0.73 도 STOP 아님) | 12방향 완주, 터미널 2 에 `작업 공간 x 상한 0.78 m` ↔ `0.57 m` 로그가 한 쌍씩, 힘 ≤ 88 N |
+| 5 | 받기 창 뒤 복귀 | 4번 로그에서 창이 꺼진 뒤(`힘 한계 25 N`) 복귀 중 STOP 이 없는지 | `workspace_limit` 없음 |
+| 6 | 카메라 | `rqt_image_view` 손목·측면 — Y0 에서 투구 위치·패드가 보이는지 | 보임 |
+| 7 | 받기 | `python3 scripts/mode3_catch_loop.py --count 10` + `scripts/record_mode3_bag.sh` (영상 포함, #195 투구 20~30회는 시연 뒤) | 왼쪽·아래 투구도 움직임, STOP 없음 |
+
+막히면: 2·3 에서 STOP → `ready_via_posj` 값을 펜던트에서 손으로 찾아 교체(팔 수직이면 됨). 4 에서 힘 > 88 N → `catch_joint_acc_deg_s2` 400 → 300. 어느 단계든 안 되면 `skills.yaml` 을 기존 값으로 되돌리면 전부 10/13 동작 (키 `left_max_m` 0, `ready_via_posj` 지움, 범위 0.35/0.08, `catch_radius_m` 0.35, `safety.yaml workspace_catch_x_max_m` −1).
+
 ## 기록
 
 (실로봇 결과를 여기에 — 날짜 · 누가 · 자세 · 단계 · 방향별 도착 s · 힘 최대 N · 알람/STOP · bag 경로)
