@@ -150,13 +150,8 @@ def retreat_from(cur, G, A):
     return [float(cur[i] + A[i] - G[i]) for i in range(3)] + [float(v) for v in A[3:6]]
 
 
-def ready_route(u_posj, ready_posj, via_posj=None):
-    """U → 대기 자세 경유 관절값 [경유, 끝]. 순수 함수.
-    기본: 손목(J4~6)은 U 그대로 두고 팔(J1~3)만 먼저 옮긴다 (10/13, 기존 대기 자세).
-    via_posj(skills.yaml mode3.ready_via_posj)가 있으면 그 자세를 경유 — 10/14 Y0 처럼 팔꿈치가 반대로 접힌 대기 자세는
-    팔만 먼저 돌리면 TCP x 0.61 m 로 작업 공간 밖. 팔을 세운 경유([-58.7, 0, 0, …])면 ≤ 0.56 (계산, 실로봇 확인 전)."""
-    if via_posj is not None:
-        return [[float(v) for v in via_posj], [float(v) for v in ready_posj]]
+def ready_route(u_posj, ready_posj):
+    """U → 대기 자세 경유 관절값 [팔만 대기 자세로, 끝]. 손목(J4~6)은 U 그대로 두고 팔(J1~3)만 먼저 옮긴다. 순수 함수."""
     via = [float(v) for v in ready_posj[:3]] + [float(v) for v in u_posj[3:6]]
     return [via, [float(v) for v in ready_posj]]
 
@@ -188,9 +183,9 @@ def pick_pad(node, log, check=lambda: None):
     if ready is not None and _near(get_current_posj(), ready):
         # 10/13 실로봇: 대기 자세 → A 한 번에 관절 이동하면 TCP 가 y −0.675 까지 휘어 workspace_limit STOP (순기구학 여유 −7.5 cm).
         # 꽂기(place_pad)처럼 손목 먼저 A 값으로(팔은 그대로) → 팔을 A 로: 여유 +9.1 cm
-        via = _ready_via_posj(node) or ([float(v) for v in ready[:3]] + [float(v) for v in cfg["pad_rack_approach_posj"][3:6]])
+        via = [float(v) for v in ready[:3]] + [float(v) for v in cfg["pad_rack_approach_posj"][3:6]]
         check()
-        movej_checked(node, via, jv, ja)                      # 10/14 Y0: ready_via_posj(팔 세움) — 팔만 두고 손목을 A 로 돌리면 TCP x 0.60
+        movej_checked(node, via, jv, ja)
     check()
     movej_checked(node, cfg["pad_rack_approach_posj"], jv, ja)
     ok, _, _ = node.gripper(open_mm, force)
@@ -216,7 +211,7 @@ def pick_pad(node, log, check=lambda: None):
     move_checked(node, pts["U"], lv, ca)
     ready = _ready_posj(node)
     if ready is not None:
-        for q in ready_route(cfg["pad_rack_lift_posj"], ready, _ready_via_posj(node)):
+        for q in ready_route(cfg["pad_rack_lift_posj"], ready):
             check()
             movej_checked(node, q, jv, ja)
         log.info("[pad_rack] 집기 끝 — 요격 대기 자세")
@@ -227,11 +222,6 @@ def pick_pad(node, log, check=lambda: None):
 
 def _ready_posj(node):
     q = ((getattr(node, "cfg", None) or {}).get("mode3") or {}).get("ready_posj")
-    return [float(v) for v in q] if q and len(q) == 6 else None
-
-
-def _ready_via_posj(node):
-    q = ((getattr(node, "cfg", None) or {}).get("mode3") or {}).get("ready_via_posj")
     return [float(v) for v in q] if q and len(q) == 6 else None
 
 
@@ -248,9 +238,9 @@ def place_pad(node, log, check=lambda: None):
     from DSR_ROBOT2 import get_current_posj
     ready = _ready_posj(node)
     if ready is not None and _near(get_current_posj(), ready):
-        via, _ = ready_route(cfg["pad_rack_lift_posj"], ready, _ready_via_posj(node))
+        via, _ = ready_route(cfg["pad_rack_lift_posj"], ready)
         check()
-        movej_checked(node, via, jv, ja)                     # 대기 자세 → 경유 (기본: 손목 먼저 U 값으로, 팔은 그대로 / ready_via_posj 면 팔 세움)
+        movej_checked(node, via, jv, ja)                     # 대기 자세 → 손목 먼저 U 값으로 (팔은 그대로)
     check()
     movej_checked(node, cfg["pad_rack_lift_posj"], jv, ja)
     check()

@@ -46,7 +46,6 @@ def main():
     n = Jog()
     m3 = skills_cfg()["mode3"]
     ready, U, G = (list(map(float, m3[k])) for k in ("ready_posj", "pad_rack_lift_posj", "pad_rack_grasp_posj"))
-    via = [float(v) for v in m3["ready_via_posj"]] if m3.get("ready_via_posj") else None   # 10/14 Y0: 팔 세운 경유 (pad_rack.ready_route 와 같음)
     chain, ws = Chain(), workspace()
     from sensor_msgs.msg import JointState
     from rclpy.qos import qos_profile_sensor_data
@@ -70,8 +69,7 @@ def main():
     steps = []
     if lateral < 0.05 and -0.05 <= off @ axis <= np.linalg.norm(p_u - p_g) + 0.02:
         print(f"거치대 손잡이 축 위 (축에서 {lateral * 100:.1f} cm, G 위 {off @ axis * 100:.0f} cm) → U 로 들어 올린 뒤 팔 먼저 대기 자세로")
-        mid = ("경유 (ready_via_posj, 팔 세움)", via) if via else ("경유 (팔만 대기 자세)", ready[:3] + U[3:])
-        steps = [("U (들어 올림)", U), mid, ("대기 자세", ready)]
+        steps = [("U (들어 올림)", U), ("경유 (팔만 대기 자세)", ready[:3] + U[3:]), ("대기 자세", ready)]
     else:
         steps = [("대기 자세", ready)]
     def legs_ok(seq):
@@ -84,11 +82,6 @@ def main():
         return None, None
 
     bad_name, bad_p = legs_ok(steps)
-    if bad_name is not None and len(steps) == 1 and via:      # 10/14 Y0: 바로 못 가면 먼저 skills.yaml 경유 자세로
-        alt = [("경유 (ready_via_posj, 팔 세움)", via), ("대기 자세", ready)]
-        if legs_ok(alt)[0] is None:
-            print(f"바로 가는 경로가 작업 공간 밖 (TCP {np.round(bad_p, 3).tolist()}) → ready_via_posj 경유")
-            steps, bad_name = alt, None
     if bad_name is not None and len(steps) == 1:
         # 10/13: 모드 1 자세(J1 0·팔 앞으로)에서 대기 자세로 바로 가면 팔꿈치가 뒤집히며 TCP 가 x 0.67 까지 나감 → 팔을 위로 세운 뒤
         # (J2·J3 0) 세운 채 J1·손목을 대기값으로 돌리고 내려온다. 세 구간 모두 순기구학으로 작업 공간 안 확인 (z 최대 1.26 m — 위쪽 여유 확인)

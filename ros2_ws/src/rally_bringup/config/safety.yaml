@@ -86,11 +86,6 @@ rally_safety_monitor:
     #   지나가서(경유 자세 조합으로도 최소 4.7 cm 밖) 이동 중 workspace STOP → 매번 태블릿 수동 이동. 환자 쪽 한계 x_max(보라색 선)는 그대로
     workspace_x_min_m: -2.00   # 로봇 뒤쪽(환자 반대) — 사실상 제한 없음. (10/6 0.20: 테이블 가까운 쪽 접촉점 x=0.231 m 포함 → 10/11 −2.00)
     workspace_x_max_m: 0.57    # 10/7 실측 보라색 한계선 x 0.568 m + 2 mm. TCP 가 넘으면 STOP. (0.80 → 0.60 임시 → 0.57)
-    # 모드 3 받기 동안만 x 상한 (10/14 정동휘, 대기 자세 Y0 — docs/mode3/MODE3_READY_POSE_Y0.md): 요격 이동 중 TCP x 최대 0.73 m.
-    #   catch_window 신호가 살아 있는 동안 + 꺼진 뒤 TCP 가 0.57 안으로 돌아올 때까지(최대 workspace_catch_hold_s) 이 값. 투구자는 J1 에서 3 m 밖.
-    #   모드 1·5 는 받기 창이 없으므로 그대로 0.57. 음수면 기능 없음. ★ 정정인 승인 필요 (안전값)
-    workspace_catch_x_max_m: 0.78
-    workspace_catch_hold_s: 10.0
     workspace_y_min_m: -0.60   # ±0.45 → ±0.60 (10/11): 위 전환 경로 y −0.47 m + 여유. 테이블 옆(사람 서는 곳)으로 크게 나가지 않게 제한은 둠
     workspace_y_max_m: 0.60
     workspace_z_min_m: 0.00
