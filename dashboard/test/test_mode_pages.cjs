@@ -329,3 +329,47 @@ async function testProposalResponses() {
   console.log('PASS: dynamic stage scenes, STOP/stale freeze, unchanged scene DOM, record tabs, hash navigation, live records, state freshness, resume gating, trials, async proposal clicks, mode switch buttons, errors and WebSocket recovery');
 }
 testProposalResponses().catch(error => { console.error(error); process.exitCode = 1; });
+
+// 휴식 제안 조건 스택 + 조건 확인 알림 (10/14)
+run("renderControl(null)");
+assert.equal(get('rest-panel').hidden, true);
+const restBase = {mode:5, trials:3, need:2, count:0, on:[], current_comp:[], llm:{state:'idle', result:null, at:null, signals:[]},
+  signals:{compensation:{on:false, count:2, need:3, window:5, trials:3}, success_drop:{on:false, applies:true, rate:0.667, max_rate:0.4, trials:3, min_trials:3},
+           slowing:{on:false, last_s:10, mean_s:10, ratio:1, need_ratio:1.5, trials:3, min_trials:3}}};
+context.restBase = restBase;
+run("renderControl({phase:'running',session_id:'rest-s',mode:5,updated_at:Date.now()/1000,rest:restBase});");
+assert.equal(get('rest-panel').hidden, false);
+assert.equal(get('rest-count').textContent, '신호 0/2');
+assert.match(get('rest-stack').innerHTML, /보상 동작 반복.*최근 3회 중 2회 · 3회면 신호/);
+assert.match(get('rest-stack').innerHTML, /성공률 67% · 40% 이하면 신호/);
+assert.match(get('rest-stack').innerHTML, /마지막 10초 \/ 평균 10초 = 1배 · 1.5배면 신호/);
+assert.match(get('rest-llm').textContent, /아직 요청 없음/);
+assert.equal(get('toasts').children.length, 0, '처음 받은 상태는 알리지 않음');
+// 신호 하나 켜짐 → 알림 1개, 행이 on
+run("renderControl({...control,rest:{...restBase,count:1,on:['slowing'],signals:{...restBase.signals,slowing:{...restBase.signals.slowing,on:true,last_s:20,ratio:2}}}});");
+assert.equal(get('toasts').children.length, 1);
+assert.equal(get('toasts').children[0].textContent, '조건 확인: 시도 시간 증가 (1/2)');
+assert.match(get('rest-stack').innerHTML, /<li class="on"><span class="mark">✓<\/span><span class="name">시도 시간 증가/);
+// 두 번째 신호 → 조건 충족 알림 + 신호 알림, 배지 met, LLM 판단 중
+run("renderControl({...control,rest:{...control.rest,count:2,on:['compensation','slowing'],llm:{state:'asked',result:null,at:Date.now()/1000,signals:['compensation','slowing']},signals:{...control.rest.signals,compensation:{...restBase.signals.compensation,on:true,count:3}}}});");
+assert.equal(get('toasts').children.length, 3);
+assert.equal(get('toasts').children[1].textContent, '조건 확인: 보상 동작 반복 (2/2)');
+assert.match(get('toasts').children[2].textContent, /휴식 제안 조건 충족 \(2\/2\)/);
+assert.equal(get('rest-count').textContent, '조건 충족 2/2');
+assert.equal(get('rest-count').className, 'badge met');
+assert.match(get('rest-llm').textContent, /AI 판단 중/);
+// 같은 상태를 다시 받으면 알림 없음, AI 가 답하면 알림
+run("renderControl({...control});");
+assert.equal(get('toasts').children.length, 3);
+run("renderControl({...control,rest:{...control.rest,llm:{...control.rest.llm,state:'answered',result:'suggest_rest'}}});");
+assert.equal(get('toasts').children.length, 4);
+assert.match(get('toasts').children[3].textContent, /휴식 제안함/);
+assert.match(get('rest-llm').textContent, /AI 판단: 휴식 제안함/);
+// 모드 1: 성공률 행은 '없음' 표시, 이번 시도 보상 동작 표시. 새 모드는 기준만 다시 잡고 알리지 않음
+run("renderControl({...control,mode:1,rest:{...restBase,mode:1,count:1,on:['compensation'],current_comp:['trunk_lean'],signals:{...restBase.signals,compensation:{...restBase.signals.compensation,on:true,count:3},success_drop:{...restBase.signals.success_drop,applies:false}}}});");
+assert.equal(get('toasts').children.length, 4);
+assert.match(get('rest-stack').innerHTML, /<li class="na">.*모드 1 은 성공률 신호 없음/);
+assert.match(get('rest-llm').textContent, /이번 시도 보상 동작 보임 \(몸통 기울임\)/);
+run("renderControl(null)");
+assert.equal(get('rest-panel').hidden, true);
+console.log('rest stack + notifications OK');

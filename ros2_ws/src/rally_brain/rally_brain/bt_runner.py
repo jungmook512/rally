@@ -133,6 +133,8 @@ class BtRunner(Node):
         self._proposal_cancelled = False
         self._rest_generation = 0
         self._rest_advisor = configured_advisor()
+        # 대시보드 「휴식 제안 조건」 패널 — 마지막 LLM 휴식 판단 상태 (idle · asked · answered · skipped · dropped), session_control.rest.llm
+        self._rest_llm: dict = {"state": "idle", "result": None, "at": None, "signals": []}
         self._exposure = self._make_exposure()                       # 모드 3 동안만 손목 카메라 노출 고정 (camera_exposure.py)
         if self._exposure is not None:
             self._exposure.want(False)                               # 켜질 때 자동 노출 한 번 (모드 3 도중 재시작 대비, #139 리뷰)
@@ -385,6 +387,7 @@ class BtRunner(Node):
             started = False
             if not self._proposal_blocked() and not self._pending_proposal():
                 started = self._rest_advisor.start(self._rest_token(), trial.mode, history, d.signals)
+            self._rest_llm = {"state": "asked" if started else "skipped", "result": None, "at": time.time(), "signals": list(d.signals)}
             log.info(f"[규칙] {d.reason} — 휴식 판단 요청" if started else "[규칙] 휴식 판단 생략 — 계속 훈련")
         elif d.action == "suggest_rest":
             self._pause(d.reason)
@@ -462,6 +465,8 @@ class BtRunner(Node):
     def _invalidate_rest(self, proposal=True):
         self._rest_generation += 1
         self._rest_advisor.invalidate()
+        if self._rest_llm["state"] == "asked":   # 답 전에 상황이 바뀜 (새 시도 기록·난이도 변경·휴식) → 대시보드에 '취소' 로
+            self._rest_llm = {**self._rest_llm, "state": "dropped", "at": time.time()}
         if proposal:
             self.proposals.invalidate()
 
@@ -482,9 +487,25 @@ class BtRunner(Node):
         item = self._proposal_snapshot()
         return item is not None and item["status"] == "pending"
 
+    def _rest_snapshot(self) -> dict | None:
+        """대시보드 「휴식 제안 조건」 패널 (10/14): 규칙 레이어와 같은 입력(같은 모드 유효 시도·시도별 보상 동작)으로 신호별 진행값,
+        켜진 신호 수 / 필요 수, 지금 시도에서 이미 보인 보상 동작, 마지막 LLM 판단 상태. lock 안에서 부른다. 세션·모드 없으면 None."""
+        session = self._session
+        mode = session.current_mode if session is not None else None
+        if mode is None:
+            return None
+        history = self._rest_history(session, mode)
+        detail = rule_layer.fatigue_breakdown(history, self._rule_cfg, performance=mode != TrialResult.MODE_PUSH_BALL,
+                                              compensation_history=self._comp_history.get(mode, ()))
+        on = [key for key, value in detail.items() if value["on"]]
+        return {"mode": mode, "trials": len(history), "need": int(self._rule_cfg["llm_signal_count"]), "count": len(on), "on": on,
+                "signals": detail, "current_comp": sorted(self._posture.seen), "llm": dict(self._rest_llm)}
+
     def _poll_rest(self):
         blocked = bool(self._proposal_blocked())
         action = self._rest_advisor.poll(self._rest_token(), blocked)
+        if action is not None:
+            self._rest_llm = {**self._rest_llm, "state": "answered", "result": action, "at": time.time()}
         if action == "suggest_rest" and not blocked and not self._pending_proposal():
             ok, _ = self.proposals.propose(self._proposal_context(), source="llm")
             if ok:
@@ -545,6 +566,7 @@ class BtRunner(Node):
                 # 접수된 모드 전환 (지금 시도가 끝나면 바뀜). None = 없음, {"mode": None} = 다음 모드
                 "pending_switch": None if self._pending_switch is None else {"mode": self._pending_switch[0]},
                 "mode_select": self._selecting,     # 모드 선택 대기 중 (음성·버튼으로 모드를 고르면 시작) — 뒤에 추가
+                "rest": self._rest_snapshot(),      # 휴식 제안 조건(신호별 진행값·LLM 판단 상태) — 대시보드 패널·알림, 뒤에 추가
             }
 
     def _action_client(self, action_type: type, name: str) -> ActionClient:
@@ -614,6 +636,7 @@ class BtRunner(Node):
             self._safety_abort = False
             self._posture = posture_coach.PostureCoach(posture_coach.config(self._skills_cfg))
             self._comp_history = {}
+            self._rest_llm = {"state": "idle", "result": None, "at": None, "signals": []}
             self._hand_stop_seen = self._hand_wait = self._normal_since = None
             self._proposal_cancelled = False
             self._invalidate_rest()

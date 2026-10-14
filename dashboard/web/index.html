@@ -56,6 +56,22 @@
   button:disabled { background:#e3e8e4; color:#53635c; border-color:#b8c3bd; cursor:not-allowed; }
   #proposal-reject { background:#fffdf6; color:var(--text); border-color:#8c9e93; }
   #proposal-reject:disabled { background:#e3e8e4; color:#53635c; }
+  /* 휴식 제안 조건 스택 + 조건 확인 알림 (10/14) */
+  #rest-panel { border-left:4px solid #9182ac; }
+  #rest-stack { list-style:none; margin:0 0 10px; padding:0; display:grid; gap:8px; }
+  #rest-stack li { display:flex; align-items:center; gap:12px; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:#fafcf9; }
+  #rest-stack .mark { flex:none; width:28px; height:28px; border-radius:50%; display:grid; place-items:center; font-weight:800; font-size:14px; background:#e3e8e4; color:#53635c; }
+  #rest-stack .name { font-weight:750; min-width:118px; }
+  #rest-stack .detail { color:var(--muted); font-size:14px; overflow-wrap:anywhere; }
+  #rest-stack li.on { background:#e2f1e6; border-color:#7cae99; }
+  #rest-stack li.on .mark { background:#2f6b45; color:#fff; }
+  #rest-stack li.na { opacity:.6; }
+  #rest-count.met { background:#2f6b45; color:#fff; border-color:#2f6b45; }
+  #rest-llm { margin:0; font-weight:650; }
+  #rest-llm:empty { display:none; }
+  #toasts { position:fixed; top:14px; right:14px; z-index:50; display:grid; gap:8px; max-width:380px; }
+  .toast { padding:11px 14px; border-radius:10px; background:#2e3a35; color:#fff; font-weight:650; box-shadow:0 6px 18px #0003; }
+  .toast.signal { background:#2f6b45; } .toast.met { background:#9b6400; } .toast.llm { background:#5b4a8a; }
   #safety { display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; border:1px solid currentColor; border-left:6px solid currentColor; border-radius:10px; padding:6px 14px; font-weight:750; }
   #safety.normal { background:var(--ok-bg); color:var(--ok); }
   #safety.slow { background:var(--warn-bg); color:var(--warn); }
@@ -339,6 +355,12 @@
     <button id="proposal-reject" type="button">아니요, 계속할게요</button>
     <p id="proposal-message" role="status" aria-live="polite"></p>
   </section>
+  <section id="rest-panel" class="panel" hidden aria-label="휴식 제안 조건">
+    <div class="panel-top"><h2>휴식 제안 조건 <small class="section-tag">규칙 → AI 판단</small></h2><span id="rest-count" class="badge"></span></div>
+    <ol id="rest-stack"></ol>
+    <p id="rest-llm" role="status"></p>
+  </section>
+  <div id="toasts" aria-live="polite"></div>
   <section id="mode-view" hidden>
     <nav class="variant" id="v-rail" hidden aria-label="모드"></nav>
     <div id="mode-left">
@@ -450,6 +472,7 @@ function renderControl(s) {
   renderModePage();
   controlReceived = performance.now();
   renderProposal();
+  renderRest(s);
   $("phase").textContent = s ? phaseText(s)
     + (s.phase === "paused" && s.blocked_reason ? ` · ${s.blocked_reason}` : "")
     + (s.hand_wait ? " · 손 근접 정지 대기" : "") : "연결 대기";
@@ -755,6 +778,54 @@ function renderProposal() {
   $('proposal-status').textContent=pending?'응답을 기다리는 동안 훈련은 계속됩니다.':statuses[p.status]||'응답 불가 · 최신 상태 확인 중';
   $('proposal-accept').disabled=$('proposal-reject').disabled=!pending||respondingProposal;
 }
+// 휴식 제안 조건 (brain session_control.rest, 10/14): 규칙 레이어가 보는 신호 3개가 쌓이는 모습 + 조건이 확인될 때 알림(토스트)
+const REST_KEYS = ['compensation', 'success_drop', 'slowing'];
+const REST_LABELS = {compensation:'보상 동작 반복', success_drop:'성공률 하락', slowing:'시도 시간 증가'};
+const COMP_NAMES = {trunk_lean:'몸통 기울임', shoulder_hike:'어깨 들림'};
+let restSeen = null;   // 마지막으로 본 {key, on, met, llm} — 바뀐 것만 알린다
+function notify(text, kind) {
+  const el = document.createElement('div');
+  el.className = `toast ${kind || ''}`; el.textContent = text; el.setAttribute('role', 'status');
+  $('toasts').append(el);
+  setTimeout(() => el.remove(), 9000);
+}
+function restDetail(key, v) {
+  const pct = x => `${Math.round(Number(x) * 100)}%`;
+  if (key === 'compensation') return `최근 ${v.trials}회 중 ${v.count}회 · ${v.need}회면 신호`;
+  if (key === 'success_drop' && !v.applies) return '모드 1 은 성공률 신호 없음';
+  if (v.trials < v.min_trials) return `시도 ${v.trials}/${v.min_trials}회 뒤 판단`;
+  if (key === 'slowing') return `마지막 ${v.last_s}초 / 평균 ${v.mean_s}초 = ${v.ratio}배 · ${v.need_ratio}배면 신호`;
+  return `성공률 ${pct(v.rate)} · ${pct(v.max_rate)} 이하면 신호`;
+}
+function renderRest(s) {
+  const r = s?.rest;
+  $('rest-panel').hidden = !r;
+  if (!r) { restSeen = null; return; }
+  const met = r.count >= r.need;
+  $('rest-stack').innerHTML = REST_KEYS.map((k, i) => {
+    const v = r.signals?.[k] || {};
+    const cls = v.on ? 'on' : (k === 'success_drop' && !v.applies) ? 'na' : '';
+    return `<li class="${cls}"><span class="mark">${v.on ? '✓' : i + 1}</span><span class="name">${REST_LABELS[k]}</span><span class="detail">${esc(restDetail(k, v))}</span></li>`;
+  }).join('');
+  $('rest-count').textContent = met ? `조건 충족 ${r.count}/${r.need}` : `신호 ${r.count}/${r.need}`;
+  $('rest-count').className = `badge${met ? ' met' : ''}`;
+  const llm = r.llm || {};
+  const at = llm.at ? new Date(llm.at * 1000).toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit', second:'2-digit'}) : '';
+  const answered = llm.result === 'suggest_rest' ? 'AI 판단: 휴식 제안함 → 위 「휴식 제안」 패널' : 'AI 판단: 계속 훈련';
+  const LLM_TEXT = {idle:'AI 판단: 아직 요청 없음 (신호가 다 모이면 요청)', asked:'AI 판단 중… (3초 안에 답)',
+    skipped:'조건 충족 — 휴식·전환 대기 중이라 판단 생략', dropped:'AI 판단 취소 (답 전에 새 시도 기록)', answered};
+  $('rest-llm').textContent = (LLM_TEXT[llm.state] || '') + (at && llm.state !== 'idle' ? ` · ${at}` : '')
+    + (r.current_comp?.length ? ` · 이번 시도 보상 동작 보임 (${r.current_comp.map(c => COMP_NAMES[c] || c).join('·')})` : '');
+  // 알림: 같은 세션·모드 안에서 신호가 새로 켜질 때, 조건이 충족될 때, AI 가 답할 때. 처음 받은 상태(새 세션·모드·화면 열기)는 기준만 잡는다
+  const now = {key:`${s.session_id}:${r.mode}`, on:new Set(r.on || []), met, llm:`${llm.state}:${llm.result}:${llm.at}`};
+  if (restSeen && restSeen.key === now.key) {
+    for (const k of now.on) if (!restSeen.on.has(k)) notify(`조건 확인: ${REST_LABELS[k]} (${r.count}/${r.need})`, 'signal');
+    if (met && !restSeen.met) notify(`휴식 제안 조건 충족 (${r.count}/${r.need}) — AI 판단으로 넘어감`, 'met');
+    if (now.llm !== restSeen.llm && llm.state === 'answered') notify(answered, 'llm');
+  }
+  restSeen = now;
+}
+
 async function respondProposal(decision) {
   if(respondingProposal||$('proposal-'+decision).disabled)return;
   const p=control?.proposal;
