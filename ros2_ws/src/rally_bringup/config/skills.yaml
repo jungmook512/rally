@@ -27,7 +27,7 @@ observe_pose:
 #   lead_time_s: scripts/measure_latency.py 결과(웹캠→skill_server) + 로봇 가속 시간
 #   ready_pose: 테이블 중앙, 패드 면 환자 쪽
 mode3:
-  catch_radius_m: 0.35
+  catch_radius_m: 0.30              # ★ 10/14 정동휘: 0.35 → 0.30 — 대기 자세 Y0 는 전 방향 25 cm(reach_max_m) + 패드 반경 일부. 그 밖은 out_of_radius
   lead_time_s: 0.12
   max_ball_speed_mps: 3.0
   # brain 모드 3 트리 (10/12, rally_brain/trees/mode3_catch.py). catch_radius_m 은 goal.catch_radius 로 간다
@@ -37,14 +37,19 @@ mode3:
   throw_prompt: "준비되면 패드를 향해 공을 던져 주세요"             # 시도마다
   done_prompt: "캐치볼을 마쳤어요. 수고하셨어요"                   # 모드 3 시도를 모두 마침 (session_tree)
   # catch_ball 스킬 (10/11, 근거 docs/mode3/MODE3_OVERVIEW.md). 없으면 catch_ball.DEFAULTS
-  ready_posj: [89.8, 30.0, -121.7, 90.2, -80.2, 88.3]   # 대기 자세 (정정인 결정, 패드 면 45°)
+  # ★ 10/14 정동휘: 대기 자세 Y0 — 관절 속도 80 % 제한에서 패드 평면 25 cm 전 방향(왼쪽·아래 포함) 가장 늦은 방향 시간 최소화
+  #   (scripts/mode3_ready_pose_time_opt.py, docs/mode3/MODE3_READY_POSE_Y0.md, 결과 https://claude.ai/artifact/SzpPiSfN84JeYqoxEeRDdt).
+  #   기존 [89.8, 30.0, -121.7, 90.2, -80.2, 88.3] 은 왼쪽·아래 반원이 J3 한계로 불가(24방향 중 12). Y0 는 팔꿈치가 반대로 접힌 자세(J3 +100°).
+  #   amovej 15 cm 모델 0.48 s(기존 0.60), 25 cm 0.67 s. 요격 중 TCP x 최대 0.73 → safety.yaml workspace_catch_x_max_m. 실로봇 확인 전 (시뮬 20방향 알람 없음)
+  ready_posj: [-58.7, 7.0, 100.2, 98.8, 63.6, -100.3]
+  ready_via_posj: [-58.7, 0.0, 0.0, 98.8, 63.6, -100.3]   # 거치대 U ↔ 대기 자세 경유 (팔 수직, 최고 0.97 m): Y0 로 팔만 먼저 돌리면 TCP x 0.61 로 작업 공간 밖 (10/14 계산, 경유하면 ≤ 0.56)
   # 패드 TCP 10/12 정동휘 실측: 공구 좌표 (−17.5, −104.3, 6.5) mm, Ry −45°. 대기 자세에서 base 패드 중심 (0.323, −0.328, 0.496) m,
   #   법선은 위로 45° + 그리퍼를 따라 −10° (공구 좌표로 쟀으므로 자동 반영). 이전 값 [-0.053, -0.048, 0.001] 은 7.2 cm 로 실물(10.6 cm)과 다름.
   #   예측 노드 flight_predictor 도 이 파일의 pad_center_base_m·pad_normal 을 패드 평면으로 읽는다 (노드 파라미터 plane_p·plane_n 을 주면 그것이 우선).
   #   그림·검증 방법: https://claude.ai/artifact/NcvZtyTn9MHD8Nvsb99JKg
   pad_offset_tool_m: [-0.0175, -0.1043, 0.0285]       # TCP → 패드 중심, 공구 좌표 (10/12 실측, z 는 오후 두 번 터치·피벗으로 +22 mm 보정)
-  pad_normal: [0.697, -0.123, 0.706]                  # 패드 면 법선 (base, 대기 자세. 위로 45°, −10° 회전 포함)
-  pad_center_base_m: [0.345, -0.332, 0.496]          # 대기 자세(ready_posj)에서 패드 중심 base [m] = TCP + R·pad_offset_tool_m. ready_posj·오프셋을 바꾸면 같이 다시 계산
+  pad_normal: [0.714, -0.066, 0.697]                  # 패드 면 법선 (base, Y0 대기 자세: 피치 45° 그대로, 요 +3.5° 롤 +8.9°). 기존 [0.697, -0.123, 0.706]
+  pad_center_base_m: [0.595, -0.423, 0.433]          # Y0 대기 자세에서 패드 중심 base [m] = TCP (0.560, -0.320, 0.432) + R·pad_offset_tool_m. 기존 [0.345, -0.332, 0.496]. ready_posj·오프셋을 바꾸면 같이 다시 계산
   # 패드 거치대 (10/12 정정인 직접교시). 패드는 위에서 꽂아 세워 둠, 그리퍼는 수평으로 들어가 손잡이를 쥠
   pad_rack_grasp_posx: [236.9, -139.8, 217.0, 47.7, 88.6, 86.8]     # G: 거치대에 꽂힌 패드 손잡이를 쥔 자세 (10/12 교시, 컨트롤러 fkin 값 — 툴 z 수평 위 1.4°, 방향 47.7°)
   pad_rack_grasp_posj: [91.1, -26.2, -117.8, -129.9, 116.6, -66.4]
@@ -82,14 +87,15 @@ mode3:
   decide_max_s: 0.60                                  # ★ 10/13: 0.40 → 0.60 (decide_ttg_s 로 높은 포물선은 더 보고 결정). 10/12 밤: 결정 시점 예측이 품질 미달이면 이때까지 기다렸다 결정
   decide_ttg_s: 0.45                                  # ★ 10/13 저녁: 예측 교차까지 이만큼 남을 때 결정. (일찍 출발 + 비행 중 갱신으로 0 을 시험했다가 재전송이 속도를 겹쳐 보호 정지 → 되돌림) (bag 1511 높은 포물선 4: 오차 14~36 → 3~6 cm, 남은 시간 0.43 s · bag 0738 빠른 투구 6: 1~7 cm 그대로)
   ball_removal_wait_s: 5.0                            # ★ 10/13: 요격 뒤 대기 자세에서 이 시간 '접촉 예정' 켜고 정지 (공 떼는 힘이 nudge STOP 으로 잡히던 것). 정정인: 8 s 도 길다 → 5
-  right_max_m: 0.35                                   # ★ 10/13 정정인: catch_radius 와 같게 35 cm (계획 도구: −y 35 cm 작업 공간 안·관절 속도 56 %). 10/12 밤 0.25 (원래 0.15): 반복 시험 대부분이 15 cm 한계에 잘림. 계획 도구: −y 30 cm 까지 작업 공간 안·관절 속도 49 %. 25 cm 이동 ≈ 0.78 s
-  updown_max_m: 0.35                                  # ★ 10/13 정정인: catch_radius 와 같게 35 cm (계획 도구: +u 35 cm 관절 속도 83 %, 25 cm 와 같음). 10/12 밤 0.25 (원래 0.15): 위쪽만 늘어남 (아래는 down_max_m 8 cm 그대로). 계획 도구: +u 30 cm 까지 OK·관절 속도 75 %
-  down_max_m: 0.08                                    # 아래(투구자 쪽)만 — 대기 자세에서 −9.4 cm 에 두산 자기충돌 정지 (10/11 실측, #131)
+  left_max_m: 0.25                                    # ★ 10/14 정동휘: 왼쪽(+y) 25 cm — Y0 는 전 방향 가능 (기존 자세는 0 = 안 감). catch_plan.intercept
+  right_max_m: 0.25                                   # ★ 10/14 정동휘: Y0 기준 전 방향 25 cm (28 cm 부터 손목 특이점·z 위반 — 최적화 재검증). 10/13 정정인 0.35: catch_radius 와 같게 35 cm (계획 도구: −y 35 cm 작업 공간 안·관절 속도 56 %). 10/12 밤 0.25 (원래 0.15): 반복 시험 대부분이 15 cm 한계에 잘림. 계획 도구: −y 30 cm 까지 작업 공간 안·관절 속도 49 %. 25 cm 이동 ≈ 0.78 s
+  updown_max_m: 0.25                                  # ★ 10/14 정동휘: Y0 기준 25 cm. 10/13 정정인 0.35: catch_radius 와 같게 35 cm (계획 도구: +u 35 cm 관절 속도 83 %, 25 cm 와 같음). 10/12 밤 0.25 (원래 0.15): 위쪽만 늘어남 (아래는 down_max_m 8 cm 그대로). 계획 도구: +u 30 cm 까지 OK·관절 속도 75 %
+  down_max_m: 0.25                                    # ★ 10/14 정동휘: Y0 는 아래 25 cm 에서 패드 아랫단 z ≥ 0.20 (모델). 기존 자세 0.08 — −9.4 cm 에 두산 자기충돌 정지 (10/11 실측, #131). 실로봇 확인 전
   catch_move: amovej              # ★ 10/13 저녁 시험: amovel(직선) | amovej(관절). 공 없이 실측 20/30 cm 도착 0.40/0.51 s (amovel 0.52/0.71), 힘 ≤ 88 N. IK 해 없으면 그 투구는 amovel
   catch_joint_vel_deg_s: 120.0    #   amovej 관절 속도 (J1·J2 한계 150 °/s 의 80 %)
   catch_joint_acc_deg_s2: 400.0   #   amovej 관절 가속 — 500 은 오른쪽 힘 94~106 N 으로 펜던트 한계 96 N 근처 (10/13 실측)
   catch_overshoot_m: 0.05                             # ★ 10/13 정정인: 요격 목표를 이동 방향으로 5 cm 더 — 예측점을 감속 없이 속도 붙은 채 지나가게 (마지막 5 cm 0.22 → 0.11 s). 패드 지름 ~15 cm. 아래쪽은 down_max_m 8 cm 에서 잘림
-  reach_max_m: 0.35                                   # ★ 10/13: 두 축 합 이동 상한 (방향 유지, 길이만 줄임). 오른쪽 32·위 35 cm 대각선이 두산 NOT REACHABLE → not_started. 순기구학: 오른쪽~위 모든 방향 40 cm 까지 도달
+  reach_max_m: 0.25                                   # ★ 10/14 정동휘: Y0 재검증 반경 25 cm (5 cm 지나치기 포함). 10/13 0.35: 두 축 합 이동 상한 (방향 유지, 길이만 줄임). 오른쪽 32·위 35 cm 대각선이 두산 NOT REACHABLE → not_started. 순기구학: 오른쪽~위 모든 방향 40 cm 까지 도달
   catch_vel_mm_s: 450.0                               # 위아래 730 은 관절 속도 121 % 로 불가
   catch_acc_mm_s2: 2000.0                             # ★ 10/12 밤 정정인: 1000 → 2000 (#144 승인값, 받기 창 130 N 코드(#165) 뒤). 반복 시험 1000 으로 10회 중 1회 받음
   # 판정은 비전 (측면 카메라 /rally/perception/ball_on_pad). 힘 판정은 쓰지 않음 — 패드 끝 튕김·이동 관성과 구분 불가 (10/12 결정)

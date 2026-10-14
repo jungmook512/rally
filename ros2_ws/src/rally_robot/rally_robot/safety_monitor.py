@@ -20,6 +20,10 @@
   가속 2000 요격 이동 관성 59~73 N + 공 충격 15 N. 창 신호가 끊기면 contact_timeout_s 뒤 25 N. 두산 자체 충돌 감지는 그대로.
   창이 열린 뒤 catch_window_max_s(2 s) 가 지나면 신호가 계속 와도 25 N (skill 스레드가 멈춰 하트비트만 도는 경우 — #165 리뷰).
   다시 130 N 이 되려면 창이 한 번 꺼졌다(False 또는 하트비트 끊김) 새로 열려야 한다.
+- 작업 공간 x 상한 (10/14 대기 자세 Y0, docs/mode3/MODE3_READY_POSE_Y0.md): 받기 이동은 TCP x 가 최대 0.73 m 로 평소 workspace_x_max_m(0.57,
+  보라색 선) 밖이다. catch_window 신호가 살아 있는 동안(contact_expected 와 무관, 2 s 상한도 무관)은 workspace_catch_x_max_m 을 x 상한으로 쓰고,
+  신호가 꺼진 뒤에도 TCP x 가 평소 상한 안으로 돌아올 때까지 유지한다 (판정·꽂기 때문에 받은 자리에 1~5 s 서 있음). 단 꺼진 뒤
+  workspace_catch_hold_s(10 s) 가 지나면 평소 상한 → 그 밖이면 workspace_limit STOP. 값이 평소 상한보다 작거나 음수면 기능 없음.
 - 손 거리 (hand_level, #59 · #98):
   손 없음 → NORMAL / 손은 보이는데 거리 NaN(깊이·tf 없음) → SLOW (hand_distance_unknown). 단 직전이 STOP 이었으면 놓침과 같이
   hand_lost_stop_s STOP 유지 (깊이는 카메라 30 cm 안에서 빠지므로 손이 로봇에 가까울수록 NaN — 리뷰 #104) /
@@ -252,6 +256,10 @@ def detach_force_limit_for(lim_n, detach_n, detach_on):
     """공 떼기 창(/rally/safety/detach_window)이 켜진 동안 힘 한계 [N] — lim_n(평소·받기 창 적용 뒤)보다 낮게는 안 함. 순수 함수."""
     return max(float(lim_n), float(detach_n)) if detach_on else float(lim_n)
 
+def workspace_relax_active(base_x_max, catch_x_max):
+    """받기 창 x 완화 기능이 켜져 있나 (순수 함수): 설정값이 평소 상한보다 클 때만. 음수·작은 값은 기능 없음 (실수로 좁아지지 않게)."""
+    return float(catch_x_max) > float(base_x_max)
+
 
 def force_limit_for(base_n, catch_n, catch_window_on):
     """지금 힘 한계 [N] (순수 함수). 받기 창이면 catch_n — 단 base 보다 낮게는 안 함 (설정 실수로 한계가 내려가 STOP 이 잦아지지 않게만)."""
@@ -321,6 +329,8 @@ class SafetyMonitor(Node):
         # 모드 3 공 떼기(벗기기) 전용 (10/15 정정인): 스킬이 /rally/safety/detach_window 를 켜고 contact_expected 도 켠 동안만 힘 한계를 올림
         self.declare_parameter("detach_window_force_limit_n", 25.0)   # 기본은 평소와 같음 — safety.yaml 에서 정함
         self.declare_parameter("detach_window_max_s", 40.0)
+        self.declare_parameter("workspace_catch_x_max_m", -1.0)      # 모드 3 받기 동안 x 상한 (10/14 Y0). 음수 = 평소 상한 그대로 — safety.yaml 에서 정함
+        self.declare_parameter("workspace_catch_hold_s", 10.0)       # 창이 꺼진 뒤 TCP 가 평소 상한 안으로 못 돌아와도 이 시간 뒤엔 평소 상한
         self.declare_parameter("return_speed_mm_s", 30.0)
 
         reliable = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=10)
@@ -381,6 +391,8 @@ class SafetyMonitor(Node):
         self.contact_until = 0.0
         self.catch_until = 0.0
         self.catch_start = 0.0                              # 이번 받기 창이 열린 monotonic (catch_window_max_s 기준)
+        self.ws_relax_until = 0.0                           # 작업 공간 x 완화가 유지되는 monotonic (창 신호마다 hold_s 로 연장, TCP 복귀 시 0)
+        self._ws_relax_on = False                           # 로그용
         self._catch_limit_on = False                        # 로그용 — 130 N ↔ 25 N 바뀔 때만 (#144 ③ 25 N 복귀 확인)
         self.extend_until = 0.0                             # 작업 공간 확장 하트비트 유효 시각 (workspace_extend)
         self.detach_until = 0.0                             # 공 떼기 창 하트비트 유효 시각 (detach_window)
@@ -442,6 +454,8 @@ class SafetyMonitor(Node):
         if now >= self.catch_until:                         # 새 창 (꺼져 있었거나 하트비트가 끊긴 뒤)
             self.catch_start = now
         self.catch_until = now + self.p("contact_timeout_s")
+        if workspace_relax_active(self.p("workspace_x_max_m"), self.p("workspace_catch_x_max_m")):
+            self.ws_relax_until = now + self.p("workspace_catch_hold_s")
 
     def catch_window_overdue(self):
         """창 신호는 살아 있는데 catch_window_max_s 를 넘김 (skill 스레드 멈춤 등)."""
@@ -539,11 +553,25 @@ class SafetyMonitor(Node):
         self.robot_seg = robot_segment((x, y, z), q, self.p("robot_segment_m"))
         self.check_workspace((x, y, z))
 
+    def catch_x_max_now(self, x_now):
+        """받기 창 x 완화 (#223): 받기 창(+ 창 뒤 hold_s) 동안 workspace_catch_x_max_m, TCP 가 평소 상한 안으로 돌아오면 바로 평소값.
+        공 떼기 확장(workspace_x_max_now, #211)과는 따로 계산하고 check_workspace 가 넓은 쪽을 쓴다."""
+        base, catch = self.p("workspace_x_max_m"), self.p("workspace_catch_x_max_m")
+        now = time.monotonic()
+        on = workspace_relax_active(base, catch) and now < self.ws_relax_until
+        if on and now >= self.catch_until and x_now <= base:   # 창이 꺼졌고 TCP 가 돌아왔으면 완화 끝
+            self.ws_relax_until, on = 0.0, False
+        if on != self._ws_relax_on:
+            self._ws_relax_on = on
+            self.get_logger().warning(f"작업 공간 x 상한 {catch if on else base:.2f} m ({'모드 3 받기 창 — 10/14 Y0' if on else '받기 끝 → 평소 값'})")
+        return catch if on else base
+
     def check_workspace(self, xyz):
         if not self.p("workspace_enabled"):
             return
         lim = {a: (self.p(f"workspace_{a}_min_m"), self.p(f"workspace_{a}_max_m")) for a in "xyz"}
-        lim["x"] = (lim["x"][0], self.workspace_x_max_now())      # 공 떼기 → 박스 동안만 넓힘 (workspace_extend)
+        # x 상한 = 공 떼기 → 박스 확장(#211, workspace_extend)과 받기 창 완화(#223, catch_window) 중 넓은 쪽 — 둘 다 꺼지면 평소 0.57
+        lim["x"] = (lim["x"][0], max(self.workspace_x_max_now(), self.catch_x_max_now(xyz[0])))
         if not in_workspace(xyz, lim):
             self._stop("workspace_limit")
 
