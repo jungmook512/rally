@@ -420,10 +420,11 @@ def movej_safe(node, posj6, jv, ja, tv, ta, x_max_mm, via_x_mm=300.0, via_z_mm=4
     return movej_checked(node, posj6, jv, ja)
 
 
-def movej_checked(node, posj6, vel, acc, timeout_s=30.0, poll_s=0.02):
+def movej_checked(node, posj6, vel, acc, timeout_s=30.0, poll_s=0.02, retarget=None):
     """amovej + 폴링 (관절 이동판 move_checked). 관측 자세 복귀처럼 팔 형태를 바꿔야 하는 이동에 쓴다.
     STOP → stop_robot → SkillAbort. 출발 못 하면(이미 그 자세가 아닌데 3 s 동안 check_motion 0) 'not_started'.
-    반환 "done". posj6: deg."""
+    retarget() 이 새 posj6 을 돌려주면 **멈추지 않고** 그 목표로 amovej 를 다시 보낸다 (모드 3 비행 중 갱신, 10/13 — 부르는 쪽이
+    간격을 제한할 것: 0.3 s 안 재전송은 속도가 겹침). 반환 "done". posj6: deg."""
     from DSR_ROBOT2 import amovej, check_motion, get_current_posj
     logger = node.get_logger()
     target = [float(v) for v in posj6]
@@ -441,6 +442,20 @@ def movej_checked(node, posj6, vel, acc, timeout_s=30.0, poll_s=0.02):
         time.sleep(poll_s)
         if node.stop_requested():
             raise SkillAbort(node.safety_reason(), stopped=stop_robot(node.dsr, logger, "safety STOP"))
+        if retarget is not None:
+            new6 = retarget()
+            if new6 is not None:
+                target = [float(v) for v in new6]
+                ret = amovej(target, vel=vel * scale, acc=acc * scale)
+                if ret is not None and ret < 0:
+                    raise SkillAbort(f"amovej_resend_rejected({ret})", stopped=stop_robot(node.dsr, logger, "재전송 거부"))
+                started = True                               # 재전송 뒤 check_motion 이 잠깐 0 이어도 끝으로 보지 않게 0.1 s 유예
+                t_re = time.monotonic()
+                while time.monotonic() - t_re < 0.1:
+                    time.sleep(poll_s)
+                    if node.stop_requested():
+                        raise SkillAbort(node.safety_reason(), stopped=stop_robot(node.dsr, logger, "safety STOP"))
+                continue
         moving = check_motion() != 0
         started = started or moving
         if not started and time.monotonic() - t0 > START_GRACE_S:

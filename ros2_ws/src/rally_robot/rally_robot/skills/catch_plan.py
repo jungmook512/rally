@@ -55,23 +55,38 @@ class Intercept:
 
 
 def intercept(ready_tcp_posx, pad_center_m, normal, predicted_m, right_max_m, updown_max_m,
-              down_max_m: float | None = None) -> Intercept:
+              down_max_m: float | None = None, reach_max_m: float | None = None, overshoot_m: float = 0.0) -> Intercept:
     """예측점으로 패드 중심을 옮기는 TCP 목표. TCP 자세 고정·위치만 이동 (10/11 결정).
 
     - 패드 면 안 두 축으로 분해해 면 수직 성분은 버린다(예측점은 이미 면 위).
     - 왼쪽(u < 0)으로는 가지 않는다: 왼쪽 공은 '환자 투구 실패'로 성공률에서 뺀다 (10/11 결정).
     - 오른쪽 right_max_m, 위 updown_max_m, 아래(+w, 투구자 쪽) down_max_m(없으면 updown_max_m) 로 자른다 (어깨 특이점·작업 공간 여유).
       아래는 대기 자세에서 약 9.4 cm 에 두산 자기충돌 정지 (10/11 실측) → skills.yaml mode3.down_max_m 0.08.
+    - overshoot_m: 10/13 정정인 — 목표를 이동 방향으로 이만큼 더 둔다. 로봇은 목표 앞에서 감속하므로 예측점에 정확히 서려 하면
+      예측점 근처를 느리게 지나 공보다 늦는다. 목표를 뒤로 밀면 예측점은 속도가 붙은 채 지나간다 (450 mm/s·가속 2000 에서 마지막 5 cm:
+      정지 0.22 s → 통과 0.11 s). 패드 지름 ~15 cm 라 5 cm 더 가 있어도 받는다. 한계(오른쪽·위·아래·reach)는 그 뒤에 다시 적용.
+    - reach_max_m: 이동 거리(두 축 합) 상한 — 넘으면 방향은 그대로 두고 길이만 줄인다. 10/13 실로봇: 오른쪽 32 · 위 35 cm (합 47 cm)
+      대각선 끝이 두산 NOT REACHABLE(1206) → not_started. 순기구학 계산으로 오른쪽~위 사이 모든 방향 40 cm 까지 도달 가능.
     """
     _, u, w = plane_axes(normal)
     d = np.asarray(predicted_m, float) - np.asarray(pad_center_m, float)
     du0, dw0 = float(d @ u), float(d @ w)
     du = min(max(du0, 0.0), right_max_m)
     dw = min(max(dw0, -updown_max_m), updown_max_m if down_max_m is None else down_max_m)
+    r = float(np.hypot(du, dw))
+    clipped = abs(du - du0) > 1e-9 or abs(dw - dw0) > 1e-9           # '잘림' 표시는 한계에 걸린 것만 (더 가기 전에 판정)
+    if overshoot_m > 0 and r > 1e-3:                                     # 실제 이동 방향(잘린 뒤)으로 더 간 뒤 한계를 다시 적용
+        du, dw = du + overshoot_m * du / r, dw + overshoot_m * dw / r
+        du = min(max(du, 0.0), right_max_m)
+        dw = min(max(dw, -updown_max_m), updown_max_m if down_max_m is None else down_max_m)
+        r = float(np.hypot(du, dw))
+    if reach_max_m is not None and r > reach_max_m > 0:
+        du, dw = du * reach_max_m / r, dw * reach_max_m / r
+        clipped = True
     move_mm = (du * u + dw * w) * 1000.0
     tcp = [float(ready_tcp_posx[i]) + float(move_mm[i]) for i in range(3)] + [float(v) for v in ready_tcp_posx[3:6]]
     return Intercept(tcp_posx=tcp, du=du, dw=dw, offset_m=float(np.hypot(du0, dw0)),
-                     clipped=(abs(du - du0) > 1e-9 or abs(dw - dw0) > 1e-9))
+                     clipped=clipped)
 
 
 def quality_ok(std: tuple[float, float], n_obs: int, std_max_m: float, n_obs_min: int) -> bool:
@@ -198,3 +213,21 @@ def window_close_delay(t_cross_ros: float, now_ros: float, cross_max_after_s: fl
     (#171 리뷰: cross_max_after_s 로만 자르면 최대 약 2.3 s — #144 "창 약 1 s"). 0 이하면 바로 닫는다."""
     by_cross = clamp_cross(t_cross_ros, now_ros, cross_max_after_s) + after_cross_s - now_ros
     return max(0.0, min(by_cross, window_max_s - opened_for_s))
+
+
+def move_time_s(dist_m: float, vel_mps: float, acc_mps2: float) -> float:
+    """정지 → 정지 직선 이동 시간 (사다리꼴 속도, 짧으면 삼각형). amovel 의 vel·acc 와 같은 단위 [m/s, m/s²]."""
+    d, v, a = max(0.0, float(dist_m)), float(vel_mps), float(acc_mps2)
+    if d <= 0.0:
+        return 0.0
+    if d <= v * v / a:                                   # 최고 속도에 못 닿음 — 삼각형
+        return 2.0 * (d / a) ** 0.5
+    return v / a + d / v
+
+
+def max_dist_in(t_s: float, vel_mps: float, acc_mps2: float) -> float:
+    """t_s 안에 정지 → 정지로 갈 수 있는 최대 거리 [m] (move_time_s 의 역)."""
+    t, v, a = max(0.0, float(t_s)), float(vel_mps), float(acc_mps2)
+    if t <= 2.0 * v / a:
+        return a * t * t / 4.0
+    return v * (t - v / a)

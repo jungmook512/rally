@@ -394,7 +394,7 @@ const REASONS = {hand_near_robot: "손이 로봇 가까이", hand_lost_near: "�
   force_limit: "힘 한계 초과", nudge: "로봇이 밀림", wrench_lost: "힘 센서 끊김", workspace_limit: "작업 공간 밖",
   estop: "비상정지", voice_stop: "음성 정지", slow_override: "느리게 고정"};
 const reasonText = (r) => String(r || "").split(/[ ,]+/).filter(Boolean).map((c) => REASONS[c.replace(/^hand_stop_dev_\w+$/, "")] ?? REASONS[c] ?? c).join(", ");
-const NOTES = {missed: "놓침", timeout: "시간 초과", out_of_radius: "반경 밖", low_confidence: "예측 불확실", slow_at_catch: "느리게 상태라 중단",
+const NOTES = {missed: "놓침", timeout: "시간 초과", out_of_radius: "반경 밖", low_confidence: "예측 불확실", too_late: "늦음(받기 창 안에 못 감)", slow_at_catch: "느리게 상태라 중단",
   interrupted: "중단", pick_failed: "집기 실패", object_not_found: "물체 못 찾음", skill_aborted: "스킬 중단", safety_stop: "안전 정지"};
 const ROBOT = {idle: "대기", moving: "움직이는 중", holding: "잡고 있음", stopped: "멈춤"};
 const KINDS = {safety_change: "안전", voice_intent: "음성", mode_change: "모드", trial: "시도", session_report: "리포트"};
