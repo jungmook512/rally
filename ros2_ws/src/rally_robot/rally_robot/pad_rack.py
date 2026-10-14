@@ -226,9 +226,9 @@ def pick_pad(node, log, check=lambda: None):
     if ready is not None and _near(get_current_posj(), ready):
         # 10/13 실로봇: 대기 자세 → A 한 번에 관절 이동하면 TCP 가 y −0.675 까지 휘어 workspace_limit STOP (순기구학 여유 −7.5 cm).
         # 꽂기(place_pad)처럼 손목 먼저 A 값으로(팔은 그대로) → 팔을 A 로: 여유 +9.1 cm
-        via = [float(v) for v in ready[:3]] + [float(v) for v in cfg["pad_rack_approach_posj"][3:6]]
+        via = _ready_via_posj(node) or ([float(v) for v in ready[:3]] + [float(v) for v in cfg["pad_rack_approach_posj"][3:6]])
         check()
-        movej_checked(node, via, jv, ja)
+        movej_checked(node, via, jv, ja)                      # 10/14 Y0: ready_via_posj(팔 세움) — 팔만 두고 손목을 A 로 돌리면 TCP x 0.60
     check()
     movej_checked(node, cfg["pad_rack_approach_posj"], jv, ja)
     ok, _, _ = node.gripper(open_mm, force)
