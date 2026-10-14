@@ -3,7 +3,9 @@
 
 catch_ball 이 skills.yaml mode3.decide_mode == "policy" 일 때 쓴다. 기본은 "rule" (decide_after_s·품질 기다림) 이라 이 모듈은 안 쓰인다.
 
-정책 = Isaac Lab 1단계 시뮬에서 PPO 로 학습한 작은 MLP (ONNX, models/policy_stage1.onnx, git 제외).
+정책 = Isaac Lab 1단계 시뮬에서 PPO 로 학습한 작은 MLP (ONNX, models/policy_stage1.onnx, git 제외 — 박성현 드라이브).
+10/14 정책: amovej 120/400 · 한계 오른쪽 35·위 35·아래 8 cm · 두 축 합 35 · 지나침 0 · 출발 지연 85~120 ms 로 학습 (docs/mode3/MODE3_POLICY_1014.md).
+옆의 models/policy_stage1.onnx.json(run·체크포인트·md5·학습 조건)을 같이 두면 catch_ball 이 학습 조건과 skills.yaml 을 대조해 다르면 경고한다.
 - 정책이 정하는 것은 **언제 출발할지**와 **예측점에 더할 보정(u·w)** 뿐이다. 이동 한계 클램핑(intercept), 품질 게이트, 반경,
   SLOW 중단, 받기 창, 비전 판정은 규칙 모드와 똑같이 catch_ball 이 적용한다 (#78: 학습은 결정만, 안전 범위 제한은 그대로).
 - 입력 obs[10] 은 시뮬(stage1_env_torch._obs_tensor)과 같은 순서·배율로 만든다 (policy_obs). 다르면 정책이 엉뚱하게 동작한다.
@@ -45,6 +47,48 @@ def find_policy(path: str = "") -> str:
         if os.path.isfile(p):
             return p
     return ""
+
+
+def policy_meta(path: str) -> dict | None:
+    """ONNX 옆의 <이름>.onnx.json (rally_isaac export_policy.py 가 씀: run·체크포인트·md5·학습 조건 env). 없거나 못 읽으면 None."""
+    import json
+    p = path + ".json"
+    if not os.path.isfile(p):
+        return None
+    try:
+        with open(p, encoding="utf-8") as f:
+            meta = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return meta if isinstance(meta, dict) else None
+
+
+def meta_mismatches(meta: dict | None, cfg: dict[str, Any]) -> list[str]:
+    """학습 조건(meta["env"]: limits [u_min, u_max, w_min, w_max] m · reach_max · accel · overshoot)과 skills.yaml(cfg)이 다른 항목.
+    정책은 학습한 한계·이동 방식에 맞춰 출발 시점을 골랐으므로 다르면 경고만 한다 (동작은 안 바꿈 — 한계는 늘 cfg 가 이긴다, #78)."""
+    if not meta or not isinstance(meta.get("env"), dict):
+        return []
+    env = meta["env"]
+    out: list[str] = []
+
+    def differ(a, b) -> bool:
+        return a is not None and b is not None and abs(float(a) - float(b)) > 1e-3
+
+    lim = env.get("limits")
+    if isinstance(lim, (list, tuple)) and len(lim) == 4:
+        for name, trained in (("right_max_m", lim[1]), ("updown_max_m", -float(lim[2])), ("down_max_m", lim[3])):
+            if differ(trained, cfg.get(name)):
+                out.append(f"{name} 학습 {float(trained):.2f} vs yaml {float(cfg[name]):.2f}")
+    if differ(env.get("reach_max"), cfg.get("reach_max_m")):
+        out.append(f"reach_max_m 학습 {float(env['reach_max']):.2f} vs yaml {float(cfg['reach_max_m']):.2f}")
+    accel = str(env.get("accel", "") or "")
+    move = "amovej" if accel == "movej" else ("amovel" if accel else "")
+    if move and cfg.get("catch_move") and str(cfg["catch_move"]) != move:
+        out.append(f"catch_move 학습 {move} vs yaml {cfg['catch_move']}")
+    if differ(env.get("overshoot"), cfg.get("catch_overshoot_m")):
+        out.append(f"catch_overshoot_m 학습 {float(env['overshoot']):.2f} vs yaml {float(cfg['catch_overshoot_m']):.2f}"
+                   " (시뮬에선 정책이 보정으로 되돌림 — 실측 영향 미확인)")
+    return out
 
 
 def policy_obs(pred: Prediction, pad_center_m, normal, now_ros: float,

@@ -34,6 +34,9 @@ RMW_IMPLEMENTATION=rmw_fastrtps_cpp ROS_DOMAIN_ID=42 ros2 run rally_robot skill_
 ```
 가짜 DSR 은 테이블 Z 250 mm 아래로 내려가면 접촉 힘을, 정지 상태로 2 s 폴링하면 당김 힘을 흉내 낸다 (`RALLY_FAKE_TABLE_Z`, `RALLY_FAKE_PULL_S`).
 
-## 모드 3 정책 모드 (선택, 10/13)
-`skills.yaml mode3.decide_mode: policy` 일 때만 `onnxruntime` 이 필요하다 (`pip install onnxruntime`, CPU). 정책 파일 `models/policy_stage1.onnx` 는 git 제외 — 박성현이 드라이브로 전달.
+## 모드 3 정책 모드 (선택, 10/13 · 10/14 정책 교체)
+`skills.yaml mode3.decide_mode: policy` 일 때만 `onnxruntime` 이 필요하다 (`pip install onnxruntime`, CPU). 정책 파일 `models/policy_stage1.onnx` 와 옆의 `models/policy_stage1.onnx.json` 은 git 제외 — 박성현 구글 드라이브에서 받아 로봇 PC `~/rally/models/` 에 둔다.
 기본 `rule` 이면 import 하지 않는다. 입력·출력 정의는 `rally_robot/skills/catch_policy.py` 머리말.
+
+10/14 정책(md5 cae0ac79)은 amovej 120/400 · 한계 오른쪽 35·위 35·아래 8 cm · 두 축 합 35 · 지나침 0 · 출발 지연 85~120 ms 로 학습했다(시뮬 같은 투구 1만 회: 규칙 0.16 s 68.8 % → 정책 71.4 %). skills.yaml 의 한계·catch_move 가 그대로여야 하며, catch_ball 은 적재할 때 옆 json 의 학습 조건과 yaml 을 대조해 다르면 경고한다.
+설치 확인: `cd ros2_ws/src/rally_robot && python3 -m pytest test/test_catch_policy.py -q` (`real_policy` 테스트가 skip 이 아니라 pass 여야 함). 적용 절차·A/B·위험은 `docs/mode3/MODE3_POLICY_1014.md`.

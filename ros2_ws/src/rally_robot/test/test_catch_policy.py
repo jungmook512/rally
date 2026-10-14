@@ -9,7 +9,7 @@ pytest.importorskip("scipy")
 
 from rally_robot.skills.catch_plan import Prediction, plane_axes  # noqa: E402
 from rally_robot.skills.catch_policy import (  # noqa: E402
-    OnnxPolicy, decide_with_policy, find_policy, policy_obs, policy_target)
+    OnnxPolicy, decide_with_policy, find_policy, meta_mismatches, policy_meta, policy_obs, policy_target)
 
 N = [0.697, -0.123, 0.706]
 PAD = np.array([0.345, -0.332, 0.496])
@@ -135,6 +135,33 @@ def test_find_policy_missing_returns_empty(tmp_path):
     f = tmp_path / "p.onnx"
     f.write_bytes(b"x")
     assert find_policy(str(f)) == str(f)
+
+
+def test_policy_meta_reads_sidecar_and_tolerates_missing(tmp_path):
+    """ONNX 옆 <이름>.onnx.json — 없으면 None, 깨졌어도 None (정책 적재를 막지 않는다)."""
+    f = tmp_path / "p.onnx"
+    f.write_bytes(b"x")
+    assert policy_meta(str(f)) is None
+    (tmp_path / "p.onnx.json").write_text(
+        '{"run": "stage1_x", "checkpoint": "model_300.pt", "env": {"accel": "movej", "limits": [0.0, 0.35, -0.35, 0.08], "reach_max": 0.35, "overshoot": 0.0}}',
+        encoding="utf-8")
+    meta = policy_meta(str(f))
+    assert meta["run"] == "stage1_x" and meta["env"]["accel"] == "movej"
+    (tmp_path / "p.onnx.json").write_text("{broken", encoding="utf-8")
+    assert policy_meta(str(f)) is None
+
+
+def test_meta_mismatches_lists_only_differences():
+    """학습 조건(10/14: movej·35/35/8·두 축 합 35·지나침 0)과 yaml 이 같으면 비고 없음, 다르면 항목별 한 줄."""
+    meta = {"env": {"accel": "movej", "limits": [0.0, 0.35, -0.35, 0.08], "reach_max": 0.35, "overshoot": 0.0}}
+    same = dict(right_max_m=0.35, updown_max_m=0.35, down_max_m=0.08, reach_max_m=0.35, catch_move="amovej", catch_overshoot_m=0.0)
+    assert meta_mismatches(meta, same) == []
+    assert meta_mismatches(None, same) == [] and meta_mismatches({}, same) == []
+    msgs = meta_mismatches(meta, dict(same, right_max_m=0.15, updown_max_m=0.15, catch_move="amovel", catch_overshoot_m=0.05))
+    assert len(msgs) == 4
+    assert any(m.startswith("right_max_m") for m in msgs) and any(m.startswith("updown_max_m") for m in msgs)
+    assert any("catch_move 학습 amovej vs yaml amovel" in m for m in msgs) and any(m.startswith("catch_overshoot_m") for m in msgs)
+    assert meta_mismatches(meta, dict(same, reach_max_m=0.30)) == ["reach_max_m 학습 0.35 vs yaml 0.30"]
 
 
 def test_real_policy_if_available():
