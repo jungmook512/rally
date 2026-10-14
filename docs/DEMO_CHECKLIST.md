@@ -3,13 +3,14 @@
 위에서부터 체크하며 따라간다. 리허설 때 실제로 해 보고 틀린 곳은 이 파일을 바로 고친다.
 두 PC를 같이 쓰는 순서다 (`full_system.launch.py` 와 같은 순서). `scripts/robot.sh` 는 모든 명령이 **혼자 시험용 로컬 모드**(서버 PC 없이)로 바꿔 실행하므로 시연에는 쓰지 않는다 — 두 PC 설정에서는 서로 안 닿는다. 비상정지는 `scripts/estop.sh`(지금 터미널 설정 그대로 씀)를 쓴다.
 
-- 서버 PC = brain·DB·대시보드 (compose `pc3`) · 로봇·인식 PC = 두산·로봇 노드(네이티브 `pc1`) + 추론 컨테이너(compose `pc2`)
+- 서버 PC = brain·DB·대시보드·**음성(voice)** (compose `pc3` — 10/14 부터 음성은 서버 PC, 스피커·마이크도 서버 PC) · 로봇·인식 PC = 두산·로봇 노드(네이티브 `pc1`) + 추론 컨테이너 vision·hand_pose(compose `pc2`)
 - 로봇·인식 PC의 **네이티브 터미널은 매번 `source scripts/env_robot_pc.sh` 먼저** (없으면 컨테이너·서버 PC와 서로 못 찾는다)
 - ⏳ 표시는 아직 머지 전인 PR이 필요한 항목. 리허설 전에 머지됐는지 확인 (10/14: #136·#139·#140·#143 머지돼 표시 뺌. 남은 ⏳ 없음)
 
 ## 0. 전날·당일 아침 준비
 
 - [ ] 두 PC 모두 `main` 최신: `cd ~/rally && git checkout main && git pull`
+- [ ] 로봇·인식 PC 에 옛 voice 컨테이너가 남아 있으면 제거 (10/14 음성이 서버 PC 로 옮겨감 — 둘 다 켜지면 안내가 두 번 나오고 명령도 두 번 들어감): `docker rm -f docker-voice-1` → `docker ps | grep voice` 가 비어야 함
 - [ ] 로봇·인식 PC 네이티브 빌드: `cd ros2_ws && colcon build --symlink-install --packages-up-to rally_bringup rally_robot && cd ..`
 - [ ] 서버 PC `docker/.env`
   - `PC3_IP` = 서버 PC IP, `ROS_DOMAIN_ID` 두 PC 같게
@@ -18,10 +19,10 @@
 - [ ] 운영 DB에 그래프 표 있음: `docker exec docker-db-1 psql -U rally -d rally -c "\dt kg_*"` → `kg_edge`·`kg_node`
 - [ ] 소품: 공(모드 1 거치대 4개), 벨크로 공·패드(모드 3), 막대·컵(모드 5, 흰 배경 위), (모드 7 은 소품 없음 — 로봇 손목을 민다), 바닥 중앙선
 - [ ] 카메라 2대 연결: 손목 RealSense(시리얼 `140122076335`), 측면 RealSense(`147122075430`)
-- [ ] 로봇·인식 PC `~/rally/models/` 에 음성 모델 두 개 (git 제외, 노션 전달): 비상어 `kws/emergency_kws.joblib` — `python3 -c "import joblib,os; m=joblib.load(os.path.expanduser('~/rally/models/kws/emergency_kws.joblib')); print(m.get('consec'), m['threshold'], m.get('wake'))"` 가 `3 0.9 ['rally']` · Piper `piper/ko_KR-kss-medium.onnx`(+`.json`)
-- [ ] 같은 폴더에 비전 모델: 공 `yolov8n-seg_ball.pt` · 막대·컵 `yolov8n-seg_cupstick.pt`(**10/12 손에 든 막대 학습본 cupstick_v2_scratch 를 이 이름으로** — 10/8 파일과 이름이 같으니 날짜·`md5sum` 으로 확인) · `T_gripper2camera.npy` · 모드 3 `velcro_ball_yolo11n-seg_1024_rot_final.(engine|pt)` · `mode3_side_calib.json`.
+- [ ] **서버 PC** `~/rally/models/` 에 음성 모델 두 개 (git 제외, 노션 전달 — 10/14 부터 voice 컨테이너가 서버 PC): 비상어 `kws/emergency_kws.joblib` — `python3 -c "import joblib,os; m=joblib.load(os.path.expanduser('~/rally/models/kws/emergency_kws.joblib')); print(m.get('consec'), m['threshold'], m.get('wake'))"` 가 `3 0.9 ['rally']` · Piper `piper/ko_KR-kss-medium.onnx`(+`.json`)
+- [ ] 로봇·인식 PC `~/rally/models/` 에 비전 모델: 공 `yolov8n-seg_ball.pt` · 막대·컵 `yolov8n-seg_cupstick.pt`(**10/12 손에 든 막대 학습본 cupstick_v2_scratch 를 이 이름으로** — 10/8 파일과 이름이 같으니 날짜·`md5sum` 으로 확인) · `T_gripper2camera.npy` · 모드 3 `velcro_ball_yolo11n-seg_1024_rot_final.(engine|pt)` · `mode3_side_calib.json`.
   확인: 손에 막대를 들고 `ros2 topic echo /rally/perception/objects --once` 에 `rod` 가 나와야 모드 5 받기 기울기 맞춤·다가가기가 돈다 (안 나오면 힘 4 N 으로만 받음)
-- [ ] 음성 장치 (#183 뒤 컨테이너 소리·마이크는 데스크톱 오디오(PipeWire) 경유): **데스크톱에 로그인한 사용자로** 진행, 설정 > 소리에서 **입력 = 맥스틸 C타입 이어셋, 출력 = 방 스피커** (이어셋을 꽂으면 출력이 이어셋으로 바뀌는 경우가 많으니 꽂은 뒤 다시 확인). `docker/.env` 의 `VOICE_MIC_DEVICE`·`VOICE_SPEAKER_DEVICE` 는 **비움**
+- [ ] 음성 장치 — **서버 PC 데스크톱**에서 (#183 뒤 컨테이너 소리·마이크는 그 PC 의 데스크톱 오디오(PipeWire) 경유): **데스크톱에 로그인한 사용자로** 진행, 설정 > 소리에서 **입력 = 맥스틸 C타입 이어셋(서버 PC 에 꽂음. 내장 마이크를 쓰면 음소거 해제·입력 레벨 확인), 출력 = 서버 PC 내장 스피커 또는 방 스피커** (이어셋을 꽂으면 출력이 이어셋으로 바뀌는 경우가 많으니 꽂은 뒤 다시 확인). 서버 PC(삼성 950XBE) 내장 스피커는 `/etc/modprobe.d/samsung-alc298.conf` 에 `options snd-hda-intel model=alc298-samsung-amp` 가 있어야 소리가 남 (10/14 — 없으면 오류 없이 무음). `docker/.env` 의 `VOICE_MIC_DEVICE`·`VOICE_SPEAKER_DEVICE` 는 **비움**. 시연 중 서버 PC 의 Firefox 등 큰 프로그램은 닫기 (메모리 7.6 GiB — voice 까지 돌면 빠듯)
 - [ ] 하드웨어 비상정지 버튼 위치를 시연자·운영자 모두 확인
 
 ## 1. 서버 PC — 기반 (먼저)
@@ -49,24 +50,26 @@ ros2 launch rally_bringup pc1_robot.launch.py hand_stop:=slow      # ★ 리허�
 - [ ] safety_monitor 로그 `★ hand_stop_mode=slow …` (stop 이면 `hand_stop_mode=stop (손 근접 STOP 켜짐)`) — **off 가 보이면 끄고 다시**
 - [ ] `skill_server ready`
 
-**터미널 3 — 추론 컨테이너 (비전·손·음성)**
+**터미널 3 — 추론 컨테이너 (비전·손)**
 ```bash
 cd ~/rally/docker && docker compose --profile pc2 up -d --build
-docker compose --profile pc2 ps          # vision · hand_pose · voice running
+docker compose --profile pc2 ps          # vision · hand_pose running (voice 는 서버 PC — 3절)
 docker compose --profile pc2 logs -f vision   # 아래 로그 확인 후 Ctrl+C
 ```
 - [ ] vision 로그 `/side/side 노출 고정: … exposure=20, … gain=128`
-- [ ] voice 로그 (`docker compose --profile pc2 logs voice`): `[voice] 소리: 호스트 PipeWire (펄스 소켓)` · `마이크: pulse …` · `호출어 대기 (랠리야, 임계 0.90, 연속 3 프레임)` · `Piper 음성 ko_KR-kss-medium.onnx`. `펄스 소켓 없음`·`hello_rokey`·`상시 감지 꺼짐` 이 보이면 0절 음성 장치·모델부터
 - [ ] 카메라 주기 (네이티브 터미널, `source scripts/env_robot_pc.sh` 후)
   - `ros2 topic hz /camera/color/image_raw` ≈ 60 (손목)
   - `ros2 topic hz /side/side/color/image_raw` ≈ 60 (측면, 모드 3)
 
-## 3. 서버 PC — brain·대시보드
+## 3. 서버 PC — brain·대시보드·음성
 
 ```bash
-cd ~/rally/docker && docker compose --profile pc3 up -d --build brain dashboard
+cd ~/rally/docker && docker compose --profile pc3 up -d --build brain dashboard voice
 docker compose --profile pc3 logs --tail 30 brain    # 오류 없는지
+docker compose --profile pc3 logs --tail 30 voice    # 아래 voice 로그 확인
 ```
+- [ ] voice 로그: `[voice] 소리: 호스트 PipeWire (펄스 소켓)` · `마이크: pulse …` · `호출어 대기 (랠리야, 임계 0.90, 연속 3 프레임)` · `Piper 음성 ko_KR-kss-medium.onnx`. `펄스 소켓 없음`·`hello_rokey`·`상시 감지 꺼짐` 이 보이면 0절 음성 장치·모델부터
+- [ ] 소리 확인: `docker compose exec brain ros2 service call /rally/voice/speak rally_interfaces/srv/Speak "{text: '안녕하세요', block_mic: false}"` → 서버 PC 스피커에서 들려야 함 (`done: true` 인데 안 들리면 0절 음성 장치)
 - [ ] 대시보드 열기: `http://<서버 PC IP>:8000` → 오른쪽 위 "실시간 연결됨"
 
 ## 4. 준비 확인 (세션 시작 전)
@@ -84,8 +87,8 @@ ros2 run rally_bringup wait_ready --group session --once
 
 - [ ] **하드웨어 비상정지**: 누르면 멈추는지 → 해제 (두산 펜던트 절차)
 - [ ] **소프트 비상정지**: 네이티브 터미널에서 `scripts/estop.sh` → 대시보드 STOP(`estop`) → `scripts/estop.sh reset` → NORMAL
-- [ ] **음성**: "그만" → STOP(`voice_stop`) → `scripts/estop.sh reset`
-- [ ] **음성 비상어 상시 감지 켜짐**: 터미널 3 intent_node 로그에 `비상어 상시 감지 켬 (… 연속 3 프레임)` 이 있고 `상시 감지 꺼짐` 경고(`kws_enabled=false` 또는 모델 없음)가 없을 것 (#172)
+- [ ] **음성**: "그만" → STOP(`voice_stop`) → `scripts/estop.sh reset` (10/14 부터 서버 PC 마이크 → 와이파이 → 로봇 PC safety_monitor. 와이파이가 끊기면 음성 정지도 안 가니 물리 비상정지가 우선)
+- [ ] **음성 비상어 상시 감지 켜짐**: 서버 PC voice 로그(`docker compose --profile pc3 logs voice`)에 `비상어 상시 감지 켬 (… 연속 3 프레임)` 이 있고 `상시 감지 꺼짐` 경고(`kws_enabled=false` 또는 모델 없음)가 없을 것 (#172)
 - [ ] 손 STOP 모드 로그를 다시 한 번 (터미널 2 맨 위 `hand_stop_mode=…`)
 
 **시연자(환자 역할)에게 미리 알려 줄 것**
@@ -130,11 +133,12 @@ ros2 action send_goal /rally/session/run rally_interfaces/action/RunSession "{pa
 | STOP — `wrench_missing`·`tcp_missing`·`wrench_lost` | 터미널 1·2 로그 확인 (두산 연결·force_publisher). 특이점 근처면 관측 자세로: `ros2 service call /rally/robot/go_observe_pose std_srvs/srv/Trigger` |
 | 세션이 시작 안 됨 (`세션 시작 불가 — 준비 안 됨: …`) | 4절 `wait_ready` 로 빠진 노드 찾기 → 그 터미널부터 다시 |
 | 비전이 물체를 못 찾음 | 대시보드 카메라 칸 / `ros2 topic hz /rally/perception/objects`. vision 컨테이너 `docker compose --profile pc2 restart vision` |
+| 음성 안내가 안 들림 · "랠리야" 반응 없음 | 서버 PC 설정 > 소리의 입력·출력 장치(0절), `docker compose --profile pc3 logs --tail 30 voice`. 안 되면 `docker compose --profile pc3 restart voice` |
 | 모드 3 이 계속 실패 | 세션 취소(터미널 Ctrl+C) → `modes: [5, 7]` 로 이어서, 모드 3 은 따로 시연 |
 | 꼬여서 처음부터 | 로봇·인식 PC: 터미널 2 → 1 순서로 Ctrl+C, `docker compose --profile pc2 down` → 2절부터. 서버 PC는 그대로 둬도 됨 |
 
 ## 8. 끝낸 뒤
 
 - [ ] 로봇을 관측 자세나 홈으로 → 터미널 2 → 1 Ctrl+C
-- [ ] 로봇·인식 PC `docker compose --profile pc2 down`, 서버 PC `docker compose --profile pc3 stop brain dashboard` (db·redis 는 기록 보관용으로 둬도 됨)
+- [ ] 로봇·인식 PC `docker compose --profile pc2 down`, 서버 PC `docker compose --profile pc3 stop brain dashboard voice` (db·redis 는 기록 보관용으로 둬도 됨)
 - [ ] **시연 뒤 개발로 돌아갈 때** 손 STOP 값을 다시 정할 것 (개발 기본은 off)
