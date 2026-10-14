@@ -365,7 +365,7 @@ handover:
   #   require_object (10/12 #142 리뷰 (b)): 받을 물체가 비전에 최근 object_recent_s 안에 보였을 때만 깊이로 닫음 — 손가락만 들어와도 20 N 으로
   #   닫히지 않게. 손에 든 막대 인식 모델(박성현 재학습 중) 전에는 사실상 힘(receive_threshold_n)으로만 받는다.
   #   실로봇에서 힘만으로 못 받으면 모델 전까지 require_object: false + 받기 닫는 힘을 낮춰서 쓴다
-  #   10/12 저녁 새 모델(yolov8n-seg_cupstick_v2_scratch, 손에 든 막대 사진 21장 중 16장 0.9 안팎): 막대를 든 손이 그리퍼 앞에 오면
+  #   10/12 저녁 새 모델(yolov8n-seg_cupstick_v2_scratch → models/yolov8n-seg_cupstick.pt 이름으로 배치, 손에 든 막대 사진 21장 중 16장 0.9 안팎): 막대를 든 손이 그리퍼 앞에 오면
   #   85~94 % 로 빈손 닫기를 반복 → hold_s 0.3 → 0.8, 영역 위쪽 6 → 3 cm(코드 box_mm), 빈손 뒤엔 한 번 비워져야 다시 닫음
   #   10/12 밤 정정인: 받기 흐름 = 막대 각도 맞춤 → 막대로 다가감(receive_approach) → 닫기. 깊이 근접으로는 안 닫음(close_on_depth: false) —
   #   깊이는 '그리퍼 사이가 비었나'(회전·다가가기 조건)에만. 밀어 넣는 힘(receive_threshold_n)으로는 여전히 닫힘

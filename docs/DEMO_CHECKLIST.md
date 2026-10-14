@@ -18,7 +18,9 @@
 - [ ] 운영 DB에 그래프 표 있음: `docker exec docker-db-1 psql -U rally -d rally -c "\dt kg_*"` → `kg_edge`·`kg_node`
 - [ ] 소품: 공(모드 1 거치대 4개), 벨크로 공·패드(모드 3), 막대·컵(모드 5, 흰 배경 위), (모드 7 은 소품 없음 — 로봇 손목을 민다), 바닥 중앙선
 - [ ] 카메라 2대 연결: 손목 RealSense(시리얼 `140122076335`), 측면 RealSense(`147122075430`)
-- [ ] 로봇·인식 PC `~/rally/models/` 에 모델 두 개 (git 제외, 노션 전달): 비상어 `kws/emergency_kws.joblib` — `python3 -c "import joblib,os; m=joblib.load(os.path.expanduser('~/rally/models/kws/emergency_kws.joblib')); print(m.get('consec'), m['threshold'], m.get('wake'))"` 가 `3 0.9 ['rally']` · Piper `piper/ko_KR-kss-medium.onnx`(+`.json`)
+- [ ] 로봇·인식 PC `~/rally/models/` 에 음성 모델 두 개 (git 제외, 노션 전달): 비상어 `kws/emergency_kws.joblib` — `python3 -c "import joblib,os; m=joblib.load(os.path.expanduser('~/rally/models/kws/emergency_kws.joblib')); print(m.get('consec'), m['threshold'], m.get('wake'))"` 가 `3 0.9 ['rally']` · Piper `piper/ko_KR-kss-medium.onnx`(+`.json`)
+- [ ] 같은 폴더에 비전 모델: 공 `yolov8n-seg_ball.pt` · 막대·컵 `yolov8n-seg_cupstick.pt`(**10/12 손에 든 막대 학습본 cupstick_v2_scratch 를 이 이름으로** — 10/8 파일과 이름이 같으니 날짜·`md5sum` 으로 확인) · `T_gripper2camera.npy` · 모드 3 `velcro_ball_yolo11n-seg_1024_rot_final.(engine|pt)` · `mode3_side_calib.json`.
+  확인: 손에 막대를 들고 `ros2 topic echo /rally/perception/objects --once` 에 `rod` 가 나와야 모드 5 받기 기울기 맞춤·다가가기가 돈다 (안 나오면 힘 4 N 으로만 받음)
 - [ ] 음성 장치 (#183 뒤 컨테이너 소리·마이크는 데스크톱 오디오(PipeWire) 경유): **데스크톱에 로그인한 사용자로** 진행, 설정 > 소리에서 **입력 = 맥스틸 C타입 이어셋, 출력 = 방 스피커** (이어셋을 꽂으면 출력이 이어셋으로 바뀌는 경우가 많으니 꽂은 뒤 다시 확인). `docker/.env` 의 `VOICE_MIC_DEVICE`·`VOICE_SPEAKER_DEVICE` 는 **비움**
 - [ ] 하드웨어 비상정지 버튼 위치를 시연자·운영자 모두 확인
 

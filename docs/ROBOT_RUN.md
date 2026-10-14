@@ -88,14 +88,18 @@ ros2 action send_goal /rally/skill/return_ball rally_interfaces/action/ReturnBal
 
 **세션 (비전, 10/11~)**: 터미널 2 를 모드 5 모델로 띄우고 `session 5`.
 ```bash
-MODEL=yolov8n-seg_864.pt IMGSZ=864 scripts/robot.sh nodes     # 터미널 2 — 막대·컵 분할 모델
+SEG_SRC=$PWD/ros2_ws/src/rally_vision/rally_vision MODEL=yolov8n-seg_cupstick.pt IMGSZ=864 scripts/robot.sh nodes   # 터미널 2 — 막대·컵 분할 모델 (모드 1 과 같이 돌리면 MODEL=auto)
+# SEG_SRC 필수: 기본값(10/7 옛 체크아웃 rally_seg66)에는 image_axis 가 없어 받기 기울기 맞춤·다가가기가 안 돈다. MODEL=auto 면 자동으로 저장소 코드
 scripts/robot.sh session 5                                       # 터미널 3
 ```
 흐름: 관측 자세 → 물체 보기 자세(`skills.yaml mode5.pick_view_posx`, 흰 배경이 화면에 다 들어오게) → 보이는 막대·컵 중 무작위 →
 마스크 주축 방향으로 그리퍼를 돌려 집기(높이 = 테이블 + `mode5.grasp_height_m`) → 기울여 건네기(당기면 놓음) → 물러난 자리에서 그리퍼 열고 대기 →
 **환자가 물체를 그리퍼 사이로 넣어 준다**(밀어 넣는 힘 4 N 또는 그리퍼 사이 깊이 근접 `mode5.receive_depth` — 받을 물체가 비전에 보일 때만(`require_object`) → 닫기, 빈손이면 다시 열고 대기. 로봇은 손을 따라가지 않음 #134)
 → 실제로 쥐었던 높이 + 1 cm(`place_drop_m`)에서 놓아 제자리에.
-- 받기 기울기 맞춤(`mode5.receive_tilt_follow`, 비전 `image_axis`)은 **기본 꺼짐** — 손에 든 막대 인식 전이고, 켜면 받기 대기가 순응 없이 돈다. 깊이 토픽이 없으면 켜져 있어도 돌리지 않는다.
+- 받기 기울기 맞춤(`handover.receive_tilt_follow`, 비전 `image_axis`)과 막대로 다가가기(`receive_approach`)는 **10/12 저녁부터 기본 켜짐**(#164). 둘 다 비전이 **손에 든 막대**를 `rod` 로 보고 화면 각도를 줄 때만 돈다 —
+  `models/yolov8n-seg_cupstick.pt` 가 10/12 손에 든 막대 학습본(cupstick_v2_scratch)이어야 하고, 10/8 흰 배경 전용 파일이면 각도가 안 와서 **회전·다가가기 없이 힘 4 N 으로만 받는다**(옛 방식처럼 보임).
+  확인: 손에 막대를 들고 `ros2 topic echo /rally/perception/objects --once` 에 `rod` 가 나오고 `ros2 topic hz /rally/perception/objects/image_axis` 가 찍혀야 한다. 터미널 2 받기 로그의 `막대 화면 기울기 -` 는 각도 없음.
+  깊이 토픽이 없으면 켜져 있어도 돌리지 않는다. 다가가기는 손 인식 입력·안전 상태·hand_stop 이 살아 있을 때만(#164 안전 조건).
 - 막대·컵은 흰 배경 위에 아무 방향으로 둔다(그리퍼가 마스크 방향에 맞춰 돈다). 막대 굵기 14.5 mm.
 - 속도는 `skills.yaml mode5.speed_scale` 하나로 조절(기본 0.5). 손 근접 STOP 이 풀리면 하던 단계를 이어 간다(#115, `brain.hand_stop_wait_modes`).
 - 물체 보기 자세를 다시 잡을 때: `python3 scripts/jog.py --dy -0.10` (NORMAL 일 때만, 도착 posx 를 `pick_view_posx` 에 옮겨 적기).
