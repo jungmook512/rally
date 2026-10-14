@@ -88,7 +88,8 @@ ros2 action send_goal /rally/skill/return_ball rally_interfaces/action/ReturnBal
 
 **세션 (비전, 10/11~)**: 터미널 2 를 모드 5 모델로 띄우고 `session 5`.
 ```bash
-MODEL=yolov8n-seg_cupstick.pt IMGSZ=864 scripts/robot.sh nodes   # 터미널 2 — 막대·컵 분할 모델 (모드 1 과 같이 돌리면 MODEL=auto)
+SEG_SRC=$PWD/ros2_ws/src/rally_vision/rally_vision MODEL=yolov8n-seg_cupstick.pt IMGSZ=864 scripts/robot.sh nodes   # 터미널 2 — 막대·컵 분할 모델 (모드 1 과 같이 돌리면 MODEL=auto)
+# SEG_SRC 필수: 기본값(10/7 옛 체크아웃 rally_seg66)에는 image_axis 가 없어 받기 기울기 맞춤·다가가기가 안 돈다. MODEL=auto 면 자동으로 저장소 코드
 scripts/robot.sh session 5                                       # 터미널 3
 ```
 흐름: 관측 자세 → 물체 보기 자세(`skills.yaml mode5.pick_view_posx`, 흰 배경이 화면에 다 들어오게) → 보이는 막대·컵 중 무작위 →

@@ -27,6 +27,9 @@
 #   header.frame_id 가 base_link 여야 로봇이 집을 수 있다 — force_publisher(/rally/robot/tcp_pose) 가 떠 있어야 함.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE=${IMAGE:-rally/vision:pr18}
+# MODEL=auto(두 모델 이름 찾기·imgsz 0)와 image_axis 는 이 저장소 segmenter 에만 있다 — 10/7 옛 체크아웃(rally_seg66)은 공 모델 하나만 찾고
+#   imgsz 0 을 모른다. 그래서 auto 이고 SEG_SRC 를 따로 안 줬으면 저장소 코드로 (#201 리뷰)
+[ "${MODEL:-}" = auto ] && [ -z "${SEG_SRC+x}" ] && SEG_SRC="$ROOT/ros2_ws/src/rally_vision/rally_vision"
 SEG_SRC=${SEG_SRC-/home/ms-01/rally_seg66/ros2_ws/src/rally_vision/rally_vision}
 NAME=rally_vision_local
 MODEL=${MODEL:-yolov8n-seg_ball.pt}
