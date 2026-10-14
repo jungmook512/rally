@@ -191,11 +191,12 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 
 | 경로 | 계약 |
 |---|---|
-| Redis `rally:session_control` | brain이 0.2 s마다 갱신, TTL 2 s. `session_id`, `phase`(idle/running/pause_pending/paused/ended), `pause_id`, `reason`, `mode`, `difficulty`, `trial_index`, `can_resume`, `blocked_reason`, `updated_at`(Unix s), `bt_node`(현재 BT 실행 노드명), `mode3_enabled`(챌린지 설정), `hand_wait`(손 근접 STOP 대기 중이면 그 사유, 아니면 빈 문자열 — 뒤에 추가) |
-| Redis pub/sub `rally:session_commands` | 재개 요청 JSON: `request_id`, `session_id`, `pause_id`(모두 UUID 문자열), `command: resume`, `expires_at`(Unix s, 최대 3 s). 저장·재전송하지 않음 |
+| Redis `rally:session_control` | brain이 0.2 s마다 갱신, TTL 2 s. `session_id`, `phase`(idle/running/pause_pending/paused/ended), `pause_id`, `reason`, `mode`, `difficulty`, `trial_index`, `can_resume`, `blocked_reason`, `updated_at`(Unix s), `bt_node`(현재 BT 실행 노드명), `mode3_enabled`(챌린지 설정), `hand_wait`(손 근접 STOP 대기 중이면 그 사유, 아니면 빈 문자열 — 뒤에 추가), `proposal`(10절), `pending_switch`(접수된 모드 전환: null 또는 `{mode: 1·3·5·7 | null(다음 모드)}` — 뒤에 추가) |
+| Redis pub/sub `rally:session_commands` | 재개 요청 JSON: `request_id`, `session_id`, `pause_id`(모두 UUID 문자열), `command: resume`, `expires_at`(Unix s, 최대 3 s). 저장·재전송하지 않음. 모드 전환은 `command: set_mode`, `mode`(정수 1·3·5·7 또는 null = 다음 모드), `pause_id` 없음 — brain 은 세션 ID 를 확인한 뒤 `/rally/brain/set_mode`·음성과 같은 확인(휴식·손 대기·안전 정지·모드 3 꺼짐·같은 모드)을 거쳐 접수하고, 실제 전환은 시도 경계에서 |
 | Redis `rally:session_reply:<request_id>` | brain 응답 `success`, `message`, `request_id`. TTL 5 s. 세션·휴식 식별값을 확인한 뒤 현재 안전·준비 조건으로 재검증. 중복 요청은 이미 소비된 휴식 ID이므로 재실행 불가 |
 | HTTP `GET /api/session` | 최신 Redis 제어 상태 또는 null (미수신·만료). Redis 연결 실패 503 |
 | HTTP `POST /api/session/resume` | JSON `session_id`, `pause_id`. 서버가 요청 UUID·만료를 생성한다. brain 승인 시 200, 거절 409, 상태 없음/Redis/수신자 없음 503, 응답 미확인 504. timeout은 결과 미확인이므로 상태 새로고침 후 판단하고 자동 재시도하지 않음 |
+| HTTP `POST /api/session/mode` | JSON `session_id`, `mode`(1·3·5·7 또는 null). `phase: running` 이고 세션이 같을 때만 Redis 로 보냄. brain 접수 200, 거절·상태 바뀜 409, 잘못된 모드 422, 상태 없음/Redis 503, 응답 미확인 504. 자동 재시도 없음 |
 | WebSocket `/ws` | 기존 메시지에 `type: session`, `data: 위 상태 또는 null` 추가. 0.5 s마다 전달. 브라우저도 2 s 이상 갱신이 없으면 버튼 비활성화 |
 
 음성 재개는 발화 timestamp가 현재 휴식 시작 이후인 경우만 허용한다. zero stamp·오래된/중복 발화는 재개하지 않는다. 대시보드 요청은 화면에 표시된 세션·휴식 ID를 보내므로 이전 세션/휴식에서 누른 버튼은 거절된다. 안전 여부는 화면의 표시가 아니라 brain이 결정한다.

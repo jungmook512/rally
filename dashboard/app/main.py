@@ -7,9 +7,11 @@
   GET  /api/events    최근 사건 — DB events (안전·음성·모드 바뀜)
   WS   /ws            {"type": "state", "data": …} 0.5 s 마다 바뀌었을 때 / {"type": "event", "data": …} rally:events 그대로
   GET /api/session · POST /api/session/resume — Redis를 통해 brain 상태 조회·재개 승인 요청
+  POST /api/session/mode — 모드 전환 요청 (1·3·5·7 또는 null = 다음 모드). brain 이 확인하고 지금 시도가 끝나면 바꾼다
   GET  /api/cameras   카메라 화면 주소 — 로봇·인식 PC 의 web_video_server(ROBOT_VIDEO_URL) MJPEG. 브라우저가 거기서 직접 받는다
                       (영상은 대시보드 서버를 거치지 않고, 저장하지 않는다 — 같은 네트워크 안 화면 표시만)
-대시보드는 ROS 를 쓰지 않는다. 휴식 재개·휴식 제안 응답을 Redis로 연결하며 안전 reset과 구분한다.
+대시보드는 ROS 를 쓰지 않는다. 휴식 재개·휴식 제안 응답·모드 전환을 Redis로 연결하며 안전 reset과 구분한다.
+로봇을 직접 움직이는 명령은 없다 — brain 이 현재 상태(휴식·손 대기·안전 정지)를 다시 확인한 뒤 행동 트리가 적용한다.
 Redis·DB 가 죽어 있어도 서버는 뜨고, 해당 API 는 503 + 이유를 돌려준다. 화면은 다시 연결될 때까지 재시도한다.
 """
 from __future__ import annotations
@@ -123,6 +125,25 @@ async def respond_proposal(body: ProposalResponse) -> dict[str, Any]:
         return await send_command({"request_id": str(uuid.uuid4()), "session_id": str(body.session_id),
             "proposal_id": str(body.proposal_id), "command": "proposal_" + body.decision,
             "expires_at": time.time() + 2})
+    except aioredis.RedisError as e:
+        raise HTTPException(503, "제어 연결이 끊겼습니다. 상태를 다시 확인해 주세요") from e
+
+
+class ModeRequest(BaseModel):
+    session_id: uuid.UUID
+    mode: Literal[1, 3, 5, 7] | None = None   # None = 다음 모드
+
+
+@app.post("/api/session/mode")
+async def switch_mode(body: ModeRequest) -> dict[str, Any]:
+    try:
+        state = await _get_control()
+        if not state:
+            raise HTTPException(503, "brain의 최신 상태가 없습니다")
+        if state["session_id"] != str(body.session_id) or state["phase"] != "running":
+            raise HTTPException(409, "진행 중인 세션이 아니거나 상태가 바뀌었습니다")
+        return await send_command({"request_id": str(uuid.uuid4()), "session_id": str(body.session_id),
+            "command": "set_mode", "mode": body.mode, "expires_at": time.time() + 2})
     except aioredis.RedisError as e:
         raise HTTPException(503, "제어 연결이 끊겼습니다. 상태를 다시 확인해 주세요") from e
 
