@@ -7,7 +7,7 @@ compose 서비스마다 part 를 하나씩 준다:
               + camera_tf · segmenter · tracker · flight_predictor
               + web_video_server (포트 8080) — 대시보드 '카메라' 칸이 MJPEG 로 받아 본다 (video_server:=false 면 안 띄움)
   human     → usb_cam(/webcam/image_raw) + hand_pose · body_pose
-  voice     → intent_node · tts_node
+  voice     → intent_node · tts_node (10/14 부터 서버 PC compose pc3 에서 띄움 — 파일 이름은 역할 이름 그대로)
   all       → 셋 다 (컨테이너 없이 한 터미널에서 확인할 때)
 
 아직 실행 등록이 안 된 노드나 이 환경에 없는 패키지는 경고만 남기고 건너뛴다 — 담당자가 노드를 채우는 동안에도 launch 는 돈다.
@@ -44,7 +44,11 @@ def _params(context, executable: str) -> list[dict]:
         # 10/14: compose 경로도 scripts/vision_local.sh 의 HAND_EYE 와 같은 선택을 할 수 있게. none = hand_eye.yaml 안 쓰고 선생님 npy
         # (#66 과 같은 좌표 — mode1.vision_offset_m 이 10/7 그 좌표 기준으로 맞춰져 있어, yaml 과 겹치면 약 1 cm 어긋남)
         he = LaunchConfiguration("segmenter_hand_eye").perform(context).strip()
-        return [{"hand_eye_path": he}] if he else []
+        params = {"hand_eye_path": he} if he else {}
+        conf = LaunchConfiguration("segmenter_conf").perform(context).strip()
+        if conf:                                   # 비우면 segmenter 기본값(0.5)
+            params["conf"] = float(conf)
+        return [params] if params else []
     return []
 
 
@@ -144,5 +148,7 @@ def generate_launch_description():
         DeclareLaunchArgument("body_arm", default_value="left", description="body_pose 뻗는 팔: left | right | auto (시연은 왼팔)"),
         DeclareLaunchArgument("segmenter_hand_eye", default_value="",
                               description="segmenter hand_eye_path: 비우면 hand_eye.yaml, none = 옛 T_gripper2camera.npy (#66 좌표, vision_offset_m 기준)"),
+        DeclareLaunchArgument("segmenter_conf", default_value="",
+                              description="segmenter 검출 신뢰도 하한: 비우면 0.5. 모드 5 받기(손에 든 막대 0.25~0.5)는 0.25 — 테이블 집기는 brain 이 0.5 로 다시 거름"),
         OpaqueFunction(function=_launch_part),
     ])

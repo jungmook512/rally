@@ -136,8 +136,8 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 1. 로봇·인식 PC source scripts/env_robot_pc.sh → dsr_bringup2 → pc1_robot.launch
                   safety_monitor → [wait_ready --group safety] → force_publisher · gripper_node · skill_server
                   확인 실패 시 로봇 노드를 켜지 않고 launch 종료
-2. 로봇·인식 PC compose pc2: vision · hand_pose · voice (pc2_perception.launch part:=...)
-3. 서버 PC      compose pc3: brain (pc3_brain.launch) · dashboard
+2. 로봇·인식 PC compose pc2: vision · hand_pose (pc2_perception.launch part:=...)
+3. 서버 PC      compose pc3: brain (pc3_brain.launch) · dashboard · voice (pc2_perception.launch part:=voice — 10/14 부터 서버 PC, 스피커·마이크도 거기)
                   bt_runner 가 session 그룹(robot + perception + voice)을 1 s 마다 확인 → 준비 안 되면 세션을 시작하지 않음
 ```
 
