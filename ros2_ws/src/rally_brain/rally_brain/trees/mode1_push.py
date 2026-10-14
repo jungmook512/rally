@@ -30,6 +30,7 @@ HAND_VIEW_SERVICE = "/rally/robot/go_hand_view"
 DEFAULTS: dict[str, Any] = {**HAND_DEFAULTS, "balls_per_cycle": 4, "push_speed_range": [0.05, 0.35],
                            "hand_max_age_s": 1.0, "patient_margin_m": 0.05,
                            "hand_clear_m": 0.20, "hand_clear_log_s": 2.0,
+                           "return_fail_wait_s": 5.0,     # 회수 실패(집기 실패 등) → 안내 뒤 이 시간 기다리고 다음 시도 (10/14 정정인: 세션을 끝내지 않는다)
                            # 레인 결정: 손바닥이 hand_hold_tol_m 안에서 hand_hold_s 머물러야 (10/11 실로봇: 지나가는 손 한 프레임으로 레인 0 → 치기)
                            "hand_hold_s": 1.5, "hand_hold_tol_m": 0.04,
                            # 정지 위치: 받기 관측 중 손 보기 자세 카메라(SceneContext.objects)로, 손이 쥐기 전까지만 잰다
@@ -442,10 +443,12 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
         state.data["returned"] = True
 
     def return_failed(_r: Any, reason: str, _k: int) -> None:
-        log.warn(f"[모드 1] 공 회수 실패: {reason} — 운영자에게 거치대에 넣어 달라고 안내")
+        # 10/14 정정인: 집기 실패(좌표 오차·공 굴러감)는 세션 종료 사유가 아니다 — 운영자가 거치대에 올리는 동안 return_fail_wait_s 기다리고
+        # 다음 시도로 (다음 push_ball 은 거치대에서 다시 집음). 그 전엔 state.fatal 로 세션이 ABORTED 됐다
+        log.warn(f"[모드 1] 공 회수 실패: {reason} — 거치대에 넣어 달라고 안내하고 {cfg['return_fail_wait_s']:.0f} s 뒤 다음 시도")
         session.say(cfg["return_fail_prompt"])
         state.data["notes"] = "return_" + reason_code(reason)
-        state.fatal = True
+        state.data["recover_until"] = time.monotonic() + float(cfg["return_fail_wait_s"])
 
     ret = skill_step(state, "공 회수", return_client,
                      lambda: ReturnBall.Goal(lane=int(state.data["lane"]), timeout_s=float(cfg["return_timeout_s"])),
@@ -490,7 +493,8 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
     recover = py_trees.composites.Sequence("손 이탈 후 회수", memory=True, children=[
         clear, Do("회수 준비", run_return),
         py_trees.composites.Selector("회수 결과 처리", memory=True, children=[
-            ret, Do("회수 실패 기록으로", lambda: None),
+            ret,
+            WaitUntil("운영자 공 복구 대기", lambda: time.monotonic() >= float(state.data.get("recover_until", 0.0))),   # 실패 안내 뒤 잠깐
         ]),
     ])
     proceed = py_trees.composites.Sequence("진행", memory=True, children=[

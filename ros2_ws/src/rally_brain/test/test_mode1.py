@@ -226,9 +226,10 @@ def test_stop_records_once():
 
 
 def test_session_uses_balls_per_cycle():
-    client, session, _ = arrange([OK] * 4)
+    client, session, _ = arrange([OK] * 6)
+    n = m.trials_per_cycle(session.skills_cfg)            # skills.yaml mode1.balls_per_cycle (10/14 시연: 2) — goal 의 10 이 아니라 이 값
     tree = build_session_tree(session, [1], 10)
-    assert run(tree) == Status.SUCCESS and client.sent == 4
+    assert run(tree) == Status.SUCCESS and client.sent == n and n != 10
 
 
 def test_stop_before_goal_and_midflight_cancels():
@@ -346,13 +347,21 @@ def test_hand_view_failure_does_not_push():
     assert published[0].notes == 'hand_view_failed'
 
 
-def test_return_failure_stops_next_trial():
+def test_return_failure_prompts_waits_then_next_trial(monkeypatch):
+    # 10/14: 회수(집기) 실패는 세션 종료가 아니다 — 안내 뒤 return_fail_wait_s 기다리고 다음 시도 (다음 push_ball 이 거치대에서 다시 집음)
+    clock = [0.]
+    monkeypatch.setattr(m, 'time', NS(monotonic=lambda: clock[0]))
     client, session, published = arrange([OK, OK])
     ret = session.action_client(ReturnBall, m.RETURN_ACTION)
-    ret.outcomes = [(False, {'failure_reason': 'pick_failed'})]
-    assert run(build_session_tree(session, [1], 10)) == Status.FAILURE
-    assert client.sent == ret.sent == 1 and len(published) == 1
-    assert published[0].notes == 'return_pick_failed'
+    ret.outcomes = [(False, {'failure_reason': 'pick_failed'}), (True, {'success': True})]
+    tree = m.build_trial(session)
+    assert run(tree, max_s=1.0) == Status.RUNNING                 # 실패 안내 뒤 대기 중 (기록 전)
+    assert client.sent == ret.sent == 1 and published == []
+    clock[0] = m.mode1_config(session.skills_cfg)['return_fail_wait_s']
+    assert run(tree) == Status.SUCCESS                            # 대기 끝 → 시도 기록, 세션은 계속
+    assert len(published) == 1 and published[0].notes == 'return_pick_failed'
+    session.get_context().hand = hand()
+    assert run(tree) == Status.SUCCESS and client.sent == 2 and ret.sent == 2   # 다음 시도 정상 진행
 
 
 def test_hand_returns_while_return_server_pending_waits_again(monkeypatch):
