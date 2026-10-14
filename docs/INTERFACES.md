@@ -100,7 +100,7 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 | `/rally/robot/go_hand_view` | `std_srvs/Trigger` | rally_robot/skill_server | 손 보기 자세로 이동 — 툴을 환자 쪽으로 기울여 그리퍼 위 RealSense 가 환자 손을 본다 (모드 1 시도 전 레인 고르기). `skills.yaml mode1.hand_view_*`. 이미 그 자세면 바로 성공 |
 | `/rally/robot/go_pick_view` | `std_srvs/Trigger` | rally_robot/skill_server | 모드 5 물체 보기 자세로 이동 — 관측 자세(관절 이동) → `skills.yaml mode5.pick_view_posx`(직선). 흰 배경(물체 놓는 자리)이 화면에 다 들어오는 자세. 세션 5 가 집기 전에 부른다 (10/11) |
 | `/rally/robot/pad_pick` | `std_srvs/Trigger` | rally_robot/skill_server | 모드 3 패드 거치대에서 패드 집기 → 거치대 위 20 cm(U)에서 끝 — A(관절) → 열기 → G(직선) → 쥐기(폭 24~38 mm 확인) → 홈 따라 순응으로 들어 올림. 교시 `skills.yaml mode3.pad_rack_*_posj` (10/12) |
-| `/rally/robot/pad_place` | `std_srvs/Trigger` | rally_robot/skill_server | 모드 3 쥔 패드를 거치대에 꽂기 — U(관절) → 홈 입구 위 3 cm → 옆·회전을 무르게 한 순응 하강(위아래 힘 6 N 에서 멈춤) → 열기 → 손잡이 축 따라 빠짐 |
+| `/rally/robot/pad_place` | `std_srvs/Trigger` | rally_robot/skill_server | 모드 3 쥔 패드를 거치대에 꽂기 — U(관절) → 홈 입구 위 P(`pad_insert_pre_m`, 고정 옆 보정 `pad_insert_shift_m`) → 옆·회전을 무르게 한 순응 하강(G 위 2 cm 부터 10 mm/s, 힘 변화 `pad_insert_contact_n` 연속 3 샘플 또는 합력 `pad_insert_abs_stop_n` 한 샘플에서 멈춤) → G 위 2 cm 보다 높으면 걸림: 홈 밖으로 올라가 `pad_insert_search_pattern_m`(옆 이동·base z 회전) 순서로 다시 시도, 다 걸리면 쥔 채 빠지고 실패(`pad_insert_blocked`) → 열기 → 손잡이 축 따라 빠짐 (10/14) |
 | `/rally/robot/reset_safety` | `std_srvs/Trigger` | rally_robot/safety_monitor | 정지 해제 (운영자만) |
 | `/rally/perception/body/reset_baseline` | `std_srvs/Trigger` | rally_human/body_pose | 몸 자세 기준(평소 자세) 다시 잡기 — 부른 뒤 약 2 s 바르게. 환자가 자리를 잡은 뒤 운영자(확인 창 `b`)·brain(세션 시작)이 부름 |
 | `/rally/db/start_session` | `std_srvs/Trigger` → 추후 커스텀 | rally_db | 세션 레코드 생성 |
