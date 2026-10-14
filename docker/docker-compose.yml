@@ -37,7 +37,7 @@ services:
   voice:
     <<: *ros
     profiles: [pc2]
-    cpus: "2"
+    cpus: "4"            # 10/14 2 → 4: 비상어·호출어 감지(80 ms 마다) + STT + TTS 재생이 2코어 안에서 겹치면 TTS 가 끊김 (로봇 PC)
     build: { context: .., dockerfile: docker/voice/Dockerfile }
     devices: ["/dev/snd:/dev/snd"]
     group_add: ["audio"]
@@ -48,6 +48,7 @@ services:
       - ROS_DISCOVERY_SERVER=${PC3_IP:-172.24.3.122}:11811
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - PULSE_SERVER=unix:/run/pulse/native
+      - PULSE_LATENCY_MSEC=60                            # 10/14: 펄스 버퍼 60 ms — 기본값은 CPU 가 바쁠 때 TTS 가 뚝뚝 끊김 (소리 0.06 s 늦어지는 대신)
       - VOICE_MIC_DEVICE=${VOICE_MIC_DEVICE:-}          # 마이크 (이름 일부나 번호). 비우면 펄스 소켓이 있을 때 'pulse'(데스크톱 기본 입력), 없으면 16 kHz 기본 장치 자동
       - VOICE_SPEAKER_DEVICE=${VOICE_SPEAKER_DEVICE:-}  # TTS 스피커 (이름 일부나 번호). 시연은 비움 → 기본 = 펄스 → 데스크톱 설정의 출력(방 스피커). hw 이름을 주면 펄스를 우회해 무음일 수 있음
     volumes:
