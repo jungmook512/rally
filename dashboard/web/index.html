@@ -299,7 +299,7 @@
   #recent-list .r-res.ok { background:#e2f1e6; color:#2f6b45; } #recent-list .r-res.fail { background:#f6e3e3; color:#9a2525; }
   #recent-list .r-m { color:var(--text); font-variant-numeric:tabular-nums; } #recent-list .r-note { color:var(--muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   #recent-panel .empty { padding:4px 0; }
-  /* 최근 시도·사건 기록 탭 (10/12) */
+  /* 최근 시도·훈련 기록 탭 (10/12; 10/15 사건 기록 → 훈련 기록) */
   #trials-view .scroll, #events-view .scroll { max-height:calc(100vh - 190px); }
   .list-head { flex-wrap:wrap; gap:12px; margin-bottom:12px; }
   .chips { display:flex; gap:6px; flex-wrap:wrap; margin-right:auto; }
@@ -336,7 +336,7 @@
 <a href="#overview" data-page="overview">전체 현황</a>
 <a href="#mode1" id="nav-mode" data-page="mode">훈련</a>
 <a href="#trials" data-page="trials">최근 시도</a>
-<a href="#events" data-page="events">사건 기록</a>
+<a href="#events" data-page="events">훈련 기록</a>
 </nav>
   <span id="conn" class="off">연결 중…</span>
 </header>
@@ -425,8 +425,8 @@
       </div>
   </section>
   <section id="events-view" class="panel" hidden>
-      <div class="panel-top list-head"><h2>사건 기록</h2><span class="stat-line">안전 상태 · 음성 · 모드 변경 · 시도 · 리포트 (최신이 위)</span></div>
-      <div class="scroll"><ul id="events"></ul><div class="empty" id="events-empty">아직 사건 없음</div></div>
+      <div class="panel-top list-head"><h2>훈련 기록</h2><span class="stat-line">안전 상태 · 음성 · 모드 변경 · 시도 · 리포트 (최신이 위)</span></div>
+      <div class="scroll"><ul id="events"></ul><div class="empty" id="events-empty">아직 기록 없음</div></div>
   </section>
 
 </main>
@@ -902,7 +902,7 @@ function selectPage() {
     $('page-title').textContent=`모드 ${selectedMode} · ${PAGES[selectedMode].title}`;
     $('diagram-title').textContent=PAGES[selectedMode].diagram;
   } else {
-    $('page-title').textContent={overview:'전체 현황',trials:'최근 시도',events:'사건 기록'}[selectedPage];
+    $('page-title').textContent={overview:'전체 현황',trials:'최근 시도',events:'훈련 기록'}[selectedPage];
   }
   filterTrials(); renderModePage();
 }

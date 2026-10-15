@@ -143,7 +143,7 @@ assert.equal(get('camera-view').previousElementSibling, get('camera-home'));
 visit('#trials');
 assert.equal(get('camera-view').hidden, true);
 for (const [hash,title,trialVisible,eventVisible] of [
-  ['#trials','최근 시도',true,false], ['#events','사건 기록',false,true], ['#overview','전체 현황',false,false],
+  ['#trials','최근 시도',true,false], ['#events','훈련 기록',false,true], ['#overview','전체 현황',false,false],
 ]) {
   visit(hash);
   assert.equal(get('page-title').textContent,title);
