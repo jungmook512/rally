@@ -100,6 +100,8 @@ class IntentNode(Node):
         self.declare_parameter("speaking_tail_s", 0.0)            # 잔향 여유는 tts_node 가 처리 (INTERFACES 2.2). 필요하면 추가로
         self.declare_parameter("speaking_max_s", 30.0)            # speaking=true 가 이보다 길면 tts_node 가 죽은 것으로 봄 (#53 리뷰)
         self.declare_parameter("kws_enabled", True)               # 비상어 상시 감지 (#50)
+        self.declare_parameter("emergency_enabled", True)         # 비상어가 들리면 정지 요청. false = 연습용 끔 (10/15): 키워드 모델은 랠리야 호출어로만 쓰고
+                                                                  #   비상어는 무시. kws_enabled=false 와 달리 랠리야가 hello rokey 로 떨어지지 않는다
         self.declare_parameter("kws_model", "")                   # 비우면 /models/kws → ~/rally/models/kws 의 emergency_kws.joblib
         self.declare_parameter("kws_threshold", float("nan"))     # NaN 이면 모델에 저장된 임계 (train.py --threshold)
         self.declare_parameter("kws_refractory_s", 1.5)           # 한 번 울린 뒤 이 시간 동안 다시 안 울림
@@ -127,6 +129,7 @@ class IntentNode(Node):
         self._stop = threading.Event()
         self._kws_last_hit = -1.0                                  # 마지막 비상어 키워드 감지 시각 (monotonic)
         self._kws = None                                           # 비상어 판별기 (마이크 스레드에서 만듦, 실패하면 None)
+        self._emergency_enabled = bool(self.get_parameter("emergency_enabled").value)
         self._estop_clear_s = ESTOP_CLEAR_S
         self._estop_clear_timer: threading.Timer | None = None
         self.thread = threading.Thread(target=self._audio_loop, daemon=True)
@@ -234,7 +237,11 @@ class IntentNode(Node):
         except Exception as e:      # noqa: BLE001 — 모델 문제로 노드 전체가 죽지 않게
             self.get_logger().error(f"비상어 모델 읽기 실패 ({path}): {type(e).__name__}: {e} → 상시 감지 꺼짐")
             return None
-        self.get_logger().info(f"비상어 상시 감지 켬 ({path.name}, 임계 {kws.threshold:.2f}, 연속 {kws.decider.consec} 프레임)")
+        if self._emergency_enabled:
+            self.get_logger().info(f"비상어 상시 감지 켬 ({path.name}, 임계 {kws.threshold:.2f}, 연속 {kws.decider.consec} 프레임)")
+        else:
+            self.get_logger().warn(f"비상어 상시 감지 끔 (emergency_enabled=false, 연습용) — {path.name} 은 랠리야 호출어로만. "
+                                   "비상정지는 물리 버튼·scripts/estop.sh·호출어 뒤 STT 로")
         return kws
 
     def _feed_kws(self, chunk: np.ndarray) -> None:
@@ -249,6 +256,9 @@ class IntentNode(Node):
             self._kws = None
             return
         if hit is not None:
+            if not self._emergency_enabled:   # 연습용 끔: 들린 것만 남기고 정지 요청은 안 함 (판별기 refractory 1.5 s 라 로그가 몰리지 않음)
+                self.get_logger().warn(f'비상어 "{hit.word}" (점수 {hit.score:.2f}) 들림 — emergency_enabled=false 라 정지 요청 안 함')
+                return
             self._on_keyword(hit)
 
     def _request_estop(self) -> None:

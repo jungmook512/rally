@@ -1,7 +1,8 @@
-# 연습용: 음성 비상어 상시 감지 끔 (intent_node kws_enabled=false). 호출어("랠리야")·TTS 는 그대로.
-# 시연 때는 쓰지 않는다 — 끄는 동안 비상정지는 물리 버튼·scripts/estop.sh 로만.
-#   켜기(끔): docker compose -f docker-compose.yml -f docker-compose.kws-off.yml --profile pc2 up -d voice
-#   되돌리기: docker compose --profile pc2 up -d --force-recreate voice
+# 연습용: 음성 비상어 정지 끔 (intent_node emergency_enabled=false). 호출어("랠리야")·TTS 는 그대로.
+#   10/15: kws_enabled=false 는 랠리야 호출어(같은 키워드 모델)까지 꺼서 hello rokey 로 떨어지므로 emergency_enabled 로 바꿈.
+# 시연 때는 쓰지 않는다 — 끄는 동안 비상정지는 물리 버튼·scripts/estop.sh·호출어 뒤 STT("랠리야 → 그만")로만.
+#   켜기(끔): docker compose -f docker-compose.yml -f docker-compose.kws-off.yml --profile pc3 up -d voice   (voice 는 10/14 부터 서버 PC pc3)
+#   되돌리기: docker compose --profile pc3 up -d --force-recreate voice
 services:
   voice:
     command:
@@ -10,7 +11,7 @@ services:
       - |
         if [ -S /run/pulse/native ]; then cp /etc/asound.pulse.conf /etc/asound.conf; echo "[voice] 소리: 호스트 PipeWire (펄스 소켓)"
         else echo "[voice] 펄스 소켓 없음 — /dev/snd 직접 (데스크톱 PC 면 안 들릴 수 있음)"; fi
-        echo "[voice] ★ 비상어 상시 감지 끔 (docker-compose.kws-off.yml) — 연습용"
+        echo "[voice] ★ 비상어 정지 끔 (docker-compose.kws-off.yml, emergency_enabled=false) — 연습용. 랠리야 호출어는 그대로"
         ros2 run rally_voice tts_node &
-        ros2 run rally_voice intent_node --ros-args -p kws_enabled:=false &
+        ros2 run rally_voice intent_node --ros-args -p emergency_enabled:=false &
         wait -n
