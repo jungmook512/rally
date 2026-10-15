@@ -64,7 +64,7 @@ def policy_meta(path: str) -> dict | None:
 
 
 def meta_mismatches(meta: dict | None, cfg: dict[str, Any]) -> list[str]:
-    """학습 조건(meta["env"]: limits [u_min, u_max, w_min, w_max] m · reach_max · accel · overshoot)과 skills.yaml(cfg)이 다른 항목.
+    """학습 조건(meta["env"]: limits [u_min, u_max, w_min, w_max] m · reach_max · accel · overshoot · ready_posj(있을 때))과 skills.yaml(cfg)이 다른 항목.
     정책은 학습한 한계·이동 방식에 맞춰 출발 시점을 골랐으므로 다르면 경고만 한다 (동작은 안 바꿈 — 한계는 늘 cfg 가 이긴다, #78)."""
     if not meta or not isinstance(meta.get("env"), dict):
         return []
@@ -97,6 +97,14 @@ def meta_mismatches(meta: dict | None, cfg: dict[str, Any]) -> list[str]:
     if differ(env.get("overshoot"), cfg.get("catch_overshoot_m")):
         out.append(f"catch_overshoot_m 학습 {num(env['overshoot']):.2f} vs yaml {num(cfg['catch_overshoot_m']):.2f}"
                    " (시뮬에선 정책이 보정으로 되돌림 — 실측 영향 미확인)")
+    # 10/15 #223: 대기 자세가 바뀌면 같은 거리라도 관절 변화·amovej 시간·한계가 달라진다 — 로봇 응답표는 학습 자세에서 잰 것.
+    # json 에 ready_posj 가 있을 때만 (10/14 학습은 기존 자세 [89.8, 30.0, -121.7, 90.2, -80.2, 88.3]). 1° 넘게 다른 관절이 있으면 한 줄.
+    tq, cq = env.get("ready_posj"), cfg.get("ready_posj")
+    if isinstance(tq, (list, tuple)) and isinstance(cq, (list, tuple)) and len(tq) == 6 and len(cq) == 6:
+        tv, cv = [num(v) for v in tq], [num(v) for v in cq]
+        if None not in tv and None not in cv and max(abs(x - y) for x, y in zip(tv, cv)) > 1.0:
+            out.append(f"ready_posj 학습 {[round(v, 1) for v in tv]} vs yaml {[round(v, 1) for v in cv]}"
+                       " (응답표는 학습 자세에서 잰 것 — 새 자세는 #195 이동 측정 뒤 재학습)")
     return out
 
 

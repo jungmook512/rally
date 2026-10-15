@@ -164,6 +164,19 @@ def test_meta_mismatches_lists_only_differences():
     assert meta_mismatches(meta, dict(same, reach_max_m=0.30)) == ["reach_max_m 학습 0.35 vs yaml 0.30"]
 
 
+def test_meta_mismatches_ready_posj():
+    """10/15 #223: json 에 ready_posj 가 있으면 대기 자세가 1° 넘게 다를 때 한 줄. 없거나 값이 이상하면 대조 안 함."""
+    base = {"accel": "movej", "limits": [0.0, 0.35, -0.35, 0.08], "reach_max": 0.35, "overshoot": 0.0}
+    old = [89.8, 30.0, -121.7, 90.2, -80.2, 88.3]
+    cfg = dict(right_max_m=0.35, updown_max_m=0.35, down_max_m=0.08, reach_max_m=0.35, catch_move="amovej", catch_overshoot_m=0.0, ready_posj=old)
+    assert meta_mismatches({"env": dict(base, ready_posj=old)}, cfg) == []
+    assert meta_mismatches({"env": dict(base, ready_posj=[v + 0.5 for v in old])}, cfg) == []        # 반올림 차이는 무시
+    msgs = meta_mismatches({"env": dict(base, ready_posj=old)}, dict(cfg, ready_posj=[123.1, -7.0, -100.2, -80.5, 61.9, -100.6]))
+    assert len(msgs) == 1 and msgs[0].startswith("ready_posj")
+    assert meta_mismatches({"env": dict(base, ready_posj=[None] * 6)}, cfg) == []                     # 값이 이상하면 건너뜀
+    assert meta_mismatches({"env": base}, cfg) == []                                                   # json 에 없으면 대조 안 함
+
+
 def test_real_policy_if_available():
     """로봇 PC·박성현 PC 에 models/policy_stage1.onnx 와 onnxruntime 이 있으면 실제로 한 번 돌려 본다."""
     pytest.importorskip("onnxruntime")
