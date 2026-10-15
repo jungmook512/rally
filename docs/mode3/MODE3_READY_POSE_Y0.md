@@ -123,21 +123,51 @@ python3 scripts/mode3_reach_test.py --run --posj -58.7 7.0 100.2 98.8 63.6 -100.
 
 두산 관절 가속 한계·자기충돌(기둥 7 cm)·케이블·툴 힘 추정의 자세 의존 오차·명령 지연(시뮬 0.11~0.33 s, 실로봇 0.1 s)·amovej 중 패드 기울기 변화(movej_test 가 `tilt_deg` 로 계산해 줌).
 
-## 9. 적용본 검증 — 금요일(10/16) 시연을 Y0 로 (10/14 정동휘 결정, PR 적용본)
+## 9. 적용본 검증 — 어깨 반대 자세 (10/15, 로봇 시간이 적을 때 이 순서만)
 
-적용 PR(`feat/rally_robot/mode3-ready-y0`)에 들어간 것: `skills.yaml mode3` Y0 값(`ready_posj`·`ready_via_posj`·`pad_center_base_m`·`pad_normal`·범위 0.25·`left_max_m`·`reach_max_m`·`catch_radius_m` 0.30), `catch_plan.intercept` 왼쪽 허용, `pad_rack.ready_route` 경유 자세, `safety_monitor` 받기 창 동안 x 상한 `workspace_catch_x_max_m`(0.78, `safety.yaml`, **정정인 승인**). 코드 바꾼 데 없이 실로봇에서 아래 순서로 — 모두 `source scripts/robot.sh env`, bringup·nodes 떠 있는 상태, 비상정지 손 닿는 곳.
+**10/14 저녁 실로봇에서 Y0 로 가다 J1 −97° 에서 J2 모터 몸통이 패드 거치대에 충돌(#208).** 이 브랜치(`feat/rally_robot/mode3-ready-flip`)는 같은 TCP·패드 자리의 **어깨 반대 IK 해** `[123.1, -7.0, -100.2, -80.5, 61.9, -100.6]` 로 바꾼 것. 두산 충돌 메시 모델(`scripts/m0609_collision.py`, 실로봇 충돌을 J1 −90~−120° 겹침으로 재현함)로 계산한 결과 — 실로봇 미확인:
 
+| 경로 | 거치대 여유 (계산) | 비고 |
+|---|---|---|
+| 관측 자세 → 대기 (직접 관절 이동) | 11.0 cm | TCP x 최대 0.560, **경유 자세 불필요** |
+| 받기 이동 25 cm 24방향 (왼쪽 23) | **6.1 cm** | amovej 15 cm 0.47 s · 25 cm 0.67 s, 관절 변화 ≤ 44°, \|sin J5\| ≥ 0.52 |
+| 대기 → 거치대 A (패드 집기) | **−5.9 cm** (기존 자세는 −2.6) | 손목을 먼저 A 로 돌릴 때 그리퍼가 거치대 상자를 쓸고 들어감(#208 "위에서 내려옴"). **이번 시험에서는 집기·꽂기를 안 한다** |
+| U ↔ 대기 (꽂기·집기 끝) | 끝점 U 에서 −2.3 (기존과 같음) | U 자체가 거치대 바로 위라 상자 모델의 한계. 중간 쓸림 없음 |
+
+**대기 자세에서 TCP x 0.560 — safety x 상한 0.57 까지 9.6 mm.** 컨트롤러 fkin 과 URDF 계산이 x 로 2.7 mm 차이(print_pose.py) → 멈춰 있을 때 `workspace_limit` 이 날 수 있으므로 시험 동안 x 상한을 0.60 으로.
+
+### 준비 (터미널 4개, 모두 `cd ~/rally && source scripts/robot.sh env`)
+```bash
+git fetch && git checkout feat/rally_robot/mode3-ready-flip && git pull
+cd ros2_ws && colcon build --packages-select rally_robot rally_bringup && cd ..
+# 1
+scripts/robot.sh bringup
+# 2  안전감시·힘·그리퍼·스킬서버 (safety 로그가 여기)
+scripts/robot.sh nodes novision
+# 3  시험값 — 끝나면 원복
+ros2 param get /rally_safety_monitor workspace_catch_x_max_m     # 0.78 (−1 이면 빌드·재시작 안 됨)
+ros2 param set /rally_safety_monitor workspace_x_max_m 0.60       # 대기 자세 x 0.560 의 9.6 mm 여유 때문 (시험 동안만)
+# 4  이동 측정 bag (#195, 영상 없음)
+IMAGES=0 DURATION=900 OUT=~/bags/motion_flip scripts/record_mode3_bag.sh
+```
+**패드는 미리 손으로 그리퍼에 쥐여 둔다** (그리퍼 닫기 `ros2 service call /rally/gripper/command rally_interfaces/srv/GripperCommand "{width_mm: 0.0, force_n: 38.0, wait_until_done: true}"`) — 집기·꽂기 경로(표 3행)는 이번에 안 돌린다.
+
+### 순서 (터미널 3, 비상정지 손에)
 | # | 무엇 | 명령 | 통과 |
 |---|---|---|---|
-| 1 | 빌드·값 확인 | `cd ros2_ws && colcon build --packages-select rally_robot rally_bringup && cd ..` → `ros2 param get /rally_safety_monitor workspace_catch_x_max_m` = 0.78 | 값이 나옴 (−1 이면 빌드·재시작 안 됨) |
-| 2 | **경유 경로** (가장 먼저, 저속) | 관측 자세에서 `python3 scripts/mode3_go_ready.py --vel 10` 가 Y0 로 가는지. 그다음 패드 집기 단독: `ros2 service call /rally/robot/pad_pick std_srvs/srv/Trigger` → U → 팔 세움(경유, 최고 0.97 m) → Y0 | 작업 공간 STOP 없음, 천장·거치대 안 닿음, 끝 TCP ≈ (0.56, −0.32, 0.43) |
-| 3 | **꽂기 경로** | `python3 scripts/pad_rack_loop.py` 1회 (Y0 → 경유 → U → 꽂기) | 작업 공간 STOP 없음, 꽂힘 |
-| 4 | 요격 이동 + x 완화 | `python3 scripts/mode3_movej_test.py --run --angles $(seq 0 30 330) --dist 15 25 --cases amovej --jvel 120 --jacc 400 --reps 1` (스크립트가 받기 창을 켜므로 x 0.73 도 STOP 아님) | 12방향 완주, 터미널 2 에 `작업 공간 x 상한 0.78 m` ↔ `0.57 m` 로그가 한 쌍씩, 힘 ≤ 88 N |
-| 5 | 받기 창 뒤 복귀 | 4번 로그에서 창이 꺼진 뒤(`힘 한계 25 N`) 복귀 중 STOP 이 없는지 | `workspace_limit` 없음 |
-| 6 | 카메라 | `rqt_image_view` 손목·측면 — Y0 에서 투구 위치·패드가 보이는지 | 보임 |
-| 7 | 받기 | `python3 scripts/mode3_catch_loop.py --count 10` + `scripts/record_mode3_bag.sh` (영상 포함, #195 투구 20~30회는 시연 뒤) | 왼쪽·아래 투구도 움직임, STOP 없음 |
+| 0 | 계획만 | `python3 scripts/mode3_movej_test.py --posj 123.1 -7.0 -100.2 -80.5 61.9 -100.6 --angles $(seq 0 30 330) --dist 15 23 --cases amovej --jvel 120 --jacc 400 --ws-x-max 0.78` | 24개 모두 OK (관절 변화 ≤ 44°) |
+| 1 | **대기 자세로 (저속)** | `python3 scripts/mode3_go_ready.py --vel 10` — 관측 자세에서 직접. J1 이 0 → 123° 로 크게 도는 게 정상 | 거치대·천장 안 닿음, STOP 없음. `print_pose.py` TCP ≈ (0.56, −0.32, 0.43). **눈으로: J2 모터가 거치대 반대쪽(로봇 왼쪽 뒤)** |
+| 2 | 받기 이동 15 cm 12방향 (bag 켠 채) | `python3 scripts/mode3_movej_test.py --run --angles $(seq 0 30 330) --dist 15 --cases amovej --jvel 120 --jacc 400 --reps 2 --ws-x-max 0.78` | 완주, 힘 ≤ 88 N, 터미널 2 에 `작업 공간 x 상한 0.78` ↔ `0.60` 로그 쌍 |
+| 3 | 받기 이동 23 cm 12방향 | 같은 명령 `--dist 23` | 완주 (왼쪽 180° 포함), 거치대 가까운 방향 240~270° 눈으로 |
+| 4 | (시간 있으면) 5·10·20·25 cm 4축 + 재전송 — #196 가이드 6절 2·3단계 | | 이동 측정 bag 완성 |
+| 5 | 받기 10회 | `python3 scripts/mode3_catch_loop.py --count 10` — **`skills.yaml mode3.pad_place_after_catch: false` 로 바꾼 뒤** (꽂기 경로 미확인) | 왼쪽·아래 투구도 움직임, STOP 없음 |
 
-막히면: 2·3 에서 STOP → `ready_via_posj` 값을 펜던트에서 손으로 찾아 교체(팔 수직이면 됨). 4 에서 힘 > 88 N → `catch_joint_acc_deg_s2` 400 → 300. 어느 단계든 안 되면 `skills.yaml` 을 기존 값으로 되돌리면 전부 10/13 동작 (키 `left_max_m` 0, `ready_via_posj` 지움, 범위 0.35/0.08, `catch_radius_m` 0.35, `safety.yaml workspace_catch_x_max_m` −1).
+끝: bag Ctrl+C → `ros2 param set /rally_safety_monitor workspace_x_max_m 0.57` → `git checkout main`.
+
+### 안 되면
+- 1 에서 거치대 쪽으로 가까워 보이면 즉시 정지 → 관절값·`print_pose.py` 를 #208 에.
+- 2·3 에서 `workspace_limit` STOP: 터미널 2 로그의 TCP 와 그때 x 상한(0.78 이었는지). 받기 창이 안 켜졌으면 `movej_test` 가 내는 `catch_window` 가 safety 에 안 닿은 것.
+- 되돌리기: `git checkout main` (10/13 자세). 이 브랜치는 main 에 코드 변경(왼쪽 허용·x 완화)을 다시 넣은 것이라 main 으로 가면 전부 꺼진다.
 
 ## 기록
 
