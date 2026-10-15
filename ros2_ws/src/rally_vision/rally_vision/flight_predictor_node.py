@@ -37,8 +37,10 @@ from tf2_ros import Buffer, TransformListener
 
 from rally_vision import projection as pj
 from rally_vision.flight_tracking import PadBallJudge, SideCalib, StaticFilter, StereoAssociator, ThrowSession, WristDet, projection_matrix
+from rally_vision.side_debug import draw_side_debug
 
-MODEL_NAMES = ("velcro_ball_yolo11n-seg_1024_rot_final.engine", "velcro_ball_yolo11n-seg_1024_rot_final.pt")
+# 10/14 v2: 패드에 붙은 공 데이터를 더해 다시 학습 (rot_final 은 패드 위 공을 자주 놓쳐 받기 판정이 '놓침'으로 나옴). 클래스·입력 크기는 같음
+MODEL_NAMES = ("velcro_ball_yolo11n-seg_1024_rot_v2.engine", "velcro_ball_yolo11n-seg_1024_rot_v2.pt")
 MODEL_DIRS = ("/models", os.path.expanduser("~/rally/models"), "models")
 CALIB_NAME = "mode3_side_calib.json"
 
@@ -122,6 +124,7 @@ class FlightPredictorNode(Node):
         d("side_color_topic", "/side/side/color/image_raw")
         d("side_info_topic", "/side/side/color/camera_info")
         d("side_calib_path", "")                   # 비면 /models·~/rally/models 의 mode3_side_calib.json
+        d("debug_image_hz", 10.0)                  # 측면 인식 화면 /rally/perception/side/debug_image 최대 주기 — 구독자(대시보드) 있을 때만 (10/14)
         d("dt_side_s", float("nan"))               # nan = calib 값 (10/11 +0.015)
         d("k_drag", float("nan"))                  # nan = calib 값 (10/11 0.073)
         d("meas_std_m", 0.015)
@@ -238,6 +241,10 @@ class FlightPredictorNode(Node):
         self.pub = self.create_publisher(PointStamped, "/rally/perception/landing", qos_profile_sensor_data)
         self.pub_info = self.create_publisher(Float64MultiArray, "/rally/perception/landing_info", qos_profile_sensor_data)
         self.pub_pad = self.create_publisher(PointStamped, "/rally/perception/ball_on_pad", qos_profile_sensor_data)
+        self.pub_dbg = self.create_publisher(Image, "/rally/perception/side/debug_image", qos_profile_sensor_data)   # 대시보드 모드 3 측면 칸
+        self._dbg_period = 1.0 / max(float(g("debug_image_hz")), 0.1)
+        self._dbg_last = 0.0
+        self._pad_vis = None                                  # 마지막 패드 판정 그림 재료 ((u, v), 반경 px, 판정) — _judge_pad 가 채움
         self._n_pad = 0
         self._n = 0
         self._t_infer = 0.0
@@ -364,6 +371,7 @@ class FlightPredictorNode(Node):
             self.get_logger().info(f"[진단] t {ts % 1000:7.3f} 검출 측면 {None if uv_s is None else [round(v) for v in uv_s]} "
                                    f"손목 {None if uv_w is None else [round(v) for v in uv_w]} (측면 후보 {len(cands_s)} 손목 후보 {len(cands_w)})")
         self._judge_pad(ts, cands_s)
+        self._publish_debug(ts, img_s, res[0], uv_s)
 
         if self.estimator == "rays":
             self._tick_rays(ts, tw, uv_s, uv_w)
@@ -439,6 +447,7 @@ class FlightPredictorNode(Node):
 
     def _judge_pad(self, ts: float, cands_s) -> None:
         """측면 후보 중 패드 위 공이 있으면 /rally/perception/ball_on_pad 발행 (측면 프레임 시각 + dt → 손목 시계)."""
+        self._pad_vis = None
         if self.judge is None or not cands_s:
             return
         T_base_tcp = self._base_from_tcp(ts + self.dt_side)
@@ -446,6 +455,9 @@ class FlightPredictorNode(Node):
             return
         pad_center = T_base_tcp[:3, :3] @ self.pad_offset + T_base_tcp[:3, 3]
         hit = self.judge.check(cands_s, pad_center, self.plane_n)
+        xv = self.judge.T[:3, :3] @ pad_center + self.judge.T[:3, 3]          # 인식 화면용: 패드 중심 픽셀·반경 (판정과 같은 투영)
+        if xv[2] > 0:
+            self._pad_vis = (((self.judge.K @ xv)[:2] / xv[2]).tolist(), self.judge.K[0, 0] * self.judge.radius_m / xv[2], hit is not None)
         if time.monotonic() - getattr(self, "_jdbg_t", 0.0) >= 0.5:         # 10/13 진단: 판정 — 패드 중심 픽셀·후보 픽셀·거리
             self._jdbg_t = time.monotonic()
             x = self.judge.T[:3, :3] @ pad_center + self.judge.T[:3, 3]
@@ -474,6 +486,22 @@ class FlightPredictorNode(Node):
                      float(t_obs - ((self.session.t_release if t_release is None else t_release) or t_obs))]
         self.pub_info.publish(info)
         self._n_pub += 1
+
+    def _publish_debug(self, ts: float, img_s: np.ndarray, result, picked) -> None:
+        """측면 인식 화면 (10/14 조정묵): 대시보드 모드 3 측면 칸이 본다. 구독자가 있을 때만, debug_image_hz 이하로.
+        cv_bridge 없이 Image 를 직접 채운다 (이 노드는 영상을 raw 로 받는다)."""
+        now = time.monotonic()
+        if self.pub_dbg.get_subscription_count() == 0 or now - self._dbg_last < self._dbg_period:
+            return
+        self._dbg_last = now
+        vis = draw_side_debug(img_s, result, picked, self._pad_vis)
+        m = Image()
+        m.header.stamp = to_stamp(ts)
+        m.header.frame_id = "side"
+        m.height, m.width = int(vis.shape[0]), int(vis.shape[1])
+        m.encoding, m.is_bigendian, m.step = "bgr8", 0, int(vis.shape[1] * 3)
+        m.data = vis.tobytes()
+        self.pub_dbg.publish(m)
 
     def _stats(self):
         if self._n:

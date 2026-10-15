@@ -129,7 +129,7 @@ def test_schema_and_prompt():
 def test_real_tunable_list_from_skills_yaml():
     limits = tunable_limits(load_skills())
     assert limits[1]["push_speed"] == Limit(0.10, 0.60)                # skills.yaml mode1.push_speed_range (10/7 실측: 테니스공은 0.15 로 거의 안 굴러감 → 0.10~0.60, #42)
-    assert limits[7]["target_force_n"].default == 5.0          # mode7.target_force_start_n
+    assert limits[7]["target_force_n"].default == load_skills()["mode7"]["target_force_start_n"]   # 값은 yaml 이 정함 (10/14: 10 N)
     assert 3 not in limits                                      # 모드 3 은 LLM 조절 금지
 
 
@@ -158,7 +158,7 @@ def test_request_range_is_narrowed_to_skills_yaml():
 def test_fallback_uses_default_ref_without_history():
     limits = tunable_limits(load_skills())
     s = Advisor(None, "p", limits).suggest(7, [], [ParamSpec("target_force_n", 0.0, 100.0)])
-    assert s.values == {"target_force_n": 5.0}
+    assert s.values == {"target_force_n": load_skills()["mode7"]["target_force_start_n"]}
 
 
 @pytest.mark.parametrize("word", ["그만", "멈춰", "아프", "위험", "정지", "아파", "스톱"])

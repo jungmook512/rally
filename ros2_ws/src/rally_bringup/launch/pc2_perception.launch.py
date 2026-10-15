@@ -7,7 +7,7 @@ compose 서비스마다 part 를 하나씩 준다:
               + camera_tf · segmenter · tracker · flight_predictor
               + web_video_server (포트 8080) — 대시보드 '카메라' 칸이 MJPEG 로 받아 본다 (video_server:=false 면 안 띄움)
   human     → usb_cam(/webcam/image_raw) + hand_pose · body_pose
-  voice     → intent_node · tts_node
+  voice     → intent_node · tts_node (10/14 부터 서버 PC compose pc3 에서 띄움 — 파일 이름은 역할 이름 그대로)
   all       → 셋 다 (컨테이너 없이 한 터미널에서 확인할 때)
 
 아직 실행 등록이 안 된 노드나 이 환경에 없는 패키지는 경고만 남기고 건너뛴다 — 담당자가 노드를 채우는 동안에도 launch 는 돈다.

@@ -12,7 +12,9 @@
   4. 같은 모드 success_streak 연속 성공            cue success_streak   → (그래프) harder
   5. 같은 모드 failure_streak 연속 실패            cue failure_streak   → (그래프) easier
   6. 애매한 신호 llm_signal_count 개 이상          → ask_llm (규칙으로 정하지 않음)
-     (보상 동작 감지 · 성공률 하락 · 시도 시간 증가 — 각각은 근거가 약해 혼자서는 행동을 정하지 않는다)
+     (보상 동작 반복 · 성공률 하락 · 시도 시간 증가 — 각각은 근거가 약해 혼자서는 행동을 정하지 않는다)
+     보상 동작은 팔을 뻗는 동안에만 나오므로(#83) 판단 순간의 상황판이 아니라 시도별 기록(compensation_history)으로 센다.
+     그 기록은 모드를 가리지 않는 세션 전체 순서다 (10/15 조정묵 — 몸 신호라 모드 무관). 성공률·시간 신호는 같은 모드만.
   7. 그 외                                       → continue
 
 연속 횟수는 그 모드의 난이도가 마지막으로 바뀐 뒤의 시도만 센다 (호출하는 쪽이 잘라서 넘김).
@@ -36,6 +38,8 @@ DEFAULTS: dict[str, Any] = {
     "llm_signal_count": 2,
     "success_drop_rate": 0.4,
     "slowing_ratio": 1.5,
+    "compensation_window": 5,
+    "compensation_min_trials": 3,
     "difficulty_range": [-3, 3],
 }
 MIN_TRIALS_FOR_TREND = 3
@@ -83,28 +87,44 @@ def tail_streak(trials: Sequence[TrialResult], success: bool) -> int:
     return n
 
 
-SIGNAL_LABELS = {"compensation": "보상 동작", "success_drop": "성공률 하락", "slowing": "시도 시간 증가"}
+SIGNAL_LABELS = {"compensation": "보상 동작 반복", "success_drop": "성공률 하락", "slowing": "시도 시간 증가"}
 
 
-def fatigue_signals(ctx: SceneContext | None, trials: Sequence[TrialResult], cfg: dict[str, Any],
-                    performance: bool = True) -> list[str]:
-    """애매한 신호들 (SIGNAL_LABELS 키). 음성 tired 는 여기 없음 — 그건 확실한 계기라 규칙 2."""
-    signals = []
-    if ctx is not None and ctx.body.compensation_detected:
-        signals.append("compensation")   # 1차: 지금 보이면. TODO: 최근 시도 중 반복 횟수로
-    if len(trials) >= MIN_TRIALS_FOR_TREND:
-        if performance and metrics.success_rate(trials) <= cfg["success_drop_rate"]:   # 성공률 정의는 metrics.yaml 한 곳
-            signals.append("success_drop")
-        earlier = [t.duration_s for t in trials[:-1] if t.duration_s > 0]
-        if earlier and trials[-1].duration_s >= cfg["slowing_ratio"] * (sum(earlier) / len(earlier)):
-            signals.append("slowing")
-    return signals
+def fatigue_breakdown(trials: Sequence[TrialResult], cfg: dict[str, Any], performance: bool = True,
+                      compensation_history: Sequence[bool] = ()) -> dict[str, dict[str, Any]]:
+    """신호별 진행값 — 대시보드 「휴식 제안 조건」 패널이 신호가 쌓이는 모습을 보여 주는 데 쓴다 (10/14).
+    fatigue_signals 는 여기서 on 인 것만 고르므로 기준은 이 한 곳. 값은 유한한 숫자·불리언만 (Redis JSON 으로 그대로 나감).
+    compensation_history: 세션의 시도마다(모드 무관) 보상 동작이 한 번이라도 보였는지 (오래된 것 → 최근)."""
+    recent = list(compensation_history)[-int(cfg["compensation_window"]):]
+    n = len(trials)
+    enough = n >= MIN_TRIALS_FOR_TREND
+    rate = metrics.success_rate(trials) if trials else 0.0                     # 성공률 정의는 metrics.yaml 한 곳
+    earlier = [t.duration_s for t in trials[:-1] if t.duration_s > 0]
+    mean = sum(earlier) / len(earlier) if earlier else 0.0
+    last = float(trials[-1].duration_s) if trials else 0.0
+    return {
+        "compensation": {"on": sum(recent) >= int(cfg["compensation_min_trials"]), "count": int(sum(recent)),
+                         "need": int(cfg["compensation_min_trials"]), "window": int(cfg["compensation_window"]), "trials": len(recent)},
+        "success_drop": {"on": bool(enough and performance and rate <= cfg["success_drop_rate"]), "applies": bool(performance),
+                         "rate": round(rate, 3), "max_rate": float(cfg["success_drop_rate"]), "trials": n, "min_trials": MIN_TRIALS_FOR_TREND},
+        "slowing": {"on": bool(enough and earlier and last >= cfg["slowing_ratio"] * mean), "last_s": round(last, 1),
+                    "mean_s": round(mean, 1), "ratio": round(last / mean, 2) if mean > 0 else 0.0,
+                    "need_ratio": float(cfg["slowing_ratio"]), "trials": n, "min_trials": MIN_TRIALS_FOR_TREND},
+    }
+
+
+def fatigue_signals(trials: Sequence[TrialResult], cfg: dict[str, Any], performance: bool = True,
+                    compensation_history: Sequence[bool] = ()) -> list[str]:
+    """애매한 신호들 (SIGNAL_LABELS 키, fatigue_breakdown 에서 on 인 것). 음성 tired 는 여기 없음 — 그건 확실한 계기라 규칙 2."""
+    return [key for key, value in fatigue_breakdown(trials, cfg, performance, compensation_history).items() if value["on"]]
 
 
 def decide(ctx: SceneContext | None, trials: Sequence[TrialResult], intent: str | None,
            cfg: dict[str, Any], graph=None, *, performance: bool = True,
-           fatigue_history: Sequence[TrialResult] | None = None) -> Decision:
-    """trials: 이번 세션에서 이 모드의 난이도가 마지막으로 바뀐 뒤의 시도. intent: 아직 처리 안 한 음성 intent."""
+           fatigue_history: Sequence[TrialResult] | None = None,
+           compensation_history: Sequence[bool] = ()) -> Decision:
+    """trials: 이번 세션에서 이 모드의 난이도가 마지막으로 바뀐 뒤의 시도. intent: 아직 처리 안 한 음성 intent.
+    compensation_history: fatigue_signals 참고."""
     graph = graph or ontology.load()
 
     def make(action: str, reason: str, signals: Sequence[str] = ()) -> Decision:
@@ -127,8 +147,8 @@ def decide(ctx: SceneContext | None, trials: Sequence[TrialResult], intent: str 
     if performance and (n := tail_streak(trials, False)) >= cfg["failure_streak"]:
         return from_cue("failure_streak", f"{n}연속 실패")
 
-    signals = fatigue_signals(ctx, trials if fatigue_history is None else fatigue_history, cfg,
-                              performance=performance)
+    signals = fatigue_signals(trials if fatigue_history is None else fatigue_history, cfg,
+                              performance=performance, compensation_history=compensation_history)
     if len(signals) >= cfg["llm_signal_count"]:
         names = ", ".join(SIGNAL_LABELS[s] for s in signals)
         return make("ask_llm", f"애매한 신호 {len(signals)}개({names}) → LLM 판단", signals)

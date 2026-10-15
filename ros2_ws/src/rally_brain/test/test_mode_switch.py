@@ -94,3 +94,15 @@ def test_mode1_only_explicit_intent_changes_difficulty(node):
     node._on_intent(VoiceIntent(intent='easier'))
     node._after_trial(s, s.trials[-1])
     assert s.difficulty[1] == 0
+
+
+def test_dashboard_button_checks_session_and_reuses_rules(node):
+    start(node)
+    node.control.start("s")
+    ok, message = node._dashboard_set_mode("other", 7)          # 화면이 보던 세션이 아님
+    assert not ok and "세션이 바뀌었" in message and node._pending_switch is None
+    ok, _ = node._dashboard_set_mode("s", 5)                     # 이미 진행 중인 모드 — set_mode·음성과 같은 확인
+    assert not ok and node._pending_switch is None
+    ok, message = node._dashboard_set_mode("s", 7)
+    assert ok and node._pending_switch == (7, "dashboard")
+    assert node.control_snapshot()["pending_switch"] == {"mode": 7}

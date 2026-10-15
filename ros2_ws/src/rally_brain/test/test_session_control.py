@@ -310,3 +310,129 @@ def test_accepted_proposal_survives_deadline_until_whole_trial_finishes(node, mo
     else:
         assert tree.status == py_trees.common.Status.RUNNING
         assert node.control.phase == "paused"
+
+
+def test_mode_select_waits_runs_chosen_mode_then_waits_until_end(node, monkeypatch):
+    """모드 선택 대기 (10/14): goal.modes 비면 대기 → 음성·대시보드로 고른 모드만 돌고 → 다시 대기 → 종료 요청으로 끝남.
+    대기 중 '다음 모드'(None)는 거절, 안내는 prompt_interval_s 마다 한 번."""
+    import threading
+    from rally_brain import bt_runner
+    from rally_brain.behaviours import Do
+    built, said, outcomes = [], [], []
+    node._say = said.append
+    node._skills_cfg = {**node._skills_cfg, "brain": {**(node._skills_cfg.get("brain") or {}), "mode_select": {
+        "enabled": True, "prompt": "어떤 모드", "prompt_interval_s": 0.3, "start_prompt": "{mode} 시작", "done_prompt": "{mode} 끝",
+        "end_prompt": "마침"}}}
+
+    def build(session, modes, n):
+        built.append(list(modes))
+        session.current_mode = modes[0]
+        return Do("trial", lambda: None)                     # 한 tick 에 끝나는 모드
+
+    monkeypatch.setattr(bt_runner, "build_session_tree", build)
+    goal = NS(request=NS(modes=[], trials_per_mode=1), is_cancel_requested=False, publish_feedback=lambda _: None,
+              abort=lambda: outcomes.append("abort"), canceled=lambda: outcomes.append("cancel"),
+              succeed=lambda: outcomes.append("success"))
+    ctx = SceneContext()
+    ctx.safety.level = SafetyStatus.LEVEL_NORMAL
+    errors = []
+
+    def until(cond, what):
+        t0 = time.monotonic()
+        while not cond():
+            node._on_context(ctx)                             # 상황판이 끊기지 않게
+            if time.monotonic() - t0 > 5:
+                errors.append(what)
+                node._end_requested = "timeout"
+                return
+            time.sleep(0.01)
+
+    def driver():
+        until(lambda: node._selecting and said.count("어떤 모드") >= 1, "대기 진입·안내")
+        ok, msg = node._request_switch(None, "dashboard")   # 대기 중 '다음 모드'는 거절
+        if ok or "말씀" not in msg:
+            errors.append(f"next rejected? {ok} {msg}")
+        ok, msg = node._request_switch(5, "음성")
+        if not ok or "시작" not in msg:
+            errors.append(f"choose 5: {ok} {msg}")
+        until(lambda: built == [[5]] and node._selecting, "모드 5 끝나고 다시 대기")
+        until(lambda: said.count("어떤 모드") >= 2, "두 번째 안내 (간격 뒤)")
+        node._request_switch(1, "dashboard")
+        until(lambda: built == [[5], [1]] and node._selecting, "모드 1 끝나고 다시 대기")
+        ok, _ = node._dashboard_end_session(node.control.session_id)
+        if not ok:
+            errors.append("end")
+
+    threading.Thread(target=driver, daemon=True).start()
+    node._run_session(goal)
+    assert errors == []
+    assert outcomes == ["success"] and node.control.phase == "ended"
+    assert built == [[5], [1]]
+    assert "건네고 받기 끝" in said and "공 굴리기 끝" in said and said[-1] == "마침"
+    assert said.index("건네고 받기 시작") < said.index("건네고 받기 끝") < said.index("공 굴리기 시작") < said.index("공 굴리기 끝")   # 시작 멘트 → 모드 → 끝 멘트
+    assert said.count("어떤 모드") <= 4                      # 0.3 s 간격 — 연속으로 떠들지 않음
+    assert not node._selecting and node._end_requested is None
+
+
+def test_end_request_waits_for_trial_boundary_and_voice_stop(node):
+    """시도 중 종료 요청은 접수만(시도가 끝난 뒤), 비상어 stop 은 종료 경로가 아님."""
+    node._session.trial_active = True
+    ok, msg = node._request_end("음성")
+    assert ok and "지금 시도가 끝나면" in msg and node._end_requested == "음성"
+    node._end_requested = None
+    stamp = node.get_clock().now().to_msg()
+    msg = VoiceIntent(intent="stop", is_emergency=True)
+    msg.header.stamp = stamp
+    node._on_intent(msg)
+    assert node._end_requested is None
+    msg = VoiceIntent(intent="stop", is_emergency=False)
+    msg.header.stamp = node.get_clock().now().to_msg()
+    node._on_intent(msg)
+    assert node._end_requested == "음성"
+    assert not node._dashboard_end_session("other-session")[0]
+
+
+def test_rest_snapshot_shows_signal_progress_and_llm_state(node):
+    """대시보드 「휴식 제안 조건」 (10/14): 규칙 레이어와 같은 입력으로 신호별 진행값 + 마지막 LLM 판단 상태를 session_control.rest 에 싣는다."""
+    rest = node.control_snapshot()["rest"]
+    assert rest["mode"] == 7 and rest["trials"] == 0 and rest["count"] == 0 and rest["on"] == []   # 픽스처 세션: 시도 없음 → 모두 꺼짐
+    saved, node._session = node._session, None
+    assert node._rest_snapshot() is None                                   # 세션 없음
+    node._session = saved
+    session, _, _, _ = make_session({})
+    session.current_mode = 5
+    for ok, dur in ((True, 10.0), (False, 10.0), (True, 20.0)):
+        session.record(TrialResult(mode=5, success=ok, duration_s=dur))
+    node._session = session
+    node._comp_history = [True, False, True]                          # 세션 전체(모드 무관) 시도 순서
+    rest = node.control_snapshot()["rest"]
+    assert rest["mode"] == 5 and rest["trials"] == 3 and rest["need"] == 2
+    assert rest["on"] == ["slowing"] and rest["count"] == 1                # 20 ≥ 1.5 × 10. 성공률 2/3 은 신호 아님, 보상 동작은 2/3 회
+    assert rest["signals"]["compensation"] == {"on": False, "count": 2, "need": 3, "window": 5, "trials": 3}
+    assert rest["signals"]["slowing"]["ratio"] == 2.0 and rest["current_comp"] == []
+    assert rest["llm"] == {"state": "idle", "result": None, "at": None, "signals": []}
+    node._rest_llm = {"state": "asked", "result": None, "at": 1.0, "signals": ["slowing", "compensation"]}
+    advisor, node._rest_advisor = node._rest_advisor, NS(poll=lambda token, blocked: "continue", invalidate=lambda: None, status="ready")
+    try:
+        node._poll_rest()
+        assert node._rest_llm["state"] == "answered" and node._rest_llm["result"] == "continue"
+        assert node._rest_llm["signals"] == ["slowing", "compensation"] and node._rest_llm["at"] > 1.0
+        node._rest_llm["state"] = "asked"
+        node._invalidate_rest(proposal=False)
+        assert node._rest_llm["state"] == "dropped"                       # 답 전에 새 시도 기록 → 취소로 표시
+    finally:
+        node._rest_advisor = advisor                                      # destroy_node 가 close() 를 부름
+
+
+def test_compensation_history_spans_modes(node):
+    """10/15 조정묵: 보상 동작 기록은 모드를 가리지 않고 세션 순서대로 쌓인다 — 모드 1·5·3 에서 1회씩이면 '보상 동작 반복'."""
+    session = node._session
+    node._comp_history = []
+    for i, mode in enumerate((1, 5, 3), start=1):
+        session.current_mode = mode
+        node._posture.seen.add("trunk_lean")
+        node._after_trial(session, TrialResult(mode=mode, success=True, duration_s=10.0, trial_index=i))
+    assert node._comp_history == [True, True, True]
+    session.current_mode = 3
+    session.trials = []
+    assert node.control_snapshot()["rest"]["signals"]["compensation"] == {"on": True, "count": 3, "need": 3, "window": 5, "trials": 3}

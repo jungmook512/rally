@@ -67,6 +67,7 @@ class Session:
     level_changed_at: dict[int, int] = field(default_factory=dict)  # 모드 → 난이도가 바뀐 시점의 len(trials)
     modes: list[int] = field(default_factory=list)                  # 지금 트리의 모드 순서 (전환하면 바뀜)
     current_mode: int | None = None                                 # 지금 진행 중인 모드
+    lane: int | None = None                                         # 모드 1 에서 손으로 고른 레인(0·1). 대시보드 그림용, 시도 끝나면 None
     trial_active: bool = False                                      # 로봇이 시도 중 (begin_trial ~ record). 모드 전환은 이때 안 함
     allow_trial: Callable[[], bool] = lambda: True                   # 시도 전체(손 대기 포함) 시작 전 휴식 관문
     robot_resume_ok: Callable[[], bool] = lambda: True               # 손 근접 STOP 으로 멈춘 명령을 다시 보내도 되는가 (#98, bt_runner)
