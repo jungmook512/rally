@@ -112,6 +112,19 @@ def intent_to_payload(msg) -> dict[str, Any]:
     }
 
 
+def body_to_payload(msg) -> dict[str, Any]:
+    """BodyPose → 대시보드 몸 자세 게이지 (10/15 조정묵). 각도는 세션 시작 때 잡은 기준 자세 대비이고 팔을 뻗었을 때
+    (팔꿈치 ≥ 140°)만 숫자 — 못 잰 NaN 은 null. 관절 좌표는 넣지 않는다."""
+    return {
+        "detected": bool(msg.detected),
+        "trunk_lean_deg": finite_or_none(round(float(msg.trunk_lean_deg), 1)),
+        "shoulder_elevation_deg": finite_or_none(round(float(msg.shoulder_elevation_deg), 1)),
+        "elbow_extension_deg": finite_or_none(round(float(msg.elbow_extension_deg), 1)),
+        "compensation_detected": bool(msg.compensation_detected),
+        "compensation_type": str(msg.compensation_type),
+    }
+
+
 def context_to_state(msg) -> dict[str, Any]:
     """SceneContext → Redis rally:state (대시보드가 처음 열릴 때 보는 요약). 영상·관절 원본은 넣지 않는다."""
     return {
@@ -126,6 +139,7 @@ def context_to_state(msg) -> dict[str, Any]:
         "last_intent": msg.last_intent.intent,
         "recent_success_rate": round(float(msg.recent_success_rate), 3),
         "fatigue_score": round(float(msg.fatigue_score), 3),
+        "body": body_to_payload(msg.body),   # 몸 자세 게이지 (10/15) — 뒤에 붙임
     }
 
 

@@ -181,6 +181,12 @@
 - [ ] 리허설 데이터 DB 축적, `trial_rolling` 뷰 갱신
 - [ ] 오후부터 기능 추가 금지, 버그 수정만
 - [ ] **HMI** 대시보드 1 s 이내 갱신 확인
+- [x] (10/15) **듣는 중 TTS 금지** — intent_node 가 호출어 → 녹음 → STT → 의도 발행 동안 `/rally/voice/listening` true. tts_node 는 그동안 발화를 미루고(최대 15 s), brain 은 모드 선택 안내를 건너뜀. INTERFACES 2.2. voice·brain 컨테이너 재빌드 필요 (rally_voice 는 정동휘 파트 — 공유)
+- [x] (10/16) **대시보드 난이도 변화 표시** — brain control snapshot 에 `difficulty_log`(어렵게/쉽게 적용 시도·전후 단계·출처, 한계라 그대로여도 기록), 모드 1 화면 현재 단계 아래 「난이도 변화」 패널(단계 막대 + 기록) + 새 변화는 훈련 기록 줄·알림·현재 단계 숫자 강조. INTERFACES 9절. brain·dashboard 컨테이너 재빌드 필요
+- [x] (10/16) **음성 타이밍 → 로봇 피드백 기준** — 모드 3 결과 안내(잘 던졌어요/아쉬워요)는 판정 피드백 caught/missed 순간(안 움직인 놓침만 결과 때), 투구 안내는 대기 자세에 선 뒤 — brain 이 `/dsr01/joint_states` 를 `ready_posj` ± `throw_prompt_pose_tol_deg`(3°) 범위로 보고 `throw_prompt_settle_s`(1 s) 머물면 (관절값 없으면 그리퍼 기준 `throw_prompt_after_grip_s` 8 s · 이미 쥔 채면 `throw_prompt_delay_s` 3 s · 늦어도 `throw_prompt_max_s` 25 s). 모드 5 돌려주기 안내는 RECEIVE 받을 자세 대기 시작(feedback wait), 잘 건네주셨어요는 잡는 순간(feedback grasp). 로봇 코드 그대로. brain 재빌드 필요 — 실로봇에서 brain 컨테이너가 `/dsr01/joint_states` 를 받는지(`ros2 topic hz`)와 3° 허용 오차 확인
+- [x] (10/15) **세션 종료 줄이기** — 웬만한 건 시도 실패 처리 후 다음 시도. 래치 STOP·이어 갈 수 없는 단계의 손 STOP 은 복구 대기(스킬 취소 → NORMAL/운영자 reset → 모드 1·5 그리퍼 비우기 → 같은 모드 남은 시도), 손 STOP 대기는 모든 모드, 상태 끊김(no_safety_status)은 취소 없이 대기, 상황판 끊김 3 s/10 s, 관측·손 보기·물체 보기 자세 재시도, 스킬 서버 없음·관측 실패는 모드 건너뛰기, 모드 1 밀기 실패·모드 5 받기 실패는 안내+대기 후 다음 시도, 루프 예외 가드. **실제 STOP 은 로봇 PC에서 확인 필요** (hand_stop.py Recovery, steps.OperatorWait)
+- [x] (10/15) **HMI** 몸 자세 카메라 칸 아래 게이지 — 몸통 기울기·어깨 들림(임계 20°)·팔꿈치 펴짐(140° 뻗음), check_body_live.py 와 같은 눈금. rally_db convert 가 rally:state 에 `body` 를 붙임(0.5 s). 로봇 PC body_pose 켜고 확인 필요
+- [x] (10/15) 모드 3 투구 안내를 goal 뒤 `mode3.throw_prompt_delay_s`(3 s, 값 하나로 가기로 함) 지나서 — 로봇이 준비 완료를 안 알려 줘 시간으로, 스킬이 먼저 끝나면 무음. 마지막 시도의 놓침·반경 밖은 `last_fail_prompt` "아쉬워요"(다시 던져 없음). 결과 문구는 skills.yaml 로. 거치대에서 다시 집는 시도(직전 받음·첫 시도)는 안내가 먼저 나옴 — 로봇 PC에서 보고 조정
 
 ## Day 8 — 시연
 - [ ] 시연 직전 전 노드 준비 확인 — `ros2 launch rally_bringup full_system.launch.py` (Day 1 에 골격 완료, 리허설 때 그룹 목록 점검)

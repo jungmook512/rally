@@ -7,7 +7,7 @@ from geometry_msgs.msg import Point
 
 from fakes import FakeClient, Status, make_session, metric, param, run
 from rally_brain import behaviours, speech
-from rally_brain.trees import mode5_handover
+from rally_brain.trees import mode5_handover, steps
 from rally_interfaces.action import Handover, PickCompliant
 from rally_interfaces.msg import TrackedObject
 
@@ -137,13 +137,28 @@ def test_receive_timeout_retried_with_prompt():
     assert published[0].success and metric(published[0], "received") == 1
 
 
-def test_receive_failure_ends_session():
-    # 물체가 환자 손에 남음 → 기록하고 세션 실패 (다음 집기가 환자 쪽을 향하지 않게)
+def test_receive_failure_prompts_until_object_is_back_then_next_trial(monkeypatch):
+    # 10/15 조정묵: 물체가 환자 손에 남음 → 기록 + "테이블에 올려 주세요" 안내 → 비전에 물체가 보이거나 receive_fail_wait_s 뒤 다음 시도 (세션 종료 아님)
+    clock = [0.0]
+    monkeypatch.setattr(steps, "time", NS(monotonic=lambda: clock[0]))
     fail = (False, {"failure_reason": "timeout"})
-    clients, session, published, _, _ = arrange(pick=[OK], handover=[GIVE_OK, fail, fail])
-    assert run(build(session)) == Status.FAILURE
+    clients, session, published, said, ctx = arrange(pick=[OK], handover=[GIVE_OK, fail, fail])
+    tree = build(session)
+    tree.tick_once()                                             # 집을 물체를 고른 뒤
+    ctx.objects.objects = []                                     # 환자가 가져가 테이블에 없음
+    assert run(tree, max_s=0.3) == Status.RUNNING                # 받기 실패 기록 뒤 물건 정리 대기
     [t] = published
     assert t.success and t.notes == "receive_timeout" and metric(t, "received") == 0
+    assert said[-1] == mode5_handover.DEFAULTS["receive_fail_prompt"]
+    ctx.objects.objects = [rod()]                                # 테이블에 다시 올림 → 바로 다음 시도
+    assert run(tree) == Status.SUCCESS
+    clients, session, published, said, ctx = arrange(pick=[OK], handover=[GIVE_OK, fail, fail])
+    tree = build(session)
+    tree.tick_once()
+    ctx.objects.objects = []
+    assert run(tree, max_s=0.3) == Status.RUNNING
+    clock[0] = mode5_handover.DEFAULTS["receive_fail_wait_s"]       # 안 올려도 시간이 지나면 다음 시도 (못 찾으면 object_not_found 로 계속)
+    assert run(tree) == Status.SUCCESS
 
 
 def test_safety_stop_on_give_is_not_retried():
@@ -164,8 +179,8 @@ def test_no_hand_prompts_then_skips():
     assert session.trials_for_rules(5) == []
 
 
-def test_server_missing_fails_session(monkeypatch):
-    # 서버가 없으면 재시도하지 않고 세션 실패 (시도 기록 없음). 3 s 기다리지 않게 시계를 빨리 돌린다
+def test_server_missing_fails_trial_tree(monkeypatch):
+    # 서버가 없으면 재시도하지 않고 시도 트리 FAILURE (기록 없음) → session_tree 가 그 모드만 건너뜀 (10/15). 3 s 기다리지 않게 시계를 빨리 돌린다
     clock = [0.0]
 
     def fast():
@@ -244,7 +259,7 @@ def test_goes_to_pick_view_before_pick_and_grasp_height_by_class():
                                          (mode5_handover.PICK_VIEW_SERVICE, "view_failed")])
 def test_pose_failure_records_and_does_not_pick(fail, notes):
     from fakes import Done
-    clients, session, published, _, _ = arrange(pick=[OK], handover=[GIVE_OK, OK])
+    clients, session, published, _, _ = arrange(pick=[OK], handover=[GIVE_OK, OK], cfg={**FAST, "brain": {"pose_retry_wait_s": 0.0}})
     session.service_client = lambda _t, name: NS(service_is_ready=lambda: True,
                                                  call_async=lambda _r: Done(NS(success=name != fail, message="x")))
     run(build(session))
@@ -316,3 +331,38 @@ def test_receive_goal_rejected_during_hand_stop_is_resent():
     assert [g.direction for g in clients[Handover].goals] == [Handover.Goal.DIR_GIVE, Handover.Goal.DIR_RECEIVE,
                                                                Handover.Goal.DIR_RECEIVE]
     assert metric(published[0], "received") == 1
+
+
+def test_receive_prompts_follow_robot_feedback():
+    # 10/16 조정묵: 돌려주기 안내는 받을 자세에서 기다리기 시작할 때(wait), 칭찬은 잡는 순간(grasp) — 결과 때 되풀이하지 않음. GIVE 안내는 그대로
+    prompts = {"present_prompt": "내민 물건을 잡아 보세요", "grasp_ok_prompt": "잘 잡으셨어요", "give_back_prompt": "다시 건네주세요", "receive_ok_prompt": "잘 건네주셨어요"}
+    cfg = {"mode5": {**FAST["mode5"], **prompts}}
+    give_fb = [{"phase": "present"}, {"phase": "wait"}, {"phase": "wait"}, {"phase": "release"}, {"phase": "retreat"}]
+    receive_fb = [{"phase": "present"}, {"phase": "wait"}, {"phase": "wait"}, {"phase": "approach"}, {"phase": "grasp"}, {"phase": "retreat"}, {"phase": "place"}]
+    clients = {PickCompliant: FakeClient(PickCompliant, [OK]), Handover: FakeClient(Handover, [GIVE_OK, OK], feedbacks=[give_fb, receive_fb])}
+    session, published, said, _ = make_session(clients, cfg, objects=[rod()])
+    assert run(build(session)) == Status.SUCCESS
+    assert said == [prompts["present_prompt"], prompts["grasp_ok_prompt"], prompts["give_back_prompt"], prompts["receive_ok_prompt"]]
+    assert published[0].success and metric(published[0], "received") == 1
+
+
+def test_receive_prompt_without_feedback_only_at_result():
+    # 피드백 없는 로봇: 돌려주기 안내는 없고(받을 자세를 모름) 칭찬은 결과 때. timeout 재시도의 receive_prompt 는 그대로
+    prompts = {"give_back_prompt": "다시 건네주세요", "receive_ok_prompt": "잘 건네주셨어요"}
+    cfg = {"mode5": {**FAST["mode5"], **prompts}}
+    clients = {PickCompliant: FakeClient(PickCompliant, [OK]), Handover: FakeClient(Handover, [GIVE_OK, (False, {"failure_reason": "timeout"}), OK])}
+    session, published, said, _ = make_session(clients, cfg, objects=[rod()])
+    assert run(build(session)) == Status.SUCCESS
+    assert said == [mode5_handover.DEFAULTS["receive_prompt"], prompts["receive_ok_prompt"]]
+
+
+def test_receive_retry_does_not_repeat_give_back_prompt():
+    # timeout 재시도의 새 goal 에서 wait 가 다시 와도 돌려주기 안내는 한 번 (receive_prompt 가 따로 안내)
+    prompts = {"give_back_prompt": "다시 건네주세요", "receive_ok_prompt": "잘 건네주셨어요"}
+    cfg = {"mode5": {**FAST["mode5"], **prompts}}
+    wait_only = [{"phase": "present"}, {"phase": "wait"}]
+    clients = {PickCompliant: FakeClient(PickCompliant, [OK]),
+               Handover: FakeClient(Handover, [GIVE_OK, (False, {"failure_reason": "timeout"}), OK], feedbacks=[[], wait_only, wait_only + [{"phase": "grasp"}]])}
+    session, published, said, _ = make_session(clients, cfg, objects=[rod()])
+    assert run(build(session)) == Status.SUCCESS
+    assert said == [prompts["give_back_prompt"], mode5_handover.DEFAULTS["receive_prompt"], prompts["receive_ok_prompt"]]

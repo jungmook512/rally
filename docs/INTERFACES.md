@@ -33,6 +33,7 @@ webcam_link          측면 대각 웹캠, 높이 약 2 m (table_link 기준 sta
 | `/rally/robot/tcp_pose` | `geometry_msgs/PoseStamped` | rally_robot/force_publisher | 10 Hz | SensorData |
 | `/rally/gripper/state` | `sensor_msgs/JointState` — name `[rg2_width_mm, rg2_grip, rg2_target_mm]`, position `[폭 mm, grip 감지 0/1, 마지막 명령 폭 mm(-1 = 없음)]`, effort 미사용. 쥠 판단 = grip 비트 **또는** 명령 폭보다 5 mm 이상 벌어져 멈춤(공을 손가락 끝에 걸치면 grip 비트 0) | rally_robot/gripper_node | 20 Hz | SensorData |
 | `/joint_states` | `sensor_msgs/JointState` | dsr_bringup2 | 100 Hz | SensorData |
+| `/dsr01/joint_states` | `sensor_msgs/JointState` (팔 6축 rad — 두산 컨트롤러가 직접 냄; `/joint_states` 는 joint_state_publisher 가 0 으로 채울 수 있음) | dsr_bringup2 | 100 Hz | SensorData — safety_monitor(움직임)·camera_tf(건강)·**brain bt_runner**(모드 3 투구 안내: `ready_posj` ± `throw_prompt_pose_tol_deg` 안에 `throw_prompt_settle_s` 머물면, 10/16. 파라미터 `joint_states_topic`) |
 | `/tf`, `/tf_static` | `tf2_msgs/TFMessage` | 여러 노드 | - | 표준 |
 
 - **손목 인식 모델은 모드마다 (10/15 정정인)**: segmenter 파라미터 `mode_models`(기본 `1:yolov8n-seg_ball.pt;3:velcro_ball_yolo11n-seg_1024_rot_v2.pt;5:yolov8n-seg_cupstick.pt;7:`) 중 `active_mode` 에 해당하는 모델만 돌린다 (시작 때 모두 읽어 둠). brain(`segmenter_mode.py`)이 모드에 들어갈 때 `/rally_segmenter` 의 `active_mode` 를 바꾸고 세션이 끝나면 0. 0 = 표 밖 → `model_path`/기본 찾기(공 + 컵·막대). 7 = 모델 없음(빈 objects). 공 떼기 시험 도구 `scripts/detach_loop.py` 는 brain 없이 3 으로 바꿨다 되돌린다.
@@ -54,6 +55,7 @@ webcam_link          측면 대각 웹캠, 높이 약 2 m (table_link 기준 sta
 | `/rally/voice/intent` | `rally_interfaces/VoiceIntent` | rally_voice/intent_node | brain, safety | 이벤트 | Reliable |
 | `/rally/voice/transcript` | `std_msgs/String` | rally_voice/intent_node | dashboard | 이벤트 | Reliable |
 | `/rally/voice/speaking` | `std_msgs/Bool` | rally_voice/tts_node | rally_voice/intent_node, rally_brain/bt_runner (말하는 중 자세 교정 안내 건너뜀, #119), dashboard 선택 | 발화 시작·끝 이벤트 | **Reliable, TransientLocal**, depth 1 |
+| `/rally/voice/listening` | `std_msgs/Bool` | rally_voice/intent_node | rally_voice/tts_node (true 동안 발화를 미룸, 최대 `listen_hold_max_s` 15 s), rally_brain/bt_runner (모드 선택 안내 건너뜀) | 호출어 감지 → 녹음 → STT → 의도 발행 끝 (10/15) | Reliable, depth 1 (TransientLocal 아님 — 시작 때 false 한 번) |
 
 **objects/image_axis** (10/12, 모드 5 받기 기울기): `poses[i]` 는 `objects[i]` 와 짝 (header.stamp 같을 때만 짝지음). `position` = 그 물체 중심(objects 와 같음), `orientation` = 화면 속 마스크 주축 각도를 z 축 회전으로 — 화면 위쪽 0°, 오른쪽으로 기울면 +, −90~90°. 둥근 물체(장단축 비 ≤ 1.3)는 (0,0,0,0). `TrackedObject.yaw` 는 base 평면에 투영한 값이라 카메라가 앞을 보는 받기 자세에서는 늘 ±90° 로 뭉개져서 따로 낸다. 메시지 형식을 안 바꾸려고 TrackedObject 필드 대신 별도 토픽 (정정인 결정, 비전 컨테이너 재빌드 없이).
 
@@ -68,6 +70,8 @@ webcam_link          측면 대각 웹캠, 높이 약 2 m (table_link 기준 sta
 **HandState 손목 각도** (`wrist_angle_deg`): 0° 손바닥 아래 · 90° 옆(엄지 위) · 180° 위. **안정화된 값** — 최근 0.5 s 의 좋은 프레임(카메라에서 너무 가깝지 않음: 깊이가 있으면 손바닥 거리 ≥ 0.30 m, 손은 보이는데 손바닥 깊이가 비면 가까움으로 봄, 깊이가 아예 없으면 화면 속 손 크기로 대신) 중간값. 손이 너무 가까우면 직전 값을 유지(잡는 순간에도 다가올 때의 값), 손이 1 s 넘게 안 보이면 NaN. 0 은 "모름" 이 아니다 — 모르면 NaN. 중간값이라 손목을 돌리면 약 0.25 s 늦게 따라온다 (잡는 순간 기록용. 실시간 제어에 쓰려면 이 지연을 감안). 파라미터 `wrist_window_s`·`wrist_lost_s`·`wrist_near_m`·`wrist_max_hand_frac` (hand_pose).
 
 **TTS 발화 중 마이크** (#45): `/rally/voice/speaking` 은 `Speak.block_mic=true` 발화가 시작되면 `true`, 끝나고 잔향 여유(약 0.3 s) 뒤 `false`. intent_node 는 `true` 동안 **일반 명령만 무시**하고 비상 키워드("그만/멈춰" → `is_emergency`)는 계속 듣는다 — 로봇이 말하는 동안에도 음성 정지가 살아 있어야 한다. 그래서 TTS 문구에는 "그만"·"멈춰"를 쓰지 않는다 (에코로 정지 오인식 방지).
+
+**사람이 말하는 중 TTS** (10/15 조정묵): `/rally/voice/listening` 은 호출어("랠리야")를 감지한 순간 `true`, 녹음(5 s)·STT·의도 판단이 끝나 `/rally/voice/intent` 를 냈거나 버렸을 때 `false` (겹치면 마지막 판단이 끝날 때). tts_node 는 `true` 동안 들어온 `Speak` 요청을 끝날 때까지 미뤘다가 순서대로 말하고(15 s 넘게 이어지면 그냥 말함), brain 은 모드 선택 대기 안내("어떤 모드를 진행할지…")를 그 동안 건너뛴다 — 사람이 명령을 말하는 중에 로봇이 끼어들지 않게.
 
 **비상어 상시 감지** (#50, 기획 CP9·FR-07): intent_node 는 호출어 없이 마이크를 80 ms 마다 키워드 모델(`models/kws/emergency_kws.joblib`)로 판정해 "그만"·"멈춰"가 들리면 **바로** `/rally/safety/estop`(true) 와 `VoiceIntent`(`intent=stop`, `is_emergency=true`, `text`=들은 단어, `confidence`=점수, `header.stamp`=감지 시각)를 낸다. STT·네트워크를 안 거치고, 로봇 발화 중·호출어 뒤 녹음 중·STT 처리 중에도 계속 듣는다. 비상 점수(P(그만)+P(멈춰))가 모델에 저장된 임계를 연속 프레임 수(`consec`, 지금 0.7·3 프레임 = 0.24 s)만큼 넘어야 울린다 (순간 소음 오탐 억제, 말 끝 → 감지 약 0.4~0.6 s). 한 번 울린 뒤 `kws_refractory_s`(1.5 s) 동안은 다시 안 울림. 모델 파일이 없으면 이 감지만 꺼지고 호출어 뒤 STT 비상어 규칙은 그대로. **호출어는 "랠리야"** (10/13 정동휘 결정, FR-06): 같은 모델의 P(랠리야)가 같은 임계·연속 프레임을 넘으면 녹음 시작 (`wake_source:=kws` 기본). 모델이 없거나 랠리야 라벨이 없으면 선생님 "hello rokey"(`wake_source:=openwakeword`)로 돌아간다.
 
@@ -188,14 +192,14 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 - 기존 `/rally/voice/intent`의 `pause` 또는 `tired` → 현재 시도를 마친 뒤 휴식. `resume` → 휴식 중인 세션만 재개. 음성 계약 필드 변경 없음.
 - 시도 경계는 모드 1의 타격·받기 관측·손 이탈 대기·회수·기록, 모드 5의 집기·GIVE·RECEIVE를 모두 포함한다. 손 이탈 대기는 시간 초과로 끝내지 않으며 이때 휴식 요청도 유지한다. 휴식 대기 중에는 현재 시도를 계속 처리하고, 다음 시도 앞의 BT 관문에서 대기한다. 마지막 시도면 휴식 대신 세션을 종료한다.
 - 휴식 중 모드 전환·난이도 변경은 거절한다. 휴식 요청 시 대기하던 모드/난이도 요청은 비운다. 재개는 같은 난이도로 다음 시도부터 진행한다. 레시피 없는 모드의 난이도 변경은 안내만 한다 (모드 1 명시적 변경·모드 7 지원).
-- STOP·context 끊김·세션 취소는 휴식 중에도 세션을 종료한다 (예외: 아래 「모드 1 손 근접 STOP 대기」). STOP 해제 서비스는 기존 그대로이며 재개로 해제하지 않는다. 준비 조건 미충족이면 재개를 거절한다.
+- 세션 취소는 휴식 중에도 세션을 종료한다. STOP·context 끊김은 10/15 부터 바로 끝내지 않고 9절의 손 근접 대기·복구 대기로 간다 (시간을 넘기면 종료). STOP 해제 서비스는 기존 그대로이며 재개로 해제하지 않는다. 준비 조건 미충족이면 재개를 거절한다.
 - `/rally/brain/state`는 기존 BT 노드 이름을 유지하되 휴식 요청 후 `pause_pending`, 실제 휴식 중 `paused`, 손 근접 STOP 대기 중 `hand_stop_wait`를 발행한다. 상세 상태는 아래 Redis 상태에 제공한다.
 
 대시보드는 ROS를 import하지 않는다. brain의 별도 I/O 콜백이 기존 Redis로 일시적 요청·응답을 주고받는다. `REDIS_URL`이 있으면 활성화되며 `dashboard_control` 노드 파라미터로 끌 수 있다. Redis 장애는 음성·안전 감시를 막지 않는다.
 
 | 경로 | 계약 |
 |---|---|
-| Redis `rally:session_control` | brain이 0.2 s마다 갱신, TTL 2 s. `session_id`, `phase`(idle/running/pause_pending/paused/ended), `pause_id`, `reason`, `mode`, `difficulty`, `trial_index`, `can_resume`, `blocked_reason`, `updated_at`(Unix s), `bt_node`(현재 BT 실행 노드명), `mode3_enabled`(챌린지 설정), `hand_wait`(손 근접 STOP 대기 중이면 그 사유, 아니면 빈 문자열 — 뒤에 추가), `proposal`(10절), `pending_switch`(접수된 모드 전환: null 또는 `{mode: 1·3·5·7 | null(다음 모드)}` — 뒤에 추가), `lane`(모드 1 에서 손으로 고른 레인 0·1, 시도 밖·다른 모드는 null — 대시보드 그림이 그 레인으로 공을 굴림, 뒤에 추가), `mode_select`(모드 선택 대기 중이면 true — 음성·버튼으로 모드를 고르면 시작, 뒤에 추가), `rest`(휴식 제안 조건 — 대시보드 「휴식 제안 조건」 패널·알림용. 세션·모드 없으면 null, 아니면 `{mode, trials(같은 모드 유효 시도 수), need(llm_signal_count), count, on[신호 키], signals{compensation{on,count,need,window,trials} — 보상 동작은 세션 전체·모드 무관(10/15) · success_drop{on,applies,rate,max_rate,trials,min_trials} · slowing{on,last_s,mean_s,ratio,need_ratio,trials,min_trials}}, current_comp[이번 시도에 이미 보인 보상 동작 종류], llm{state: idle·asked·answered·skipped·dropped, result: continue·suggest_rest·null, at, signals}}` — `rule_layer.fatigue_breakdown` 과 같은 기준(규칙과 같은 입력)이며 표시용, 제어에 쓰지 않음. 뒤에 추가), `comp_log`(보상 동작 기록 — 대시보드 훈련 탭 「보상 동작 기록」 패널용(10/15). `{log[{trial, mode, success, types[trunk_lean·shoulder_hike]}] 최근 50개(세션 순서, 모드 무관), current[지금 시도에서 이미 보인 종류], window, need, count, trials}` — count/trials 는 규칙 '보상 동작 반복' 창(window) 안 횟수. 세션이 없어도(시작 전·끝난 뒤) 마지막 세션 기록을 그대로 싣고 current 만 빈 목록, 다음 세션 시작 때 비움. 표시용, 제어에 쓰지 않음. 뒤에 추가) |
+| Redis `rally:session_control` | brain이 0.2 s마다 갱신, TTL 2 s. `session_id`, `phase`(idle/running/pause_pending/paused/ended), `pause_id`, `reason`, `mode`, `difficulty`, `trial_index`, `can_resume`, `blocked_reason`, `updated_at`(Unix s), `bt_node`(현재 BT 실행 노드명), `mode3_enabled`(챌린지 설정), `hand_wait`(손 근접 STOP 대기 중이면 그 사유, 아니면 빈 문자열 — 뒤에 추가), `proposal`(10절), `pending_switch`(접수된 모드 전환: null 또는 `{mode: 1·3·5·7 | null(다음 모드)}` — 뒤에 추가), `lane`(모드 1 에서 손으로 고른 레인 0·1, 시도 밖·다른 모드는 null — 대시보드 그림이 그 레인으로 공을 굴림, 뒤에 추가), `mode_select`(모드 선택 대기 중이면 true — 음성·버튼으로 모드를 고르면 시작, 뒤에 추가), `rest`(휴식 제안 조건 — 대시보드 「휴식 제안 조건」 패널·알림용. 세션·모드 없으면 null, 아니면 `{mode, trials(같은 모드 유효 시도 수), need(llm_signal_count), count, on[신호 키], signals{compensation{on,count,need,window,trials} — 보상 동작은 세션 전체·모드 무관(10/15) · success_drop{on,applies,rate,max_rate,trials,min_trials} · slowing{on,last_s,mean_s,ratio,need_ratio,trials,min_trials}}, current_comp[이번 시도에 이미 보인 보상 동작 종류], llm{state: idle·asked·answered·skipped·dropped, result: continue·suggest_rest·null, at, signals}}` — `rule_layer.fatigue_breakdown` 과 같은 기준(규칙과 같은 입력)이며 표시용, 제어에 쓰지 않음. 뒤에 추가), `comp_log`(보상 동작 기록 — 대시보드 훈련 탭 「보상 동작 기록」 패널용(10/15). `{log[{trial, mode, success, types[trunk_lean·shoulder_hike]}] 최근 50개(세션 순서, 모드 무관), current[지금 시도에서 이미 보인 종류], window, need, count, trials}` — count/trials 는 규칙 '보상 동작 반복' 창(window) 안 횟수. 세션이 없어도(시작 전·끝난 뒤) 마지막 세션 기록을 그대로 싣고 current 만 빈 목록, 다음 세션 시작 때 비움. 표시용, 제어에 쓰지 않음. 뒤에 추가), `difficulty_log`(난이도 변화 기록 — 대시보드 모드 1 화면 「난이도 변화」 패널용(10/16). `{log[{trial(적용된 시도 회차), mode, from, to, action(harder·easier), source(voice·rule), at(Unix s)}] 최근 20개, range{1:[0,3], 7:[-3,3]}(모드별 단계 범위)}` — 한계라 그대로여도(from == to) 남긴다. 세션 없어도 마지막 세션 기록 유지, 다음 세션 시작 때 비움. 대시보드는 새 줄을 훈련 기록(kind `difficulty_change`, 화면에서만·DB 없음)과 알림으로도 보여 줌. 표시용, 제어에 쓰지 않음. 뒤에 추가) |
 | Redis pub/sub `rally:session_commands` | 재개 요청 JSON: `request_id`, `session_id`, `pause_id`(모두 UUID 문자열), `command: resume`, `expires_at`(Unix s, 최대 3 s). 저장·재전송하지 않음. 모드 전환은 `command: set_mode`, `mode`(정수 1·3·5 또는 null = 다음 모드 — 7 은 10/14 시연 제외로 대시보드에서 뺌, brain 은 받으면 그대로 처리), `pause_id` 없음 — brain 은 세션 ID 를 확인한 뒤 `/rally/brain/set_mode`·음성과 같은 확인(휴식·손 대기·안전 정지·모드 3 꺼짐·같은 모드)을 거쳐 접수하고, 실제 전환은 시도 경계에서. 세션 종료는 `command: end_session`(`session_id` 만) — brain 이 접수하고 모드 선택 대기 중이면 바로, 시도 중이면 그 시도가 끝난 뒤 끝냄 (음성 "여기까지 하자"와 같은 경로) |
 | Redis `rally:session_reply:<request_id>` | brain 응답 `success`, `message`, `request_id`. TTL 5 s. 세션·휴식 식별값을 확인한 뒤 현재 안전·준비 조건으로 재검증. 중복 요청은 이미 소비된 휴식 ID이므로 재실행 불가 |
 | HTTP `GET /api/session` | 최신 Redis 제어 상태 또는 null (미수신·만료). Redis 연결 실패 503 |
@@ -250,9 +254,9 @@ STOP·취소는 기존 세션 중단 처리. 타격 action 실패 시에도 다�
 
 후속 구현에서는 명시적 휴식 요청을 pause, 명시적 난이도 요청을 harder/easier로 분류하고 상태 표현은 직접 제어와 분리한다. 상태 표현은 규칙에 따라 의사를 확인하거나 애매한 경우 LLM 제안의 근거로 사용할 수 있다. VoiceIntent에는 현재 수락/거절 의도가 없으므로 정동휘 담당 음성 분류와 제안 ID·발화 시각 연계 계약을 맞춰야 한다. 임의의 모든 “네” 또는 resume을 제안 수락으로 해석하지 않는다.
 
-## 9. 모드 1 손 근접 STOP 대기·재진행 — #98, 1단계 구현 (#115, 2026-10-11)
+## 9. 손 근접 STOP 대기·재진행 — #98, 1단계 구현 (#115, 2026-10-11) + 복구 대기 (2026-10-15)
 
-모드 1 에서 **비래치 손 근접 STOP** 만 세션을 유지하고 기다린다. 그 밖의 STOP 은 7절대로 세션 종료. 안전 감시의 거리 계산·임계값·정지 실행은 로봇 파트(safety_monitor)가 맡고, **Brain 은 STOP 을 낮추거나 reset 하지 않는다.** 코드: `rally_brain/hand_stop.py`, `bt_runner._handle_hand_stop`, `trees/mode1_push.py`.
+**비래치 손 근접 STOP** 은 세션을 유지하고 기다렸다가 같은 시도를 이어 간다 (10/15 부터 모든 모드). 그 밖의 STOP 은 10/15 부터 세션 종료 대신 아래 「복구 대기」. 안전 감시의 거리 계산·임계값·정지 실행은 로봇 파트(safety_monitor)가 맡고, **Brain 은 STOP 을 낮추거나 reset 하지 않는다.** 코드: `rally_brain/hand_stop.py`, `bt_runner._handle_hand_stop`, `trees/mode1_push.py`.
 
 ### SafetyStatus.reason 별 Brain 처리 (#104 최종 · 정정인 확정 계약)
 
@@ -289,13 +293,19 @@ STOP·취소는 기존 세션 중단 처리. 타격 action 실패 시에도 다�
 | 모드 5 PickCompliant `approach` 까지 | 다시 보냄 (그 뒤 하강·파지 중이면 세션 종료) |
 | 모드 5 Handover GIVE | `release` 를 지났으면 건네기 끝난 것으로, `present` 까지면 다시 보냄, 그 사이(당김 대기)는 세션 종료 |
 | 모드 5 Handover RECEIVE | `present` 까지면 다시 보냄, 그 뒤는 세션 종료 |
-| PushBall `place` 이후 (놓기~치기~복귀) · ReturnBall `pickup`~`drop` | 공·그리퍼 상태가 애매해 **세션 종료** (2단계: 로봇 스킬에 '입구 공 바로 치기'·'쥔 공 거치대로' 옵션 필요, #117) |
+| PushBall `place` 이후 (놓기~치기~복귀) · ReturnBall `pickup`~`drop` | 공·그리퍼 상태가 애매해 같은 시도는 못 이어 감 → **복구 대기** 뒤 다음 시도 (10/15. 전엔 세션 종료. 로봇 스킬 옵션 #117 은 보류) |
+| 모드 3 CatchBall `ready` (패드를 쥐고 공을 기다림) | 다시 보냄 (집기는 '이미 쥠'으로 통과). 비행·요격 중이면 복구 대기 뒤 다음 시도 |
 
 재전송은 NORMAL 1 s 유지 뒤, 명령당 최대 5회. 재전송한 goal 이 그 순간 다시 STOP 으로 **거절**되면(손이 또 다가옴) 실패로 끝내지 않고 같은 대기로 돌아간다 (10/11 실로봇: 받기 goal 거절 → 세션 종료가 났었음). 공 회수 전 손 이탈 확인은 별도 조건이다: 최신 검출 손의 중앙선 거리 ≥ `skills.yaml mode1.hand_clear_m`(0.20 m, `safety.yaml slow_distance_m` 과 별개 — #113). 이 확인은 **처음 보낼 때만** 하고, 손 STOP 뒤 재전송은 NORMAL 1 s 만 본다 (10/12 실로봇: 회수하러 가다 선 자세에선 손이 카메라에 안 보여 '손 안 보임' 으로 영영 대기).
 
-### 그대로 세션 종료
+### 복구 대기 — 세션 종료 대신 (2026-10-15 조정묵, rally_brain/hand_stop.py `Recovery`)
 
-위 표에서 이어 갈 수 없는 단계의 STOP, 대기 목록에 없는 모든 STOP 사유(래치·`*_missing`·`wrench_lost`·`hand_deep_intrusion`·모르는 사유), `hand_stop_wait_modes` 에 없는 모드, 대기 중 다른 STOP·context 끊김·세션 취소. 일단 종료된 세션은 나중에 NORMAL 이 와도 되살리지 않는다.
+위 표에서 이어 갈 수 없는 단계의 손 STOP, 대기 목록에 없는 모든 STOP 사유(래치 STOP·`*_missing`·`wrench_lost`·`hand_deep_intrusion`·모르는 사유), 대기 중 겹친 다른 STOP 은 **세션을 끝내지 않는다**.
+Brain 은 트리를 멈춰 돌던 스킬을 취소하고(그 시도는 `interrupted` 기록) → 안전이 NORMAL 로 `hand_stop_resume_hold_s` 이어질 때까지 기다리고(래치 STOP 은 운영자 reset 이 있어야 풀린다 — `recovery_prompt` 로 부탁, `recovery_prompt_s` 마다) → 모드 1·5 는 `/rally/gripper/state` 로 그리퍼에 물건이 있으면 사람이 뺄 때까지(`clear_gripper_prompt`. 다음 스킬이 시작하자마자 그리퍼를 열어 물건이 떨어지므로) → **같은 모드의 남은 시도부터** 트리를 다시 만든다 (모드 시작 관측 자세 이동이 자세를 정리, intro 안내 없음). `recovery_max_s`(300 s)·`clear_gripper_max_s`(120 s)를 넘기면 그때만 세션 종료.
+`no_safety_status`(안전 상태 3 s 끊김, 래치 아님)는 어느 모드든 스킬을 취소하지 않고 손 근접처럼 기다린다 (안내 없음). `/rally/brain/context` 끊김은 3 s 부터 기다리고(새 goal 없음) 10 s 넘으면 종료 (`context_timeout_s`·`context_lost_end_s`).
+Brain 은 STOP 을 낮추거나 reset 하지 않는다. 표시는 손 근접 대기와 같은 `hand_wait`(사유) — 대시보드가 사유로 「손 근접 정지 대기」·「정지 뒤 복구 대기」·「안전 상태 수신 대기」를 구분한다. 값은 모두 `skills.yaml brain`.
+
+같은 날 시도 단위로도 세션 종료를 줄였다: 모드 시작 관측 자세·손 보기·물체 보기 자세 실패는 `pose_retry_wait_s` 쉬고 `pose_tries` 번까지 다시, 끝내 못 가면 그 시도만 실패(손·물체 보기) 또는 그 모드만 건너뜀(관측 자세, 스킬 서버 없음 — `mode_skip_prompt`). 모드 1 밀기 실패는 `push_fail_prompt` + `push_fail_wait_s`(그리퍼가 빌 때까지), 모드 5 받기 실패는 `receive_fail_prompt` + 비전에 물체가 보이거나 `receive_fail_wait_s` 뒤 다음 시도 (steps.py `OperatorWait`). 세션 루프의 코드 예외는 기록·로그 뒤 종료.
 
 ### 휴식·표시·기록
 
@@ -306,7 +316,8 @@ STOP·취소는 기존 세션 중단 처리. 타격 action 실패 시에도 다�
 ### 남은 것
 
 1. ~~로봇 쪽: `hand_deep_intrusion` 분리~~ (10/12 완료), action 취소·정지 확인 계약 (9절 계약 2번, 정정인 별도 정리)
-2. 2단계: 위 '세션 종료' 단계의 이어 가기 — 로봇 스킬 옵션 (#117)
+2. ~~2단계: 위 '세션 종료' 단계의 이어 가기~~ → 10/15 복구 대기로 대체 (로봇 스킬 옵션 #117 은 보류)
+4. 로봇·인식 PC 실기 확인 (10/15 복구 대기): 래치 STOP → reset → 같은 모드 남은 시도 / 공을 쥔 채 STOP → "물건을 빼 주세요" → 그리퍼 비면 진행
 3. 로봇·인식 PC 실기 확인: 움직이는 중 손 STOP → 손 빼기 → 같은 시도 이어 감. 문서 갱신을 실물 검증 완료로 보지 않는다.
 
 ## 휴식 제안 — LLM 판단·대시보드 응답

@@ -71,8 +71,10 @@ def mode5_cfg():
 
 def test_mode5_feedback_order():
     give_fb = [{"phase": "present"}, {"phase": "wait"}, {"phase": "wait"}, {"phase": "release"}, {"phase": "retreat"}]
+    # 10/16: 돌려주기 안내는 RECEIVE 가 받을 자세에서 기다리기 시작할 때(wait), 칭찬은 잡는 순간(grasp) — 결과가 아니라 피드백에서
+    receive_fb = [{"phase": "present"}, {"phase": "wait"}, {"phase": "wait"}, {"phase": "grasp"}, {"phase": "retreat"}, {"phase": "place"}]
     clients = {PickCompliant: FakeClient(PickCompliant, [(True, {"success": True})]),
-               Handover: FakeClient(Handover, [(True, {"success": True}), (True, {"success": True})], feedbacks=[give_fb, []])}
+               Handover: FakeClient(Handover, [(True, {"success": True}), (True, {"success": True})], feedbacks=[give_fb, receive_fb])}
     session, published, said, _ = make_session(clients, mode5_cfg(), objects=[rod()])
     assert run(mode5_handover.build_trial(session)) == Status.SUCCESS
     m5 = SKILLS["mode5"]

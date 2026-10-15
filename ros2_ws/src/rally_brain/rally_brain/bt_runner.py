@@ -33,6 +33,7 @@ import json
 import threading
 import math
 import time
+import traceback
 from datetime import datetime, timezone
 from typing import Any
 import uuid
@@ -45,6 +46,7 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallb
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
+from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool, String
 
 from rally_brain import graph_rag, hand_stop, rule_layer, metrics, posture_coach, session_report
@@ -55,7 +57,7 @@ from rally_brain.speech import phrase_problem
 from rally_brain.session_control import SessionControl
 from rally_brain.proposal_control import ProposalControl, REST_PROMPT
 from rally_brain.rest_advisor import configured_advisor
-from rally_brain.trees.session_tree import MODE_NAMES, Session, build_session_tree, modes_after_switch
+from rally_brain.trees.session_tree import MODE_NAMES, Session, build_session_tree, mode_prompt, modes_after_switch
 from rally_bringup.readiness import ReadinessChecker
 from rally_interfaces.action import RunSession
 from rally_interfaces.msg import SafetyStatus, SceneContext, TrialResult, VoiceIntent
@@ -70,6 +72,7 @@ RULE_INTENTS = ("tired", "harder", "easier")   # 규칙 레이어가 소비하�
 
 
 COMP_LOG_MAX = 50   # 대시보드 「보상 동작 기록」에 싣는 최근 시도 수 (10/15)
+DIFF_LOG_MAX = 20   # 대시보드 「난이도 변화」에 싣는 최근 변경 수 (10/16)
 
 
 def mode3_enabled(skills_cfg: dict) -> bool:
@@ -99,10 +102,13 @@ class BtRunner(Node):
         self.declare_parameter("check_readiness", True)
         self.declare_parameter("trials_per_mode", 5)
         self.declare_parameter("tick_hz", 10.0)
-        self.declare_parameter("context_timeout_s", 1.0)
+        self.declare_parameter("context_timeout_s", 3.0)       # 10/15: 1 → 3 s (와이파이 끊김과 같게). 넘으면 끝내지 않고 기다림
+        self.declare_parameter("joint_states_topic", "/dsr01/joint_states")   # 두산 컨트롤러 관절값 (100 Hz) — 모드 3 대기 자세 판정 (10/16)
+        self.declare_parameter("context_lost_end_s", 10.0)     # 상황판이 이만큼 안 오면 그때 세션 중단
         self.check_readiness = bool(self.get_parameter("check_readiness").value)
         self.tick_period = 1.0 / float(self.get_parameter("tick_hz").value)
         self.context_timeout_s = float(self.get_parameter("context_timeout_s").value)
+        self.context_lost_end_s = float(self.get_parameter("context_lost_end_s").value)
 
         self.readiness = ReadinessChecker(self, ["session"]) if self.check_readiness else None
         self.session_ready = not self.check_readiness
@@ -133,6 +139,7 @@ class BtRunner(Node):
         self._posture = posture_coach.PostureCoach(posture_coach.config(self._skills_cfg))   # 보상 동작 교정 안내 (#119)
         self._comp_history: list[bool] = []   # 세션의 시도마다(모드 무관) 보상 동작이 보였는지 — 규칙 '보상 동작 반복'. 10/15 조정묵: 모드별 → 세션 전체
         self._comp_log: list[dict] = []       # 대시보드 「보상 동작 기록」: 시도마다 {trial, mode, success, types} (10/15 조정묵)
+        self._difficulty_log: list[dict] = []  # 대시보드 「난이도 변화」: 어렵게/쉽게가 적용될 때마다 {trial, mode, from, to, action, source, at} (10/16 조정묵)
         self.proposals = ProposalControl()
         self._proposal_cancelled = False
         self._rest_generation = 0
@@ -147,7 +154,11 @@ class BtRunner(Node):
             self._seg_mode.want(0)                                   # 켜질 때 기본 모델 한 번 (모드 3 도중 재시작 대비)
         self.get_logger().info(f"휴식 LLM: {self._rest_advisor.status}")
         self._switch_lock = self.control.lock                         # 세션·전환·휴식의 공통 lock
-        self._safety_abort = False                                    # STOP 한 번 수신하면 세션 종료까지 유지
+        self._safety_abort = False                                    # 복구 대기가 시간을 넘김 → 세션 종료까지 유지
+        self._stop_seen: str | None = None                            # 기다릴 수 없는 STOP 사유 (tick 이 복구 대기로 바꿈, 10/15)
+        self._recovery: hand_stop.Recovery | None = None              # 복구 대기 중이면 그 상태 (10/15)
+        self._grip: tuple[bool, float] | None = None                  # (그리퍼에 물건 있음, 수신 시각) — /rally/gripper/state
+        self._joints: tuple[list[float], float] | None = None         # (관절 각도 6개 deg, 수신 시각) — joint_states_topic
         self._hand_cfg = hand_stop.config(self._skills_cfg)
         self._hand_stop_seen: str | None = None                      # 기다릴 수 있는 손 STOP 을 받음 (tick 이 소비)
         self._hand_wait: hand_stop.HandStopWait | None = None        # 손 근접 STOP 대기 중 (tick 스레드만)
@@ -160,6 +171,12 @@ class BtRunner(Node):
         speaking_qos = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL, depth=1)
         self._speaking = False                                        # TTS 발화 중 (자세 교정 안내는 건너뜀, #119)
         self.create_subscription(Bool, "/rally/voice/speaking", lambda m: setattr(self, "_speaking", bool(m.data)), speaking_qos)
+        self._listening: tuple[bool, float] = (False, 0.0)            # 사람이 말하는 중 (호출어 → 녹음 → 판단, 10/15) — 모드 선택 안내 건너뜀
+        self.create_subscription(Bool, "/rally/voice/listening", lambda m: setattr(self, "_listening", (bool(m.data), time.monotonic())),
+                                 QoSProfile(reliability=ReliabilityPolicy.RELIABLE, depth=1))
+        self.create_subscription(JointState, "/rally/gripper/state", self._on_gripper, qos_profile_sensor_data)   # 복구 뒤 그리퍼 비우기 확인 (10/15)
+        self.create_subscription(JointState, str(self.get_parameter("joint_states_topic").value), self._on_joints,
+                                 qos_profile_sensor_data)   # 모드 3 투구 안내 — 대기 자세(ready_posj) 도착 판정 (10/16)
         self._trial_pub = self.create_publisher(TrialResult, "/rally/brain/trial_result", reliable)
         self._report_pub = self.create_publisher(String, "/rally/brain/session_report", reliable)
         self._state_pub = self.create_publisher(String, "/rally/brain/state", reliable)
@@ -199,8 +216,56 @@ class BtRunner(Node):
                 if hand_stop.waitable(msg.safety.reason, self._session.current_mode, self._hand_cfg):
                     self._hand_stop_seen = msg.safety.reason   # 로봇이 움직이는지는 tick 이 보고 대기·종료를 정한다
                 else:
-                    self._safety_abort = True
+                    self._stop_seen = msg.safety.reason        # 래치 STOP 등 — tick 이 복구 대기로 (10/15, 전엔 세션 종료)
                 self._invalidate_rest()
+
+    def _on_gripper(self, msg: JointState) -> None:
+        """/rally/gripper/state (20 Hz): 쥠 = grip 비트 또는 명령 폭보다 5 mm 이상 벌어진 채 멈춤 (INTERFACES 2절 — 공을 손끝에 걸치면 비트 0)."""
+        try:
+            names = list(msg.name)
+            width = float(msg.position[names.index("rg2_width_mm")])
+            grip = float(msg.position[names.index("rg2_grip")]) > 0.5
+            target = float(msg.position[names.index("rg2_target_mm")])
+        except (ValueError, IndexError):
+            return
+        self._grip = (grip or (target >= 0.0 and width >= target + 5.0), time.monotonic())
+
+    def _on_joints(self, msg: JointState) -> None:
+        """두산 /dsr01/joint_states (100 Hz, rad): 팔 6축만 deg 로. 모드 3 트리가 대기 자세(ready_posj)와 허용 오차로 비교한다."""
+        pos = list(msg.position[:6])
+        if len(pos) < 6:
+            return
+        self._joints = ([math.degrees(float(v)) for v in pos], time.monotonic())
+
+    def _joint_deg(self) -> list[float] | None:
+        """트리용 — 관절 각도 6개 [deg]. 1 s 넘게 안 왔으면 None (로봇 노드 없음·테스트 → 트리가 다른 기준으로)."""
+        if self._joints is None or time.monotonic() - self._joints[1] > 1.0:
+            return None
+        return list(self._joints[0])
+
+    def _user_speaking(self) -> bool:
+        """intent_node 가 듣는 중(호출어 뒤 녹음·판단). 20 s 넘게 true 면(끝을 못 받음) 아니라고 본다. tts_node 도 같은 동안 발화를 미룬다."""
+        on, since = self._listening
+        return on and time.monotonic() - since < 20.0
+
+    def _recovering(self) -> bool:
+        """STOP 을 봤지만 아직 복구 대기로 안 넘어갔거나(다음 tick) 복구 대기 중 — 재개·새 시도·휴식 제안을 막는다 (10/15)."""
+        return self._recovery is not None or self._stop_seen is not None
+
+    def _gripper_empty(self) -> bool | None:
+        """그리퍼가 비었는가. None = 모름 (상태가 2 s 넘게 없음 — 로봇 노드 없음·테스트)."""
+        if self._grip is None or time.monotonic() - self._grip[1] > 2.0:
+            return None
+        return not self._grip[0]
+
+    def _gripper_known_empty(self) -> bool:
+        """트리(사람에게 물건을 빼 달라고 한 뒤 확인)용 — 모르면 비운 것으로."""
+        return self._gripper_empty() is not False
+
+    def _gripper_holding(self) -> bool | None:
+        """트리용 — 쥐고 있으면 True, 비었으면 False, 모르면 None (모드 3 투구 안내: 패드를 쥔 뒤 대기 자세까지의 시간으로, 10/16)."""
+        empty = self._gripper_empty()
+        return None if empty is None else not empty
 
     def _context_stale(self, since: float) -> bool:
         """상황판이 context_timeout_s 넘게 안 왔으면 True. since = 세션 시작 (그 전 수신은 인정)."""
@@ -389,6 +454,11 @@ class BtRunner(Node):
             if old != new:
                 self._invalidate_rest()
             session.set_difficulty(trial.mode, new)
+            # 대시보드 「난이도 변화」 — 한계라 그대로여도 남긴다 (요청이 왜 반영 안 됐는지 운영자가 보게)
+            self._difficulty_log.append({"trial": int(trial.trial_index), "mode": int(trial.mode), "from": int(old), "to": int(new),
+                                         "action": d.action, "source": "voice" if intent in ("harder", "easier") else "rule",
+                                         "at": time.time()})
+            del self._difficulty_log[:-DIFF_LOG_MAX]
             if new != old and (text := (self._skills_cfg.get("brain") or {}).get(f"{d.action}_prompt")):
                 self._say(text)   # 난이도가 실제로 바뀐 때만 (#119)
             log.info(f"[규칙] {d.reason} — 모드 {trial.mode} 난이도 {old} → {new}"
@@ -436,7 +506,7 @@ class BtRunner(Node):
 
     def _allow_trial(self) -> bool:
         with self._switch_lock:
-            if self._safety_abort or self._context_stale(0.0):
+            if self._safety_abort or self._recovering() or self._context_stale(0.0):
                 return False
             was_pending = self.control.phase == "pause_pending"
             allowed = self.control.at_boundary(self.get_clock().now().nanoseconds)
@@ -450,6 +520,8 @@ class BtRunner(Node):
             return "세션이 없거나 안전 중단 중입니다"
         if self._context is None or self._context_stale(0.0):
             return "안전 상황판 수신이 오래됐습니다"
+        if self._recovering():
+            return "안전 정지 뒤 복구 대기 중입니다 — 풀리면 같은 모드의 남은 시도로 이어집니다"
         if self.control.hand_wait:
             return "손 근접 정지 대기 중입니다 — 손이 빠지면 이어집니다"
         if self._context.safety.level == SafetyStatus.LEVEL_STOP:
@@ -522,6 +594,14 @@ class BtRunner(Node):
                 "window": window, "need": int(self._rule_cfg["compensation_min_trials"]),
                 "count": sum(1 for seen in recent if seen), "trials": len(recent)}
 
+    def _difficulty_snapshot(self) -> dict:
+        """대시보드 「난이도 변화」 패널 (10/16, 모드 1 화면 현재 단계 아래): 어렵게/쉽게가 적용된 시도·전후 단계·요청 출처와 모드별 단계 범위.
+        표시용 — 제어에 쓰지 않는다. lock 안에서 부른다. 세션이 없어도 마지막 세션 기록을 그대로 싣고 다음 세션 시작 때 비운다 (comp_log 와 같음)."""
+        lo, hi = (int(v) for v in self._rule_cfg["difficulty_range"])
+        return {"log": list(self._difficulty_log[-DIFF_LOG_MAX:]),
+                "range": {TrialResult.MODE_PUSH_BALL: [max(0, lo), hi],     # 모드 1 은 0 이 가장 쉬운 단계 (아래로 안 내려감)
+                          TrialResult.MODE_RESIST: [lo, hi]}}
+
     def _poll_rest(self):
         blocked = bool(self._proposal_blocked())
         action = self._rest_advisor.poll(self._rest_token(), blocked)
@@ -589,6 +669,7 @@ class BtRunner(Node):
                 "mode_select": self._selecting,     # 모드 선택 대기 중 (음성·버튼으로 모드를 고르면 시작) — 뒤에 추가
                 "rest": self._rest_snapshot(),      # 휴식 제안 조건(신호별 진행값·LLM 판단 상태) — 대시보드 알림, 뒤에 추가
                 "comp_log": self._comp_snapshot(),  # 보상 동작 기록(시도별 종류·지금 시도·창 안 횟수) — 대시보드 「보상 동작 기록」, 뒤에 추가
+                "difficulty_log": self._difficulty_snapshot(),  # 난이도 변화 기록(바뀐 시도·전후 단계·요청 출처·단계 범위) — 대시보드 모드 1 「난이도 변화」, 뒤에 추가
             }
 
     def _action_client(self, action_type: type, name: str) -> ActionClient:
@@ -648,7 +729,8 @@ class BtRunner(Node):
                           publish=self._trial_pub.publish, action_client=self._action_client,
                           skills_cfg=self._skills_cfg, say=self._say, after_trial=self._after_trial,
                           service_client=self._service_client, allow_trial=self._allow_trial,
-                          robot_resume_ok=self._robot_resume_ok, exposure_fixed=self._exposure_fixed)
+                          robot_resume_ok=self._robot_resume_ok, exposure_fixed=self._exposure_fixed,
+                          gripper_empty=self._gripper_known_empty, gripper_holding=self._gripper_holding, joint_deg=self._joint_deg)
         tree = self._waiting_tree() if selecting else py_trees.trees.BehaviourTree(build_session_tree(session, modes, n))
         with self._switch_lock:
             self._session, self._pending_switch = session, None
@@ -656,9 +738,11 @@ class BtRunner(Node):
             self._end_requested = self._last_mode = None
             self._pending_intent = None
             self._safety_abort = False
+            self._stop_seen = self._recovery = None
             self._posture = posture_coach.PostureCoach(posture_coach.config(self._skills_cfg))
             self._comp_history = []
             self._comp_log = []
+            self._difficulty_log = []
             self._rest_llm = {"state": "idle", "result": None, "at": None, "signals": []}
             self._hand_stop_seen = self._hand_wait = self._normal_since = None
             self._proposal_cancelled = False
@@ -673,6 +757,7 @@ class BtRunner(Node):
         outcome = "aborted"
         last_feedback = 0.0
         last_prompt = float("-inf")       # 모드 선택 대기 안내는 prompt_interval_s 마다
+        stale_since: float | None = None  # 상황판이 끊긴 시각 (10/15: 바로 끝내지 않고 기다림)
         try:
             while rclpy.ok():
                 if goal_handle.is_cancel_requested:
@@ -680,26 +765,48 @@ class BtRunner(Node):
                     outcome = "canceled"
                     break
                 ctx = self._context
+                now = time.monotonic()
                 if self._context_stale(started):
-                    tree.root.stop(py_trees.common.Status.INVALID)   # 실행 중 블록 terminate → 스킬 goal 취소
-                    self.get_logger().error(f"/rally/brain/context 가 {self.context_timeout_s} s 넘게 안 옴 — 세션 중단")
-                    break
-                if not self._handle_hand_stop(tree, session, ctx):
-                    tree.root.stop(py_trees.common.Status.INVALID)   # 실행 중 블록 terminate → 스킬 goal 취소
-                    self.get_logger().warn("안전 정지 — 세션 중단")
-                    break
-                if self._hand_wait is not None:                      # 손 근접 정지 대기: 트리를 멈춘 채 기다림
-                    if ctx is not None and time.monotonic() - last_feedback >= 1.0:
-                        goal_handle.publish_feedback(RunSession.Feedback(context=ctx))
-                        last_feedback = time.monotonic()
+                    # 10/15: 상황판이 끊겨도 바로 끝내지 않는다 — 트리를 멈춘 채 기다리고(새 goal 없음) context_lost_end_s 넘으면 종료
+                    if stale_since is None:
+                        stale_since = now
+                        self.get_logger().warn(f"/rally/brain/context 가 {self.context_timeout_s:.0f} s 넘게 안 옴 — 기다림 (최대 {self.context_lost_end_s:.0f} s)")
+                    if now - stale_since > self.context_lost_end_s:
+                        tree.root.stop(py_trees.common.Status.INVALID)   # 실행 중 블록 terminate → 스킬 goal 취소
+                        self.get_logger().error(f"/rally/brain/context 가 {self.context_lost_end_s:.0f} s 넘게 안 옴 — 세션 중단")
+                        break
                     time.sleep(self.tick_period)
                     continue
-                if self._end_requested is not None and (self._selecting or not (session.trial_active or self._skill_running(tree))):
+                if stale_since is not None:
+                    hand_stop.shift_timers(tree.root.iterate(), now - stale_since)
+                    self.get_logger().info(f"/rally/brain/context 다시 옴 — {now - stale_since:.1f} s 기다림, 이어 감")
+                    stale_since = None
+                if self._end_requested is not None and (self._selecting or self._recovery is not None
+                                                        or not (session.trial_active or self._skill_running(tree))):
                     tree.root.stop(py_trees.common.Status.INVALID)
                     self.get_logger().info(f"[세션 종료] {self._end_requested} 요청 — 시도 경계에서 끝냄")
                     self._say(str(select["end_prompt"]))
                     outcome = "succeeded"
                     break
+                verdict = self._handle_safety(tree, session, ctx)
+                if verdict == "end":
+                    tree.root.stop(py_trees.common.Status.INVALID)   # 실행 중 블록 terminate → 스킬 goal 취소
+                    self.get_logger().warn("안전 정지 — 세션 중단")
+                    break
+                if verdict == "hold":                                # 손 근접 정지·복구 대기: 트리를 멈춘 채 기다림
+                    if ctx is not None and now - last_feedback >= 1.0:
+                        goal_handle.publish_feedback(RunSession.Feedback(context=ctx))
+                        last_feedback = now
+                    time.sleep(self.tick_period)
+                    continue
+                if verdict == "recovered":                           # 복구 끝 → 같은 모드의 남은 시도부터 트리 다시 (10/15)
+                    new_tree = self._rebuild_after_recovery(session, n, select)
+                    if new_tree is None:
+                        outcome = "succeeded"
+                        break
+                    tree = new_tree
+                    last_prompt = time.monotonic()
+                    continue
                 if self._selecting:
                     with self._switch_lock:
                         pend, self._pending_switch = self._pending_switch, None
@@ -711,8 +818,8 @@ class BtRunner(Node):
                         tree = py_trees.trees.BehaviourTree(build_session_tree(session, [target], n))
                         with self._switch_lock:
                             self._selecting = False
-                    elif time.monotonic() - last_prompt >= float(select["prompt_interval_s"]):
-                        self._say(str(select["prompt"]))
+                    elif time.monotonic() - last_prompt >= float(select["prompt_interval_s"]) and not self._user_speaking():
+                        self._say(str(select["prompt"]))               # 사람이 말하는 중이면 건너뜀 — 끝난 뒤 다음 tick 에 (10/15)
                         last_prompt = time.monotonic()
                 with self._switch_lock:
                     self._poll_rest()
@@ -749,6 +856,12 @@ class BtRunner(Node):
                     goal_handle.publish_feedback(RunSession.Feedback(context=ctx))
                     last_feedback = time.monotonic()
                 time.sleep(self.tick_period)
+        except Exception as e:  # noqa: BLE001 — 트리·규칙 코드의 버그가 goal 을 조용히 abort 시키지 않게 (10/15): 기록·로그 남기고 중단
+            self.get_logger().error(f"세션 루프 예외 — 세션 중단: {type(e).__name__}: {e}\n{traceback.format_exc()}")
+            try:
+                tree.root.stop(py_trees.common.Status.INVALID)       # 돌던 시도는 interrupted 로 기록
+            except Exception as e2:  # noqa: BLE001
+                self.get_logger().error(f"세션 중단 정리 실패: {type(e2).__name__}: {e2}")
         finally:
             self._state_name = "idle"
             self._hand_wait = None
@@ -833,39 +946,52 @@ class BtRunner(Node):
         with open(path, encoding="utf-8") as f:
             return (yaml.safe_load(f) or {}).get("rally_llm_advisor", {}).get("ros__parameters", {})
 
-    # ---------- 손 근접 STOP 대기 (#98) ----------
-    def _handle_hand_stop(self, tree: py_trees.trees.BehaviourTree, session: Session, ctx: SceneContext | None) -> bool:
-        """tick 마다. False = 세션 종료해야 함. 기다릴 수 있는 손 STOP 이면 대기에 들어가거나(로봇이 서 있을 때) 대기를 갱신."""
+    # ---------- STOP 처리: 손 근접 STOP 대기 (#98) · 복구 대기 (10/15) ----------
+    def _handle_safety(self, tree: py_trees.trees.BehaviourTree, session: Session, ctx: SceneContext | None) -> str:
+        """tick 마다. "tick" 트리 진행 / "hold" 트리를 멈춘 채 대기 / "recovered" 복구 끝(트리 다시 만들기) / "end" 세션 종료.
+        손 근접 STOP(비래치)이 로봇이 서 있을 때(또는 이어 갈 수 있는 단계)면 같은 시도를 이어 간다 (#98).
+        그 밖의 STOP·이어 갈 수 없는 단계의 손 STOP 은 10/15 부터 세션을 끝내지 않고 복구 대기 (hand_stop.Recovery:
+        스킬 취소 → NORMAL(래치면 운영자 reset) → 그리퍼 비우기 → 같은 모드의 남은 시도). 시간을 넘기면 그때만 종료."""
         with self._switch_lock:
             if self._safety_abort:
-                return False
+                return "end"
             seen, self._hand_stop_seen = self._hand_stop_seen, None
+            other, self._stop_seen = self._stop_seen, None
         stop = ctx is not None and ctx.safety.level == SafetyStatus.LEVEL_STOP
         now = time.monotonic()
-        if ctx is not None and ctx.safety.level == SafetyStatus.LEVEL_NORMAL and seen is None:
+        if ctx is not None and ctx.safety.level == SafetyStatus.LEVEL_NORMAL and seen is None and other is None:
             self._normal_since = self._normal_since or now
         else:
             self._normal_since = None
-        if stop and seen is None:
+        if self._recovery is not None:
+            if seen is not None or other is not None:
+                self._recovery.stop_seen(other if other is not None else seen)
+            return self._tick_recovery(ctx, now)
+        if stop and seen is None and other is None:
             # 세션 전에 이미 STOP 이었거나 _on_context 가 아직 못 본 상황판 — 같은 기준으로 분류
-            if not hand_stop.waitable(ctx.safety.reason, session.current_mode, self._hand_cfg):
-                return False
-            seen = ctx.safety.reason
+            reason = ctx.safety.reason
+            if hand_stop.waitable(reason, session.current_mode, self._hand_cfg):
+                seen = reason
+            else:
+                other = reason
+        if other is not None:
+            return self._start_recovery(tree, session, other, now)
         if seen is not None:
             if self._hand_wait is None:
-                if (hand_stop.robot_busy(tree.root.iterate())
-                        and not hand_stop.busy_resumable(tree.root.iterate(), seen)):
-                    self.get_logger().warn(f"[손 근접 정지] 로봇 동작 중 {seen} — 이 단계는 공·그리퍼 상태를 몰라 이어 가지 않음")
-                    return False
+                blocks = list(tree.root.iterate())
+                if hand_stop.robot_busy(blocks) and not hand_stop.busy_resumable(blocks, seen, self._hand_cfg):
+                    self.get_logger().warn(f"[손 근접 정지] 로봇 동작 중 {seen} — 이 단계는 이어 갈 수 없어 시도를 중단하고 복구 대기")
+                    return self._start_recovery(tree, session, seen, now)
                 self._hand_wait = hand_stop.HandStopWait(seen, now, self._hand_cfg)
                 with self._switch_lock:
                     self.control.hand_wait = seen
-                self.get_logger().warn(f"[손 근접 정지] {seen} — 세션 유지, 손이 빠지면 같은 시도를 이어 감")
-                self._say(self._hand_cfg["hand_stop_prompt"])
+                self.get_logger().warn(f"[손 근접 정지] {seen} — 세션 유지, 풀리면 같은 시도를 이어 감")
+                if text := hand_stop.stop_prompt(seen, self._hand_cfg):
+                    self._say(text)
             else:
                 self._hand_wait.stop_seen(seen)
         if self._hand_wait is None:
-            return True
+            return "tick"
         level = ctx.safety.level if ctx is not None else SafetyStatus.LEVEL_STOP
         if self._hand_wait.update(level, now):
             waited = now - self._hand_wait.started
@@ -874,9 +1000,75 @@ class BtRunner(Node):
             self._hand_wait = None
             with self._switch_lock:
                 self.control.hand_wait = ""
-        elif self._hand_wait.prompt_due(now):
-            self._say(self._hand_cfg["hand_stop_prompt"])
-        return True
+            return "tick"
+        if self._hand_wait.prompt_due(now) and (text := hand_stop.stop_prompt(self._hand_wait.reason, self._hand_cfg)):
+            self._say(text)
+        return "hold"
+
+    def _start_recovery(self, tree: py_trees.trees.BehaviourTree, session: Session, reason: str, now: float) -> str:
+        """복구 대기 시작 (10/15): 트리를 멈춰 돌던 스킬을 취소하고(그 시도는 Guard on_stop 이 interrupted 로 기록) 기다린다."""
+        tree.root.stop(py_trees.common.Status.INVALID)
+        check = session.current_mode in self._hand_cfg["clear_gripper_modes"]
+        self._recovery = hand_stop.Recovery(reason, now, self._hand_cfg, check_gripper=check)
+        self._hand_wait = None
+        with self._switch_lock:
+            self.control.hand_wait = reason
+        latched = reason not in self._hand_cfg["hand_stop_wait_reasons"]
+        self.get_logger().warn(f"[복구] STOP {reason} — 세션 유지. NORMAL" + (" (운영자 reset)" if latched else "")
+                               + (" → 그리퍼 비우기" if check else "") + " 뒤 같은 모드의 남은 시도부터")
+        if text := self._recovery.prompt(now):
+            self._say(text)
+        return "hold"
+
+    def _tick_recovery(self, ctx: SceneContext | None, now: float) -> str:
+        rec = self._recovery
+        level = ctx.safety.level if ctx is not None else SafetyStatus.LEVEL_STOP
+        verdict = rec.update(level, now, self._gripper_empty())
+        if verdict == "wait":
+            if text := rec.prompt(now):
+                self._say(text)
+            return "hold"
+        self._recovery = None
+        with self._switch_lock:
+            self.control.hand_wait = ""
+        if verdict == "timeout":
+            self.get_logger().error(f"[복구] {rec.stage} 단계에서 {now - rec.started:.0f} s 넘게 기다림 (STOP {rec.reason}) — 세션 중단")
+            with self._switch_lock:
+                self._safety_abort = True
+            return "end"
+        self.get_logger().info(f"[복구] 끝 — {now - rec.started:.1f} s 기다림 (STOP {rec.reason})")
+        self._normal_since = self._normal_since or now
+        return "recovered"
+
+    def _rebuild_after_recovery(self, session: Session, n: int, select: dict) -> py_trees.trees.BehaviourTree | None:
+        """복구 뒤 트리 다시 만들기 (10/15): 같은 모드의 남은 시도부터 (관측 자세부터 다시, intro 없음). 남은 시도가 없으면
+        그 모드의 끝 안내 뒤 다음 모드 / 모드 선택 대기. None = 세션 끝 (모드 순서 세션에서 마지막 모드였음)."""
+        mode = session.current_mode
+        with self._switch_lock:
+            self._pending_switch = None
+        if mode is None:                                               # 모드 선택 대기 중에 걸린 STOP
+            if self._selecting:
+                return self._waiting_tree()
+            return py_trees.trees.BehaviourTree(build_session_tree(session, list(session.modes), n))
+        done = max(0, len(session.trials) - session.block_trial_start)
+        remaining = int(session.trials_planned.get(mode, n)) - done
+        rest = session.modes[session.modes.index(mode) + 1:] if mode in session.modes else []
+        if remaining > 0:
+            self.get_logger().info(f"[복구] 모드 {mode} {MODE_NAMES.get(mode, '?')} 남은 시도 {remaining}회부터 이어 감 (관측 자세부터)")
+            return py_trees.trees.BehaviourTree(build_session_tree(session, [mode, *rest], n, first_remaining=remaining))
+        if text := mode_prompt(session, mode, "done_prompt"):
+            self._say(text)
+        session.current_mode = None
+        if rest:
+            self.get_logger().info(f"[복구] 모드 {mode} 는 시도를 다 했음 — 다음 모드 {rest} 로")
+            return py_trees.trees.BehaviourTree(build_session_tree(session, rest, n))
+        if self._select_session:
+            with self._switch_lock:
+                self._last_mode, session.modes, self._selecting = mode, [], True
+            self.get_logger().info(f"[복구] 모드 {mode} {MODE_NAMES.get(mode, '?')} 끝 — 다시 모드 선택 대기")
+            self._say(str(select["done_prompt"]).format(mode=MODE_NAMES.get(mode, f"{mode}")))
+            return self._waiting_tree()
+        return None
 
     def _robot_resume_ok(self) -> bool:
         """손 근접 STOP 으로 멈춘 명령을 다시 보내도 되는가: 대기 중이 아니고 NORMAL 이 resume_hold_s 이어짐 (tick 스레드)."""

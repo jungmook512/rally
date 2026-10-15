@@ -203,6 +203,30 @@ def test_mode1_explicit_difficulty_and_rest_preserve_level(node):
     assert session.difficulty[1] == 0
 
 
+def test_difficulty_log_in_control_snapshot(node):
+    """대시보드 「난이도 변화」(10/16): 어렵게/쉽게가 적용되면(한계라 그대로여도) 시도·전후 단계·출처를 남겨 control_snapshot 에 싣는다.
+    규칙만으로는 모드 1 단계가 안 바뀌므로 기록도 없다."""
+    session = node._session
+    session.current_mode = 1
+    session.difficulty = {1: 0}
+    trial = TrialResult(mode=1, success=True, trial_index=3)
+    session.trials = [trial] * 3
+    assert node.control_snapshot()["difficulty_log"] == {"log": [], "range": {1: [0, 3], 7: [-3, 3]}}
+    node._after_trial(session, trial)
+    assert node._difficulty_log == []
+    node._pending_intent = "harder"
+    node._after_trial(session, trial)
+    node._pending_intent = "easier"
+    node._after_trial(session, TrialResult(mode=1, success=False, trial_index=4))
+    node._pending_intent = "easier"
+    node._after_trial(session, TrialResult(mode=1, success=True, trial_index=5))     # 0 아래로는 못 내려감 → 그대로, 그래도 남김
+    log = node.control_snapshot()["difficulty_log"]["log"]
+    assert [(e["trial"], e["from"], e["to"], e["action"], e["source"]) for e in log] == [
+        (3, 0, 1, "harder", "voice"), (4, 1, 0, "easier", "voice"), (5, 0, 0, "easier", "voice")]
+    assert all(e["mode"] == 1 and e["at"] > 0 for e in log)
+    assert session.difficulty[1] == 0
+
+
 def test_rest_proposal_accept_uses_existing_boundary(node):
     response = node._test_proposal(None, NS())
     assert response.success and node.control.phase == 'running'
