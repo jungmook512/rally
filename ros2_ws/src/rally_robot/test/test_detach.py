@@ -194,3 +194,8 @@ def test_top_grasp_pose_like_keeps_camera_side():
     assert Rg[2, 2] == pytest.approx(-1.0, abs=0.01)                 # 툴 아래
     assert Rg[0, 1] > 0.99                                           # 툴 y 가 그대로 base +x (카메라 안 돎)
     assert abs(Rg[1, 0]) > 0.99                                      # 손가락(툴 x) = base y
+
+
+
+def test_default_ball_class_is_velcro_only():
+    assert d.ball_classes(d.DEFAULTS["ball_class"]) == ("velcro_ball",)

@@ -30,8 +30,7 @@ DEFAULTS = dict(
     box_drop_posj=[],                       # ★ 교시 필요: 뗀 공을 놓을 박스 위 관절값
     pad_normal=[1.0, 0.0, 0.0],             # 거치대에 꽂힌 패드의 공 붙은 면 법선 (base). 10/14 정정인: 로봇 반대쪽 +x
     ball_radius_m=0.031,                    # 벨크로 공 지름 62 mm (10/14 정정인)
-    ball_class=["velcro_ball", "ball"],     # /rally/perception/objects 에서 고를 클래스, 앞이 우선. velcro_ball = segmenter 에 모드 3 모델
-                                            #   velcro_ball_yolo11n-seg_1024_rot_v2.pt 를 넣었을 때 (10/14 정정인). 없으면 ball(모드 1 모델)
+    ball_class=["velcro_ball"],             # ★ 10/15 정정인: 모드 3 은 벨크로 공 모델(velcro_ball, v2)만 — 테니스공(ball)으로 대신하지 않음
     ball_min_conf=0.4,
     ball_obs_s=1.0,                         # 이 시간 동안 본 위치의 중앙값
     ball_obs_min=5,                         # 최소 관측 프레임 수
