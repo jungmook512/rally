@@ -15,6 +15,13 @@ function element() {
 }
 const ids = [...html.matchAll(/id="([^"]+)"/g)].map(m => m[1]);
 ids.forEach(id => elements.set(id, element()));
+// 모드 전환 버튼 (10/14): data-mode 버튼들을 classList 와 함께
+const modeButtons = [...html.matchAll(/<button type="button" data-mode="(\d?)">/g)].map(m => {
+  const classes = new Set();
+  return Object.assign(element(), {dataset:{mode:m[1]}, disabled:false, title:'',
+    classList:{toggle(name,on){on?classes.add(name):classes.delete(name);}, contains:name=>classes.has(name)}});
+});
+elements.get('mode-switch').querySelectorAll = () => modeButtons;
 const nav = [...html.matchAll(/<a[^>]*data-page="([^"]+)"[^>]*>/g)].map(match => Object.assign(element(),{dataset:{page:match[1]}}));
 const listeners = {};
 const intervals = [];
@@ -260,6 +267,29 @@ async function testProposalResponses() {
   await previousSessionClick;
   assert.equal(get('proposal-panel').hidden, true);
   assert.equal(get('proposal-message').textContent, '', 'old session replies must remain hidden');
-  console.log('PASS: dynamic stage scenes, STOP/stale freeze, unchanged scene DOM, record tabs, hash navigation, live records, state freshness, resume gating, trials, async proposal clicks, errors and WebSocket recovery');
+  // 모드 전환: 진행 중일 때만 보이고, 지금 모드·손 대기·꺼진 모드 3 은 못 누름. 확인 창을 거쳐 POST, brain 답을 그대로 표시
+  const btn = m => modeButtons.find(b => b.dataset.mode === String(m ?? ''));
+  receive({phase:'paused',session_id:'s-mode',mode:5,updated_at:Date.now()/1000,proposal:null});
+  assert.equal(get('mode-switch').hidden, true);
+  receive({phase:'running',session_id:'s-mode',mode:5,mode3_enabled:false,hand_wait:'',updated_at:Date.now()/1000,proposal:null,pending_switch:{mode:3}});
+  assert.equal(get('mode-switch').hidden, false);
+  assert(btn(5).classList.contains('on') && btn(5).disabled);
+  assert.equal(btn(3).disabled, true);
+  assert.equal(btn(1).disabled, false);
+  assert(btn(3).classList.contains('pending') && !btn(1).classList.contains('pending'));
+  assert.equal(btn(7), undefined, 'mode 7 button removed (10/14)');
+  let sent = null, asked = 0;
+  context.confirm = () => { asked++; return false; };
+  await get('mode-switch').onclick({target:{closest:()=>btn(1)}});
+  assert.equal(sent, null, 'cancelled confirm must not send');
+  context.confirm = () => { asked++; return true; };
+  context.fetch = async (url, options) => { sent = {url, body:JSON.parse(options.body)}; return {ok:true,json:async()=>({message:'모드 1 공 굴리기(으)로 전환 접수'})}; };
+  await get('mode-switch').onclick({target:{closest:()=>btn(null)}});
+  assert.deepEqual(sent, {url:'/api/session/mode', body:{session_id:'s-mode', mode:null}});
+  assert.equal(asked, 2);
+  assert.match(get('control-message').textContent, /접수/);
+  receive({phase:'running',session_id:'s-mode',mode:5,mode3_enabled:true,hand_wait:'hand_near',updated_at:Date.now()/1000,proposal:null,pending_switch:null});
+  assert.equal(btn(1).disabled, true, 'hand wait blocks switching');
+  console.log('PASS: dynamic stage scenes, STOP/stale freeze, unchanged scene DOM, record tabs, hash navigation, live records, state freshness, resume gating, trials, async proposal clicks, mode switch buttons, errors and WebSocket recovery');
 }
 testProposalResponses().catch(error => { console.error(error); process.exitCode = 1; });

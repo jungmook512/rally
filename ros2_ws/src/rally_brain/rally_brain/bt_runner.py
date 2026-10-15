@@ -20,7 +20,7 @@
 시도가 기록될 때마다 rule_layer 가 다음 행동을 고른다 (/rally/voice/intent 의 tired·harder·easier 도 여기서 소비).
   harder/easier → 구현된 모드 레시피의 난이도 단계만 바꾼다. suggest_rest → 현재 시도 후 휴식.
   ask_llm → 비동기 휴식 판단. 승인된 제안 수락 전에는 훈련 계속.
-모드 전환: /rally/brain/set_mode (SetMode, 대시보드) · 음성 next_mode (+ 슬롯 mode, INTERFACES 2.2).
+모드 전환: /rally/brain/set_mode (SetMode) · 대시보드 버튼(Redis set_mode → _dashboard_set_mode) · 음성 next_mode (+ 슬롯 mode, INTERFACES 2.2).
   요청은 바로 답하고, 실제 전환은 시도와 시도 사이(또는 손 대기 중)에만 한다 — 로봇이 물체를 건네는 도중에 끊지 않음.
   고른 모드부터 원래 순서대로 이어 간다 (session_tree.modes_after_switch). 슬롯 없는 next_mode = 다음 모드.
   같은 발화(header.stamp 같음)는 한 번만 처리. 안전 STOP 중 요청은 거절. 대기 중 요청은 새 요청이 덮어쓴다.
@@ -265,6 +265,14 @@ class BtRunner(Node):
             what = ("다음 모드" if target is None else f"모드 {target} {MODE_NAMES[target]}") + "(으)로 전환"
         return True, f"{what} 접수 — 지금 시도가 끝나면 바뀜" + (" (앞선 요청은 취소)" if replaced else "")
 
+    def _dashboard_set_mode(self, session_id: str, target: int | None) -> tuple[bool, str]:
+        """대시보드 모드 버튼. 화면이 보던 세션일 때만 — 나머지 확인은 set_mode·음성과 같은 _request_switch."""
+        if session_id != self.control.session_id:
+            return False, "세션이 바뀌었습니다. 새 상태를 확인해 주세요"
+        ok, message = self._request_switch(target, "dashboard")
+        self.get_logger().info(f"[모드 전환] dashboard — {message}")
+        return ok, message
+
     @staticmethod
     def _skill_running(tree: py_trees.trees.BehaviourTree) -> bool:
         return any(isinstance(b, SkillCall) and b.status == py_trees.common.Status.RUNNING
@@ -482,6 +490,8 @@ class BtRunner(Node):
                 "bt_node": self._state_name,
                 "mode3_enabled": mode3_enabled(self._skills_cfg),
                 "proposal": self._proposal_snapshot(),
+                # 접수된 모드 전환 (지금 시도가 끝나면 바뀜). None = 없음, {"mode": None} = 다음 모드
+                "pending_switch": None if self._pending_switch is None else {"mode": self._pending_switch[0]},
             }
 
     def _action_client(self, action_type: type, name: str) -> ActionClient:
