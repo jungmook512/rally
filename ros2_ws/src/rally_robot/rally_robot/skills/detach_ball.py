@@ -203,18 +203,19 @@ def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=N
         with compliance(cfg["stiffness"], log):
             for deg, back in detach.peel_schedule(cfg["peel_step_deg"], cfg["peel_max_deg"], cfg["peel_retreat_per_step_m"]):
                 check()
-                target = detach.peel_pose_vertical(grasp_now, ball_m, n, r, cfg["pivot_side_r"], deg, back)
+                target = detach.up(detach.peel_pose_vertical(grasp_now, ball_m, n, r, cfg["pivot_side_r"], deg, back),
+                                   -float(cfg["peel_down_per_step_m"]) * deg / float(cfg["peel_step_deg"]))   # 돌리며 아래로 (패드가 딸려 올라오지 않게)
                 how = move_checked(node, target, cfg["peel_vel_mm_s"], ca, on_poll=poll, stall_ok=True)
                 if feedback:
                     feedback("pull", watch.last)
-                log.info(f"[detach_ball] 벗기기 {deg:.0f}° (후퇴 {back * 1000:.0f} mm) {how} · 힘 {watch.last:.1f} N (최대 {watch.peak:.1f})")
+                log.info(f"[detach_ball] 벗기기 {deg:.0f}° (후퇴 {back * 1000:.0f} mm · 아래 {cfg['peel_down_per_step_m'] * 1000 * deg / cfg['peel_step_deg']:.0f} mm) {how} · 힘 {watch.last:.1f} N (최대 {watch.peak:.1f})")
                 if watch.over or watch.detached:
                     break
             if not (watch.detached or watch.over):
                 # 한계 각까지 급락 없음 → n 방향으로 더 당겨 보고 힘이 풀렸으면 떼어진 것
                 check()
                 here = list(get_current_posx()[0])
-                how = move_checked(node, detach.along(here, n, cfg["pull_extra_m"]), cfg["peel_vel_mm_s"], ca, on_poll=poll, stall_ok=True)
+                how = move_checked(node, detach.up(detach.along(here, n, cfg["pull_extra_m"]), -float(cfg["pull_down_m"])), cfg["peel_vel_mm_s"], ca, on_poll=poll, stall_ok=True)
                 f_now = float(np.linalg.norm(np.asarray(get_tool_force()[:3], float) - f0))
                 log.info(f"[detach_ball] 당기기 {cfg['pull_extra_m'] * 1000:.0f} mm {how} · 힘 {f_now:.1f} N (최대 {watch.peak:.1f})")
                 if not (watch.over or watch.detached) and how == "done" and f_now < cfg["drop_n"]:
