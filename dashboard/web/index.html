@@ -884,11 +884,12 @@ function selectPage() {
     if (selectedMode !== null) { if (el.parentNode !== $(slot)) $(slot).append(el); }
     else if (el.previousElementSibling !== $(home)) $(home).after(el);
   }
-  // 모드별 진행 카드: 모드 화면이면 그림 아래, 전체 현황이면 왼쪽 위. 단계 목록은 보고 있는 모드 카드 안 (전체 현황에선 숨김)
+  // 모드별 진행 카드: 모드 화면이면 그림 아래, 전체 현황이면 왼쪽 위. 보상 동작 기록은 어느 화면이든 그 바로 아래에 상시 (10/15).
+  // 단계 목록은 보고 있는 모드 카드 안 (전체 현황에선 숨김)
   const progressHome = selectedMode !== null ? $('mode-left') : $('ov-progress-slot');
   if ($('progress-panel').parentNode !== progressHome) {
     progressHome.append($('progress-panel'));
-    if (selectedMode !== null) $('mode-left').append($('comp-panel'));   // 보상 동작 기록은 모드별 진행(단계) 바로 아래 (10/15)
+    progressHome.append($('comp-panel'));
   }
   const stepsHome = selectedMode !== null ? $(`card-slot-${selectedMode}`) : $('steps-home');
   if ($('steps-panel').parentNode !== stepsHome) stepsHome.append($('steps-panel'));

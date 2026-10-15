@@ -384,7 +384,11 @@ run("renderControl({...control,phase:'idle',comp_log:{...compBase,log:[],current
 assert.equal(get('comp-empty').hidden, false);
 assert.equal(get('comp-count').textContent, '3회면 휴식 신호');
 assert.equal(get('comp-now').textContent, '세션을 시작하면 시도마다 기록됩니다');
-visit('#overview'); visit('#mode5');
+visit('#overview');
+assert.equal(get('comp-panel').parentNode, get('ov-progress-slot'), '전체 현황에도 상시: 모드별 진행 아래');
+assert.equal(get('ov-progress-slot').children.at(-2), get('progress-panel'));
+assert.equal(get('ov-progress-slot').children.at(-1), get('comp-panel'));
+visit('#mode5');
 assert.equal(get('comp-panel').parentNode, get('mode-left'), '훈련 탭: 모드별 진행(단계) 아래');
 assert.equal(get('mode-left').children.at(-2), get('progress-panel'));
 assert.equal(get('mode-left').children.at(-1), get('comp-panel'));
