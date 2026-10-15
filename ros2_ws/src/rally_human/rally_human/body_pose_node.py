@@ -20,6 +20,7 @@
 import math
 import os
 import threading
+import time
 from pathlib import Path
 
 import cv2
@@ -44,6 +45,43 @@ MODEL_CANDIDATES = [f"/opt/mediapipe/{MODEL_NAME}",
                     os.path.expanduser(f"~/rally/models/mediapipe/{MODEL_NAME}")]
 
 
+# 관절 화면(대시보드 '몸 자세' 칸, 10/15) — MediaPipe Pose 33점 중 몸통·팔·다리 뼈대만
+SKELETON = ((11, 12), (11, 13), (13, 15), (12, 14), (14, 16), (11, 23), (12, 24), (23, 24),
+            (23, 25), (25, 27), (24, 26), (26, 28), (0, 11), (0, 12))
+
+
+def _fmt(v: float, unit: str = "deg") -> str:
+    return "-" if not math.isfinite(v) else f"{v:.0f} {unit}"
+
+
+def draw_debug(bgr: np.ndarray, pts, out: BodyPose, vis_thr: float = 0.5) -> np.ndarray:
+    """영상 위에 뼈대(pts: [(x, y, visibility)] 0~1 정규 좌표, 없으면 None)와 BodyPose 값. 순수 함수 (테스트용).
+    점 색 = visibility (초록 ≥ 0.7 · 노랑 ≥ vis_thr · 빨강 = 가려짐 추정). 글씨는 영문 — cv2 기본 글꼴에 한글이 없음."""
+    img = bgr.copy()
+    h, w = img.shape[:2]
+    if pts:
+        xy = [(int(x * w), int(y * h)) for x, y, _ in pts]
+        for a, b in SKELETON:
+            if a < len(pts) and b < len(pts) and min(pts[a][2], pts[b][2]) >= vis_thr:
+                cv2.line(img, xy[a], xy[b], (0, 220, 0), 2, cv2.LINE_AA)
+        for i in {i for e in SKELETON for i in e}:
+            if i < len(pts):
+                v = pts[i][2]
+                col = (0, 220, 0) if v >= 0.7 else (0, 220, 255) if v >= vis_thr else (0, 0, 255)
+                cv2.circle(img, xy[i], 4, col, -1, cv2.LINE_AA)
+    lines = [("BODY " + ("OK" if out.detected else "none")),
+             f"trunk lean {_fmt(out.trunk_lean_deg)}",
+             f"shoulder {_fmt(out.shoulder_elevation_deg)}",
+             f"elbow {_fmt(out.elbow_extension_deg)}",
+             f"comp {out.compensation_type or 'none'}"]
+    warn = bool(out.compensation_detected)
+    cv2.rectangle(img, (6, 6), (230, 14 + 22 * len(lines)), (0, 0, 0), -1)
+    for k, t in enumerate(lines):
+        col = (0, 0, 255) if (warn and k == len(lines) - 1) else (255, 255, 255)
+        cv2.putText(img, t, (12, 26 + 22 * k), cv2.FONT_HERSHEY_SIMPLEX, 0.55, col, 1, cv2.LINE_AA)
+    return img
+
+
 class BodyPoseNode(Node):
     def __init__(self) -> None:
         super().__init__("rally_body_pose")
@@ -61,6 +99,7 @@ class BodyPoseNode(Node):
         d("good_visibility", 0.7)                  # 뻗는 팔 어깨·팔꿈치·손목이 이 이상 보여야 값을 믿음
         d("extended_deg", 140.0)                   # 팔꿈치 펴짐이 이 이상이면 '뻗음' — 이때만 보상 판정
         d("window_s", 0.5)                         # 뻗은 동안 중간값 창
+        d("debug_hz", 10.0)                        # 관절 화면 /rally/perception/body/debug_image — 보는 쪽(대시보드)이 있을 때만 (10/15)
         p = lambda k: self.get_parameter(k).value  # noqa: E731
 
         self.vis_thr = float(p("min_visibility"))
@@ -79,6 +118,10 @@ class BodyPoseNode(Node):
         self.create_subscription(Image, str(p("image_topic")), self._on_image, qos_profile_sensor_data,
                                  callback_group=MutuallyExclusiveCallbackGroup())
         self.pub = self.create_publisher(BodyPose, "/rally/perception/body", qos_profile_sensor_data)
+        self.pub_dbg = self.create_publisher(Image, "/rally/perception/body/debug_image", qos_profile_sensor_data)
+        self._dbg_period = 1.0 / max(float(p("debug_hz")), 0.1)
+        self._last_dbg = 0.0
+        self._frame = None                          # (bgr, pts) 이번 프레임 — 관절 화면용
         self.create_timer(1.0 / float(p("rate_hz")), self._tick, callback_group=MutuallyExclusiveCallbackGroup())
         # 기준 자세 다시 잡기 — 노드를 켤 때 자동으로도 잡지만, 사람이 자리를 잡은 뒤 이걸로 다시 잡는다 (확인 창 b 키, brain 세션 시작)
         self._reset_req = False
@@ -135,6 +178,21 @@ class BodyPoseNode(Node):
         out.compensation_type = kind
         out.compensation_detected = kind != "none"
         self.pub.publish(out)
+        self._publish_debug(msg, out)
+
+    def _publish_debug(self, msg: Image, out: BodyPose) -> None:
+        """관절 화면 — 구독자가 있을 때만, debug_hz 로 (영상은 로봇 PC 안 web_video_server 로만 나감, 저장 안 함)."""
+        now = time.monotonic()
+        if self._frame is None or now - self._last_dbg < self._dbg_period or self.pub_dbg.get_subscription_count() == 0:
+            return
+        self._last_dbg = now
+        bgr, pts = self._frame
+        try:
+            img = self.bridge.cv2_to_imgmsg(draw_debug(bgr, pts, out, self.vis_thr), "bgr8")
+            img.header = msg.header
+            self.pub_dbg.publish(img)
+        except Exception as e:      # noqa: BLE001 — 화면 실패로 판정이 멈추지 않게
+            self.get_logger().warn(f"관절 화면 실패: {type(e).__name__}: {e}", throttle_duration_sec=5.0)
 
     def _process(self, msg: Image, out: BodyPose) -> None:
         import mediapipe as mp
@@ -146,6 +204,7 @@ class BodyPoseNode(Node):
         self.last_ts_ms = ts_ms
         res = self.landmarker.detect_for_video(
             mp.Image(image_format=mp.ImageFormat.SRGB, data=cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)), ts_ms)
+        self._frame = (bgr, [(q.x, q.y, q.visibility) for q in res.pose_landmarks[0]] if res.pose_landmarks else None)
         if not res.pose_world_landmarks:
             out.detected = False
             return

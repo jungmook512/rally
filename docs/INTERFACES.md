@@ -50,6 +50,7 @@ webcam_link          측면 대각 웹캠, 높이 약 2 m (table_link 기준 sta
 | `/rally/perception/objects/image_axis` | `geometry_msgs/PoseArray` | rally_vision/segmenter | robot(handover 받기) | objects 와 같이 (같은 header·순서) | BestEffort, depth 1 |
 | `/rally/perception/hand` | `rally_interfaces/HandState` | rally_human/hand_pose_node | brain, robot(safety), robot(handover) | 30 Hz | BestEffort, depth 1 |
 | `/rally/perception/body` | `rally_interfaces/BodyPose` | rally_human/body_pose_node | brain | 15 Hz | BestEffort |
+| `/rally/perception/body/debug_image` | `sensor_msgs/Image` (bgr8) | rally_human/body_pose | dashboard('몸 자세' 칸, web_video_server 경유) | 관절 화면 — 입력 영상 + 뼈대 + 몸통 기울기·어깨 들림·팔꿈치 펴짐·보상 판정 (10/15). 구독자가 있을 때만 `debug_hz` 10 Hz | BestEffort |
 | `/rally/voice/intent` | `rally_interfaces/VoiceIntent` | rally_voice/intent_node | brain, safety | 이벤트 | Reliable |
 | `/rally/voice/transcript` | `std_msgs/String` | rally_voice/intent_node | dashboard | 이벤트 | Reliable |
 | `/rally/voice/speaking` | `std_msgs/Bool` | rally_voice/tts_node | rally_voice/intent_node, rally_brain/bt_runner (말하는 중 자세 교정 안내 건너뜀, #119), dashboard 선택 | 발화 시작·끝 이벤트 | **Reliable, TransientLocal**, depth 1 |
