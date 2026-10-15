@@ -87,7 +87,7 @@ rally_safety_monitor:
     workspace_x_min_m: -2.00   # 로봇 뒤쪽(환자 반대) — 사실상 제한 없음. (10/6 0.20: 테이블 가까운 쪽 접촉점 x=0.231 m 포함 → 10/11 −2.00)
     workspace_x_max_m: 0.57    # 10/7 실측 보라색 한계선 x 0.568 m + 2 mm. TCP 가 넘으면 STOP. (0.80 → 0.60 임시 → 0.57)
     # 모드 3 받기 동안만 x 상한 (10/14 정동휘, 대기 자세 Y0 — docs/mode3/MODE3_READY_POSE_Y0.md): 요격 이동 중 TCP x 최대 0.73 m.
-    #   catch_window 신호가 살아 있는 동안 + 꺼진 뒤 TCP 가 0.57 안으로 돌아올 때까지(최대 workspace_catch_hold_s) 이 값. 투구자는 J1 에서 3 m 밖.
+    #   catch_window 신호가 살아 있는 동안 + 꺼진 뒤 workspace_catch_hold_s(10 s) 동안 이 값 (10/16: 일찍 끄면 대기 자세 x 0.560 이 선을 넘나들며 STOP). 투구자는 J1 에서 3 m 밖.
     #   모드 1·5 는 받기 창이 없으므로 그대로 0.57. 음수면 기능 없음. ★ 정정인 승인 필요 (안전값)
     workspace_catch_x_max_m: 1.00   # 10/16 정동휘: 0.78 → 1.00 — 모드 3 투구자는 J1 에서 3 m 밖, 받기 창 동안(+ 복귀까지)만. 실로봇 아래 이동 중 STOP (계산 경로 x 최대 0.734). 평소 workspace_x_max_m 0.57 · 모드 1·5·7 은 그대로
     workspace_catch_hold_s: 10.0
