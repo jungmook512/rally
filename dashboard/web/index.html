@@ -194,6 +194,10 @@
   .camera[data-rot="ccw"] .frame { aspect-ratio:240/424; margin:0 auto; }
   .camera[data-rot="ccw"] img { position:absolute; top:50%; left:50%; width:calc(100% * 424 / 240); height:calc(100% * 240 / 424); transform:translate(-50%, -50%) rotate(-90deg); }
   #camera-slot .camera[data-rot="ccw"] .frame { max-height:none; width:min(100%, calc((100vh - 440px) * 240 / 424)); }   /* 세로가 길어지니 높이 한계를 너비로 환산 */
+  /* 모드 3 만 좌우 (10/15): 세로 손목(240:424)과 가로 측면(424:240)의 높이가 같아지는 너비 비 = 240²:424² ≈ 1:3.12. 다른 화면은 위아래 한 열 */
+  .cameras[data-layout="row"] { grid-template-columns:minmax(0,1fr) minmax(0,3.12fr); align-items:start; }
+  #camera-slot .cameras[data-layout="row"] .camera[data-rot="ccw"] .frame { width:100%; }   /* 열 너비가 곧 높이 기준 — 뷰포트 환산 너비는 안 씀 */
+  .cameras[data-layout="row"] .camera figcaption { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }   /* 좁은 손목 칸에서 토픽 이름이 여러 줄로 접히지 않게 */
   #report { overflow-wrap:anywhere; line-height:1.6; max-height:520px; overflow:auto; }
   #report h4 { margin:16px 0 8px; font-size:16px; font-weight:750; color:var(--text); }
   #report h4:first-child { margin-top:0; }
@@ -660,7 +664,10 @@ async function loadCameras() {
 // 손목·측면 두 칸을 어느 화면에서나 보인다. 10/15 #222: 몸 자세(body_pose)가 측면 RealSense 로 가서 모드 1·5 에서도 측면이 보여야 함 —
 // 측면을 모드 3 전용으로 숨기던 것(로봇 PC 압축 부담)은 뺐다. 인식 화면은 10 Hz 라 부담이 작다는 정동휘 의견, 실측은 vision 컨테이너 docker stats 로
 function showCameras() {
-  for (const fig of $("cameras").children) {
+  // 모드 3 만 손목(세로)·측면(가로)을 같은 높이로 좌우에 (10/15 조정묵). 다른 화면은 위아래 한 열 — CSS .cameras[data-layout="row"]
+  const cams = $("cameras"), layout = selectedMode === 3 ? "row" : "";
+  if ((cams.dataset.layout || "") !== layout) { if (layout) cams.dataset.layout = layout; else delete cams.dataset.layout; }
+  for (const fig of cams.children) {
     // 모드 3 화면에서만 손목 카메라를 반시계 90° 로 (10/14 조정묵). 모드 1·5·전체 현황·측면은 그대로
     const rot = selectedMode === 3 && fig.dataset.kind === "wrist" ? "ccw" : "";
     if ((fig.dataset.rot || "") !== rot) { if (rot) fig.dataset.rot = rot; else delete fig.dataset.rot; }

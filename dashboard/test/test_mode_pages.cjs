@@ -400,10 +400,12 @@ const sideCam = run("cameraFigure({name:'측면', topic:'/rally/perception/side/
 get('cameras').children = [wristCam, sideCam];
 visit('#mode3');
 assert.equal(wristCam.dataset.rot, 'ccw', '모드 3: 손목 반시계 90°');
+assert.equal(get('cameras').dataset.layout, 'row', '모드 3: 손목·측면을 같은 높이로 좌우 (10/15)');
 assert.equal(sideCam.dataset.rot, undefined, '측면은 그대로');
 assert.ok(!sideCam.hidden);
 visit('#mode1');
 assert.equal(wristCam.dataset.rot, undefined, '모드 1: 그대로');
+assert.equal(get('cameras').dataset.layout, undefined, '모드 1: 위아래 한 열');
 assert.ok(!sideCam.hidden, '측면은 모드 1 에도 — 몸 자세가 측면 RealSense (10/15 #222)');
 visit('#mode5');
 assert.equal(wristCam.dataset.rot, undefined, '모드 5: 그대로'); assert.ok(!sideCam.hidden, '측면은 모드 5 에도');
