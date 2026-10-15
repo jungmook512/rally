@@ -176,8 +176,13 @@ def test_camera_streams_point_to_robot_pc():
     assert wrist.startswith("http://192.168.0.10:8080/stream?topic=/rally/perception/objects/debug_image&")   # 인식 결과(마스크·신뢰도)
     assert "type=mjpeg" in wrist and "width=424" in wrist and "qos_profile=sensor_data" in wrist
     assert r["streams"][0]["fallback"].startswith("http://192.168.0.10:8080/stream?topic=/camera/color/image_raw&")  # 안 오면 원본
-    assert r["streams"][1]["topic"] == "/rally/perception/side/debug_image"                     # 측면도 인식 화면 (10/14)
-    assert r["streams"][1]["fallback"].startswith("http://192.168.0.10:8080/stream?topic=/side/side/color/image_raw&")
+    side = r["streams"][1]                                                                    # 측면 칸 하나가 모드에 따라 화면을 바꿈 (10/15)
+    assert side["topic"] == "/rally/perception/body/debug_image"                              # 기본: 몸 자세 인식 화면 (#222)
+    assert side["url"].startswith("http://192.168.0.10:8080/stream?topic=/rally/perception/body/debug_image&")
+    assert side["by_mode"] == {"3": {"topic": "/rally/perception/side/debug_image",           # 모드 3: 투구 인식 화면 (10/14)
+                                     "url": f"http://192.168.0.10:8080/stream?topic=/rally/perception/side/debug_image&{web.STREAM_QUERY}"}}
+    assert side["fallback"].startswith("http://192.168.0.10:8080/stream?topic=/side/side/color/image_raw&")   # 둘 다 안 오면 원본
+    assert r["streams"][0]["by_mode"] == {}
 
 
 def test_camera_panel_on_page():

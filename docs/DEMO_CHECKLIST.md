@@ -60,7 +60,7 @@ docker compose --profile pc2 logs -f vision   # 아래 로그 확인 후 Ctrl+C
 - [ ] 카메라 주기 (네이티브 터미널, `source scripts/env_robot_pc.sh` 후)
   - `ros2 topic hz /camera/color/image_raw` ≈ 60 (손목)
   - `ros2 topic hz /side/side/color/image_raw` ≈ 60 (측면, 모드 3)
-- [ ] 영상 서버에 스트림 목록: `curl -s http://localhost:8080/ | grep -c image_raw` → 1 이상 (대시보드 카메라 칸이 여기서 받음. 손목·측면 RealSense 두 칸, 모든 모드 — 10/15 #222 로 웹캠은 안 씀). 켠 직후엔 비어 있을 수 있어 잠시 뒤 다시 확인. 계속 0 이면 vision 컨테이너가 카메라를 못 연 것 — RealSense USB 확인 후 `docker compose --profile pc2 restart vision`
+- [ ] 영상 서버에 스트림 목록: `curl -s http://localhost:8080/ | grep -c image_raw` → 1 이상 (대시보드 카메라 칸이 여기서 받음. 손목·측면 RealSense 두 칸, 모든 모드 — 10/15 #222 로 웹캠은 안 씀. 측면 칸은 모드 1·5 몸 자세 인식 화면 `/rally/perception/body/debug_image`, 모드 3 투구 인식 화면, 둘 다 없으면 원본). 켠 직후엔 비어 있을 수 있어 잠시 뒤 다시 확인. 계속 0 이면 vision 컨테이너가 카메라를 못 연 것 — RealSense USB 확인 후 `docker compose --profile pc2 restart vision`
 
 ## 3. 서버 PC — brain·대시보드·음성
 

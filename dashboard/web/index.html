@@ -488,6 +488,7 @@ function renderControl(s) {
   $("resume").disabled = resuming || !s?.can_resume || s.phase !== "paused";
   $("end-session").disabled = ending || !s || !["running", "pause_pending", "paused"].includes(s.phase);
   renderModeSwitch(s);
+  showCameras();   // 전체 현황에서 세션 모드가 바뀌면 측면 칸 화면도 따라 바뀜 (10/15)
 }
 
 // 모드 전환 버튼 — 진행 중(running)일 때만 보임. 실제 확인(손 대기·안전 정지·모드 3 꺼짐)과 전환 시점(시도 경계)은 brain
@@ -667,7 +668,10 @@ function showCameras() {
   // 모드 3 만 손목(세로)·측면(가로)을 같은 높이로 좌우에 (10/15 조정묵). 다른 화면은 위아래 한 열 — CSS .cameras[data-layout="row"]
   const cams = $("cameras"), layout = selectedMode === 3 ? "row" : "";
   if ((cams.dataset.layout || "") !== layout) { if (layout) cams.dataset.layout = layout; else delete cams.dataset.layout; }
+  // 측면 칸의 인식 화면은 모드에 따라 — 보고 있는 모드, 전체 현황에선 brain 의 현재 모드 (모드 3 투구 화면, 그 외 몸 자세 화면, 10/15)
+  const m = selectedMode ?? control?.mode ?? null;
   for (const fig of cams.children) {
+    fig.selectMode?.(m);
     // 모드 3 화면에서만 손목 카메라를 반시계 90° 로 (10/14 조정묵). 모드 1·5·전체 현황·측면은 그대로
     const rot = selectedMode === 3 && fig.dataset.kind === "wrist" ? "ccw" : "";
     if ((fig.dataset.rot || "") !== rot) { if (rot) fig.dataset.rot = rot; else delete fig.dataset.rot; }
@@ -688,7 +692,9 @@ function cameraFigure(cam, why = "") {
   // 서버는 있는데 카메라 토픽이 없으면 그림이 안 들어오므로 계속 No Image
   // 손목은 인식 결과 화면(세그먼트 마스크·신뢰도가 그려진 debug_image)을 먼저 받고, FALLBACK_S 동안 그림이 안 오면(비전 꺼짐) 원본 카메라로
   let failed = false, usingFallback = false, blank = 0;
-  const src = () => usingFallback ? cam.fallback : cam.url;
+  let primary = {topic: cam.topic, url: cam.url};   // 지금 보여 줄 인식 화면. 측면은 모드 3 만 투구 화면, 그 외 몸 자세 화면 (cam.by_mode, 10/15)
+  fig.dataset.topic = primary.topic;
+  const src = () => usingFallback ? cam.fallback : primary.url;
   const open = () => { if (fig.hidden) return; failed = false; img.src = `${src()}&t=${Date.now()}`; };
   const check = setInterval(() => {
     if (!fig.isConnected) { clearInterval(check); return; }
@@ -701,6 +707,13 @@ function cameraFigure(cam, why = "") {
   }, 1000);
   img.onload = () => { msg.hidden = true; };
   img.onerror = () => { failed = true; msg.hidden = false; setTimeout(open, 5000); };   // 카메라·web_video_server 없음 → No Image, 5 s 뒤 다시
+  // 모드가 바뀌면 그 모드의 인식 화면으로 다시 연결. 원본으로 내려가 있었어도 처음부터 다시 시도 (새 토픽은 와 있을 수 있으니)
+  fig.selectMode = (m) => {
+    const next = cam.by_mode?.[m] ?? {topic: cam.topic, url: cam.url};
+    if (next.url === primary.url) return;
+    primary = next; usingFallback = false; blank = 0;
+    fig.dataset.topic = primary.topic; cap.textContent = `${cam.name} · ${primary.topic}`; open();
+  };
   frame.append(img, msg); fig.append(frame, cap); open();
   return fig;
 }
