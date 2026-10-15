@@ -9,7 +9,7 @@ pytest.importorskip("scipy")
 
 from rally_robot.skills.catch_plan import Prediction, plane_axes  # noqa: E402
 from rally_robot.skills.catch_policy import (  # noqa: E402
-    OnnxPolicy, decide_with_policy, find_policy, policy_obs, policy_target)
+    OnnxPolicy, decide_with_policy, find_policy, meta_mismatches, policy_meta, policy_obs, policy_target)
 
 N = [0.697, -0.123, 0.706]
 PAD = np.array([0.345, -0.332, 0.496])
@@ -137,6 +137,46 @@ def test_find_policy_missing_returns_empty(tmp_path):
     assert find_policy(str(f)) == str(f)
 
 
+def test_policy_meta_reads_sidecar_and_tolerates_missing(tmp_path):
+    """ONNX 옆 <이름>.onnx.json — 없으면 None, 깨졌어도 None (정책 적재를 막지 않는다)."""
+    f = tmp_path / "p.onnx"
+    f.write_bytes(b"x")
+    assert policy_meta(str(f)) is None
+    (tmp_path / "p.onnx.json").write_text(
+        '{"run": "stage1_x", "checkpoint": "model_300.pt", "env": {"accel": "movej", "limits": [0.0, 0.35, -0.35, 0.08], "reach_max": 0.35, "overshoot": 0.0}}',
+        encoding="utf-8")
+    meta = policy_meta(str(f))
+    assert meta["run"] == "stage1_x" and meta["env"]["accel"] == "movej"
+    (tmp_path / "p.onnx.json").write_text("{broken", encoding="utf-8")
+    assert policy_meta(str(f)) is None
+
+
+def test_meta_mismatches_lists_only_differences():
+    """학습 조건(10/14: movej·35/35/8·두 축 합 35·지나침 0)과 yaml 이 같으면 비고 없음, 다르면 항목별 한 줄."""
+    meta = {"env": {"accel": "movej", "limits": [0.0, 0.35, -0.35, 0.08], "reach_max": 0.35, "overshoot": 0.0}}
+    same = dict(right_max_m=0.35, updown_max_m=0.35, down_max_m=0.08, reach_max_m=0.35, catch_move="amovej", catch_overshoot_m=0.0)
+    assert meta_mismatches(meta, same) == []
+    assert meta_mismatches(None, same) == [] and meta_mismatches({}, same) == []
+    msgs = meta_mismatches(meta, dict(same, right_max_m=0.15, updown_max_m=0.15, catch_move="amovel", catch_overshoot_m=0.05))
+    assert len(msgs) == 4
+    assert any(m.startswith("right_max_m") for m in msgs) and any(m.startswith("updown_max_m") for m in msgs)
+    assert any("catch_move 학습 amovej vs yaml amovel" in m for m in msgs) and any(m.startswith("catch_overshoot_m") for m in msgs)
+    assert meta_mismatches(meta, dict(same, reach_max_m=0.30)) == ["reach_max_m 학습 0.35 vs yaml 0.30"]
+
+
+def test_meta_mismatches_ready_posj():
+    """10/15 #223: json 에 ready_posj 가 있으면 대기 자세가 1° 넘게 다를 때 한 줄. 없거나 값이 이상하면 대조 안 함."""
+    base = {"accel": "movej", "limits": [0.0, 0.35, -0.35, 0.08], "reach_max": 0.35, "overshoot": 0.0}
+    old = [89.8, 30.0, -121.7, 90.2, -80.2, 88.3]
+    cfg = dict(right_max_m=0.35, updown_max_m=0.35, down_max_m=0.08, reach_max_m=0.35, catch_move="amovej", catch_overshoot_m=0.0, ready_posj=old)
+    assert meta_mismatches({"env": dict(base, ready_posj=old)}, cfg) == []
+    assert meta_mismatches({"env": dict(base, ready_posj=[v + 0.5 for v in old])}, cfg) == []        # 반올림 차이는 무시
+    msgs = meta_mismatches({"env": dict(base, ready_posj=old)}, dict(cfg, ready_posj=[123.1, -7.0, -100.2, -80.5, 61.9, -100.6]))
+    assert len(msgs) == 1 and msgs[0].startswith("ready_posj")
+    assert meta_mismatches({"env": dict(base, ready_posj=[None] * 6)}, cfg) == []                     # 값이 이상하면 건너뜀
+    assert meta_mismatches({"env": base}, cfg) == []                                                   # json 에 없으면 대조 안 함
+
+
 def test_real_policy_if_available():
     """로봇 PC·박성현 PC 에 models/policy_stage1.onnx 와 onnxruntime 이 있으면 실제로 한 번 돌려 본다."""
     pytest.importorskip("onnxruntime")
@@ -146,3 +186,11 @@ def test_real_policy_if_available():
     pol = OnnxPolicy(path)
     a = pol(policy_obs(pred_at(0.2), PAD, N, 100.3))
     assert a.shape == (3,) and np.all(np.isfinite(a))
+
+
+def test_meta_mismatches_tolerates_non_numeric_json():
+    """#212 리뷰: 손으로 만든 json 에 null·문자열이 있어도 예외 없이 대조만 건너뛴다."""
+    meta = {"env": {"accel": "movej", "limits": [0.0, "abc", None, 0.08], "reach_max": None, "overshoot": "x"}}
+    cfg = dict(right_max_m=0.35, updown_max_m=0.35, down_max_m=0.08, reach_max_m=0.35, catch_move="amovej", catch_overshoot_m=0.05)
+    assert meta_mismatches(meta, cfg) == []
+    assert meta_mismatches({"env": {"limits": [0.0, 0.15, -0.35, 0.08]}}, cfg) == ["right_max_m 학습 0.15 vs yaml 0.35"]

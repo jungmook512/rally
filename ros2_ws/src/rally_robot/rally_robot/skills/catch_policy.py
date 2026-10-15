@@ -3,7 +3,9 @@
 
 catch_ball 이 skills.yaml mode3.decide_mode == "policy" 일 때 쓴다. 기본은 "rule" (decide_after_s·품질 기다림) 이라 이 모듈은 안 쓰인다.
 
-정책 = Isaac Lab 1단계 시뮬에서 PPO 로 학습한 작은 MLP (ONNX, models/policy_stage1.onnx, git 제외).
+정책 = Isaac Lab 1단계 시뮬에서 PPO 로 학습한 작은 MLP (ONNX, models/policy_stage1.onnx, git 제외 — 박성현 드라이브).
+10/14 정책: amovej 120/400 · 한계 오른쪽 35·위 35·아래 8 cm · 두 축 합 35 · 지나침 0 · 출발 지연 85~120 ms 로 학습 (docs/mode3/MODE3_POLICY_1014.md).
+옆의 models/policy_stage1.onnx.json(run·체크포인트·md5·학습 조건)을 같이 두면 catch_ball 이 학습 조건과 skills.yaml 을 대조해 다르면 경고한다.
 - 정책이 정하는 것은 **언제 출발할지**와 **예측점에 더할 보정(u·w)** 뿐이다. 이동 한계 클램핑(intercept), 품질 게이트, 반경,
   SLOW 중단, 받기 창, 비전 판정은 규칙 모드와 똑같이 catch_ball 이 적용한다 (#78: 학습은 결정만, 안전 범위 제한은 그대로).
 - 입력 obs[10] 은 시뮬(stage1_env_torch._obs_tensor)과 같은 순서·배율로 만든다 (policy_obs). 다르면 정책이 엉뚱하게 동작한다.
@@ -45,6 +47,65 @@ def find_policy(path: str = "") -> str:
         if os.path.isfile(p):
             return p
     return ""
+
+
+def policy_meta(path: str) -> dict | None:
+    """ONNX 옆의 <이름>.onnx.json (rally_isaac export_policy.py 가 씀: run·체크포인트·md5·학습 조건 env). 없거나 못 읽으면 None."""
+    import json
+    p = path + ".json"
+    if not os.path.isfile(p):
+        return None
+    try:
+        with open(p, encoding="utf-8") as f:
+            meta = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return meta if isinstance(meta, dict) else None
+
+
+def meta_mismatches(meta: dict | None, cfg: dict[str, Any]) -> list[str]:
+    """학습 조건(meta["env"]: limits [u_min, u_max, w_min, w_max] m · reach_max · accel · overshoot · ready_posj(있을 때))과 skills.yaml(cfg)이 다른 항목.
+    정책은 학습한 한계·이동 방식에 맞춰 출발 시점을 골랐으므로 다르면 경고만 한다 (동작은 안 바꿈 — 한계는 늘 cfg 가 이긴다, #78)."""
+    if not meta or not isinstance(meta.get("env"), dict):
+        return []
+    env = meta["env"]
+    out: list[str] = []
+
+    def num(x):
+        """숫자로 못 바꾸는 값(손으로 만든 json 의 null·문자열)은 None — 대조만 건너뛴다 (#212 리뷰: 예외가 execute() 까지 올라가면 안 됨)."""
+        try:
+            return None if x is None else float(x)
+        except (TypeError, ValueError):
+            return None
+
+    def differ(a, b) -> bool:
+        a, b = num(a), num(b)
+        return a is not None and b is not None and abs(a - b) > 1e-3
+
+    lim = env.get("limits")
+    if isinstance(lim, (list, tuple)) and len(lim) == 4:
+        w_min = num(lim[2])
+        for name, trained in (("right_max_m", lim[1]), ("updown_max_m", None if w_min is None else -w_min), ("down_max_m", lim[3])):
+            if differ(trained, cfg.get(name)):
+                out.append(f"{name} 학습 {num(trained):.2f} vs yaml {num(cfg[name]):.2f}")
+    if differ(env.get("reach_max"), cfg.get("reach_max_m")):
+        out.append(f"reach_max_m 학습 {num(env['reach_max']):.2f} vs yaml {num(cfg['reach_max_m']):.2f}")
+    accel = str(env.get("accel", "") or "")
+    move = "amovej" if accel == "movej" else ("amovel" if accel else "")
+    if move and cfg.get("catch_move") and str(cfg["catch_move"]) != move:
+        out.append(f"catch_move 학습 {move} vs yaml {cfg['catch_move']}")
+    if differ(env.get("overshoot"), cfg.get("catch_overshoot_m")):
+        out.append(f"catch_overshoot_m 학습 {num(env['overshoot']):.2f} vs yaml {num(cfg['catch_overshoot_m']):.2f}"
+                   " (시뮬에선 정책이 보정으로 되돌림 — 실측 영향 미확인)")
+    # 10/15 #223: 대기 자세가 바뀌면 같은 거리라도 관절 변화·amovej 시간·한계가 달라진다 — 로봇 응답표는 학습 자세에서 잰 것.
+    # json 에 ready_posj 가 있을 때만 (10/14 학습은 기존 자세 [89.8, 30.0, -121.7, 90.2, -80.2, 88.3]). 1° 넘게 다른 관절이 있으면 한 줄.
+    tq, cq = env.get("ready_posj"), cfg.get("ready_posj")
+    if isinstance(tq, (list, tuple)) and isinstance(cq, (list, tuple)) and len(tq) == 6 and len(cq) == 6:
+        tv, cv = [num(v) for v in tq], [num(v) for v in cq]
+        if None not in tv and None not in cv and max(abs(x - y) for x, y in zip(tv, cv)) > 1.0:
+            out.append(f"ready_posj 학습 {[round(v, 1) for v in tv]} vs yaml {[round(v, 1) for v in cv]}"
+                       " (응답표는 학습 자세에서 잰 것 — 새 자세는 #195 이동 측정 뒤 재학습)")
+    return out
 
 
 def policy_obs(pred: Prediction, pad_center_m, normal, now_ros: float,

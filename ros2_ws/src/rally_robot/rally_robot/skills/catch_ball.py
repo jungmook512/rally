@@ -46,7 +46,7 @@ from std_msgs.msg import Float64MultiArray
 
 from rally_interfaces.action import CatchBall
 from rally_robot.dsr_helpers import SkillAbort, move_checked, movej_checked, stop_robot
-from rally_robot.skills.catch_policy import OnnxPolicy, decide_with_policy, find_policy, policy_target
+from rally_robot.skills.catch_policy import OnnxPolicy, decide_with_policy, find_policy, meta_mismatches, policy_meta, policy_target
 from rally_robot.skills.catch_plan import (ContactWindow, Prediction, clamp_cross, intercept, judge_pad, max_dist_in, pad_center,
                                               parse_info, quality_ok,
                                               should_resend, window_close_delay)
@@ -285,6 +285,15 @@ def _load_policy(node, cfg0: dict):
         node.get_logger().error(f"[catch_ball] 정책 {path} 를 못 읽음 ({type(e).__name__}: {e}) — 규칙 결정으로 돎. 로봇 PC: pip install onnxruntime")
         return None
     node.get_logger().info(f"[catch_ball] 정책 모드 — {path}")
+    meta = policy_meta(path)
+    if meta:                                               # 옆 .onnx.json: 어느 학습인지 + 학습 조건과 yaml 대조 (다르면 경고만, 동작은 yaml 대로)
+        env = meta.get("env") or {}
+        node.get_logger().info(f"[catch_ball] 정책 학습 조건 — run {meta.get('run')} {meta.get('checkpoint')} md5 {str(meta.get('md5', ''))[:8]} · "
+                               f"{env.get('accel')} · 한계 {env.get('limits')} m · 두 축 합 {env.get('reach_max')} · 지나침 {env.get('overshoot')} · 지연 {env.get('delay')} s")
+        for m in meta_mismatches(meta, cfg0):
+            node.get_logger().warning(f"[catch_ball] 정책 학습 조건과 skills.yaml 이 다름: {m} — 정책은 학습 조건에 맞춰 출발 시점을 고름. 비교 시험 땐 맞출 것")
+    else:
+        node.get_logger().warning(f"[catch_ball] 정책 옆 {path}.json 없음 — 어느 학습인지·학습 한계를 대조 못 함 (export_policy.py 가 만드는 .onnx.json 을 같이 복사)")
     return pol
 
 
