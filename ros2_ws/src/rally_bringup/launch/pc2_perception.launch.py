@@ -43,8 +43,14 @@ def _params(context, executable: str) -> list[dict]:
     if executable == "flight_predictor":
         # 10/15 정정인 실로봇: 투구 시작 속도 1.5 m/s(노드 기본)면 놓기 전 손 휘두름(z −0.3, 1.9~2.9 m/s)을 놓음으로 잡아 궤적이 틀어지고
         #   진짜 비행 점이 전부 버려짐 → 예측 발행 0. 3.0 이면 5번 중 4번 발행 (scripts/vision_local.sh 는 2.5 로 넘기고 있었음)
+        params = {}
         v = LaunchConfiguration("flight_min_speed").perform(context).strip()
-        return [{"min_speed_mps": float(v)}] if v else []
+        if v:
+            params["min_speed_mps"] = float(v)
+        est = LaunchConfiguration("flight_estimator").perform(context).strip()
+        if est:                                    # rays = 카메라별 픽셀·시각으로 궤적 맞춤 (#182). 10/13 실로봇 받기 시험은 전부 이것 — 노드 기본은 stereo
+            params["estimator"] = est
+        return [params] if params else []
     if executable == "segmenter":
         # 10/14: compose 경로도 scripts/vision_local.sh 의 HAND_EYE 와 같은 선택을 할 수 있게. none = hand_eye.yaml 안 쓰고 선생님 npy
         # (#66 과 같은 좌표 — mode1.vision_offset_m 이 10/7 그 좌표 기준으로 맞춰져 있어, yaml 과 겹치면 약 1 cm 어긋남)
@@ -159,7 +165,9 @@ def generate_launch_description():
         DeclareLaunchArgument("segmenter_conf", default_value="",
                               description="segmenter 검출 신뢰도 하한: 비우면 0.5. 모드 5 받기(손에 든 막대 0.25~0.5)는 0.25 — 테이블 집기는 brain 이 0.5 로 다시 거름"),
         DeclareLaunchArgument("flight_min_speed", default_value="3.0",
-                              description="flight_predictor 투구 시작 속도 [m/s] (min_speed_mps). 비우면 노드 기본 1.5. 10/15 실로봇 3.0"),
+                              description="flight_predictor 투구 시작 속도 [m/s] (min_speed_mps, stereo 방식에만). 비우면 노드 기본 1.5. 10/15 실로봇 3.0"),
+        DeclareLaunchArgument("flight_estimator", default_value="rays",
+                              description="flight_predictor estimator: rays(#182, 10/13 실로봇 기준, 투구 확정 vx 2.5 m/s 코드 고정) | stereo(옛 3D 점 방식)"),
         DeclareLaunchArgument("segmenter_models", default_value="",
                               description="segmenter 모델 쉼표 목록 (/models 안 이름, 앞이 우선). 비우면 공 + 컵·막대. "
                                           "모드 3 벨크로 공은 velcro_ball_yolo11n-seg_1024_rot_v2.pt (10/15)"),
