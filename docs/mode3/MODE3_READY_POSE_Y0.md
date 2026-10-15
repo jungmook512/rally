@@ -85,7 +85,7 @@ python3 scripts/mode3_reach_test.py --run --posj -58.7 7.0 100.2 98.8 63.6 -100.
 # a) 4축(0·90·180·270°) × 5·10·15·20·25 cm × 2회 = 40
 python3 scripts/mode3_movej_test.py --run --posj -58.7 7.0 100.2 98.8 63.6 -100.3 --angles 0 90 180 270 --dist 5 10 15 20 25 --cases amovej --jvel 120 --jacc 400 --reps 2 --ws-x-max 0.78
 # b) 8방향(45° 간격) × 15·25 cm × 2회 = 32
-python3 scripts/mode3_movej_test.py --run --angles $(seq 0 45 315) --dist 15 25 --cases amovej --jvel 120 --jacc 400 --reps 2 --ws-x-max 0.78
+python3 scripts/mode3_movej_test.py --run --posj 123.1 -7.0 -100.2 -80.5 61.9 -100.6 --angles $(seq 0 45 315) --dist 15 25 --cases amovej --jvel 120 --jacc 400 --reps 2 --ws-x-max 0.78
 ```
 스크립트는 방향 순서대로 돈다 (섞는 옵션 없음 — 박성현 제안의 "순서 섞기"는 아직 미반영).
 
@@ -155,11 +155,13 @@ IMAGES=0 DURATION=900 OUT=~/bags/motion_flip scripts/record_mode3_bag.sh
 패드는 거치대에 꽂혀 있는 상태로 시작(평소대로).
 
 ### 순서 (터미널 3, 비상정지 손에 — 1·3·4 는 사람이 거치대 쪽을 보면서)
+
+> ⚠ **`mode3_movej_test.py` 는 `--posj` 가 없으면 지금 자세를 출발점으로 쓴다.** 패드를 꽂은 뒤(거치대 앞)에 `--posj` 없이 치면 거치대 주변을 12방향으로 움직이려 한다 (10/16 실로봇에서 STOP 덕에 안 움직임). 받기 이동은 항상 `--posj` 를 붙인다 — 스크립트가 먼저 대기 자세로 간 뒤 시작한다. 거치대 근처에서 출발할 때는 그 전에 `mode3_go_ready.py --vel 10`.
 | # | 무엇 | 명령 | 통과 |
 |---|---|---|---|
 | 0 | 계획만 | `python3 scripts/mode3_movej_test.py --posj 123.1 -7.0 -100.2 -80.5 61.9 -100.6 --angles $(seq 0 30 330) --dist 15 23 --cases amovej --jvel 120 --jacc 400 --ws-x-max 0.78` | 24개 모두 OK (관절 변화 ≤ 44°) |
 | 1 | **대기 자세로 (저속)** | `python3 scripts/mode3_go_ready.py --vel 10` — 관측 자세에서 직접. J1 이 0 → 123° 로 크게 도는 게 정상 | 거치대·천장 안 닿음, STOP 없음. `print_pose.py` TCP ≈ (0.56, −0.32, 0.43). **눈으로: J2 모터가 거치대 반대쪽(로봇 왼쪽 뒤)** |
-| 2 | 받기 이동 15 cm 12방향 (bag 켠 채) — 패드 없이 | `python3 scripts/mode3_movej_test.py --run --angles $(seq 0 30 330) --dist 15 --cases amovej --jvel 120 --jacc 400 --reps 2 --ws-x-max 0.78` | 완주, 힘 ≤ 88 N, 터미널 2 에 `작업 공간 x 상한 1.00` ↔ `0.60` 로그 쌍 |
+| 2 | 받기 이동 15 cm 12방향 (bag 켠 채) — 패드 없이 | `python3 scripts/mode3_movej_test.py --run --posj 123.1 -7.0 -100.2 -80.5 61.9 -100.6 --angles $(seq 0 30 330) --dist 15 --cases amovej --jvel 120 --jacc 400 --reps 2 --ws-x-max 0.78` | 완주, 힘 ≤ 88 N, 터미널 2 에 `작업 공간 x 상한 1.00` ↔ `0.60` 로그 쌍 |
 | 3 | **집기 → 꽂기 1회** (새 접근 경로) | `python3 scripts/pad_rack_loop.py --count 1` — 대기 자세에서 시작하므로 `[pad_rack] U → A 뒤 6 cm … → A (직선, 손잡이 축)` 로그가 나와야 함 | 집기: U 로 올라갔다 손잡이 뒤에서 수평으로 들어옴(위에서 내려오지 않음), 쥔 폭 24~38 mm. 꽂기: 10/14 와 같이 끝까지. STOP 없음 |
 | 4 | 집기 → 꽂기 3회 더 | `python3 scripts/pad_rack_loop.py --count 3 --auto` | 4/4 |
 | 5 | 받기 이동 23 cm 12방향 — **패드 쥔 채** (`--start place` 전 상태: 3번 뒤 `/rally/robot/pad_pick` 한 번 더 불러 쥐고 대기 자세) | `ros2 service call /rally/robot/pad_pick std_srvs/srv/Trigger` → 같은 `movej_test --dist 23` | 완주 (왼쪽 180° 포함), 240~270° 방향은 거치대 6 cm — 눈으로 |
