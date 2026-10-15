@@ -69,6 +69,9 @@ ALL_MODES = [TrialResult.MODE_PUSH_BALL, TrialResult.MODE_CATCH_PAD, TrialResult
 RULE_INTENTS = ("tired", "harder", "easier")   # 규칙 레이어가 소비하는 음성 intent
 
 
+COMP_LOG_MAX = 50   # 대시보드 「보상 동작 기록」에 싣는 최근 시도 수 (10/15)
+
+
 def mode3_enabled(skills_cfg: dict) -> bool:
     """skills.yaml mode3_challenge.enabled. 없으면 True (기획 기본값)."""
     return bool((skills_cfg.get("mode3_challenge") or {}).get("enabled", True))
@@ -129,6 +132,7 @@ class BtRunner(Node):
         self.control = SessionControl()
         self._posture = posture_coach.PostureCoach(posture_coach.config(self._skills_cfg))   # 보상 동작 교정 안내 (#119)
         self._comp_history: list[bool] = []   # 세션의 시도마다(모드 무관) 보상 동작이 보였는지 — 규칙 '보상 동작 반복'. 10/15 조정묵: 모드별 → 세션 전체
+        self._comp_log: list[dict] = []       # 대시보드 「보상 동작 기록」: 시도마다 {trial, mode, success, types} (10/15 조정묵)
         self.proposals = ProposalControl()
         self._proposal_cancelled = False
         self._rest_generation = 0
@@ -349,6 +353,9 @@ class BtRunner(Node):
     def _after_trial(self, session: Session, trial: TrialResult) -> None:
         with self._switch_lock:
             self._comp_history.append(bool(self._posture.seen))   # end_trial 이 비우기 전에. 어느 모드든 한 줄 (몸 신호라 모드를 안 가림)
+            self._comp_log.append({"trial": int(trial.trial_index), "mode": int(trial.mode), "success": bool(trial.success),
+                                   "types": sorted(self._posture.seen)})
+            del self._comp_log[:-COMP_LOG_MAX]
             if not self._safety_abort and (text := self._posture.end_trial(self._speaking)):
                 self.get_logger().info(f"[자세] 보상 동작 연속 — 안내: {text}")
                 self._say(text)
@@ -501,6 +508,17 @@ class BtRunner(Node):
         return {"mode": mode, "trials": len(history), "need": int(self._rule_cfg["llm_signal_count"]), "count": len(on), "on": on,
                 "signals": detail, "current_comp": sorted(self._posture.seen), "llm": dict(self._rest_llm)}
 
+    def _comp_snapshot(self) -> dict | None:
+        """대시보드 「보상 동작 기록」 패널 (10/15, 훈련 탭 모드별 진행 아래): 세션의 시도마다(모드 무관) 보인 보상 동작 종류,
+        지금 시도에서 이미 보인 종류, 규칙 '보상 동작 반복' 창 안 횟수. 표시용 — 제어에 쓰지 않는다. lock 안에서 부른다. 세션 없으면 None."""
+        if self._session is None:
+            return None
+        window = int(self._rule_cfg["compensation_window"])
+        recent = self._comp_history[-window:]
+        return {"log": list(self._comp_log[-COMP_LOG_MAX:]), "current": sorted(self._posture.seen),
+                "window": window, "need": int(self._rule_cfg["compensation_min_trials"]),
+                "count": sum(1 for seen in recent if seen), "trials": len(recent)}
+
     def _poll_rest(self):
         blocked = bool(self._proposal_blocked())
         action = self._rest_advisor.poll(self._rest_token(), blocked)
@@ -566,7 +584,8 @@ class BtRunner(Node):
                 # 접수된 모드 전환 (지금 시도가 끝나면 바뀜). None = 없음, {"mode": None} = 다음 모드
                 "pending_switch": None if self._pending_switch is None else {"mode": self._pending_switch[0]},
                 "mode_select": self._selecting,     # 모드 선택 대기 중 (음성·버튼으로 모드를 고르면 시작) — 뒤에 추가
-                "rest": self._rest_snapshot(),      # 휴식 제안 조건(신호별 진행값·LLM 판단 상태) — 대시보드 패널·알림, 뒤에 추가
+                "rest": self._rest_snapshot(),      # 휴식 제안 조건(신호별 진행값·LLM 판단 상태) — 대시보드 알림, 뒤에 추가
+                "comp_log": self._comp_snapshot(),  # 보상 동작 기록(시도별 종류·지금 시도·창 안 횟수) — 대시보드 「보상 동작 기록」, 뒤에 추가
             }
 
     def _action_client(self, action_type: type, name: str) -> ActionClient:
@@ -636,6 +655,7 @@ class BtRunner(Node):
             self._safety_abort = False
             self._posture = posture_coach.PostureCoach(posture_coach.config(self._skills_cfg))
             self._comp_history = []
+            self._comp_log = []
             self._rest_llm = {"state": "idle", "result": None, "at": None, "signals": []}
             self._hand_stop_seen = self._hand_wait = self._normal_since = None
             self._proposal_cancelled = False

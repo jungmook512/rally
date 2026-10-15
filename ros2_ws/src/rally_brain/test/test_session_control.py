@@ -436,3 +436,26 @@ def test_compensation_history_spans_modes(node):
     session.current_mode = 3
     session.trials = []
     assert node.control_snapshot()["rest"]["signals"]["compensation"] == {"on": True, "count": 3, "need": 3, "window": 5, "trials": 3}
+
+
+def test_compensation_log_for_dashboard(node):
+    """대시보드 「보상 동작 기록」 (10/15): 시도마다 보인 보상 동작 종류를 세션 순서대로(모드 무관) 싣고, 지금 시도에서 이미 보인 것과
+    규칙 '보상 동작 반복' 창 안 횟수도 같이. 세션 없으면 None."""
+    session = node._session
+    node._comp_history, node._comp_log = [], []
+    assert node.control_snapshot()["comp_log"] == {"log": [], "current": [], "window": 5, "need": 3, "count": 0, "trials": 0}
+    node._posture.seen.add("trunk_lean")
+    assert node.control_snapshot()["comp_log"]["current"] == ["trunk_lean"]           # 지금 시도에서 이미 보인 것
+    node._after_trial(session, TrialResult(mode=1, success=True, duration_s=10.0, trial_index=1))
+    node._after_trial(session, TrialResult(mode=5, success=False, duration_s=10.0, trial_index=2))   # 보상 동작 없음
+    node._posture.seen.update({"shoulder_hike", "trunk_lean"})
+    node._after_trial(session, TrialResult(mode=3, success=True, duration_s=10.0, trial_index=3))
+    snap = node.control_snapshot()["comp_log"]
+    assert snap["log"] == [{"trial": 1, "mode": 1, "success": True, "types": ["trunk_lean"]},
+                           {"trial": 2, "mode": 5, "success": False, "types": []},
+                           {"trial": 3, "mode": 3, "success": True, "types": ["shoulder_hike", "trunk_lean"]}]
+    assert snap["current"] == [] and snap["count"] == 2 and snap["trials"] == 3     # end_trial 이 이번 시도 기억을 비움
+    assert node._comp_history == [True, False, True]
+    saved, node._session = node._session, None
+    assert node._comp_snapshot() is None
+    node._session = saved

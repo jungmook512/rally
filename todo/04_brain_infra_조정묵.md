@@ -203,3 +203,4 @@
 - [x] 합성 데이터 실제 API 1회: suggest_rest, 1.832초. 실제 환자·영상·음성 사용 없음.
 - [ ] 실제 장비·2 PC·음성 응답 확인. KG/Graph RAG·리포트는 이 연결 완료에 포함하지 않음.
 - [x] 최종 격리 검증: build4패키지, Brain284+DB25+bringup1+API26=336 PASS, 선택 Redis1 SKIP, Node/ontology/Compose pc3 config 통과.
+- [x] 10/15 대시보드 「보상 동작 기록」 패널 — 훈련 탭 모드별 진행(단계) 아래, 시도별 종류(몸통 기울임·어깨 들림)·이번 시도·창 안 횟수 (brain session_control.comp_log). 「휴식 제안 조건」 스택 패널은 제거, 조건 확인 토스트는 유지. 웹캠(/webcam/image_raw) 화면을 모드 1·3·5 카메라 칸에 추가. 로봇·인식 PC 확인 필요: web_video_server 가 usb_cam 영상(yuyv)을 MJPEG 로 내는지.
