@@ -89,7 +89,7 @@ ros2 run rally_bringup wait_ready --group session --once
 - [ ] **하드웨어 비상정지**: 누르면 멈추는지 → 해제 (두산 펜던트 절차)
 - [ ] **소프트 비상정지**: 네이티브 터미널에서 `scripts/estop.sh` → 대시보드 STOP(`estop`) → `scripts/estop.sh reset` → NORMAL
 - [ ] **음성**: "그만" → STOP(`voice_stop`) → `scripts/estop.sh reset` (10/14 부터 서버 PC 마이크 → 와이파이 → 로봇 PC safety_monitor. 와이파이가 끊기면 음성 정지도 안 가니 물리 비상정지가 우선)
-- [ ] **음성 비상어 상시 감지 켜짐**: 서버 PC voice 로그(`docker compose --profile pc3 logs voice`)에 `비상어 상시 감지 켬 (… 연속 3 프레임)` 이 있고 `상시 감지 꺼짐` 경고(`kws_enabled=false` 또는 모델 없음)가 없을 것 (#172)
+- [ ] **음성 비상어 상시 감지 켜짐**: 서버 PC voice 로그(`docker compose --profile pc3 logs voice`)에 `비상어 상시 감지 켬 (… 연속 3 프레임)` 이 있고 `상시 감지 꺼짐`·`상시 감지 끔` 경고(`kws_enabled=false`·`emergency_enabled=false`(연습용 docker-compose.kws-off.yml) 또는 모델 없음)가 없을 것 (#172)
 - [ ] 손 STOP 모드 로그를 다시 한 번 (터미널 2 맨 위 `hand_stop_mode=…`)
 
 **시연자(환자 역할)에게 미리 알려 줄 것**
