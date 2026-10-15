@@ -40,6 +40,11 @@ def _params(context, executable: str) -> list[dict]:
                  "info_topic": "/camera/color/camera_info"}]
     if executable == "body_pose":
         return [{"arm": LaunchConfiguration("body_arm").perform(context)}]   # 시연은 왼팔 (10/8 결정, 웹캠이 환자 왼쪽)
+    if executable == "flight_predictor":
+        # 10/15 정정인 실로봇: 투구 시작 속도 1.5 m/s(노드 기본)면 놓기 전 손 휘두름(z −0.3, 1.9~2.9 m/s)을 놓음으로 잡아 궤적이 틀어지고
+        #   진짜 비행 점이 전부 버려짐 → 예측 발행 0. 3.0 이면 5번 중 4번 발행 (scripts/vision_local.sh 는 2.5 로 넘기고 있었음)
+        v = LaunchConfiguration("flight_min_speed").perform(context).strip()
+        return [{"min_speed_mps": float(v)}] if v else []
     if executable == "segmenter":
         # 10/14: compose 경로도 scripts/vision_local.sh 의 HAND_EYE 와 같은 선택을 할 수 있게. none = hand_eye.yaml 안 쓰고 선생님 npy
         # (#66 과 같은 좌표 — mode1.vision_offset_m 이 10/7 그 좌표 기준으로 맞춰져 있어, yaml 과 겹치면 약 1 cm 어긋남)
@@ -153,6 +158,8 @@ def generate_launch_description():
                               description="segmenter hand_eye_path: 비우면 hand_eye.yaml, none = 옛 T_gripper2camera.npy (#66 좌표, vision_offset_m 기준)"),
         DeclareLaunchArgument("segmenter_conf", default_value="",
                               description="segmenter 검출 신뢰도 하한: 비우면 0.5. 모드 5 받기(손에 든 막대 0.25~0.5)는 0.25 — 테이블 집기는 brain 이 0.5 로 다시 거름"),
+        DeclareLaunchArgument("flight_min_speed", default_value="3.0",
+                              description="flight_predictor 투구 시작 속도 [m/s] (min_speed_mps). 비우면 노드 기본 1.5. 10/15 실로봇 3.0"),
         DeclareLaunchArgument("segmenter_models", default_value="",
                               description="segmenter 모델 쉼표 목록 (/models 안 이름, 앞이 우선). 비우면 공 + 컵·막대. "
                                           "모드 3 벨크로 공은 velcro_ball_yolo11n-seg_1024_rot_v2.pt (10/15)"),
