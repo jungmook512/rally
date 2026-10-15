@@ -35,8 +35,9 @@ from std_srvs.srv import Trigger
 
 from rally_interfaces.action import CatchBall, DetachBall, Handover, MoveTarget, PickCompliant, PushBall, ResistPush, ReturnBall
 from rally_interfaces.msg import HandState, SafetyStatus, TrackedObjectArray
-from rally_interfaces.srv import GripperCommand
+from rally_interfaces.srv import GripperCommand, Speak
 from rally_robot.dsr_helpers import OBSERVE_POS, ROBOT_ID, SkillAbort, init_dsr, motion_speeds
+from rally_robot import pad_rack
 
 CONTACT_HZ = 5.0
 CONFIG_FILES = ("skills.yaml", "table.yaml")
@@ -80,6 +81,8 @@ class SkillServer(Node):
         self._contact = False
         self._patient_contact = False
         self._catch_window = False
+        self._workspace_extend = False       # 모드 3 공 떼기 → 박스 (작업 공간 x 상한 확장 하트비트)
+        self._detach_window = False          # 모드 3 공 떼기 벗기는 동안 (힘 한계 detach_window_force_limit_n 하트비트)
         self._cm_client = None
         self.last_pick = None                # PickCompliant 성공 자세 {pose(mm·deg), grip_force} — 모드 5 내려놓기 자리
         self.holding = False                 # 물체를 쥐고 있는지 — gripper() 가 닫힘+감지면 True, 열면 False
@@ -102,6 +105,8 @@ class SkillServer(Node):
         self.pub_contact = self.create_publisher(Bool, "/rally/safety/contact_expected", reliable1)
         self.pub_patient_contact = self.create_publisher(Bool, "/rally/safety/patient_contact", reliable1)
         self.pub_catch_window = self.create_publisher(Bool, "/rally/safety/catch_window", reliable1)
+        self.pub_workspace_extend = self.create_publisher(Bool, "/rally/safety/workspace_extend", reliable1)
+        self.pub_detach_window = self.create_publisher(Bool, "/rally/safety/detach_window", reliable1)
         self.create_timer(1.0 / CONTACT_HZ, self._contact_tick, callback_group=self.cb_state)
         self.gripper_cli = self.create_client(GripperCommand, "/rally/gripper/command", callback_group=self.cb_state)
         self.create_service(Trigger, "/rally/robot/go_observe_pose", self._go_observe, callback_group=self.cb_skill)
@@ -249,9 +254,37 @@ class SkillServer(Node):
         self._catch_window = bool(on)
         self.pub_catch_window.publish(Bool(data=self._catch_window))
 
+    def set_workspace_extend(self, on: bool):
+        """모드 3 공 떼기 → 박스 놓기 (10/14): 켠 동안 safety_monitor 작업 공간 x 상한이 workspace_x_max_extended_m.
+        detach_ball 만 쓴다. 하트비트가 끊기거나 workspace_extend_max_s 를 넘으면 safety_monitor 가 평소 상한으로 되돌린다."""
+        self._workspace_extend = bool(on)
+        self.pub_workspace_extend.publish(Bool(data=self._workspace_extend))
+
+    def say(self, text: str) -> bool:
+        """음성 안내 (/rally/voice/speak, 기다리지 않음). 서비스가 없으면 로그만 — 안내는 동작을 막지 않는다 (10/15 모드 3 공 떼기 사람 몫)."""
+        if self.fake or not text:
+            return False
+        if getattr(self, "_speak_cli", None) is None:
+            self._speak_cli = self.create_client(Speak, "/rally/voice/speak", callback_group=self.cb_state)
+        if not self._speak_cli.service_is_ready():
+            self.get_logger().warning(f"[안내] /rally/voice/speak 없음 — 말하지 못함: {text}")
+            return False
+        self._speak_cli.call_async(Speak.Request(text=text, block_mic=True))
+        return True
+
+    def set_detach_window(self, on: bool):
+        """모드 3 공 떼기 (10/15): 켠 동안(+ contact_expected 도 켜져 있을 때) safety_monitor 힘 한계가 detach_window_force_limit_n.
+        detach_ball 만 쓴다. 하트비트가 끊기거나 detach_window_max_s 를 넘으면 평소 값."""
+        self._detach_window = bool(on)
+        self.pub_detach_window.publish(Bool(data=self._detach_window))
+
     def _contact_tick(self):
         if self._catch_window:
             self.pub_catch_window.publish(Bool(data=True))
+        if self._workspace_extend:
+            self.pub_workspace_extend.publish(Bool(data=True))
+        if self._detach_window:
+            self.pub_detach_window.publish(Bool(data=True))
         if self._contact:
             self.pub_contact.publish(Bool(data=True))
         if self._patient_contact:
@@ -321,6 +354,7 @@ class SkillServer(Node):
             return res
         posj = (self.cfg.get("observe_pose") or {}).get("posj") or OBSERVE_POS   # skills.yaml 티칭 값 우선
         tv, ta, _, _, jv, ja = motion_speeds(self)                                 # skills.yaml motion: joint_vel_deg_s
+        jv, ja = pad_rack.joint_speeds_here(self, jv, ja, self.get_logger())       # 거치대 근처에서 출발하면 30/60 (10/14 관성 힘 STOP)
         try:
             movej_safe(self, [float(v) for v in posj], jv, ja, tv, ta, self.observe_x_max_mm())
         except SkillAbort as e:
@@ -340,6 +374,7 @@ class SkillServer(Node):
         pose = (self.cfg.get("mode5") or {}).get("pick_view_posx")
         posj = (self.cfg.get("observe_pose") or {}).get("posj") or OBSERVE_POS
         tv, ta, _, _, jv, ja = motion_speeds(self, "mode5")
+        jv, ja = pad_rack.joint_speeds_here(self, jv, ja, self.get_logger())
         try:
             movej_safe(self, [float(v) for v in posj], jv, ja, tv, ta, self.observe_x_max_mm())
             if pose:
@@ -389,7 +424,7 @@ class SkillServer(Node):
             res.success, res.message = False, "no_lanes (skills.yaml mode1.lanes)"
             return res
         try:
-            movej_to_pose(self, pose, *hand_view_joint(self, cfg))
+            movej_to_pose(self, pose, *pad_rack.joint_speeds_here(self, *hand_view_joint(self, cfg), self.get_logger()))
         except SkillAbort as e:
             res.success, res.message = False, e.reason
             return res

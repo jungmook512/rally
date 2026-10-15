@@ -6,7 +6,7 @@ import pytest
 
 from rally_interfaces.msg import SafetyStatus
 from rally_robot.safety_monitor import (force_limit_for, hand_level, hand_lost_level, hand_robot_dist, hand_unknown_level, in_workspace,
-                                        input_level, point_segment_dist, robot_segment, worst)
+                                        input_level, point_segment_dist, robot_segment, workspace_x_max_for, worst, detach_force_limit_for)
 
 NORMAL, SLOW, STOP = SafetyStatus.LEVEL_NORMAL, SafetyStatus.LEVEL_SLOW, SafetyStatus.LEVEL_STOP
 CFG = {"slow_distance_m": 0.25, "stop_distance_m": 0.15, "hand_deep_stop_m": -0.15, "hand_deep_end_m": -0.30,
@@ -406,3 +406,24 @@ def test_safety_yaml_force_limits_144():
     assert p["force_limit_n"] == 25.0
     assert p["catch_window_force_limit_n"] == 130.0
     assert 0 < p["catch_window_max_s"] <= 2.0                     # #165 리뷰: 창 길이 상한
+
+
+def test_workspace_x_max_extends_only_while_signal_on():
+    """모드 3 공 떼기 → 박스 (10/14): 확장 신호가 켜진 동안만 x 상한 0.65, 아니면 0.57. 0 이면 확장 없음."""
+    assert workspace_x_max_for(0.57, 0.65, False) == 0.57
+    assert workspace_x_max_for(0.57, 0.65, True) == 0.65
+    assert workspace_x_max_for(0.57, 0.0, True) == 0.57            # safety.yaml 에 값이 없으면 켜도 그대로
+    assert workspace_x_max_for(0.57, 0.50, True) == 0.57           # 확장값이 더 작아도 평소보다 좁아지지 않음
+    lim = {"x": (-2.0, workspace_x_max_for(0.57, 0.65, True)), "y": (-0.6, 0.6), "z": (0.0, 2.0)}
+    assert in_workspace((0.595, -0.153, 0.12), lim)                # 박스 교시 자세 (x 0.595)
+    lim["x"] = (-2.0, workspace_x_max_for(0.57, 0.65, False))
+    assert not in_workspace((0.595, -0.153, 0.12), lim)
+
+
+
+def test_detach_window_force_limit():
+    """모드 3 공 떼기 창 (10/15): 켜진 동안만 50 N, 아니면 그대로. 평소·받기 창 값보다 낮추지 않음."""
+    assert detach_force_limit_for(25.0, 50.0, False) == 25.0
+    assert detach_force_limit_for(25.0, 50.0, True) == 50.0
+    assert detach_force_limit_for(130.0, 50.0, True) == 130.0       # 받기 창이 더 크면 그대로
+    assert detach_force_limit_for(25.0, 20.0, True) == 25.0         # 설정 실수로 낮아지지 않게
