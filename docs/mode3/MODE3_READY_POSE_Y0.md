@@ -154,6 +154,14 @@ IMAGES=0 DURATION=900 OUT=~/bags/motion_flip scripts/record_mode3_bag.sh
 ```
 패드는 거치대에 꽂혀 있는 상태로 시작(평소대로).
 
+### 공 던지기(받기 10회) 전에 — 비전 컨테이너 다시 빌드 (박성현 #223 리뷰)
+flight_predictor 는 패드 평면을 **컨테이너 안 rally_bringup 설치본**의 skills.yaml 에서 읽는다. 브랜치 체크아웃 + colcon 만 하면 catch_ball(네이티브)은 새 패드 (0.595, −0.423), 예측기(컨테이너)는 옛 패드 (0.345, −0.332) 를 써서 **요격 목표가 25 cm 어긋난다.**
+```bash
+cd ~/rally/docker && docker compose --profile pc2 up -d --build vision      # scripts/vision_local.sh 를 쓰면 config 를 끼워 쓰므로 재시작만
+docker compose --profile pc2 logs vision | grep "패드 평면"                    # 중심 [0.595, -0.423, 0.433] 이어야 함
+```
+패드 중심 x 0.595 는 보라색 선(0.568) 밖이다 — 모드 3 투구자는 J1 에서 3 m 밖이라 #198 결정대로 받기 창 동안만 x 를 넓힌다.
+
 ### 순서 (터미널 3, 비상정지 손에 — 1·3·4 는 사람이 거치대 쪽을 보면서)
 
 > ⚠ **`mode3_movej_test.py` 는 `--posj` 가 없으면 지금 자세를 출발점으로 쓴다.** 패드를 꽂은 뒤(거치대 앞)에 `--posj` 없이 치면 거치대 주변을 12방향으로 움직이려 한다 (10/16 실로봇에서 STOP 덕에 안 움직임). 받기 이동은 항상 `--posj` 를 붙인다 — 스크립트가 먼저 대기 자세로 간 뒤 시작한다. 거치대 근처에서 출발할 때는 그 전에 `mode3_go_ready.py --vel 10`.
