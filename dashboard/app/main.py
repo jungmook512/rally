@@ -47,8 +47,12 @@ ROBOT_VIDEO_URL = os.environ.get("ROBOT_VIDEO_URL", "").strip().rstrip("/")
 # 보여 줄 카메라 (INTERFACES 2.1). 작게·낮은 화질로 — 로봇 PC 의 압축 부담과 네트워크를 줄인다
 # (이름, 토픽, 대신 쓸 토픽). 손목은 세그먼터의 인식 결과 화면(마스크·신뢰도·3D 좌표가 그려진 debug_image, 구독자가 있을 때만 10 Hz 발행)을
 #   먼저 쓰고, 안 오면(비전 컨테이너 꺼짐) 브라우저가 원본 카메라로 바꾼다. 측면은 원본만
-CAMERAS = [("손목", "/rally/perception/objects/debug_image", "/camera/color/image_raw"),
-           ("측면", "/rally/perception/side/debug_image", "/side/side/color/image_raw")]   # 측면도 인식 화면(flight_predictor), 안 오면 원본 (10/14)
+# (이름, 인식 화면 토픽, 안 오면 원본 토픽, 보이는 모드 — None 이면 모든 화면). 영상은 로봇·인식 PC web_video_server 가 토픽을 MJPEG 로 중계
+CAMERAS = [("손목", "/rally/perception/objects/debug_image", "/camera/color/image_raw", None),
+           ("몸 자세", "/rally/perception/body/debug_image", "/side/side/color/image_raw", None),   # 측면 RealSense: body_pose 뼈대·기울기·어깨 들림 (#222 정동휘). 토픽 나오기 전엔 원본
+           ("공 추적", "/rally/perception/side/debug_image", None, [3])]                             # 측면 RealSense: flight_predictor 인식 화면 (10/14) — 모드 3 만
+# 10/15 조정묵: 전체 현황·모드 1·5 는 손목·몸 자세 두 칸을 위아래로, 모드 3 은 세 칸(왼쪽 세로 손목이 두 줄, 오른쪽 몸 자세 위·공 추적 아래).
+# 몸 자세(body_pose)도 측면 RealSense 로 (#222) — 잠깐 넣었던 웹캠(/webcam) 칸은 뺐다
 STREAM_QUERY = "type=mjpeg&quality=50&width=424&height=240&qos_profile=sensor_data"
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 
@@ -247,8 +251,9 @@ def camera_streams(base: str) -> dict[str, Any]:
         return {"enabled": False, "reason": "ROBOT_VIDEO_URL 미설정 (docker/.env, 예: http://로봇PC주소:8080)", "streams": []}
     return {"enabled": True, "reason": "",
             "streams": [{"name": name, "topic": topic, "url": f"{base}/stream?topic={topic}&{STREAM_QUERY}",
-                         "fallback": None if alt is None else f"{base}/stream?topic={alt}&{STREAM_QUERY}"}
-                        for name, topic, alt in CAMERAS]}
+                         "fallback": None if alt is None else f"{base}/stream?topic={alt}&{STREAM_QUERY}",
+                         "modes": modes}   # 보이는 모드 목록, null 이면 모든 화면 (뒤에 추가, 10/15)
+                        for name, topic, alt, modes in CAMERAS]}
 
 
 @app.get("/api/cameras")

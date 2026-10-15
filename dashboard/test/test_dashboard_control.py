@@ -171,13 +171,18 @@ def test_cameras_off_without_robot_url(monkeypatch):
 
 def test_camera_streams_point_to_robot_pc():
     r = web.camera_streams("http://192.168.0.10:8080")
-    assert r["enabled"] and [s["name"] for s in r["streams"]] == ["손목", "측면"]
+    assert r["enabled"] and [s["name"] for s in r["streams"]] == ["손목", "몸 자세", "공 추적"]   # 웹캠 칸 없음 (#222: 몸 자세도 측면 RealSense)
     wrist = r["streams"][0]["url"]
     assert wrist.startswith("http://192.168.0.10:8080/stream?topic=/rally/perception/objects/debug_image&")   # 인식 결과(마스크·신뢰도)
     assert "type=mjpeg" in wrist and "width=424" in wrist and "qos_profile=sensor_data" in wrist
     assert r["streams"][0]["fallback"].startswith("http://192.168.0.10:8080/stream?topic=/camera/color/image_raw&")  # 안 오면 원본
-    assert r["streams"][1]["topic"] == "/rally/perception/side/debug_image"                     # 측면도 인식 화면 (10/14)
-    assert r["streams"][1]["fallback"].startswith("http://192.168.0.10:8080/stream?topic=/side/side/color/image_raw&")
+    body, ball = r["streams"][1], r["streams"][2]
+    assert body["topic"] == "/rally/perception/body/debug_image" and body["modes"] is None     # 몸 자세 인식 화면 (#222), 모든 화면
+    assert body["url"].startswith("http://192.168.0.10:8080/stream?topic=/rally/perception/body/debug_image&")
+    assert body["fallback"].startswith("http://192.168.0.10:8080/stream?topic=/side/side/color/image_raw&")   # 토픽 나오기 전엔 측면 원본
+    assert ball["topic"] == "/rally/perception/side/debug_image" and ball["modes"] == [3]      # 공 추적 인식 화면 (10/14) — 모드 3 만
+    assert ball["url"].startswith("http://192.168.0.10:8080/stream?topic=/rally/perception/side/debug_image&") and ball["fallback"] is None
+    assert r["streams"][0]["modes"] is None
 
 
 def test_camera_panel_on_page():

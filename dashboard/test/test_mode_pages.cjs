@@ -143,7 +143,7 @@ assert.equal(get('camera-view').previousElementSibling, get('camera-home'));
 visit('#trials');
 assert.equal(get('camera-view').hidden, true);
 for (const [hash,title,trialVisible,eventVisible] of [
-  ['#trials','최근 시도',true,false], ['#events','사건 기록',false,true], ['#overview','전체 현황',false,false],
+  ['#trials','최근 시도',true,false], ['#events','훈련 기록',false,true], ['#overview','전체 현황',false,false],
 ]) {
   visit(hash);
   assert.equal(get('page-title').textContent,title);
@@ -330,63 +330,93 @@ async function testProposalResponses() {
 }
 testProposalResponses().catch(error => { console.error(error); process.exitCode = 1; });
 
-// 휴식 제안 조건 스택 + 조건 확인 알림 (10/14)
+// 조건 확인 알림 (10/14) — 토스트만. 신호 스택 패널은 10/15 「보상 동작 기록」 패널로 바뀜
 run("renderControl(null)");
-assert.equal(get('rest-panel').hidden, true);
+assert.equal(get('comp-panel').hidden, false, '보상 동작 기록 패널은 brain·세션 없어도 보임 (10/15)');
+assert.equal(get('comp-empty').hidden, false);
+assert.equal(get('comp-count').textContent, '');
+assert.equal(get('comp-now').textContent, 'brain 연결을 기다리는 중');
 const restBase = {mode:5, trials:3, need:2, count:0, on:[], current_comp:[], llm:{state:'idle', result:null, at:null, signals:[]},
   signals:{compensation:{on:false, count:2, need:3, window:5, trials:3}, success_drop:{on:false, applies:true, rate:0.667, max_rate:0.4, trials:3, min_trials:3},
            slowing:{on:false, last_s:10, mean_s:10, ratio:1, need_ratio:1.5, trials:3, min_trials:3}}};
 context.restBase = restBase;
 run("renderControl({phase:'running',session_id:'rest-s',mode:5,updated_at:Date.now()/1000,rest:restBase});");
-assert.equal(get('rest-panel').hidden, false);
-assert.equal(get('rest-count').textContent, '신호 0/2');
-assert.match(get('rest-stack').innerHTML, /보상 동작 반복.*최근 3회 중 2회 \(모든 모드\) · 3회면 신호/);
-assert.match(get('rest-stack').innerHTML, /성공률 67% · 40% 이하면 신호/);
-assert.match(get('rest-stack').innerHTML, /마지막 10초 \/ 평균 10초 = 1배 · 1.5배면 신호/);
-assert.match(get('rest-llm').textContent, /아직 요청 없음/);
 assert.equal(get('toasts').children.length, 0, '처음 받은 상태는 알리지 않음');
-// 신호 하나 켜짐 → 알림 1개, 행이 on
+// 신호 하나 켜짐 → 알림 1개
 run("renderControl({...control,rest:{...restBase,count:1,on:['slowing'],signals:{...restBase.signals,slowing:{...restBase.signals.slowing,on:true,last_s:20,ratio:2}}}});");
 assert.equal(get('toasts').children.length, 1);
 assert.equal(get('toasts').children[0].textContent, '조건 확인: 시도 시간 증가 (1/2)');
-assert.match(get('rest-stack').innerHTML, /<li class="on"><span class="mark">✓<\/span><span class="name">시도 시간 증가/);
-// 두 번째 신호 → 조건 충족 알림 + 신호 알림, 배지 met, LLM 판단 중
+// 두 번째 신호 → 조건 충족 알림 + 신호 알림
 run("renderControl({...control,rest:{...control.rest,count:2,on:['compensation','slowing'],llm:{state:'asked',result:null,at:Date.now()/1000,signals:['compensation','slowing']},signals:{...control.rest.signals,compensation:{...restBase.signals.compensation,on:true,count:3}}}});");
 assert.equal(get('toasts').children.length, 3);
 assert.equal(get('toasts').children[1].textContent, '조건 확인: 보상 동작 반복 (2/2)');
 assert.match(get('toasts').children[2].textContent, /휴식 제안 조건 충족 \(2\/2\)/);
-assert.equal(get('rest-count').textContent, '조건 충족 2/2');
-assert.equal(get('rest-count').className, 'badge met');
-assert.match(get('rest-llm').textContent, /AI 판단 중/);
-// 같은 상태를 다시 받으면 알림 없음, AI 가 답하면 알림
+// 같은 상태를 다시 받으면 알림 없음, AI 가 답하면 알림. 새 모드는 기준만 다시 잡고 알리지 않음
 run("renderControl({...control});");
 assert.equal(get('toasts').children.length, 3);
 run("renderControl({...control,rest:{...control.rest,llm:{...control.rest.llm,state:'answered',result:'suggest_rest'}}});");
 assert.equal(get('toasts').children.length, 4);
 assert.match(get('toasts').children[3].textContent, /휴식 제안함/);
-assert.match(get('rest-llm').textContent, /AI 판단: 휴식 제안함/);
-// 모드 1: 성공률 행은 '없음' 표시, 이번 시도 보상 동작 표시. 새 모드는 기준만 다시 잡고 알리지 않음
-run("renderControl({...control,mode:1,rest:{...restBase,mode:1,count:1,on:['compensation'],current_comp:['trunk_lean'],signals:{...restBase.signals,compensation:{...restBase.signals.compensation,on:true,count:3},success_drop:{...restBase.signals.success_drop,applies:false}}}});");
+run("renderControl({...control,mode:1,rest:{...restBase,mode:1,count:1,on:['compensation']}});");
 assert.equal(get('toasts').children.length, 4);
-assert.match(get('rest-stack').innerHTML, /<li class="na">.*모드 1 은 성공률 신호 없음/);
-assert.match(get('rest-llm').textContent, /이번 시도 보상 동작 보임 \(몸통 기울임\)/);
-run("renderControl(null)");
-assert.equal(get('rest-panel').hidden, true);
-console.log('rest stack + notifications OK');
+// 보상 동작 기록 패널 (10/15): 시도별 종류(최신이 위) · 이번 시도 · 창 안 횟수. 훈련 탭의 모드별 진행 아래
+const compBase = {log:[{trial:1,mode:1,success:true,types:['trunk_lean']},{trial:2,mode:5,success:false,types:[]},{trial:3,mode:3,success:true,types:['shoulder_hike','trunk_lean']}],
+  current:['trunk_lean'], window:5, need:3, count:2, trials:3};
+context.compBase = compBase;
+run("renderControl({...control,phase:'running',comp_log:compBase});");
+assert.equal(get('comp-panel').hidden, false);
+assert.equal(get('comp-count').textContent, '최근 3회 중 2회 · 3회면 휴식 신호');
+assert.equal(get('comp-count').className, 'badge');
+assert.equal(get('comp-now').textContent, '이번 시도: 몸통 기울임 보임');
+assert.match(get('comp-rows').innerHTML, /^<tr class="seen"><td class="num">3회<\/td><td><span class="mchip">3<\/span>캐치볼<\/td><td><span class="ctag">어깨 들림<\/span><span class="ctag">몸통 기울임<\/span><\/td><td><span class="r-res ok">성공/);
+assert.match(get('comp-rows').innerHTML, /<tr class=""><td class="num">2회<\/td><td><span class="mchip">5<\/span>건네고 받기<\/td><td><span class="none">없음<\/span><\/td><td><span class="r-res fail">실패/);
+assert.equal(get('comp-empty').hidden, true);
+run("renderControl({...control,phase:'running',comp_log:{...compBase,log:[],current:[],count:3,trials:5}});");
+assert.equal(get('comp-empty').hidden, false);
+assert.equal(get('comp-count').className, 'badge met');
+assert.equal(get('comp-now').textContent, '이번 시도: 아직 보상 동작 없음');
+run("renderControl({...control,phase:'ended',comp_log:compBase});");                      // 세션이 끝나도 마지막 기록은 그대로
+assert.equal(get('comp-panel').hidden, false);
+assert.equal(get('comp-empty').hidden, true);
+assert.equal(get('comp-count').textContent, '최근 3회 중 2회 · 3회면 휴식 신호');
+assert.equal(get('comp-now').textContent, '지난 세션 기록 — 다음 세션을 시작하면 새로 쌓입니다');
+run("renderControl({...control,phase:'idle',comp_log:{...compBase,log:[],current:[],count:0,trials:0}});");   // brain 켠 직후
+assert.equal(get('comp-empty').hidden, false);
+assert.equal(get('comp-count').textContent, '3회면 휴식 신호');
+assert.equal(get('comp-now').textContent, '세션을 시작하면 시도마다 기록됩니다');
+visit('#overview');
+assert.equal(get('comp-panel').parentNode, get('ov-progress-slot'), '전체 현황에도 상시: 모드별 진행 아래');
+assert.equal(get('ov-progress-slot').children.at(-2), get('progress-panel'));
+assert.equal(get('ov-progress-slot').children.at(-1), get('comp-panel'));
+visit('#mode5');
+assert.equal(get('comp-panel').parentNode, get('mode-left'), '훈련 탭: 모드별 진행(단계) 아래');
+assert.equal(get('mode-left').children.at(-2), get('progress-panel'));
+assert.equal(get('mode-left').children.at(-1), get('comp-panel'));
+console.log('rest notifications + compensation log OK');
 
-// 모드 3 화면에서만 손목 카메라 반시계 90° (10/14) — data-rot="ccw" 는 모드 3 의 손목 그림에만
+// 모드 3 화면에서만 손목 카메라 반시계 90° (10/14) — data-rot="ccw" 는 모드 3 의 손목 그림에만. 측면은 어느 모드에서나 보임 (10/15 #222)
 const wristCam = run("cameraFigure({name:'손목', topic:'/rally/perception/objects/debug_image', url:'http://robot:8080/stream?topic=/d', fallback:'http://robot:8080/stream?topic=/c'})");
-const sideCam = run("cameraFigure({name:'측면', topic:'/side/side/color/image_raw', url:'http://robot:8080/stream?topic=/s'})");
-get('cameras').children = [wristCam, sideCam];
+const bodyCam = run("cameraFigure({name:'몸 자세', topic:'/rally/perception/body/debug_image', url:'http://robot:8080/stream?topic=/body', fallback:'http://robot:8080/stream?topic=/side/side/color/image_raw'})");
+const ballCam = run("cameraFigure({name:'공 추적', topic:'/rally/perception/side/debug_image', url:'http://robot:8080/stream?topic=/s3', fallback:null, modes:[3]})");
+get('cameras').children = [wristCam, bodyCam, ballCam];
 visit('#mode3');
 assert.equal(wristCam.dataset.rot, 'ccw', '모드 3: 손목 반시계 90°');
-assert.equal(sideCam.dataset.rot, undefined, '측면은 그대로');
-assert.equal(sideCam.hidden, false);
+assert.equal(get('cameras').dataset.layout, 'row', '모드 3: 왼쪽 세로 손목 + 오른쪽 몸 자세·공 추적 (10/15)');
+assert.equal(bodyCam.dataset.rot, undefined, '몸 자세는 그대로'); assert.ok(!bodyCam.hidden);
+assert.ok(!ballCam.hidden, '모드 3: 공 추적 칸 보임');
 visit('#mode1');
 assert.equal(wristCam.dataset.rot, undefined, '모드 1: 그대로');
-assert.equal(sideCam.hidden, true, '측면은 모드 3 전용');
+assert.equal(get('cameras').dataset.layout, undefined, '모드 1: 위아래 한 열');
+assert.ok(!bodyCam.hidden, '몸 자세는 모드 1 에도 — 측면 RealSense (10/15 #222)');
+assert.equal(ballCam.hidden, true, '모드 1: 공 추적 칸 숨김 (연결도 끊음)');
+visit('#overview');
+run("renderControl({...control,mode:3,phase:'running'});");
+assert.ok(!ballCam.hidden, '전체 현황: brain 의 현재 모드가 3 이면 공 추적 칸 보임');
+assert.equal(get('cameras').dataset.layout, undefined, '전체 현황은 위아래 한 열');
+run("renderControl({...control,mode:5,phase:'running'});");
+assert.equal(ballCam.hidden, true, '전체 현황: 모드 5 면 공 추적 칸 숨김');
 visit('#mode5');
-assert.equal(wristCam.dataset.rot, undefined, '모드 5: 그대로');
+assert.equal(wristCam.dataset.rot, undefined, '모드 5: 그대로'); assert.ok(!bodyCam.hidden); assert.equal(ballCam.hidden, true);
 visit('#mode3');
 assert.equal(wristCam.dataset.rot, 'ccw');
 assert.match(html, /\.camera\[data-rot="ccw"\] img \{[^}]*rotate\(-90deg\)/, 'CSS 가 반시계 90° 를 그린다');
