@@ -98,6 +98,12 @@ rally_safety_monitor:
     #   전제: 모드 3 투구자는 3 m 밖. y·z 상한·손 근접 SLOW/STOP·힘 한계 25 N 은 그대로. 신호 끊김(contact_timeout_s)·최대 길이 넘으면 0.57
     workspace_x_max_extended_m: 0.65   # 박스 0.595 + 여유 5.5 cm. 0 이면 확장 없음
     workspace_extend_max_s: 15.0       # 박스 가서 놓고 돌아올 시간. 넘으면 신호가 와도 평소 상한 (스킬 스레드가 멈춘 채 하트비트만 남는 경우)
+    # ★ 10/15 정정인: 모드 3 공 떼기(벗기기) 동안만 힘 한계 50 N (/rally/safety/detach_window + contact_expected, 받기 창 130 N 과 같은 방식).
+    #   근거: 실제 던진 공은 벨크로에 세게 붙어 벗기기 +5° 부터 당김 10 N, +15° 에서 스킬 한계 20 N (10/15 세션) → 25 N 이면 못 뗌.
+    #   전제: 거치대에 꽂힌 패드에서 공을 쥔 채 순응 제어로 벗기는 구간만 (환자 접촉 없음, 모드 3 투구자는 3 m 밖). 스킬 자체 한계 40 N 이 먼저 걸림.
+    #   신호가 contact_timeout_s 넘게 끊기거나 detach_window_max_s 를 넘으면 25 N
+    detach_window_force_limit_n: 50.0
+    detach_window_max_s: 40.0          # 벗기기 10° 씩 ±60° (12 스텝) + 당기기·확인 — 실측 약 20 s. 스킬 스레드 멈춤 대비 상한
     return_speed_mm_s: 30.0    # 모드 7 복귀·STOP 후 후퇴 속도 상한 (CP14)
 
 # skill_server (#14) — 안전 상태를 한 번도 못 받았거나 이 시간 넘게 끊기면 STOP 취급: 새 goal 거부, 실행 중 스킬 abort

@@ -594,4 +594,6 @@ def execute(node):
             window.cancel()
             node.set_contact(False)
             node.set_catch_window(False)
+            node.set_detach_window(False)                      # after_catch 의 공 떼기 (10/15)
+            node.set_workspace_extend(False)
     return _execute

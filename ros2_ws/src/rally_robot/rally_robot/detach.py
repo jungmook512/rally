@@ -59,7 +59,7 @@ DEFAULTS = dict(
     vision_top_to_center_m=0.03,            # 비전 z − 이 값 = 공 중심 (공 지름 62 mm, 반지름 약 3 cm)
     grasp_tries=3,                          # ★ 10/15 정정인: 잘못 쥐면 열고 올라가 공 보기부터 다시, 이 횟수까지
     ball_offset_m=[0.0, 0.0, 0.0],          # 위 보정 뒤 남는 고정 오차 [m, base] — 실로봇에서 쥐는 위치 보고 맞춤
-    peel_step_deg=5.0,                      # 한 스텝 회전각
+    peel_step_deg=10.0,                     # 한 스텝 회전각. 10/15 정정인 5 → 10 (세게 붙은 공은 작게 오래 당기는 것보다 크게 꺾어야)
     peel_max_deg=60.0,                      # ★ 10/15 정정인: 더 시도 — 양쪽 번갈아 ±60° 까지 (24 스텝)
     peel_retreat_per_step_m=0.001,          # 스텝마다 n 방향으로 더 후퇴 (양쪽 번갈아 16 스텝이면 16 mm)
     peel_down_per_step_m=0.001,             # ★ 10/15 정정인 실로봇: 스텝마다 아래(−z)로도 — 위로 딸려 올라오던 패드를 거치대 홈에 눌러 둠 (16 스텝 16 mm)
@@ -75,7 +75,7 @@ DEFAULTS = dict(
     grip_force_n=40.0,                      # ★ 10/15 정정인: 떼기는 RG2 최대 힘(40 N)으로 — gripper.velcro_ball 12 N 은 돌릴 때 미끄러짐
     pull_extra_m=0.03,
     peel_vel_mm_s=15.0,
-    limit_n=20.0,                           # 스킬 자체 힘 한계 (goal.pull_force_limit_n 이 0 이면). safety 25 N 아래. 10/15 15 → 20 (힘이 약해 안 떼어짐)
+    limit_n=40.0,                           # 스킬 자체 힘 한계 (goal.pull_force_limit_n 이 0 이면). 10/15 15 → 20 → 40: 벗기는 동안 safety 공 떼기 창 50 N 아래
     drop_n=5.0,                             # peak 뒤 이만큼 떨어지면 떼어짐
     min_peak_n=4.0,                         # 급락 판정은 peak 가 이 이상일 때만 (잡음 제외)
     stiffness=[300, 300, 300, 400, 400, 400],   # [x y z N/m, rx ry rz Nm/rad] — 접근·쥐기 하강: 이동 무르게, 회전 단단히 (DSR 회전 최대 400)

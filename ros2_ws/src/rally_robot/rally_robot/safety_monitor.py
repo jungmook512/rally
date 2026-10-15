@@ -11,6 +11,8 @@
   멈춘 뒤 nudge_settle_s 까지도 '움직이는 중'으로 본다 (감속 관성 힘이 풀리는 구간, 10/8 실로봇 오탐).
   (10/8 실로봇: 손끝은 거의 제자리에서 손목만 45° 도는 관절 이동 중 툴 힘이 출렁여 nudge STOP — 직선 속도만 봐서 '정지'로 오판)
 - 접촉 예정 플래그는 contact_timeout_s(0.5 s) 안에 갱신되지 않으면 꺼진 것으로 본다 (skill_server 가 죽어도 감시 복귀).
+- 힘 한계 공 떼기 창 (10/15 정정인): 모드 3 공 떼기 스킬이 벗기는 동안 /rally/safety/detach_window 와 contact_expected 를 둘 다 켠 동안
+  (최대 detach_window_max_s)만 detach_window_force_limit_n. 신호가 끊기거나 시간이 넘으면 평소 값.
 - 작업 공간 x 상한 (10/14 정정인): 평소 workspace_x_max_m. 모드 3 공 떼기 스킬이 /rally/safety/workspace_extend 하트비트를 켠 동안
   (박스로 가서 놓고 돌아오는 구간, 최대 workspace_extend_max_s)만 workspace_x_max_extended_m. y·z·손 근접·힘 한계는 그대로.
 - 힘 한계 (#144, 10/12 정정인 조건부 승인): 평소 force_limit_n(25 N). 모드 3 받기 창 — /rally/safety/catch_window 와
@@ -246,6 +248,11 @@ def workspace_x_max_for(base_m, extended_m, extend_on):
     return float(base_m)
 
 
+def detach_force_limit_for(lim_n, detach_n, detach_on):
+    """공 떼기 창(/rally/safety/detach_window)이 켜진 동안 힘 한계 [N] — lim_n(평소·받기 창 적용 뒤)보다 낮게는 안 함. 순수 함수."""
+    return max(float(lim_n), float(detach_n)) if detach_on else float(lim_n)
+
+
 def force_limit_for(base_n, catch_n, catch_window_on):
     """지금 힘 한계 [N] (순수 함수). 받기 창이면 catch_n — 단 base 보다 낮게는 안 함 (설정 실수로 한계가 내려가 STOP 이 잦아지지 않게만)."""
     return max(float(base_n), float(catch_n)) if catch_window_on else float(base_n)
@@ -311,6 +318,9 @@ class SafetyMonitor(Node):
         # 모드 3 공 떼기 → 박스 놓기 전용 (10/14 정정인): 스킬이 /rally/safety/workspace_extend 를 켠 동안만 x 상한을 넓힘. 값은 safety.yaml
         self.declare_parameter("workspace_x_max_extended_m", 0.0)   # 0 = 확장 없음 (기본). 받기 창(catch_window)과 같은 하트비트 방식
         self.declare_parameter("workspace_extend_max_s", 15.0)      # 한 번 켠 뒤 이 시간 넘으면 신호가 와도 평소 상한 (스킬 스레드 멈춤 대비)
+        # 모드 3 공 떼기(벗기기) 전용 (10/15 정정인): 스킬이 /rally/safety/detach_window 를 켜고 contact_expected 도 켠 동안만 힘 한계를 올림
+        self.declare_parameter("detach_window_force_limit_n", 25.0)   # 기본은 평소와 같음 — safety.yaml 에서 정함
+        self.declare_parameter("detach_window_max_s", 40.0)
         self.declare_parameter("return_speed_mm_s", 30.0)
 
         reliable = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=10)
@@ -323,6 +333,7 @@ class SafetyMonitor(Node):
         self.create_subscription(Bool, "/rally/safety/contact_expected", self.on_contact, reliable1)
         self.create_subscription(Bool, "/rally/safety/catch_window", self.on_catch_window, reliable1)
         self.create_subscription(Bool, "/rally/safety/workspace_extend", self.on_workspace_extend, reliable1)
+        self.create_subscription(Bool, "/rally/safety/detach_window", self.on_detach_window, reliable1)
         self.create_subscription(Bool, "/rally/safety/patient_contact", self.on_patient_contact, reliable1)
         self.create_subscription(WrenchStamped, "/rally/robot/wrench", self.on_wrench, qos_profile_sensor_data)
         self.create_subscription(PoseStamped, "/rally/robot/tcp_pose", self.on_tcp, qos_profile_sensor_data)
@@ -372,6 +383,9 @@ class SafetyMonitor(Node):
         self.catch_start = 0.0                              # 이번 받기 창이 열린 monotonic (catch_window_max_s 기준)
         self._catch_limit_on = False                        # 로그용 — 130 N ↔ 25 N 바뀔 때만 (#144 ③ 25 N 복귀 확인)
         self.extend_until = 0.0                             # 작업 공간 확장 하트비트 유효 시각 (workspace_extend)
+        self.detach_until = 0.0                             # 공 떼기 창 하트비트 유효 시각 (detach_window)
+        self.detach_start = 0.0
+        self._detach_limit_on = False
         self.extend_start = 0.0
         self._extend_on = False                             # 로그용 — 상한이 바뀔 때만
         self.patient_contact_until = 0.0
@@ -464,7 +478,35 @@ class SafetyMonitor(Node):
             self.get_logger().warning(f"작업 공간 x 상한 {x_max:.2f} m ({why})")
         return x_max
 
+    def on_detach_window(self, m):
+        now = time.monotonic()
+        if not m.data:
+            self.detach_until = 0.0
+            return
+        if now >= self.detach_until:
+            self.detach_start = now
+        self.detach_until = now + self.p("contact_timeout_s")
+
+    def detach_window_overdue(self):
+        now = time.monotonic()
+        return now < self.detach_until and now - self.detach_start > self.p("detach_window_max_s")
+
+    def detach_window(self):
+        return time.monotonic() < self.detach_until and not self.detach_window_overdue() and self.contact_expected()
+
     def force_limit_now(self):
+        lim = self._catch_force_limit()
+        on = self.detach_window()
+        out = detach_force_limit_for(lim, self.p("detach_window_force_limit_n"), on)
+        if on != self._detach_limit_on:
+            self._detach_limit_on = on
+            why = ("모드 3 공 떼기 창" if on else
+                   f"공 떼기 창 {self.p('detach_window_max_s'):.0f} s 초과 → 평소 값 (신호는 계속 옴)" if self.detach_window_overdue() else
+                   "공 떼기 창 끝 → 평소 값")
+            self.get_logger().warning(f"힘 한계 {out:.0f} N ({why})")
+        return out
+
+    def _catch_force_limit(self):
         on = self.catch_window()
         lim = force_limit_for(self.p("force_limit_n"), self.p("catch_window_force_limit_n"), on)
         if on != self._catch_limit_on:

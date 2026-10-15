@@ -123,6 +123,7 @@ def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=N
 
     def release_and_back(reason, msg):
         """실패 정리: 열고 수직으로 safe_z_m 까지 올라간 뒤 SkillAbort."""
+        node.set_detach_window(False)                                # 놓고 올라가는 건 평소 힘 한계로
         log.error(f"[detach_ball] {msg} → 열고 수직으로 올라감")
         node.gripper(open_mm, force)
         rise("놓음")
@@ -216,6 +217,7 @@ def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=N
             return detach.tension_n(np.asarray(get_tool_force()[:3], float) - f0, n)
 
         early, low = False, 0
+        node.set_detach_window(True)                                 # 벗기는 동안만 safety 힘 한계 50 N (contact_expected 와 같이, 10/15). 끄기는 아래·finally
         with compliance(cfg["peel_stiffness"], log):
             for deg, k in steps:
                 check()
@@ -253,11 +255,13 @@ def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=N
             log.info(f"[detach_ball] 떼어짐 확인: +x {cfg['retreat_m'] * 1000:.0f} mm {how} · 당김 {f_sep:+.1f} N (기준 {cfg['sep_max_n']:.0f} N 미만이면 떨어짐)")
             if watch.over or f_sep >= cfg["sep_max_n"]:                # stalled 여부는 안 봄 — 순응이라 몇 mm 덜 가도 됨 (10/15)
                 release_and_back("detach_not_detached", f"안 떼어짐 — 떼어짐 확인 당김 {f_sep:+.1f} N (최대 {watch.peak:.1f})")
+        node.set_detach_window(False)
         out["detached"] = True
         phase("detached", f_sep)
         # 패드에서 떨어진 뒤에만 위로
         rise("떨어짐")
     finally:
+        node.set_detach_window(False)
         node.set_contact(False)
 
     # 6. 박스
@@ -314,5 +318,6 @@ def execute(node):
             return res
         finally:
             node.set_contact(False)
+            node.set_detach_window(False)
             node.set_workspace_extend(False)
     return _execute
