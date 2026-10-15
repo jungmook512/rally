@@ -171,15 +171,13 @@ def test_cameras_off_without_robot_url(monkeypatch):
 
 def test_camera_streams_point_to_robot_pc():
     r = web.camera_streams("http://192.168.0.10:8080")
-    assert r["enabled"] and [s["name"] for s in r["streams"]] == ["손목", "측면", "웹캠"]
+    assert r["enabled"] and [s["name"] for s in r["streams"]] == ["손목", "측면"]          # 웹캠 칸 없음 (#222: 몸 자세도 측면 RealSense)
     wrist = r["streams"][0]["url"]
     assert wrist.startswith("http://192.168.0.10:8080/stream?topic=/rally/perception/objects/debug_image&")   # 인식 결과(마스크·신뢰도)
     assert "type=mjpeg" in wrist and "width=424" in wrist and "qos_profile=sensor_data" in wrist
     assert r["streams"][0]["fallback"].startswith("http://192.168.0.10:8080/stream?topic=/camera/color/image_raw&")  # 안 오면 원본
     assert r["streams"][1]["topic"] == "/rally/perception/side/debug_image"                     # 측면도 인식 화면 (10/14)
     assert r["streams"][1]["fallback"].startswith("http://192.168.0.10:8080/stream?topic=/side/side/color/image_raw&")
-    assert r["streams"][2]["url"].startswith("http://192.168.0.10:8080/stream?topic=/webcam/image_raw&")        # 몸 자세용 웹캠 원본 (10/15)
-    assert r["streams"][2]["fallback"] is None
 
 
 def test_camera_panel_on_page():

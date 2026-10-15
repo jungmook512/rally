@@ -100,7 +100,6 @@
   .summary .tile .label { font-size:12.5px; color:var(--muted); font-weight:650; }
   .summary .tile .value { font-family:"Noto Serif KR","Nanum Myeongjo",Georgia,serif; font-size:26px; margin:4px 0 2px; overflow-wrap:anywhere; }
   .summary .tile .sub { font-size:12px; color:var(--muted); overflow-wrap:anywhere; }
-  #ov-right .cameras { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
   #report-view #report { max-height:calc(100vh - 470px); }
   @media(max-width:1000px) { #overview-view { grid-template-columns:1fr; } }
   #mode-view { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(0,1fr); gap:14px; align-items:start;
@@ -117,7 +116,7 @@
   #mode-view #mode-diagram svg { min-width:0; max-height:calc(100vh - 400px); min-height:200px; }
   #camera-slot .camera .frame { max-height:calc(100vh - 440px); } #camera-slot .cameras { justify-content:start; }
   #camera-slot #camera-view { padding:12px; } #camera-slot #camera-view .section-heading { margin-bottom:8px; padding-bottom:6px; font-size:14px; }
-  #camera-slot .cameras { grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:8px; }
+  #camera-slot .cameras { gap:10px; }
   #camera-slot .camera figcaption { font-size:12px; }
   .stat-line { color:var(--muted); font-size:14px; } .stat-line b { color:var(--text); font-size:16px; font-variant-numeric:tabular-nums; }
   .mode-cards { display:flex; gap:10px; align-items:flex-start; }
@@ -184,7 +183,7 @@
   .card .value { font-size:24px; line-height:1.3; margin-top:8px; font-weight:800; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
   #events-view { background:#f5f0fb; border-color:#b6a6cd; }
   #trials-view .scroll,#events-view .scroll { max-height:520px; }
-  .cameras { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 560px)); gap:12px; }   /* 한 대만 보일 때 너무 커지지 않게 */
+  .cameras { display:grid; grid-template-columns:minmax(0,1fr); gap:12px; }   /* 손목·측면을 위아래로 한 줄씩 — 좌우로 나누면 각 화면이 너무 작음 (10/15). 회전한 손목(모드 3)은 아래 ccw 규칙이 너비를 제한 */
   .camera { margin:0; }
   .camera .frame { position:relative; aspect-ratio:424/240; background:#111; border-radius:8px; overflow:hidden; }
   .camera img { width:100%; height:100%; object-fit:contain; display:block; }
@@ -219,7 +218,7 @@
   .new { animation:flash 1.2s ease-out; }
   @keyframes flash { from { background:#d5eee2; } to { background:transparent; } }
   @media(max-width:1000px) { #mode-view { grid-template-columns:1fr; grid-template-areas:"control" "left" "right"; } .mode-cards { flex-wrap:wrap; }
-                             #mode-view #camera-view .cameras { grid-template-columns:repeat(auto-fill, minmax(260px, 560px)); } #page-heading { align-items:flex-start; flex-direction:column; } }
+                             #page-heading { align-items:flex-start; flex-direction:column; } }
   @media(max-width:700px) { .cards { grid-template-columns:repeat(2,minmax(0,1fr)); } header { padding:14px 16px; } header small { display:none; } main { padding:16px 12px 28px; } .panel { padding:14px; } #mode-nav { padding-inline:12px; } #mode-nav a { padding:9px 12px; font-size:14px; } #page-heading h2 { font-size:25px; } .panel-top { align-items:flex-start; flex-direction:column; } #steps { flex-wrap:wrap; row-gap:16px; } #steps li { flex:0 0 calc(33.33% - 6px); } }
   @media(max-width:700px) { #mode-diagram svg { min-width:0; } #mode-diagram svg text { display:none; } }
   @media(max-width:440px) { #mode-view { grid-template-columns:1fr; grid-template-areas:"control" "left" "right"; } .control-bar { grid-template-columns:1fr; } .control-bar small { grid-column:1/-1; } #resume { justify-self:start; } #proposal-panel button { display:block; width:100%; margin-top:8px; } }
@@ -378,7 +377,7 @@
       </div></div>
       <div class="panel" id="comp-panel" aria-label="보상 동작 기록">
         <div class="panel-top"><h2>보상 동작 기록 <small class="section-tag">몸통 기울임 · 어깨 들림</small></h2><span id="comp-count" class="badge"></span></div>
-        <p id="comp-now" class="caption"></p>
+        <p id="comp-now" class="caption">brain 연결을 기다리는 중</p>
         <div class="scroll"><table class="comp-table"><thead><tr><th>시도</th><th>모드</th><th>보상 동작</th><th>결과</th></tr></thead><tbody id="comp-rows"></tbody></table></div>
         <div class="empty" id="comp-empty">아직 기록 없음</div></div>
     </div>
@@ -652,18 +651,16 @@ async function loadCameras() {
     const cfg = await r.json();
     $("cameras-empty").hidden = true;
     // 주소가 없으면(ROBOT_VIDEO_URL 미설정) 칸만 그리고 No Image — 이유는 마우스를 올리면 보임
-    const streams = cfg.enabled ? cfg.streams : [{name: "손목", topic: "", url: ""}, {name: "측면", topic: "", url: ""}, {name: "웹캠", topic: "", url: ""}];
+    const streams = cfg.enabled ? cfg.streams : [{name: "손목", topic: "", url: ""}, {name: "측면", topic: "", url: ""}];
     $("cameras").replaceChildren(...streams.map((c) => cameraFigure(c, cfg.reason)));
     showCameras();
   } catch (e) { console.warn(e); }
 }
 
-// 측면 카메라는 모드 3 (던진 공) 전용 — 모드 1·5·7 화면에선 숨기고 연결도 끊는다 (로봇 PC 압축 부담을 줄이려고).
-// 웹캠(몸 자세)은 모드 1·3·5 모두 보인다 (10/15)
+// 손목·측면 두 칸을 어느 화면에서나 보인다. 10/15 #222: 몸 자세(body_pose)가 측면 RealSense 로 가서 모드 1·5 에서도 측면이 보여야 함 —
+// 측면을 모드 3 전용으로 숨기던 것(로봇 PC 압축 부담)은 뺐다. 인식 화면은 10 Hz 라 부담이 작다는 정동휘 의견, 실측은 vision 컨테이너 docker stats 로
 function showCameras() {
   for (const fig of $("cameras").children) {
-    const show = fig.dataset.kind !== "side" || selectedMode === null || selectedMode === 3;
-    if (fig.hidden !== !show) { fig.hidden = !show; fig.toggle?.(show); }
     // 모드 3 화면에서만 손목 카메라를 반시계 90° 로 (10/14 조정묵). 모드 1·5·전체 현황·측면은 그대로
     const rot = selectedMode === 3 && fig.dataset.kind === "wrist" ? "ccw" : "";
     if ((fig.dataset.rot || "") !== rot) { if (rot) fig.dataset.rot = rot; else delete fig.dataset.rot; }
@@ -674,8 +671,7 @@ const CAMERA_FALLBACK_S = 8;   // 인식 화면이 이만큼 안 오면 원본 �
 function cameraFigure(cam, why = "") {
   // 영상은 로봇·인식 PC 의 web_video_server 에서 브라우저가 직접 받는다. 끊기면 5 s 뒤 다시 연결
   const fig = document.createElement("figure"); fig.className = "camera";
-  fig.dataset.kind = cam.topic.startsWith("/side/") || cam.name === "측면" ? "side"
-    : cam.topic.startsWith("/webcam") || cam.name === "웹캠" ? "webcam" : "wrist";   // side 는 모드 3 전용, webcam 은 늘, wrist 만 모드 3 에서 회전
+  fig.dataset.kind = cam.topic.startsWith("/side/") || cam.name === "측면" ? "side" : "wrist";   // wrist 만 모드 3 에서 회전
   const frame = document.createElement("div"); frame.className = "frame";
   const img = document.createElement("img"); img.alt = `${cam.name} 카메라 화면`;
   const msg = document.createElement("div"); msg.className = "empty"; msg.textContent = "No Image";
@@ -687,7 +683,6 @@ function cameraFigure(cam, why = "") {
   let failed = false, usingFallback = false, blank = 0;
   const src = () => usingFallback ? cam.fallback : cam.url;
   const open = () => { if (fig.hidden) return; failed = false; img.src = `${src()}&t=${Date.now()}`; };
-  fig.toggle = (show) => { if (show) open(); else { img.removeAttribute("src"); msg.hidden = false; } };
   const check = setInterval(() => {
     if (!fig.isConnected) { clearInterval(check); return; }
     const ok = !failed && img.naturalWidth > 0;

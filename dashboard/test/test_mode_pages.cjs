@@ -394,22 +394,19 @@ assert.equal(get('mode-left').children.at(-2), get('progress-panel'));
 assert.equal(get('mode-left').children.at(-1), get('comp-panel'));
 console.log('rest notifications + compensation log OK');
 
-// 모드 3 화면에서만 손목 카메라 반시계 90° (10/14) — data-rot="ccw" 는 모드 3 의 손목 그림에만
+// 모드 3 화면에서만 손목 카메라 반시계 90° (10/14) — data-rot="ccw" 는 모드 3 의 손목 그림에만. 측면은 어느 모드에서나 보임 (10/15 #222)
 const wristCam = run("cameraFigure({name:'손목', topic:'/rally/perception/objects/debug_image', url:'http://robot:8080/stream?topic=/d', fallback:'http://robot:8080/stream?topic=/c'})");
-const sideCam = run("cameraFigure({name:'측면', topic:'/side/side/color/image_raw', url:'http://robot:8080/stream?topic=/s'})");
-const webCam = run("cameraFigure({name:'웹캠', topic:'/webcam/image_raw', url:'http://robot:8080/stream?topic=/w'})");
-get('cameras').children = [wristCam, sideCam, webCam];
+const sideCam = run("cameraFigure({name:'측면', topic:'/rally/perception/side/debug_image', url:'http://robot:8080/stream?topic=/s', fallback:'http://robot:8080/stream?topic=/side/side/color/image_raw'})");
+get('cameras').children = [wristCam, sideCam];
 visit('#mode3');
 assert.equal(wristCam.dataset.rot, 'ccw', '모드 3: 손목 반시계 90°');
 assert.equal(sideCam.dataset.rot, undefined, '측면은 그대로');
-assert.equal(sideCam.hidden, false);
-assert.equal(webCam.dataset.rot, undefined, '웹캠은 회전 없음'); assert.equal(webCam.hidden, false);
+assert.ok(!sideCam.hidden);
 visit('#mode1');
 assert.equal(wristCam.dataset.rot, undefined, '모드 1: 그대로');
-assert.equal(sideCam.hidden, true, '측면은 모드 3 전용');
-assert.equal(webCam.hidden, false, '웹캠은 모드 1·3·5 모두 (10/15)');
+assert.ok(!sideCam.hidden, '측면은 모드 1 에도 — 몸 자세가 측면 RealSense (10/15 #222)');
 visit('#mode5');
-assert.equal(wristCam.dataset.rot, undefined, '모드 5: 그대로'); assert.equal(webCam.hidden, false);
+assert.equal(wristCam.dataset.rot, undefined, '모드 5: 그대로'); assert.ok(!sideCam.hidden, '측면은 모드 5 에도');
 visit('#mode3');
 assert.equal(wristCam.dataset.rot, 'ccw');
 assert.match(html, /\.camera\[data-rot="ccw"\] img \{[^}]*rotate\(-90deg\)/, 'CSS 가 반시계 90° 를 그린다');
