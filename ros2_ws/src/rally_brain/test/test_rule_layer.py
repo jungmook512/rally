@@ -168,3 +168,21 @@ def test_check_graph_reports_unreadable_file(monkeypatch):
         raise ValueError("깨진 JSON")
     monkeypatch.setattr(ontology, "load", broken)
     assert rule_layer.check_graph(CFG)[0].startswith("ontology 를 읽지 못함")
+
+
+def test_fatigue_breakdown_matches_signals_and_shows_progress():
+    # 대시보드 「휴식 제안 조건」 패널 (10/14): 같은 기준의 진행값 — on 인 것 = fatigue_signals
+    for ts, comp in [(trials(False, True, False, durations=[10.0, 10.0, 20.0]), ()), (trials(True, False, True), REPEATED),
+                     (trials(True, True), (True, True)), ([], ())]:
+        b = rule_layer.fatigue_breakdown(ts, CFG, compensation_history=comp)
+        assert [k for k, v in b.items() if v["on"]] == rule_layer.fatigue_signals(ts, CFG, compensation_history=comp)
+    b = rule_layer.fatigue_breakdown(trials(True, False, True), CFG, compensation_history=(True, True, False))
+    assert b["compensation"] == {"on": False, "count": 2, "need": 3, "window": 5, "trials": 3}
+    assert b["success_drop"]["applies"] and b["success_drop"]["trials"] == 3 and not b["success_drop"]["on"]
+    assert b["success_drop"]["rate"] == pytest.approx(0.667, abs=1e-3) and b["success_drop"]["max_rate"] == 0.4
+    assert b["slowing"] == {"on": False, "last_s": 10.0, "mean_s": 10.0, "ratio": 1.0, "need_ratio": 1.5, "trials": 3, "min_trials": 3}
+    b = rule_layer.fatigue_breakdown(trials(True, True, True, mode=1, durations=[10.0, 10.0, 16.0]), CFG, performance=False)
+    assert b["success_drop"]["applies"] is False and not b["success_drop"]["on"]      # 모드 1 은 성공률 신호 없음
+    assert b["slowing"]["on"] and b["slowing"]["ratio"] == 1.6 and b["slowing"]["last_s"] == 16.0
+    assert rule_layer.fatigue_breakdown([], CFG)["slowing"] == {"on": False, "last_s": 0.0, "mean_s": 0.0, "ratio": 0.0,
+                                                                 "need_ratio": 1.5, "trials": 0, "min_trials": 3}

@@ -89,21 +89,33 @@ def tail_streak(trials: Sequence[TrialResult], success: bool) -> int:
 SIGNAL_LABELS = {"compensation": "보상 동작 반복", "success_drop": "성공률 하락", "slowing": "시도 시간 증가"}
 
 
+def fatigue_breakdown(trials: Sequence[TrialResult], cfg: dict[str, Any], performance: bool = True,
+                      compensation_history: Sequence[bool] = ()) -> dict[str, dict[str, Any]]:
+    """신호별 진행값 — 대시보드 「휴식 제안 조건」 패널이 신호가 쌓이는 모습을 보여 주는 데 쓴다 (10/14).
+    fatigue_signals 는 여기서 on 인 것만 고르므로 기준은 이 한 곳. 값은 유한한 숫자·불리언만 (Redis JSON 으로 그대로 나감).
+    compensation_history: 이 모드의 시도마다 보상 동작이 한 번이라도 보였는지 (오래된 것 → 최근)."""
+    recent = list(compensation_history)[-int(cfg["compensation_window"]):]
+    n = len(trials)
+    enough = n >= MIN_TRIALS_FOR_TREND
+    rate = metrics.success_rate(trials) if trials else 0.0                     # 성공률 정의는 metrics.yaml 한 곳
+    earlier = [t.duration_s for t in trials[:-1] if t.duration_s > 0]
+    mean = sum(earlier) / len(earlier) if earlier else 0.0
+    last = float(trials[-1].duration_s) if trials else 0.0
+    return {
+        "compensation": {"on": sum(recent) >= int(cfg["compensation_min_trials"]), "count": int(sum(recent)),
+                         "need": int(cfg["compensation_min_trials"]), "window": int(cfg["compensation_window"]), "trials": len(recent)},
+        "success_drop": {"on": bool(enough and performance and rate <= cfg["success_drop_rate"]), "applies": bool(performance),
+                         "rate": round(rate, 3), "max_rate": float(cfg["success_drop_rate"]), "trials": n, "min_trials": MIN_TRIALS_FOR_TREND},
+        "slowing": {"on": bool(enough and earlier and last >= cfg["slowing_ratio"] * mean), "last_s": round(last, 1),
+                    "mean_s": round(mean, 1), "ratio": round(last / mean, 2) if mean > 0 else 0.0,
+                    "need_ratio": float(cfg["slowing_ratio"]), "trials": n, "min_trials": MIN_TRIALS_FOR_TREND},
+    }
+
+
 def fatigue_signals(trials: Sequence[TrialResult], cfg: dict[str, Any], performance: bool = True,
                     compensation_history: Sequence[bool] = ()) -> list[str]:
-    """애매한 신호들 (SIGNAL_LABELS 키). 음성 tired 는 여기 없음 — 그건 확실한 계기라 규칙 2.
-    compensation_history: 이 모드의 시도마다 보상 동작이 한 번이라도 보였는지 (오래된 것 → 최근)."""
-    signals = []
-    recent = list(compensation_history)[-int(cfg["compensation_window"]):]
-    if sum(recent) >= int(cfg["compensation_min_trials"]):
-        signals.append("compensation")
-    if len(trials) >= MIN_TRIALS_FOR_TREND:
-        if performance and metrics.success_rate(trials) <= cfg["success_drop_rate"]:   # 성공률 정의는 metrics.yaml 한 곳
-            signals.append("success_drop")
-        earlier = [t.duration_s for t in trials[:-1] if t.duration_s > 0]
-        if earlier and trials[-1].duration_s >= cfg["slowing_ratio"] * (sum(earlier) / len(earlier)):
-            signals.append("slowing")
-    return signals
+    """애매한 신호들 (SIGNAL_LABELS 키, fatigue_breakdown 에서 on 인 것). 음성 tired 는 여기 없음 — 그건 확실한 계기라 규칙 2."""
+    return [key for key, value in fatigue_breakdown(trials, cfg, performance, compensation_history).items() if value["on"]]
 
 
 def decide(ctx: SceneContext | None, trials: Sequence[TrialResult], intent: str | None,

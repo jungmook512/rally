@@ -390,3 +390,35 @@ def test_end_request_waits_for_trial_boundary_and_voice_stop(node):
     node._on_intent(msg)
     assert node._end_requested == "음성"
     assert not node._dashboard_end_session("other-session")[0]
+
+
+def test_rest_snapshot_shows_signal_progress_and_llm_state(node):
+    """대시보드 「휴식 제안 조건」 (10/14): 규칙 레이어와 같은 입력으로 신호별 진행값 + 마지막 LLM 판단 상태를 session_control.rest 에 싣는다."""
+    rest = node.control_snapshot()["rest"]
+    assert rest["mode"] == 7 and rest["trials"] == 0 and rest["count"] == 0 and rest["on"] == []   # 픽스처 세션: 시도 없음 → 모두 꺼짐
+    saved, node._session = node._session, None
+    assert node._rest_snapshot() is None                                   # 세션 없음
+    node._session = saved
+    session, _, _, _ = make_session({})
+    session.current_mode = 5
+    for ok, dur in ((True, 10.0), (False, 10.0), (True, 20.0)):
+        session.record(TrialResult(mode=5, success=ok, duration_s=dur))
+    node._session = session
+    node._comp_history = {5: [True, False, True]}
+    rest = node.control_snapshot()["rest"]
+    assert rest["mode"] == 5 and rest["trials"] == 3 and rest["need"] == 2
+    assert rest["on"] == ["slowing"] and rest["count"] == 1                # 20 ≥ 1.5 × 10. 성공률 2/3 은 신호 아님, 보상 동작은 2/3 회
+    assert rest["signals"]["compensation"] == {"on": False, "count": 2, "need": 3, "window": 5, "trials": 3}
+    assert rest["signals"]["slowing"]["ratio"] == 2.0 and rest["current_comp"] == []
+    assert rest["llm"] == {"state": "idle", "result": None, "at": None, "signals": []}
+    node._rest_llm = {"state": "asked", "result": None, "at": 1.0, "signals": ["slowing", "compensation"]}
+    advisor, node._rest_advisor = node._rest_advisor, NS(poll=lambda token, blocked: "continue", invalidate=lambda: None, status="ready")
+    try:
+        node._poll_rest()
+        assert node._rest_llm["state"] == "answered" and node._rest_llm["result"] == "continue"
+        assert node._rest_llm["signals"] == ["slowing", "compensation"] and node._rest_llm["at"] > 1.0
+        node._rest_llm["state"] = "asked"
+        node._invalidate_rest(proposal=False)
+        assert node._rest_llm["state"] == "dropped"                       # 답 전에 새 시도 기록 → 취소로 표시
+    finally:
+        node._rest_advisor = advisor                                      # destroy_node 가 close() 를 부름
