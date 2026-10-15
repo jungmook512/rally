@@ -406,7 +406,7 @@ def test_rest_snapshot_shows_signal_progress_and_llm_state(node):
     node._session = session
     node._comp_history = [True, False, True]                          # 세션 전체(모드 무관) 시도 순서
     rest = node.control_snapshot()["rest"]
-    assert rest["mode"] == 5 and rest["trials"] == 3 and rest["need"] == 2
+    assert rest["mode"] == 5 and rest["trials"] == 3 and rest["need"] == int(node._rule_cfg["llm_signal_count"])   # skills.yaml 값 (10/15: 1)
     assert rest["on"] == ["slowing"] and rest["count"] == 1                # 20 ≥ 1.5 × 10. 성공률 2/3 은 신호 아님, 보상 동작은 2/3 회
     assert rest["signals"]["compensation"] == {"on": False, "count": 2, "need": 3, "window": 5, "trials": 3}
     assert rest["signals"]["slowing"]["ratio"] == 2.0 and rest["current_comp"] == []

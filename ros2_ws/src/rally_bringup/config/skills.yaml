@@ -278,7 +278,8 @@ brain:
   actions: [continue, harder, easier, suggest_rest, wait, ask_llm]
   success_streak: 3                 # 같은 모드 연속 성공 → harder
   failure_streak: 2                 # 같은 모드 연속 실패 → easier
-  llm_signal_count: 2               # 애매한 신호(보상 동작·성공률 하락·시도 시간 증가)가 이만큼 겹치면 ask_llm
+  llm_signal_count: 1               # 애매한 신호(보상 동작·성공률 하락·시도 시간 증가)가 이만큼 겹치면 ask_llm. 10/15 조정묵: 2 → 1 — 시연에서 모드별 3회(성공률·시간) 없이
+                                    #   보상 동작 반복(세션 전체 3회)만으로 LLM 휴식 판단까지. 제안 수락·시도 경계 적용은 그대로
   success_drop_rate: 0.4            # 최근 시도 성공률이 이 이하면 '성공률 하락' 신호 (최소 3회)
   slowing_ratio: 1.5                # 마지막 시도 시간이 앞선 시도 평균의 이 배 이상이면 '시도 시간 증가' 신호
   compensation_window: 5            # 세션 전체(모드 무관) 최근 이만큼의 시도 중 — 10/15 조정묵: 같은 모드 → 세션 전체 (몸 신호라 모드를 안 가림)

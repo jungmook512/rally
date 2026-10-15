@@ -74,9 +74,14 @@ def test_6_two_weak_signals_ask_llm():
     assert "성공률 하락" in d.reason
 
 
-def test_6_one_signal_is_not_enough():
+def test_6_signal_count_threshold():
+    # 10/15 조정묵: skills.yaml llm_signal_count 1 — 보상 동작 반복 하나만으로 LLM 판단 (시연). 2 로 두면 하나로는 부족
     d = decide(ts=trials(True, False, True), comp=REPEATED)
+    assert d.action == "ask_llm" and d.signals == ("compensation",) and CFG["llm_signal_count"] == 1
+    two = {**CFG, "llm_signal_count": 2}
+    d = rule_layer.decide(ctx(), trials(True, False, True), None, two, compensation_history=REPEATED)
     assert d.action == "continue" and d.signals == ("compensation",)
+    assert decide(ts=trials(True, False, True)).action == "continue"            # 신호 0개는 계속
 
 
 def test_compensation_counts_recent_trials_not_current_frame():
