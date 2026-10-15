@@ -16,13 +16,16 @@ def ctx(stop=False, compensation=False):
     return c
 
 
+REPEATED = (True, False, True, True)   # 최근 5회 중 3회 보상 동작
+
+
 def trials(*results, mode=1, durations=None):
     durations = durations or [10.0] * len(results)
     return [TrialResult(mode=mode, success=r, duration_s=d) for r, d in zip(results, durations)]
 
 
-def decide(c=None, ts=(), intent=None):
-    return rule_layer.decide(c if c is not None else ctx(), list(ts), intent, CFG)
+def decide(c=None, ts=(), intent=None, comp=()):
+    return rule_layer.decide(c if c is not None else ctx(), list(ts), intent, CFG, compensation_history=comp)
 
 
 def test_config_comes_from_skills_yaml():
@@ -65,15 +68,24 @@ def test_6_two_weak_signals_ask_llm():
     d = decide(ts=ts)
     assert d.action == "ask_llm" and set(d.signals) == {"success_drop", "slowing"}
     ts = trials(False, False, True, False, True, durations=[10, 10, 10, 10, 20])
-    d = decide(ctx(compensation=True), ts)
+    d = decide(ts=ts, comp=REPEATED)
     assert d.action == "ask_llm"
     assert set(d.signals) == {"compensation", "success_drop", "slowing"}
     assert "성공률 하락" in d.reason
 
 
 def test_6_one_signal_is_not_enough():
-    d = decide(ctx(compensation=True), trials(True, False, True))
+    d = decide(ts=trials(True, False, True), comp=REPEATED)
     assert d.action == "continue" and d.signals == ("compensation",)
+
+
+def test_compensation_counts_recent_trials_not_current_frame():
+    # 판단 순간 상황판에 보여도 시도 기록이 없으면 신호 아님 (보상 동작은 팔을 뻗는 동안만 나옴, #83)
+    assert "compensation" not in decide(ctx(compensation=True)).signals
+    assert "compensation" not in decide(comp=(True, True, False)).signals             # 2회 < 3
+    assert "compensation" in decide(comp=(True, True, True)).signals
+    assert "compensation" not in decide(comp=(True, True, True, False, False, False)).signals   # 최근 5회 중 2회
+    assert CFG["compensation_window"] == 5 and CFG["compensation_min_trials"] == 3
 
 
 def test_7_continue():
@@ -156,3 +168,21 @@ def test_check_graph_reports_unreadable_file(monkeypatch):
         raise ValueError("깨진 JSON")
     monkeypatch.setattr(ontology, "load", broken)
     assert rule_layer.check_graph(CFG)[0].startswith("ontology 를 읽지 못함")
+
+
+def test_fatigue_breakdown_matches_signals_and_shows_progress():
+    # 대시보드 「휴식 제안 조건」 패널 (10/14): 같은 기준의 진행값 — on 인 것 = fatigue_signals
+    for ts, comp in [(trials(False, True, False, durations=[10.0, 10.0, 20.0]), ()), (trials(True, False, True), REPEATED),
+                     (trials(True, True), (True, True)), ([], ())]:
+        b = rule_layer.fatigue_breakdown(ts, CFG, compensation_history=comp)
+        assert [k for k, v in b.items() if v["on"]] == rule_layer.fatigue_signals(ts, CFG, compensation_history=comp)
+    b = rule_layer.fatigue_breakdown(trials(True, False, True), CFG, compensation_history=(True, True, False))
+    assert b["compensation"] == {"on": False, "count": 2, "need": 3, "window": 5, "trials": 3}
+    assert b["success_drop"]["applies"] and b["success_drop"]["trials"] == 3 and not b["success_drop"]["on"]
+    assert b["success_drop"]["rate"] == pytest.approx(0.667, abs=1e-3) and b["success_drop"]["max_rate"] == 0.4
+    assert b["slowing"] == {"on": False, "last_s": 10.0, "mean_s": 10.0, "ratio": 1.0, "need_ratio": 1.5, "trials": 3, "min_trials": 3}
+    b = rule_layer.fatigue_breakdown(trials(True, True, True, mode=1, durations=[10.0, 10.0, 16.0]), CFG, performance=False)
+    assert b["success_drop"]["applies"] is False and not b["success_drop"]["on"]      # 모드 1 은 성공률 신호 없음
+    assert b["slowing"]["on"] and b["slowing"]["ratio"] == 1.6 and b["slowing"]["last_s"] == 16.0
+    assert rule_layer.fatigue_breakdown([], CFG)["slowing"] == {"on": False, "last_s": 0.0, "mean_s": 0.0, "ratio": 0.0,
+                                                                 "need_ratio": 1.5, "trials": 0, "min_trials": 3}

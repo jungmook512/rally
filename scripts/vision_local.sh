@@ -4,11 +4,15 @@
 #   scripts/vision_local.sh stop
 #   scripts/vision_local.sh logs
 # 환경 변수: IMAGE(기본 rally/vision:pr18) · SEG_SRC(#66 의 rally_vision 파이썬 패키지 폴더, 비우면 이미지 안 코드 그대로)
-#   MODEL(models/ 안 파일 이름, 기본 yolov8n-seg_ball.pt) · IMGSZ(추론 크기, 기본 640) · CONF(검출 신뢰도 하한, 기본 0.5 —
+#   MODEL(models/ 안 파일 이름, 기본 yolov8n-seg_ball.pt · auto = 공+컵·막대 두 모델을 segmenter 가 이름으로 찾아 같이 돌림, compose 와 같음)
+#   · IMGSZ(추론 크기, 기본 640 · auto 면 0 = 모델마다 학습 크기) · CONF(검출 신뢰도 하한, 기본 0.5 —
 #   낮추면 손에 든 막대처럼 약한 검출도 화면·토픽에 나오지만 잘못 집을 수도 있으니 확인용으로만)
 #   모드 5 받기 막대 기울기(/rally/perception/objects/image_axis, 10/12)는 이 저장소 segmenter 에만 있다:
-#     SEG_SRC=$PWD/ros2_ws/src/rally_vision/rally_vision HAND_EYE=none CONF=0.25 MODEL=yolov8n-seg_864.pt IMGSZ=864 HAND=0 scripts/robot.sh nodes
-#   모드 5 (컵·막대, 10/11 박성현 모델):  MODEL=yolov8n-seg_864.pt IMGSZ=864 scripts/robot.sh nodes   (stick → rod 로 발행)
+#     SEG_SRC=$PWD/ros2_ws/src/rally_vision/rally_vision HAND_EYE=none CONF=0.25 MODEL=yolov8n-seg_cupstick.pt IMGSZ=864 HAND=0 scripts/robot.sh nodes
+#   모드 5 (컵·막대):  MODEL=yolov8n-seg_cupstick.pt IMGSZ=864 scripts/robot.sh nodes   (stick → rod 로 발행)
+#     ★ models/yolov8n-seg_cupstick.pt 는 10/12 저녁 손에 든 막대 학습본(cupstick_v2_scratch)이어야 받기 기울기 맞춤·다가가기가 돈다.
+#       10/8 파일(흰 배경 전용)이면 손에 든 막대를 못 봐서 힘 4 N 으로만 받는다 — 같은 이름이라 날짜·md5 로 확인
+#   모드 1·5 한 번에:  MODEL=auto scripts/robot.sh nodes   (yolov8n-seg_ball.pt + yolov8n-seg_cupstick.pt)
 # 손목 RealSense 는 rally_bringup/config/cameras.yaml 의 wrist 시리얼·해상도로 띄운다 (#139 — 두 대를 꽂으면 시리얼 없이는 측면이
 #   손목 자리 /camera 에 열릴 수 있음). 컨테이너 경로(pc2_perception.launch.py)와 같은 함수(camera_params.rs_launch_args)를 쓴다.
 #   측면 카메라는 기본으로 띄우지 않는다. CAM_CFG 로 다른 yaml 지정 가능.
@@ -23,10 +27,17 @@
 #   header.frame_id 가 base_link 여야 로봇이 집을 수 있다 — force_publisher(/rally/robot/tcp_pose) 가 떠 있어야 함.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE=${IMAGE:-rally/vision:pr18}
+# MODEL=auto(두 모델 이름 찾기·imgsz 0)와 image_axis 는 이 저장소 segmenter 에만 있다 — 10/7 옛 체크아웃(rally_seg66)은 공 모델 하나만 찾고
+#   imgsz 0 을 모른다. 그래서 auto 이고 SEG_SRC 를 따로 안 줬으면 저장소 코드로 (#201 리뷰)
+[ "${MODEL:-}" = auto ] && [ -z "${SEG_SRC+x}" ] && SEG_SRC="$ROOT/ros2_ws/src/rally_vision/rally_vision"
 SEG_SRC=${SEG_SRC-/home/ms-01/rally_seg66/ros2_ws/src/rally_vision/rally_vision}
 NAME=rally_vision_local
 MODEL=${MODEL:-yolov8n-seg_ball.pt}
-IMGSZ=${IMGSZ:-640}
+if [ "$MODEL" = auto ]; then                 # 공 + 컵·막대 두 모델 (segmenter 가 /models 에서 이름으로 찾음, imgsz 0 = 학습 크기)
+  MODEL_FILES="yolov8n-seg_ball.pt yolov8n-seg_cupstick.pt"; MODEL_ARG=""; IMGSZ=${IMGSZ:-0}
+else
+  MODEL_FILES="$MODEL"; MODEL_ARG="-p model_path:=/models/$MODEL"; IMGSZ=${IMGSZ:-640}
+fi
 CONF=${CONF:-0.5}
 HAND_EYE_ARG=()
 [ -n "$HAND_EYE" ] && HAND_EYE_ARG=(-p hand_eye_path:=$HAND_EYE)   # main segmenter 만: none = hand_eye.yaml 안 쓰고 npy (#66 과 같은 좌표)
@@ -36,7 +47,7 @@ case "$1" in
 esac
 MODE3=${MODE3:-0}
 [ "$MODE3" = 1 ] && IMAGE=${IMAGE_MODE3:-rally/vision:mode3}
-for f in "$MODEL" T_gripper2camera.npy $([ "$MODE3" = 1 ] && echo mode3_side_calib.json); do
+for f in $MODEL_FILES T_gripper2camera.npy $([ "$MODE3" = 1 ] && echo mode3_side_calib.json); do
   [ -f "$ROOT/models/$f" ] || { echo "[vision] models/$f 없음"; exit 1; }
 done
 OVERLAY=()
@@ -95,7 +106,7 @@ docker run -d --name $NAME --network host --ipc host --gpus all --privileged -v 
   "$IMAGE" bash -c "
     ros2 launch realsense2_camera rs_launch.py $WRIST_ARGS &
     sleep 6
-    ros2 run rally_vision segmenter --ros-args -p model_path:=/models/$MODEL -p imgsz:=$IMGSZ -p conf:=$CONF ${HAND_EYE_ARG[*]} -p gripper2cam_path:=/models/T_gripper2camera.npy
+    ros2 run rally_vision segmenter --ros-args $MODEL_ARG -p imgsz:=$IMGSZ -p conf:=$CONF ${HAND_EYE_ARG[*]} -p gripper2cam_path:=/models/T_gripper2camera.npy
   " >/dev/null
 echo "[vision] 손목 카메라: $WRIST_ARGS"
 echo "[vision] $IMAGE 기동 (도메인 $DOMAIN, 모델 $MODEL imgsz $IMGSZ conf $CONF, segmenter 코드 ${SEG_SRC:-이미지 기본}) — 로그: scripts/vision_local.sh logs"

@@ -23,6 +23,16 @@ if [ "${RALLY_LOCAL:-0}" = "1" ]; then
   echo "[rally] RALLY_LOCAL=1 — Discovery Server 없이 로컬(멀티캐스트) 모드. ROS_DOMAIN_ID=$ROS_DOMAIN_ID  RMW=$RMW_IMPLEMENTATION  TRANSPORT=UDPv4"
 else
   export ROS_DISCOVERY_SERVER="${PC3_IP}:11811"
+  # 10/14 정정인: 로봇 PC 안의 노드끼리(두산 bringup ↔ robot_state_publisher ↔ skill_server)는 와이파이 너머 서버 PC 를 거치지 않게
+  # 이 PC 에 discovery 서버를 하나 더(ID 1, 127.0.0.1:11812) 두고 두 서버에 같이 등록한다. 서버 PC brain 과는 ID 0 으로 그대로 보인다.
+  # (와이파이 지연 100~600 ms 순간에 bringup 이 robot_description 을 못 받고 멈췄다.) 끄기: RALLY_LOCAL_DS=0
+  if [ "${RALLY_LOCAL_DS:-1}" = "1" ]; then
+    ROS_DISCOVERY_SERVER="${ROS_DISCOVERY_SERVER};127.0.0.1:11812"
+    if ! pgrep -f "fastdds discovery -i 1 -l 127.0.0.1 -p 11812" >/dev/null; then
+      nohup fastdds discovery -i 1 -l 127.0.0.1 -p 11812 >/tmp/rally_local_discovery.log 2>&1 &
+      disown 2>/dev/null; echo "[rally] 로컬 discovery 서버 시작 (127.0.0.1:11812, 로그 /tmp/rally_local_discovery.log)"
+    fi
+  fi
   # XML 프로필(FASTRTPS_DEFAULT_PROFILES_FILE)은 쓰지 않는다 — XML 의 CLIENT 설정이 ROS_SUPER_CLIENT 를 덮어써서
   # ros2 topic list 가 비어 나왔다 (10/6). 서버 주소는 ROS_DISCOVERY_SERVER 하나로 충분하다
   unset FASTRTPS_DEFAULT_PROFILES_FILE

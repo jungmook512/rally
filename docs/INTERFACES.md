@@ -46,6 +46,7 @@ webcam_link          측면 대각 웹캠, 높이 약 2 m (table_link 기준 sta
 | `/rally/perception/landing_info` | `std_msgs/Float64MultiArray` — `[교차 시각 s(ROS 시각), 교차까지 남은 시간 s(landing stamp 기준), 평면 위 표준편차 u·w m, 관측 수, 릴리스 이후 s]`. landing 과 같은 순서로 하나씩 발행 (전용 msg 는 팀 합의 후) | rally_vision/flight_predictor | robot(catch_ball) | landing 과 같음 | BestEffort, depth 1 |
 | `/rally/perception/ball_on_pad` | `geometry_msgs/PointStamped` — 측면 카메라가 **패드 중심(실시간 TCP + `pad_offset_tool_m`) 주변 10 cm 안**에서 본 공의 3D (`base_link`, 패드 평면과 교차). 보일 때만 측면 프레임마다. `header.stamp` = 측면 시각 + dt(손목 시계) | rally_vision/flight_predictor | robot(catch_ball: `pad_hold_s` 1 s 연속이면 잡음) | ≤ 60 Hz, 보일 때만 | BestEffort, depth 1 |
 | `/rally/perception/objects/debug_image` | `sensor_msgs/Image` | rally_vision/segmenter (ByteTrack tracker 전까지) | dashboard | 10 Hz | BestEffort |
+| `/rally/perception/side/debug_image` | `sensor_msgs/Image` (bgr8) — 측면 프레임에 YOLO 후보 마스크(파란색)·상자·신뢰도, 고른(움직이는) 후보는 굵게 + `moving`, 패드 위 공 판정 원(판정되면 초록 + `ball on pad`) | rally_vision/flight_predictor | dashboard (모드 3 측면 칸, 안 오면 원본 `/side/side/color/image_raw`) | ≤ `debug_image_hz`(10 Hz), 구독자 있을 때만 (10/14) | BestEffort |
 | `/rally/perception/objects/image_axis` | `geometry_msgs/PoseArray` | rally_vision/segmenter | robot(handover 받기) | objects 와 같이 (같은 header·순서) | BestEffort, depth 1 |
 | `/rally/perception/hand` | `rally_interfaces/HandState` | rally_human/hand_pose_node | brain, robot(safety), robot(handover) | 30 Hz | BestEffort, depth 1 |
 | `/rally/perception/body` | `rally_interfaces/BodyPose` | rally_human/body_pose_node | brain | 15 Hz | BestEffort |
@@ -136,8 +137,8 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 1. 로봇·인식 PC source scripts/env_robot_pc.sh → dsr_bringup2 → pc1_robot.launch
                   safety_monitor → [wait_ready --group safety] → force_publisher · gripper_node · skill_server
                   확인 실패 시 로봇 노드를 켜지 않고 launch 종료
-2. 로봇·인식 PC compose pc2: vision · hand_pose · voice (pc2_perception.launch part:=...)
-3. 서버 PC      compose pc3: brain (pc3_brain.launch) · dashboard
+2. 로봇·인식 PC compose pc2: vision · hand_pose (pc2_perception.launch part:=...)
+3. 서버 PC      compose pc3: brain (pc3_brain.launch) · dashboard · voice (pc2_perception.launch part:=voice — 10/14 부터 서버 PC, 스피커·마이크도 거기)
                   bt_runner 가 session 그룹(robot + perception + voice)을 1 s 마다 확인 → 준비 안 되면 세션을 시작하지 않음
 ```
 
@@ -191,11 +192,13 @@ QoS 규칙: 영상·관절·힘 같은 **스트림은 BestEffort + depth 1**(최
 
 | 경로 | 계약 |
 |---|---|
-| Redis `rally:session_control` | brain이 0.2 s마다 갱신, TTL 2 s. `session_id`, `phase`(idle/running/pause_pending/paused/ended), `pause_id`, `reason`, `mode`, `difficulty`, `trial_index`, `can_resume`, `blocked_reason`, `updated_at`(Unix s), `bt_node`(현재 BT 실행 노드명), `mode3_enabled`(챌린지 설정), `hand_wait`(손 근접 STOP 대기 중이면 그 사유, 아니면 빈 문자열 — 뒤에 추가) |
-| Redis pub/sub `rally:session_commands` | 재개 요청 JSON: `request_id`, `session_id`, `pause_id`(모두 UUID 문자열), `command: resume`, `expires_at`(Unix s, 최대 3 s). 저장·재전송하지 않음 |
+| Redis `rally:session_control` | brain이 0.2 s마다 갱신, TTL 2 s. `session_id`, `phase`(idle/running/pause_pending/paused/ended), `pause_id`, `reason`, `mode`, `difficulty`, `trial_index`, `can_resume`, `blocked_reason`, `updated_at`(Unix s), `bt_node`(현재 BT 실행 노드명), `mode3_enabled`(챌린지 설정), `hand_wait`(손 근접 STOP 대기 중이면 그 사유, 아니면 빈 문자열 — 뒤에 추가), `proposal`(10절), `pending_switch`(접수된 모드 전환: null 또는 `{mode: 1·3·5·7 | null(다음 모드)}` — 뒤에 추가), `lane`(모드 1 에서 손으로 고른 레인 0·1, 시도 밖·다른 모드는 null — 대시보드 그림이 그 레인으로 공을 굴림, 뒤에 추가), `mode_select`(모드 선택 대기 중이면 true — 음성·버튼으로 모드를 고르면 시작, 뒤에 추가), `rest`(휴식 제안 조건 — 대시보드 「휴식 제안 조건」 패널·알림용. 세션·모드 없으면 null, 아니면 `{mode, trials(같은 모드 유효 시도 수), need(llm_signal_count), count, on[신호 키], signals{compensation{on,count,need,window,trials} — 보상 동작은 세션 전체·모드 무관(10/15) · success_drop{on,applies,rate,max_rate,trials,min_trials} · slowing{on,last_s,mean_s,ratio,need_ratio,trials,min_trials}}, current_comp[이번 시도에 이미 보인 보상 동작 종류], llm{state: idle·asked·answered·skipped·dropped, result: continue·suggest_rest·null, at, signals}}` — `rule_layer.fatigue_breakdown` 과 같은 기준(규칙과 같은 입력)이며 표시용, 제어에 쓰지 않음. 뒤에 추가) |
+| Redis pub/sub `rally:session_commands` | 재개 요청 JSON: `request_id`, `session_id`, `pause_id`(모두 UUID 문자열), `command: resume`, `expires_at`(Unix s, 최대 3 s). 저장·재전송하지 않음. 모드 전환은 `command: set_mode`, `mode`(정수 1·3·5 또는 null = 다음 모드 — 7 은 10/14 시연 제외로 대시보드에서 뺌, brain 은 받으면 그대로 처리), `pause_id` 없음 — brain 은 세션 ID 를 확인한 뒤 `/rally/brain/set_mode`·음성과 같은 확인(휴식·손 대기·안전 정지·모드 3 꺼짐·같은 모드)을 거쳐 접수하고, 실제 전환은 시도 경계에서. 세션 종료는 `command: end_session`(`session_id` 만) — brain 이 접수하고 모드 선택 대기 중이면 바로, 시도 중이면 그 시도가 끝난 뒤 끝냄 (음성 "여기까지 하자"와 같은 경로) |
 | Redis `rally:session_reply:<request_id>` | brain 응답 `success`, `message`, `request_id`. TTL 5 s. 세션·휴식 식별값을 확인한 뒤 현재 안전·준비 조건으로 재검증. 중복 요청은 이미 소비된 휴식 ID이므로 재실행 불가 |
 | HTTP `GET /api/session` | 최신 Redis 제어 상태 또는 null (미수신·만료). Redis 연결 실패 503 |
 | HTTP `POST /api/session/resume` | JSON `session_id`, `pause_id`. 서버가 요청 UUID·만료를 생성한다. brain 승인 시 200, 거절 409, 상태 없음/Redis/수신자 없음 503, 응답 미확인 504. timeout은 결과 미확인이므로 상태 새로고침 후 판단하고 자동 재시도하지 않음 |
+| HTTP `POST /api/session/mode` | JSON `session_id`, `mode`(1·3·5 또는 null). `phase: running` 이고 세션이 같을 때만 Redis 로 보냄. brain 접수 200, 거절·상태 바뀜 409, 잘못된 모드 422, 상태 없음/Redis 503, 응답 미확인 504. 자동 재시도 없음 |
+| HTTP `POST /api/session/end` | JSON `session_id`. `phase` 가 running·pause_pending·paused 이고 세션이 같을 때만 Redis `end_session`. 응답 코드는 `/mode` 와 같음 |
 | WebSocket `/ws` | 기존 메시지에 `type: session`, `data: 위 상태 또는 null` 추가. 0.5 s마다 전달. 브라우저도 2 s 이상 갱신이 없으면 버튼 비활성화 |
 
 음성 재개는 발화 timestamp가 현재 휴식 시작 이후인 경우만 허용한다. zero stamp·오래된/중복 발화는 재개하지 않는다. 대시보드 요청은 화면에 표시된 세션·휴식 ID를 보내므로 이전 세션/휴식에서 누른 버튼은 거절된다. 안전 여부는 화면의 표시가 아니라 brain이 결정한다.

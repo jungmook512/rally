@@ -126,3 +126,9 @@ def test_during_robot_speech_only_emergency_is_published():
     assert llm.calls == 0
     assert classify_heard("다음 거 하자", llm, during_speech=False).intent == "next_mode"   # 평소엔 그대로
     assert llm.calls == 1
+
+
+@pytest.mark.parametrize("text", ["오늘은 여기까지 하자", "세션 끝내자", "이제 끝낼게요", "훈련 종료"])
+def test_session_end_is_plain_stop(text):
+    r = classify_rules(text)
+    assert r.intent == "stop" and not r.is_emergency

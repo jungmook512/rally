@@ -203,7 +203,7 @@ mode1:
   pickup_view_posj: [28.0, 15.0, 43.0, -2.0, 120.0, 28.0]
   # 비전 좌표 보정 (base, m, 더함). 10/7: 레인 입구 실측 공을 두 자세(관측·거치대)에서 비교 → 둘 다 x +9.5, y −9.2 mm 치우침.
   #   segmenter 가 T_gripper2camera.npy 대신 bringup URDF 의 카메라 브래킷 설계 치수(tf)를 쓰는 탓으로 추정 (박성현 확인 필요)
-  vision_offset_m: [-0.0095, 0.0092, 0.0]
+  vision_offset_m: [0.0, 0.0, 0.0]   # ★ 10/14 정정인: 손목 카메라 고정 뒤 수동 보정 끄고 확인 (직전 [-0.0025, 0.0015] — hand_eye.yaml 기준 눈대중)
   pickup_posx: null               # (pickup_source: posx 일 때만) 공을 쥔 자세 posx
   pickup_approach_m: 0.08         # 집는 자리 위 접근 높이
   place_open_mm: 80.0             # 레인 입구에 놓을 때 여는 폭 (레인 안쪽 폭 ≈ 87 mm 보다 작게)
@@ -258,11 +258,11 @@ mode1:
 # mode7 (저항 밀기) — 로봇은 버티거나 져주기만, 절대 밀지 않음
 mode7:
   stiffness_range: [200, 1500]      # N/m, 낮을수록 쉬움
-  target_force_start_n: 5.0
+  target_force_start_n: 10.0
   target_force_range_n: [3.0, 12.0]
   hold_time_s: 2.0
   yield_distance_m: 0.05
-  force_limit_n: 15.0               # safety.yaml 25 N 보다 낮음
+  force_limit_n: 20.0               # safety.yaml 25 N 보다 낮음
   # brain (trees/mode7_resist.py) — 목표 힘 = target_force_start_n × (1 + level_step_ratio)^난이도, target_force_range_n 으로 자름
   stiffness_default: 700.0          # 고정 (강성 3단계 200/700/1500 중 가운데). 리허설 느낌 보고 조정
   level_step_ratio: 0.10            # 난이도 한 단계 = 목표 힘 ±10 %
@@ -281,7 +281,19 @@ brain:
   llm_signal_count: 2               # 애매한 신호(보상 동작·성공률 하락·시도 시간 증가)가 이만큼 겹치면 ask_llm
   success_drop_rate: 0.4            # 최근 시도 성공률이 이 이하면 '성공률 하락' 신호 (최소 3회)
   slowing_ratio: 1.5                # 마지막 시도 시간이 앞선 시도 평균의 이 배 이상이면 '시도 시간 증가' 신호
+  compensation_window: 5            # 세션 전체(모드 무관) 최근 이만큼의 시도 중 — 10/15 조정묵: 같은 모드 → 세션 전체 (몸 신호라 모드를 안 가림)
+  compensation_min_trials: 3        # 이 횟수 이상 보상 동작(몸통 기울임·어깨 으쓱)이 보였으면 '보상 동작 반복' 신호
   difficulty_range: [-3, 3]
+  # 모드 선택 대기 (10/14 조정묵): 세션을 모드 순서대로 돌지 않고, 시작하면 대기 → 음성("공 굴리기 하자"·"모드 5")·대시보드 버튼으로 고른 모드를
+  #   N회 → 끝나면 다시 대기. 종료는 음성 "여기까지 하자"·"세션 끝내자"(stop, 비상 아님) 또는 대시보드 '세션 종료' 버튼 — 시도 중이면 그 시도를 마친 뒤.
+  #   goal 에 modes 를 적으면 예전처럼 순서대로. 대기 안내는 prompt_interval_s 마다 한 번 (너무 자주 말하지 않게)
+  mode_select:
+    enabled: true
+    prompt: "어떤 모드를 진행할지 말씀해 주세요"
+    prompt_interval_s: 10.0
+    start_prompt: "{mode} 진행하겠습니다."                                          # 고른 모드가 시작될 때. {mode} = 공 굴리기·캐치볼·건네고 받기. 빈 문자열이면 말하지 않음
+    done_prompt: "{mode} 모드가 끝났습니다. 다음으로 진행할 모드를 말씀해 주세요"   # {mode} = 공 굴리기·캐치볼·건네고 받기
+    end_prompt: "오늘 훈련을 마칠게요. 수고하셨어요"
   # 음성 피드백 (#119, 10/11) — 난이도가 실제로 바뀐 때만, 보상 동작은 연속 posture_repeat 시도면 한 번 (posture_coach.py)
   harder_prompt: "잘하고 계세요. 조금 더 어렵게 해 볼게요"
   easier_prompt: "조금 쉽게 바꿔 볼게요"
@@ -365,7 +377,7 @@ handover:
   #   require_object (10/12 #142 리뷰 (b)): 받을 물체가 비전에 최근 object_recent_s 안에 보였을 때만 깊이로 닫음 — 손가락만 들어와도 20 N 으로
   #   닫히지 않게. 손에 든 막대 인식 모델(박성현 재학습 중) 전에는 사실상 힘(receive_threshold_n)으로만 받는다.
   #   실로봇에서 힘만으로 못 받으면 모델 전까지 require_object: false + 받기 닫는 힘을 낮춰서 쓴다
-  #   10/12 저녁 새 모델(yolov8n-seg_cupstick_v2_scratch, 손에 든 막대 사진 21장 중 16장 0.9 안팎): 막대를 든 손이 그리퍼 앞에 오면
+  #   10/12 저녁 새 모델(yolov8n-seg_cupstick_v2_scratch → models/yolov8n-seg_cupstick.pt 이름으로 배치, 손에 든 막대 사진 21장 중 16장 0.9 안팎): 막대를 든 손이 그리퍼 앞에 오면
   #   85~94 % 로 빈손 닫기를 반복 → hold_s 0.3 → 0.8, 영역 위쪽 6 → 3 cm(코드 box_mm), 빈손 뒤엔 한 번 비워져야 다시 닫음
   #   10/12 밤 정정인: 받기 흐름 = 막대 각도 맞춤 → 막대로 다가감(receive_approach) → 닫기. 깊이 근접으로는 안 닫음(close_on_depth: false) —
   #   깊이는 '그리퍼 사이가 비었나'(회전·다가가기 조건)에만. 밀어 넣는 힘(receive_threshold_n)으로는 여전히 닫힘

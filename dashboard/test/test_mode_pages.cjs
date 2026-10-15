@@ -15,6 +15,13 @@ function element() {
 }
 const ids = [...html.matchAll(/id="([^"]+)"/g)].map(m => m[1]);
 ids.forEach(id => elements.set(id, element()));
+// 모드 전환 버튼 (10/14): data-mode 버튼들을 classList 와 함께
+const modeButtons = [...html.matchAll(/<button type="button" data-mode="(\d?)">/g)].map(m => {
+  const classes = new Set();
+  return Object.assign(element(), {dataset:{mode:m[1]}, disabled:false, title:'',
+    classList:{toggle(name,on){on?classes.add(name):classes.delete(name);}, contains:name=>classes.has(name)}});
+});
+elements.get('mode-switch').querySelectorAll = () => modeButtons;
 const nav = [...html.matchAll(/<a[^>]*data-page="([^"]+)"[^>]*>/g)].map(match => Object.assign(element(),{dataset:{page:match[1]}}));
 const listeners = {};
 const intervals = [];
@@ -30,7 +37,7 @@ vm.runInContext(fs.readFileSync(path.join(__dirname,'../web/images/training-scen
 vm.runInContext(html.split('<script>')[1].split('</script>')[0].replace('load().then(connect);',''),context);
 function run(code){return vm.runInContext(code,context);}
 const get = id => elements.get(id);
-for(const mode of [1,3,5,7]) {
+for(const mode of [1,3,5]) {
   run(`location.hash='#mode${mode}';selectPage();`);
   assert.match(get('page-title').textContent,new RegExp(`모드 ${mode}`));
   const picture = get('mode-diagram').innerHTML;
@@ -41,6 +48,24 @@ for(const mode of [1,3,5,7]) {
   assert.equal(get('events-view').hidden,true);
   assert.equal(nav.find(a=>a.attributes['aria-current']==='page').dataset.page,'mode');
 }
+// 모드 1 레인은 2개 (#142 레인 3 제거) — 레일 2개 × 레인 2개
+assert.equal((run('topLanes()').match(/url\(#t-rail\)/g) || []).length, 4, 'mode 1 scene must draw exactly 2 lanes');
+// brain 이 고른 레인으로 공이 굴러간다 (control.lane 0 → 거치대 쪽 x 630, 1 → 가운데 x 480, 없으면 가운데)
+assert.equal(run('renderTrainingScene(7,0,"running")'), '', 'mode 7 has no scene any more');
+const ballAt = (lane) => { const svg = run(`renderTrainingScene(1,1,'running',{lane:${lane}})`); const m = svg.match(/class="ball-roll"><circle cx="(\d+)"/); return m && Number(m[1]); };
+assert.equal(ballAt(0), 630, 'lane 0 rolls on the rack-side lane');
+assert.equal(ballAt(1), 480, 'lane 1 rolls on the middle lane');
+assert.equal(ballAt(null), 480, 'unknown lane keeps the middle lane');
+run("location.hash='#mode1';selectPage();renderState({time:new Date().toISOString(),safety:{level:'normal'}});renderControl({mode:1,phase:'running',bt_node:'밀기',updated_at:Date.now()/1000,trial_index:1,lane:0});");
+assert(get('mode-diagram').innerHTML.includes('class="ball-roll"><circle cx="630"'), 'page scene follows control.lane');
+run("renderControl({...control,lane:1});");
+assert(get('mode-diagram').innerHTML.includes('class="ball-roll"><circle cx="480"'), 'lane change redraws the scene');
+// 세션 리포트 마크다운 → HTML (표·제목·목록·참고 문장), 본문의 HTML 은 글자로
+const rep = run(String.raw`renderReportMd("## 세션 요약 (취소)\n\n| 모드 | 시도 |\n|---|---|\n| 5 건네고 받기 | 4 |\n\n지표에서 뺀 시도:\n- 모드 5: interrupted 1회 <b>x</b>\n\n### 지식 그래프 근거\n\n_이 해석은 참고용입니다._")`);
+assert(rep.includes('<h4>세션 요약 (취소)</h4>') && rep.includes('<h5>지식 그래프 근거</h5>'), 'headings');
+assert(rep.includes('<th>모드</th>') && rep.includes('<td>4</td>') && !rep.includes('---'), 'table without separator row');
+assert(rep.includes('<li>모드 5: interrupted 1회 &lt;b&gt;x&lt;/b&gt;</li>'), 'list items escaped');
+assert(rep.includes('<p class="note"><em>이 해석은 참고용입니다.</em></p>'), 'closing note');
 run("location.hash='#mode1';selectPage();renderControl({mode:1,phase:'running',bt_node:'손 이탈 확인 대기',updated_at:Date.now()/1000,trial_index:2,difficulty:1});");
 assert.equal(get('step-title').textContent,'손 이탈 대기');
 assert.match(get('steps').innerHTML,/aria-current="step"/);
@@ -131,7 +156,7 @@ for (const [hash,title,trialVisible,eventVisible] of [
 }
 visit('#trials');
 assert.equal(get('trials').children.filter(r=>!r.hidden).length,2);
-run("addTrial({trial_id:'seven',mode:7},true);addTrial({trial_id:'seven',mode:7},true);");
+run("addTrial({trial_id:'five2',mode:5},true);addTrial({trial_id:'five2',mode:5},true);");
 assert.equal(get('trials').children.filter(r=>!r.hidden).length,3);
 visit('#mode1');
 assert.equal(get('trials-view').hidden,true);
@@ -260,6 +285,109 @@ async function testProposalResponses() {
   await previousSessionClick;
   assert.equal(get('proposal-panel').hidden, true);
   assert.equal(get('proposal-message').textContent, '', 'old session replies must remain hidden');
-  console.log('PASS: dynamic stage scenes, STOP/stale freeze, unchanged scene DOM, record tabs, hash navigation, live records, state freshness, resume gating, trials, async proposal clicks, errors and WebSocket recovery');
+  // 모드 전환: 진행 중일 때만 보이고, 지금 모드·손 대기·꺼진 모드 3 은 못 누름. 확인 창을 거쳐 POST, brain 답을 그대로 표시
+  const btn = m => modeButtons.find(b => b.dataset.mode === String(m ?? ''));
+  receive({phase:'paused',session_id:'s-mode',mode:5,updated_at:Date.now()/1000,proposal:null});
+  assert.equal(get('mode-switch').hidden, true);
+  receive({phase:'running',session_id:'s-mode',mode:5,mode3_enabled:false,hand_wait:'',updated_at:Date.now()/1000,proposal:null,pending_switch:{mode:3}});
+  assert.equal(get('mode-switch').hidden, false);
+  assert(btn(5).classList.contains('on') && btn(5).disabled);
+  assert.equal(btn(3).disabled, true);
+  assert.equal(btn(1).disabled, false);
+  assert(btn(3).classList.contains('pending') && !btn(1).classList.contains('pending'));
+  assert.equal(btn(7), undefined, 'mode 7 button removed (10/14)');
+  // 세션 종료 버튼 (10/14): 진행·휴식 중에만 누를 수 있고, 확인 뒤 POST /api/session/end
+  assert.equal(get('end-session').disabled, false, 'end button enabled while running');
+  receive({phase:'ended',session_id:'s-mode',mode:5,updated_at:Date.now()/1000,proposal:null,pending_switch:null});
+  assert.equal(get('end-session').disabled, true, 'end button disabled after session end');
+  receive({phase:'running',session_id:'s-mode',mode:null,mode_select:true,mode3_enabled:false,hand_wait:'',updated_at:Date.now()/1000,proposal:null,pending_switch:null});
+  assert.match(get('phase').textContent, /모드 선택 대기/);
+  assert.equal(btn(null).hidden, true, 'no next-mode button while selecting');
+  assert.equal(btn(1).disabled, false);
+  {
+    let endSent = null;
+    context.confirm = () => true;
+    context.fetch = async (url, options) => { endSent = {url, body:JSON.parse(options.body)}; return {ok:true,json:async()=>({message:'세션 종료 접수'})}; };
+    await get('end-session').onclick();
+    assert.equal(endSent.url, '/api/session/end');
+    assert.deepEqual(endSent.body, {session_id:'s-mode'});
+    assert.equal(get('control-message').textContent, '세션 종료 접수');
+  }
+  receive({phase:'running',session_id:'s-mode',mode:5,mode3_enabled:false,hand_wait:'',updated_at:Date.now()/1000,proposal:null,pending_switch:{mode:3}});
+  let sent = null, asked = 0;
+  context.confirm = () => { asked++; return false; };
+  await get('mode-switch').onclick({target:{closest:()=>btn(1)}});
+  assert.equal(sent, null, 'cancelled confirm must not send');
+  context.confirm = () => { asked++; return true; };
+  context.fetch = async (url, options) => { sent = {url, body:JSON.parse(options.body)}; return {ok:true,json:async()=>({message:'모드 1 공 굴리기(으)로 전환 접수'})}; };
+  await get('mode-switch').onclick({target:{closest:()=>btn(null)}});
+  assert.deepEqual(sent, {url:'/api/session/mode', body:{session_id:'s-mode', mode:null}});
+  assert.equal(asked, 2);
+  assert.match(get('control-message').textContent, /접수/);
+  receive({phase:'running',session_id:'s-mode',mode:5,mode3_enabled:true,hand_wait:'hand_near',updated_at:Date.now()/1000,proposal:null,pending_switch:null});
+  assert.equal(btn(1).disabled, true, 'hand wait blocks switching');
+  console.log('PASS: dynamic stage scenes, STOP/stale freeze, unchanged scene DOM, record tabs, hash navigation, live records, state freshness, resume gating, trials, async proposal clicks, mode switch buttons, errors and WebSocket recovery');
 }
 testProposalResponses().catch(error => { console.error(error); process.exitCode = 1; });
+
+// 휴식 제안 조건 스택 + 조건 확인 알림 (10/14)
+run("renderControl(null)");
+assert.equal(get('rest-panel').hidden, true);
+const restBase = {mode:5, trials:3, need:2, count:0, on:[], current_comp:[], llm:{state:'idle', result:null, at:null, signals:[]},
+  signals:{compensation:{on:false, count:2, need:3, window:5, trials:3}, success_drop:{on:false, applies:true, rate:0.667, max_rate:0.4, trials:3, min_trials:3},
+           slowing:{on:false, last_s:10, mean_s:10, ratio:1, need_ratio:1.5, trials:3, min_trials:3}}};
+context.restBase = restBase;
+run("renderControl({phase:'running',session_id:'rest-s',mode:5,updated_at:Date.now()/1000,rest:restBase});");
+assert.equal(get('rest-panel').hidden, false);
+assert.equal(get('rest-count').textContent, '신호 0/2');
+assert.match(get('rest-stack').innerHTML, /보상 동작 반복.*최근 3회 중 2회 \(모든 모드\) · 3회면 신호/);
+assert.match(get('rest-stack').innerHTML, /성공률 67% · 40% 이하면 신호/);
+assert.match(get('rest-stack').innerHTML, /마지막 10초 \/ 평균 10초 = 1배 · 1.5배면 신호/);
+assert.match(get('rest-llm').textContent, /아직 요청 없음/);
+assert.equal(get('toasts').children.length, 0, '처음 받은 상태는 알리지 않음');
+// 신호 하나 켜짐 → 알림 1개, 행이 on
+run("renderControl({...control,rest:{...restBase,count:1,on:['slowing'],signals:{...restBase.signals,slowing:{...restBase.signals.slowing,on:true,last_s:20,ratio:2}}}});");
+assert.equal(get('toasts').children.length, 1);
+assert.equal(get('toasts').children[0].textContent, '조건 확인: 시도 시간 증가 (1/2)');
+assert.match(get('rest-stack').innerHTML, /<li class="on"><span class="mark">✓<\/span><span class="name">시도 시간 증가/);
+// 두 번째 신호 → 조건 충족 알림 + 신호 알림, 배지 met, LLM 판단 중
+run("renderControl({...control,rest:{...control.rest,count:2,on:['compensation','slowing'],llm:{state:'asked',result:null,at:Date.now()/1000,signals:['compensation','slowing']},signals:{...control.rest.signals,compensation:{...restBase.signals.compensation,on:true,count:3}}}});");
+assert.equal(get('toasts').children.length, 3);
+assert.equal(get('toasts').children[1].textContent, '조건 확인: 보상 동작 반복 (2/2)');
+assert.match(get('toasts').children[2].textContent, /휴식 제안 조건 충족 \(2\/2\)/);
+assert.equal(get('rest-count').textContent, '조건 충족 2/2');
+assert.equal(get('rest-count').className, 'badge met');
+assert.match(get('rest-llm').textContent, /AI 판단 중/);
+// 같은 상태를 다시 받으면 알림 없음, AI 가 답하면 알림
+run("renderControl({...control});");
+assert.equal(get('toasts').children.length, 3);
+run("renderControl({...control,rest:{...control.rest,llm:{...control.rest.llm,state:'answered',result:'suggest_rest'}}});");
+assert.equal(get('toasts').children.length, 4);
+assert.match(get('toasts').children[3].textContent, /휴식 제안함/);
+assert.match(get('rest-llm').textContent, /AI 판단: 휴식 제안함/);
+// 모드 1: 성공률 행은 '없음' 표시, 이번 시도 보상 동작 표시. 새 모드는 기준만 다시 잡고 알리지 않음
+run("renderControl({...control,mode:1,rest:{...restBase,mode:1,count:1,on:['compensation'],current_comp:['trunk_lean'],signals:{...restBase.signals,compensation:{...restBase.signals.compensation,on:true,count:3},success_drop:{...restBase.signals.success_drop,applies:false}}}});");
+assert.equal(get('toasts').children.length, 4);
+assert.match(get('rest-stack').innerHTML, /<li class="na">.*모드 1 은 성공률 신호 없음/);
+assert.match(get('rest-llm').textContent, /이번 시도 보상 동작 보임 \(몸통 기울임\)/);
+run("renderControl(null)");
+assert.equal(get('rest-panel').hidden, true);
+console.log('rest stack + notifications OK');
+
+// 모드 3 화면에서만 손목 카메라 반시계 90° (10/14) — data-rot="ccw" 는 모드 3 의 손목 그림에만
+const wristCam = run("cameraFigure({name:'손목', topic:'/rally/perception/objects/debug_image', url:'http://robot:8080/stream?topic=/d', fallback:'http://robot:8080/stream?topic=/c'})");
+const sideCam = run("cameraFigure({name:'측면', topic:'/side/side/color/image_raw', url:'http://robot:8080/stream?topic=/s'})");
+get('cameras').children = [wristCam, sideCam];
+visit('#mode3');
+assert.equal(wristCam.dataset.rot, 'ccw', '모드 3: 손목 반시계 90°');
+assert.equal(sideCam.dataset.rot, undefined, '측면은 그대로');
+assert.equal(sideCam.hidden, false);
+visit('#mode1');
+assert.equal(wristCam.dataset.rot, undefined, '모드 1: 그대로');
+assert.equal(sideCam.hidden, true, '측면은 모드 3 전용');
+visit('#mode5');
+assert.equal(wristCam.dataset.rot, undefined, '모드 5: 그대로');
+visit('#mode3');
+assert.equal(wristCam.dataset.rot, 'ccw');
+assert.match(html, /\.camera\[data-rot="ccw"\] img \{[^}]*rotate\(-90deg\)/, 'CSS 가 반시계 90° 를 그린다');
+console.log('mode 3 wrist rotation OK');

@@ -4,7 +4,6 @@ const SCENE_STAGES = {
   1: ['손 시작 위치 확인', '공 보내기', '받기 관측', '손 이탈 대기', '공 회수', '시도 기록'],
   3: ['준비', '던지기·받기', '결과 기록'],
   5: ['손·물체 확인', '물체 집기', '물체 건네기', '물체 돌려받기', '시도 기록'],
-  7: ['손 확인', '저항 훈련', '시도 기록'],
 };
 const SCENE_STATUS = {paused:'휴식 중', ended:'세션 종료', stopped:'안전 정지'};
 const sceneEscape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -131,27 +130,34 @@ function topRack(n) {
     ${Array.from({length: n}, (_, i) => topBall([690 + i * 28, 62])).join('')}<text x="714" y="100" text-anchor="middle" class="note small">거치대</text>`;
 }
 function topLanes() {
-  return [330, 480, 630].map(x => `<rect x="${x - 26}" y="126" width="52" height="222" fill="#d9e3d6" opacity=".7"/>
+  // 레인 2개 (10/12 #142: 레인 3 은 모드 3 패드 거치대 자리라 제거). 공은 가운데 x 480 레인으로, 거치대 쪽이 레인 1
+  return [480, 630].map(x => `<rect x="${x - 26}" y="126" width="52" height="222" fill="#d9e3d6" opacity=".7"/>
     <g filter="url(#t-sh2)"><rect x="${x - 30}" y="126" width="7" height="222" rx="3" fill="url(#t-rail)"/><rect x="${x + 23}" y="126" width="7" height="222" rx="3" fill="url(#t-rail)"/></g>`).join('');
 }
 
-function topMode1(stage) {
+// 레인 번호 → 그림 x. 0 = 거치대 쪽 레인(630), 1 = 가운데(480) — table_layout 과 같은 순서(레인 1 이 거치대 가까운 쪽). 모르면 가운데
+const LANE_X = {0: 630, 1: 480};
+function topMode1(stage, lane = null) {
   // 공이 굴러오는 쪽 손은 손바닥이 위 (받을 준비). 회수부터는 손을 옆으로 빼서 손등
-  const palm = {pose: 'palm'}, handAt = [480, 330], view = [480, 152], away = [690, 336];
+  const L = Object.hasOwn(LANE_X, lane) ? LANE_X[lane] : 480;
+  const right = L >= 600;                                  // 거치대 쪽 레인이면 메모를 왼쪽에 (화면 밖으로 안 나가게)
+  const note = ([dx, y], text) => right ? topNote([L - dx, y], text, 'end') : topNote([L + dx, y], text);
+  const palm = {pose: 'palm'}, handAt = [L, 330], view = [L, 152], away = [right ? 770 : 690, 336];   // 손을 빼는 자리는 레인 오른쪽
   const s = {arm: [560, 124], back: topLanes() + topRack(2), patient: topPatient(handAt, palm)};
-  if (stage === 0) Object.assign(s, {arm: view, back: topLanes() + topRack(2) + topRing([480, 314], 44) + topView(view, [480, 318]),
-    front: topNote([540, 290], '손바닥을 위로, 레인 끝에')});
-  if (stage === 1) Object.assign(s, {arm: [480, 120], back: topLanes() + topRack(1),
-    front: topArrow('M480 162V250') + topBall([480, 272], 'ball-roll') + topNote([506, 214], '공을 굴려 보냄')});
-  if (stage === 2) Object.assign(s, {arm: view, back: topLanes() + topRack(1) + topView(view, [480, 318]),
-    front: topBall([481, 318]) + topNote([540, 250], '손목 카메라로 받기 확인')});
-  if (stage === 3) Object.assign(s, {arm: view, back: topLanes() + topRack(1) + topView(view, [480, 306]), patient: topPatient(away),
-    front: topBall([480, 296]) + topArrow('M515 318L640 328') + topNote([600, 286], '손을 빼면 회수 시작', 'middle')});
-  if (stage === 4) Object.assign(s, {arm: [480, 236], grip: 'closed', back: topLanes() + topRack(1), patient: topPatient(away, {fade: true}),
-    front: topBall([480, 266]) + topArrow('M508 226Q600 160 686 92', 'flow-run') + topNote([560, 214], '공을 거치대로')});
+  if (stage === 0) Object.assign(s, {arm: view, back: topLanes() + topRack(2) + topRing([L, 314], 44) + topView(view, [L, 318]),
+    front: note([60, 290], '손바닥을 위로, 레인 끝에')});
+  if (stage === 1) Object.assign(s, {arm: [L, 120], back: topLanes() + topRack(1),
+    front: topArrow(`M${L} 162V250`) + topBall([L, 272], 'ball-roll') + note([26, 214], '공을 굴려 보냄')});
+  if (stage === 2) Object.assign(s, {arm: view, back: topLanes() + topRack(1) + topView(view, [L, 318]),
+    front: topBall([L + 1, 318]) + note([60, 250], '손목 카메라로 받기 확인')});
+  if (stage === 3) Object.assign(s, {arm: view, back: topLanes() + topRack(1) + topView(view, [L, 306]), patient: topPatient(away),
+    front: topBall([L, 296]) + topArrow(`M${L + 35} 318L${away[0] - 50} 328`) + note([right ? 30 : 120, 286], '손을 빼면 회수 시작')});
+  if (stage === 4) Object.assign(s, {arm: [L, 236], grip: 'closed', back: topLanes() + topRack(1), patient: topPatient(away, {fade: true}),
+    front: topBall([L, 266]) + topArrow(`M${L + 28} 226Q${Math.round((L + 686) / 2) + 20} 160 686 92`, 'flow-run') + note([80, 214], '공을 거치대로')});
   if (stage === 5) Object.assign(s, {arm: [560, 124], back: topLanes() + topRack(2), patient: topPatient(away, {fade: true}), front: topRecord});
   return s;
 }
+
 function topMode3(stage) {
   // 패드(벨크로)를 든 로봇. 던지기 전 손은 손바닥 위에 공을 올림 (아래로 던질 준비), 던진 뒤엔 빈 손바닥
   const pad = '<rect x="-46" y="16" width="92" height="44" rx="10" fill="url(#t-pad)" stroke="#4f7a66" stroke-width="1.5"/>'
@@ -183,17 +189,7 @@ function topMode5(stage) {
   if (stage === 4) Object.assign(s, {front: topRecord, patient: topPatient([600, 336], {fade: true})});
   return s;
 }
-function topMode7(stage) {
-  // 팔씨름형: 로봇이 든 손잡이를 환자가 감싸 쥐고 민다. 로봇은 버티다 물러날 뿐 환자 쪽으로 밀지 않음
-  const handle = topHeldRod(-46, 46);
-  const s = {arm: [480, 206], grip: 'closed', tool: handle, patient: topPatient([480, 344], {ang: 0})};
-  if (stage === 0) Object.assign(s, {back: topView([480, 206], [480, 330], 46), front: topRing([480, 318], 44) + topNote([540, 304], '손이 보이는지 확인')});
-  if (stage === 1) Object.assign(s, {patient: '', front: topRodGrip([480, 206], 0, 0) + topArrow('M570 330L570 262', 'flow-run') + topNote([590, 300], '환자가 밀기')
-    + `<path d="M390 232L390 192" stroke="#8aa0ad" stroke-width="4" stroke-linecap="round" stroke-dasharray="6 6" marker-end="url(#scene-arrow-grey)"/>` + topNote([378, 214], '로봇은 버티다 물러남', 'end')});
-  if (stage === 2) Object.assign(s, {patient: topPatient([480, 344], {ang: 0, fade: true}), front: topRecord});
-  return s;
-}
-const TOP_BUILDERS = {1: topMode1, 3: topMode3, 5: topMode5, 7: topMode7};
+const TOP_BUILDERS = {1: topMode1, 3: topMode3, 5: topMode5};   // 모드 7 은 10/14 시연 제외로 뺌
 
 function renderTrainingScene(mode, stageIndex, status, opts = {}) {
   if (!Object.hasOwn(SCENE_STAGES, mode)) return '';
@@ -203,7 +199,7 @@ function renderTrainingScene(mode, stageIndex, status, opts = {}) {
   const stage = active ? stageIndex : -1;
   // 움직임(애니메이션)은 실행 중인 알려진 단계에서만. 정지·휴식·끊김이면 멈춘 그림
   const motion = active && ((mode === 1 && [1, 4].includes(stage)) || (mode === 3 && stage === 1) || (mode === 5 && [1, 3].includes(stage)) || (mode === 7 && stage === 1));
-  const s = TOP_BUILDERS[mode](stage);
+  const s = TOP_BUILDERS[mode](stage, opts.lane ?? null);   // 모드 1: brain 이 고른 레인(0·1)으로 공을 굴린다
   const body = `${topTable()}${s.back || ''}${s.patient || ''}${topArm(s.arm, {grip: s.grip, tool: s.tool || ''})}${s.front || ''}`;
   // 그림 위 표시는 미리보기·정지·휴식일 때만 (진행 중 단계 이름은 진행 트랙·현재 단계 칸에 이미 있음)
   const stepName = active ? `${stage + 1}. ${stages[stage]}` : '';

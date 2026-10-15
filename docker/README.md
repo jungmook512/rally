@@ -1,6 +1,6 @@
 # docker/
 
-- `docker-compose.yml` — 로봇·인식 PC 의 추론 컨테이너 (`--profile pc2`, 로봇 노드와 같은 PC) / 서버 PC (`--profile pc3`). 프로필 이름은 역할이지 PC 번호가 아니다.
+- `docker-compose.yml` — 로봇·인식 PC 의 추론 컨테이너 (`--profile pc2`, 로봇 노드와 같은 PC) / 서버 PC (`--profile pc3` — 10/14 부터 음성 voice 도 여기, 스피커·마이크가 서버 PC). 프로필 이름은 역할이지 PC 번호가 아니다.
 - 서비스별 `Dockerfile` — 멀티 스테이지 (build: ros:jazzy-ros-base → runtime)
 
 ## Dockerfile 규칙 (한 번 당한 버그)
@@ -13,7 +13,7 @@
 2. 디버깅용으로 컨테이너를 따로 띄울 때도 `--network host --ipc host`. Fast DDS 는 같은 호스트끼리 공유 메모리로 데이터를 보내서, `--ipc host` 가 없으면 discovery(서비스 확인 등)는 되는데 **토픽 데이터만 안 온다.**
 3. DDS 는 `ROS_DISCOVERY_SERVER` 환경변수만 쓴다. Fast DDS XML 프로필(`FASTRTPS_DEFAULT_PROFILES_FILE`)을 같이 주면 XML 의 CLIENT 설정이 `ROS_SUPER_CLIENT` 를 덮어써 `ros2 topic list` 가 비어 나온다.
 4. 컨테이너는 root 로 돈다. 같은 PC 에서 **일반 계정으로 띄우는 ROS 노드·CLI 는 공유 메모리를 끄고 UDP 만** 쓴다(`FASTDDS_BUILTIN_TRANSPORTS=UDPv4`, `scripts/env_robot_pc.sh` 가 설정). 안 그러면 root 소유 `/dev/shm/fastrtps_*` 파일 때문에 컨테이너 ↔ 네이티브 메시지가 **양방향 모두** 오류 없이 사라진다 (#30). 이미 막힌 PC 는 `sudo rm /dev/shm/fastrtps_*` 한 번.
-5. 서비스에 `environment:` 를 따로 적으면 `<<: *ros` 의 environment 를 **통째로 덮어쓴다** (YAML 병합은 목록을 합치지 않음). 그 서비스에는 `ROS_DOMAIN_ID`·`RMW_IMPLEMENTATION`·`ROS_DISCOVERY_SERVER` 를 다시 적는다. 빠지면 그 컨테이너만 다른 노드를 못 찾는다 (voice, 10/7). 확인: `docker compose --profile pc2 config` 에서 각 서비스 environment
+5. 서비스에 `environment:` 를 따로 적으면 `<<: *ros` 의 environment 를 **통째로 덮어쓴다** (YAML 병합은 목록을 합치지 않음). 그 서비스에는 `ROS_DOMAIN_ID`·`RMW_IMPLEMENTATION`·`ROS_DISCOVERY_SERVER` 를 다시 적는다. 빠지면 그 컨테이너만 다른 노드를 못 찾는다 (voice, 10/7). 확인: `docker compose --profile pc2 config`·`--profile pc3 config` 에서 각 서비스 environment
 
 ## CI
 - `build.yml`: colcon build·test. PR 에서 한 번(브랜치 push 중복 실행 없음), `ros2_ws/` 가 바뀔 때만. main 은 머지 직후 한 번
