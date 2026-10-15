@@ -554,13 +554,13 @@ class SafetyMonitor(Node):
         self.check_workspace((x, y, z))
 
     def catch_x_max_now(self, x_now):
-        """받기 창 x 완화 (#223): 받기 창(+ 창 뒤 hold_s) 동안 workspace_catch_x_max_m, TCP 가 평소 상한 안으로 돌아오면 바로 평소값.
+        """받기 창 x 완화 (#223): 받기 창 동안 + 창이 꺼진 뒤 workspace_catch_hold_s 동안 workspace_catch_x_max_m.
+        10/16 실로봇: 'TCP 가 평소 상한 안으로 한 번 돌아오면 바로 끝' 이었더니, 대기 자세(어깨 반대, TCP x 0.560)가 0.57 선에서 1 cm 라
+        복귀 끝에 0.57 을 넘나들며 완화가 꺼진 직후 workspace_limit STOP (180° 25 cm 뒤 복귀). → 일찍 끄지 않고 hold_s 만 유지.
         공 떼기 확장(workspace_x_max_now, #211)과는 따로 계산하고 check_workspace 가 넓은 쪽을 쓴다."""
         base, catch = self.p("workspace_x_max_m"), self.p("workspace_catch_x_max_m")
         now = time.monotonic()
         on = workspace_relax_active(base, catch) and now < self.ws_relax_until
-        if on and now >= self.catch_until and x_now <= base:   # 창이 꺼졌고 TCP 가 돌아왔으면 완화 끝
-            self.ws_relax_until, on = 0.0, False
         if on != self._ws_relax_on:
             self._ws_relax_on = on
             self.get_logger().warning(f"작업 공간 x 상한 {catch if on else base:.2f} m ({'모드 3 받기 창 — 10/14 Y0' if on else '받기 끝 → 평소 값'})")

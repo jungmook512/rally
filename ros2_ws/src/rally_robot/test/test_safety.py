@@ -410,8 +410,8 @@ def ws_monitor(monitor_with):
     return node
 
 
-def test_workspace_x_relaxed_in_catch_window_and_until_tcp_returns(ws_monitor):
-    """10/14 Y0: 받기 창 동안 x 0.73 은 STOP 아님. 창이 꺼진 뒤에도 TCP 가 0.57 안으로 돌아올 때까지 유지, 돌아오면 평소값."""
+def test_workspace_x_relaxed_in_catch_window_and_hold_after(ws_monitor):
+    """받기 창 동안 x 0.73 은 STOP 아님. 창이 꺼진 뒤에도 hold_s 동안 유지 — 대기 자세로 돌아와 0.57 을 넘나들어도 STOP 아님 (10/16 실로봇)."""
     from std_msgs.msg import Bool
     ws_monitor.check_workspace((0.73, 0.0, 0.4))
     assert ws_monitor.latched_stop                                # 창 없이는 평소 0.57
@@ -422,8 +422,11 @@ def test_workspace_x_relaxed_in_catch_window_and_until_tcp_returns(ws_monitor):
     ws_monitor.catch_until = 0.0                                  # 창 신호 끊김 — 로봇은 아직 받은 자리
     ws_monitor.check_workspace((0.73, 0.0, 0.4))
     assert not ws_monitor.latched_stop and ws_monitor.catch_x_max_now(0.73) == 0.78
-    ws_monitor.check_workspace((0.56, 0.0, 0.4))                  # 대기 자세로 복귀 → 완화 끝
-    assert ws_monitor.ws_relax_until == 0.0 and ws_monitor.catch_x_max_now(0.56) == 0.57
+    ws_monitor.check_workspace((0.56, 0.0, 0.4))                  # 대기 자세 근처로 복귀
+    ws_monitor.check_workspace((0.572, 0.0, 0.4))                 # 복귀 끝에 선을 살짝 넘나듦 — 예전엔 여기서 STOP
+    assert not ws_monitor.latched_stop
+    ws_monitor.ws_relax_until -= 11.0                             # hold_s 지나면 평소 값
+    assert ws_monitor.catch_x_max_now(0.56) == 0.57
     ws_monitor.check_workspace((0.73, 0.0, 0.4))
     assert ws_monitor.latched_stop
 
