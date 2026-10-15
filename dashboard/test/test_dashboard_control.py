@@ -176,7 +176,8 @@ def test_camera_streams_point_to_robot_pc():
     assert wrist.startswith("http://192.168.0.10:8080/stream?topic=/rally/perception/objects/debug_image&")   # 인식 결과(마스크·신뢰도)
     assert "type=mjpeg" in wrist and "width=424" in wrist and "qos_profile=sensor_data" in wrist
     assert r["streams"][0]["fallback"].startswith("http://192.168.0.10:8080/stream?topic=/camera/color/image_raw&")  # 안 오면 원본
-    assert r["streams"][1]["topic"] == "/side/side/color/image_raw" and r["streams"][1]["fallback"] is None
+    assert r["streams"][1]["topic"] == "/rally/perception/side/debug_image"                     # 측면도 인식 화면 (10/14)
+    assert r["streams"][1]["fallback"].startswith("http://192.168.0.10:8080/stream?topic=/side/side/color/image_raw&")
 
 
 def test_camera_panel_on_page():
