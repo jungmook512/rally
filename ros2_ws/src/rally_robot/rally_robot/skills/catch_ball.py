@@ -24,7 +24,8 @@
                교차가 늦게 예측돼도 창은 연 뒤 contact_window_max_s(1.5 s) 를 넘지 않는다 (#171 리뷰 — safety_monitor catch_window_max_s 2 s 가 뒷받침).
                판정은 창이 닫힌 뒤에도 계속 기다린다 — **비전 판정**: 측면 카메라의 ball_on_pad 가 pad_hold_s(1 s) 연속(틈 ≤ pad_gap_s) 들어오면 caught.
                교차 시각 + judge_timeout_s 안에 없으면 missed. 힘 판정은 쓰지 않는다 (10/12 결정: 패드 끝 튕김·이동 관성과 구분 불가)
-5. after     : after_catch() — 정정인 자리. 지금은 대기 자세 → 패드를 거치대에 꽂고 빠짐 (공 떼기·공 거치대는 아직)
+5. after     : after_catch() — 정정인 자리. 대기 자세 → 패드를 거치대에 꽂고 빠짐 → (교시 있으면) 공 떼기(detach_ball.run: 공 보기 자세 →
+               비전 velcro_ball → 세로로 쥐고 벗기기 → 박스에 놓기, 박스 구간만 작업 공간 x 확장) — 떼기 실패는 로그만, 시도는 그대로
 6. return    : 대기 자세 TCP 로 복귀 (after_catch 가 skip_return 을 켜면 생략)
 결과: 끝까지 돌면 succeed (caught 참/거짓), 안전·타임아웃·예외면 abort.
 
@@ -264,6 +265,37 @@ def after_catch(node, goal_handle, ctx: CatchContext) -> None:
     movej_checked(node, ctx.ready_posj, jv, ja)
     pad_rack.place_pad(node, node.get_logger(), lambda: node.check_stop(goal_handle))
     ctx.skip_return = True
+    # ④~⑥ 공 떼기 → 박스 (10/14 정정인): 교시(detach_ball_view_posj·detach_box_drop_posj)가 있을 때만. 떼기 실패는 이번 시도(요격은
+    # 이미 판정됨)를 깨지 않고 로그만 — 공이 패드에 붙은 채 남는다. 안전 STOP·취소는 그대로 올린다.
+    from rally_robot import detach
+    from rally_robot.skills import detach_ball
+    if not ctx.cfg.get("detach_after_place", True):
+        # 10/15 정정인: 실제로 던진 공은 벨크로에 세게 붙어 로봇이 못 뗌(50 N 까지 당겨도) → 사람이 뗀다. 꽂은 뒤 A 에서 멈춰 안내하고 기다림
+        wait_s = float(ctx.cfg.get("manual_removal_wait_s", 10.0))
+        prompt = str(ctx.cfg.get("manual_removal_prompt", "") or "")
+        if wait_s > 0:
+            node.say(prompt)
+            node.get_logger().info(f"[catch_ball] 공 떼기는 사람 몫 — \"{prompt}\" · {wait_s:.0f} s 기다림 (로봇 정지)")
+            node.set_contact(True)                     # 사람이 패드를 만져도 nudge 안 걸리게 (힘 한계 25 N 은 그대로)
+            try:
+                t0 = time.monotonic()
+                while time.monotonic() - t0 < wait_s:
+                    node.check_stop(goal_handle)
+                    time.sleep(0.1)
+            finally:
+                node.set_contact(False)
+        return None
+    if not detach.taught(node):
+        node.get_logger().warning("[catch_ball] 공 떼기 교시 없음 (skills.yaml mode3.detach_*_posj) → 건너뜀")
+        return None
+    try:
+        out = detach_ball.run(node, node.get_logger(), lambda: node.check_stop(goal_handle))
+        ctx.extra["detach"] = out
+    except SkillAbort as e:
+        if e.reason == "canceled" or node.stop_requested():
+            raise
+        node.get_logger().error(f"[catch_ball] 공 떼기 실패: {e.reason} — 공은 패드에 붙은 채, 다음 시도로")
+        ctx.extra["detach"] = dict(success=False, reason=e.reason)
     return None
 
 
@@ -585,4 +617,6 @@ def execute(node):
             window.cancel()
             node.set_contact(False)
             node.set_catch_window(False)
+            node.set_detach_window(False)                      # after_catch 의 공 떼기 (10/15)
+            node.set_workspace_extend(False)
     return _execute

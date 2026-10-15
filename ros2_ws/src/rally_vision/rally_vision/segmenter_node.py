@@ -61,6 +61,49 @@ MODEL_DIRS = ("/models", os.path.expanduser("~/rally/models"), "models")  # 컨�
 MODEL_ROLE = {"yolov8n-seg_ball.pt": "모드 1 공(ball)", "yolov8n-seg_cupstick.pt": "모드 5 컵·막대(cup·rod)"}
 
 
+# 모드별 손목 인식 모델 (10/15 정정인): 모드마다 쓰는 모델이 다르다 — 한 번에 그 모드 모델만 돌린다 (세 개를 매 프레임 다 돌리면
+#   29 → 14~24 fps, 모드 3 에서 테니스공 모델이 벨크로 공을 'ball' 로도 잡음). active_mode 파라미터(brain 이 모드 들어갈 때 바꿈)로 고른다.
+#   0 = 모드 모름(brain 없이 띄움·세션 밖) → model_path / 기본 찾기(공 + 컵·막대) 그대로. 7 = 모델 없음(손 인식만, 빈 objects 발행)
+DEFAULT_MODE_MODELS = "1:yolov8n-seg_ball.pt;3:velcro_ball_yolo11n-seg_1024_rot_v2.pt;5:yolov8n-seg_cupstick.pt;7:"
+
+
+def parse_mode_models(s: str) -> dict[int, list[str]]:
+    """"1:a.pt;3:b.pt,c.pt;7:" → {1: ["a.pt"], 3: ["b.pt", "c.pt"], 7: []}. 잘못된 칸은 건너뜀. 순수 함수."""
+    out: dict[int, list[str]] = {}
+    for part in str(s or "").split(";"):
+        if ":" not in part:
+            continue
+        k, v = part.split(":", 1)
+        try:
+            mode = int(k.strip())
+        except ValueError:
+            continue
+        out[mode] = [x.strip() for x in v.split(",") if x.strip()]
+    return out
+
+
+def resolve_model(name: str, dirs=MODEL_DIRS) -> str | None:
+    """모델 이름 → 경로. '/' 가 있으면 그대로(있을 때), 없으면 MODEL_DIRS 에서 찾음. 없으면 None. 순수 함수(파일 확인만)."""
+    if os.sep in name:
+        return name if os.path.isfile(name) else None
+    for d in dirs:
+        p = os.path.join(d, name)
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def active_paths(mode: int, table: dict[int, list[str]], default_paths: list[str], resolve=resolve_model) -> list[str] | None:
+    """이 모드에 돌릴 모델 경로 목록. 표에 없는 모드(0 포함)면 default_paths. 표에 있는데 파일이 하나도 없으면 None(못 바꿈). 순수 함수."""
+    if mode not in table:
+        return list(default_paths)
+    names = table[mode]
+    paths = [p for p in (resolve(n) for n in names) if p]
+    if names and not paths:
+        return None
+    return paths
+
+
 def find_default_models() -> tuple[list[str], list[str]]:
     """(찾은 경로, 같은 묶음인데 없는 파일 이름). 아무것도 없으면 (["yolov8n-seg.pt"](COCO 임시), [])."""
     for d in MODEL_DIRS:
@@ -249,6 +292,8 @@ class SegmenterNode(Node):
         d("debug_hz", 10.0)
         d("moving_mps", 0.05)
         d("known_only", True)                     # INTERFACES 클래스(ball·velcro_ball·pad·rod·cup·hand) 만 발행
+        d("mode_models", DEFAULT_MODE_MODELS)     # 모드별 모델 "모드:이름,이름;..." (10/15). 이름은 MODEL_DIRS 에서 찾음
+        d("active_mode", 0)                       # 지금 모드 (brain 이 바꿈). 0 = model_path / 기본 찾기
         g = lambda k: self.get_parameter(k).value  # noqa: E731
 
         self.bridge = CvBridge()
@@ -283,15 +328,24 @@ class SegmenterNode(Node):
             paths, missing = find_default_models()
             for n in missing:                              # 묶음 중 하나만 있으면 다른 모드가 조용히 '물체 없음'으로 실패하므로 원인을 남김 (PR #105 정동휘 리뷰)
                 self.get_logger().warn(f"{n} 없음 → {MODEL_ROLE.get(n, n)} 인식 안 됨. {os.path.dirname(paths[0])} 에 넣을 것")
-        self.models = []                                  # (YOLO, names, imgsz)
-        for path in paths:
+        self.default_paths = paths
+        self.mode_table = parse_mode_models(g("mode_models"))
+        self._loaded = {}                                 # 경로 → (YOLO, names, imgsz). 모든 모드 모델을 시작 때 한 번 읽음 (모드 바꿀 때 지연 없게)
+        wanted = list(paths) + [p for m in self.mode_table.values() for p in (resolve_model(n) for n in m) if p]
+        for m, names_ in self.mode_table.items():
+            for n in names_:
+                if resolve_model(n) is None:
+                    self.get_logger().warn(f"모드 {m} 모델 {n} 없음 ({', '.join(MODEL_DIRS)}) → 모드 {m} 에서 바꾸지 않음")
+        for path in dict.fromkeys(wanted):
             mdl = YOLO(path)
             names = dict(mdl.names)
             sz = self.imgsz or model_train_imgsz(mdl)
-            self.models.append((mdl, names, sz))
+            self._loaded[path] = (mdl, names, sz)
             self.get_logger().info(f"모델 {path} imgsz {sz} 클래스 {sorted(set(self.alias.get(v, v) for v in names.values()))[:12]}")
-        if len(self.models) > 1:
-            self.get_logger().info(f"모델 {len(self.models)}개를 매 프레임 같이 돌려 합침 (다른 모델끼리 겹치면 앞 모델 우선)")
+        self.models = []                                  # 지금 돌리는 (YOLO, names, imgsz) — active_mode 로 고름
+        self.active_mode = None
+        self._set_mode(int(g("active_mode")))
+        self.add_on_set_parameters_callback(self._on_params)
 
         self.color = self.depth = self.K = self.tcp = None
         self.color_stamp = self.color_frame = None
@@ -326,6 +380,30 @@ class SegmenterNode(Node):
 
     def _on_info(self, msg: CameraInfo):
         self.K = list(msg.k)
+
+    def _set_mode(self, mode: int) -> bool:
+        """active_mode → 돌릴 모델. 표에 있는 모드인데 파일이 없으면 False (지금 모델 유지)."""
+        paths = active_paths(mode, self.mode_table, self.default_paths, lambda n: resolve_model(n) if resolve_model(n) in self._loaded else None)
+        if paths is None:
+            self.get_logger().warn(f"모드 {mode} 모델을 못 읽음 — 지금 모델 유지")
+            return False
+        self.models = [self._loaded[p] for p in paths]
+        self.active_mode = mode
+        what = ", ".join(os.path.basename(p) for p in paths) or "없음 (빈 objects 발행)"
+        self.get_logger().info(f"모드 {mode if mode else '기본'} — 모델 {what}" + (" · 겹치면 앞 모델 우선" if len(paths) > 1 else ""))
+        return True
+
+    def _on_params(self, params):
+        from rcl_interfaces.msg import SetParametersResult
+        for p in params:
+            if p.name == "active_mode":
+                try:
+                    mode = int(p.value)
+                except (TypeError, ValueError):
+                    return SetParametersResult(successful=False, reason="active_mode 는 정수")
+                if mode != self.active_mode and not self._set_mode(mode):
+                    return SetParametersResult(successful=False, reason=f"모드 {mode} 모델 없음")
+        return SetParametersResult(successful=True)
 
     def _on_tcp(self, msg: PoseStamped):
         self.tcp = (msg, time.monotonic())
@@ -387,7 +465,7 @@ class SegmenterNode(Node):
         t0 = time.monotonic()
         T, frame = self._cam_to_base(stamp, cam_frame)
         groups = []
-        for mdl, names, sz in self.models:
+        for mdl, names, sz in list(self.models):          # 모드 전환(파라미터 콜백)과 겹쳐도 이번 프레임은 그대로
             res = mdl.predict(img, imgsz=sz, conf=self.conf, device=self.device or None, verbose=False)[0]
             groups.append(extract_objects(res, depth, self.K, T, names, self.alias, self.conf, self.known_only))
         objs = groups[0] if len(groups) == 1 else merge_cross_model(groups)
