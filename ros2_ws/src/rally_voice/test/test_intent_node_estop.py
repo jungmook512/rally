@@ -42,6 +42,7 @@ def make_node(clear_s=0.05):
     n.get_clock = lambda: SimpleNamespace(now=lambda: SimpleNamespace(to_msg=lambda: intent_node.VoiceIntent().header.stamp))
     n.pub_estop, n.pub_intent = FakePub(), FakePub()
     n._kws, n._kws_last_hit = None, -1.0
+    n._emergency_enabled = True
     n._estop_clear_s, n._estop_clear_timer = clear_s, None
     n._stop = threading.Event()
     return n, log
@@ -116,3 +117,14 @@ def test_kws_feed_hit_goes_to_keyword_path():
     n._feed_kws(np.zeros(intent_node.FRAME, dtype=np.int16))
     assert estops(n)[0] is True
     assert n.pub_intent.sent[0].text == "멈춰"
+
+
+def test_emergency_off_ignores_hit_but_keeps_kws():
+    # 10/15 연습용 emergency_enabled=false: 비상어가 들려도 정지 요청·intent 없음, 판별기(랠리야 호출어용)는 그대로 둔다
+    n, log = make_node()
+    n._emergency_enabled = False
+    hit = SimpleNamespace(word="그만", score=0.9)
+    n._kws = SimpleNamespace(feed=lambda chunk, t: hit)
+    n._feed_kws(np.zeros(intent_node.FRAME, dtype=np.int16))
+    assert estops(n) == [] and n.pub_intent.sent == [] and n._kws is not None
+    assert any("정지 요청 안 함" in s for _, s in log.lines)
