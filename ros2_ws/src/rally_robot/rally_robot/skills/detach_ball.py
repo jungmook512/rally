@@ -121,57 +121,83 @@ def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=N
         move_checked(node, detach.up(detach.along(here, n, 0.01), cfg["approach_m"]), tv, ta)   # 패드에서 1 cm 떼고 위로
         raise SkillAbort(reason)
 
-    # 1. 공 보기 자세 → 비전
+    # 1~3. 공 보기 → 비전 → 접근 → 닿을 때까지 하강 → 쥐기. 잘못 쥐면 열고 올라가 공 보기부터 다시 (grasp_tries 번, 10/15 정정인)
     node.check_controller()
-    phase("view")
-    ok, _, _ = node.gripper(open_mm, force)
-    if not ok:
-        raise SkillAbort("gripper_unavailable")
-    movej_planned(node, log, cfg, cfg["ball_view_posj"], jv, ja, cfg["path_x_max_m"], "공 보기 자세")
     seen_given = ball_m is not None                                   # goal 로 받은 공 위치는 보정하지 않음
-    if ball_m is None:
-        time.sleep(0.5)                                              # tcp_pose(10 Hz) 가 멈춘 자세를 반영한 뒤 (segmenter tcp_npy 변환)
-        G = pad_rack.rack_points(fkin, pad_rack.config(node))["G"] if pad_rack.taught(node) else None
-        near = [v / 1000.0 for v in G[:3]] if G is not None else None
-        ball_m, n_obs = _observe_ball(node, cfg, check, near)
-        log.info(f"[detach_ball] 공 {np.round(ball_m, 3).tolist()} m (관측 {n_obs}, 거치대 G 기준 {cfg['ball_search_m']} m 안)")
-    view6 = list(get_current_posx()[0])                              # 공 보기 자세 TCP (카메라 위치·쥐는 방향 기준)
-    if float(cfg["ball_z_m"]) > 0.0:                                 # 거치대 높이는 고정 — 비전 깊이 오차 대신 실측
-        before = list(ball_m)
-        cam = _camera_pos(view6) if cfg["ray_correct"] and not seen_given else None
-        if cam is not None:
-            ball_m = detach.slide_along_ray(ball_m, cam, float(cfg["ball_z_m"]))   # 시선 따라 → x·y 도 같이 고침
-        else:
-            ball_m = [ball_m[0], ball_m[1], float(cfg["ball_z_m"])]
-        log.info(f"[detach_ball] 공 비전 {np.round(np.array(before) * 1000).tolist()} mm → {'시선 따라' if cam is not None else '높이만'} "
-                 f"{np.round(np.array(ball_m) * 1000).tolist()} mm (ball_z_m {cfg['ball_z_m'] * 1000:.0f})")
-    off = [float(v) for v in cfg["ball_offset_m"]]
-    if any(abs(v) > 1e-6 for v in off):
-        ball_m = [ball_m[i] + off[i] for i in range(3)]
-        log.info(f"[detach_ball] 고정 보정 ball_offset_m {np.round(np.array(off) * 1000).tolist()} mm → {np.round(np.array(ball_m) * 1000).tolist()} mm")
-    out["ball_m"] = [float(v) for v in ball_m]
-
-    # 2. 접근 자세: 위에서 수직으로 — 툴 아래, 손가락은 패드 면과 나란히(옆) 닫힘 (10/14: 정면 수평 쥐기는 IK 없음)
-    if cfg["keep_view_yaw"]:                                         # 카메라 방향 그대로 (10/14: 180° 돌고 내려가던 것)
-        grasp6 = detach.top_grasp_pose_like(ball_m, cfg["grasp_below_m"], cfg["top_down_zyz"], view6[3:6])
-    else:
-        grasp6 = detach.top_grasp_pose(ball_m, cfg["grasp_below_m"], cfg["top_down_zyz"], cfg["finger_rot_deg"])
-    pre = detach.up(grasp6, cfg["approach_m"])
-    phase("approach")
-    from DSR_ROBOT2 import get_current_posj
-    q_pre = ik_nearest(pre, get_current_posj())                      # 공 보기 자세에서 관절 차 가장 작은 해 (10/14 확인: J1 153, 경로 x ≤ 0.33)
-    if q_pre is None:
-        raise SkillAbort("ik_failed (공 위 접근 자세)")
-    movej_planned(node, log, cfg, q_pre, jv, ja, cfg["path_x_max_m"], "공 위 접근")
+    given = list(ball_m) if seen_given else None
+    tries = max(1, int(cfg["grasp_tries"]))
     node.set_contact(True)                                           # 손가락이 패드에 닿을 수 있음 — nudge 쉼, 힘 한계 25 N 그대로
     try:
-        with compliance(cfg["stiffness"], log):
-            move_checked(node, grasp6, cv, ca, stall_ok=True)
-        # 3. 쥐기
-        phase("grasp")
-        ok, width, detected = node.gripper(0.0, force)
-        if not detach.grip_ok(ok, width, detected, r, cfg["grip_tol_mm"]):
-            release_and_back("detach_grip_fail", f"잘못 쥠 — 폭 {width:.1f} mm (공 {r * 2000:.0f} ± {cfg['grip_tol_mm']:.0f}), 물체 {detected}")
+        for attempt in range(1, tries + 1):
+            phase("view")
+            ok, _, _ = node.gripper(open_mm, force)
+            if not ok:
+                raise SkillAbort("gripper_unavailable")
+            movej_planned(node, log, cfg, cfg["ball_view_posj"], jv, ja, cfg["path_x_max_m"], "공 보기 자세")
+            if seen_given:
+                ball_m = list(given)
+            else:
+                time.sleep(0.5)                                      # tcp_pose(10 Hz) 가 멈춘 자세를 반영한 뒤 (segmenter tcp_npy 변환)
+                G = pad_rack.rack_points(fkin, pad_rack.config(node))["G"] if pad_rack.taught(node) else None
+                near = [v / 1000.0 for v in G[:3]] if G is not None else None
+                ball_m, n_obs = _observe_ball(node, cfg, check, near)
+                log.info(f"[detach_ball] 공 {np.round(ball_m, 3).tolist()} m (관측 {n_obs}, 거치대 G 기준 {cfg['ball_search_m']} m 안, {attempt}/{tries}번째)")
+            view6 = list(get_current_posx()[0])                      # 공 보기 자세 TCP (카메라 위치·쥐는 방향 기준)
+            if float(cfg["ball_z_m"]) > 0.0:                         # 거치대 높이는 고정 — 비전 깊이 오차 대신 실측
+                before = list(ball_m)
+                cam = _camera_pos(view6) if cfg["ray_correct"] and not seen_given else None
+                if cam is not None:
+                    ball_m = detach.slide_along_ray(ball_m, cam, float(cfg["ball_z_m"]))   # 시선 따라 → x·y 도 같이 고침
+                else:
+                    ball_m = [ball_m[0], ball_m[1], float(cfg["ball_z_m"])]
+                log.info(f"[detach_ball] 공 비전 {np.round(np.array(before) * 1000).tolist()} mm → {'시선 따라' if cam is not None else '높이만'} "
+                         f"{np.round(np.array(ball_m) * 1000).tolist()} mm (ball_z_m {cfg['ball_z_m'] * 1000:.0f})")
+            off = [float(v) for v in cfg["ball_offset_m"]]
+            if any(abs(v) > 1e-6 for v in off):
+                ball_m = [ball_m[k] + off[k] for k in range(3)]
+                log.info(f"[detach_ball] 고정 보정 ball_offset_m {np.round(np.array(off) * 1000).tolist()} mm → {np.round(np.array(ball_m) * 1000).tolist()} mm")
+            out["ball_m"] = [float(v) for v in ball_m]
+
+            # 2. 접근 자세: 위에서 수직으로 — 툴 아래, 손가락은 패드 면과 나란히(옆) 닫힘 (10/14: 정면 수평 쥐기는 IK 없음)
+            if cfg["keep_view_yaw"]:                                 # 카메라 방향 그대로 (10/14: 180° 돌고 내려가던 것)
+                grasp6 = detach.top_grasp_pose_like(ball_m, cfg["grasp_below_m"], cfg["top_down_zyz"], view6[3:6])
+            else:
+                grasp6 = detach.top_grasp_pose(ball_m, cfg["grasp_below_m"], cfg["top_down_zyz"], cfg["finger_rot_deg"])
+            pre = detach.up(grasp6, cfg["approach_m"])
+            phase("approach")
+            from DSR_ROBOT2 import get_current_posj
+            q_pre = ik_nearest(pre, get_current_posj())              # 공 보기 자세에서 관절 차 가장 작은 해 (10/14 확인: J1 153, 경로 x ≤ 0.33)
+            if q_pre is None:
+                raise SkillAbort("ik_failed (공 위 접근 자세)")
+            movej_planned(node, log, cfg, q_pre, jv, ja, cfg["path_x_max_m"], "공 위 접근")
+
+            # 비전 높이를 믿지 않고 닿을 때까지 내려감 (10/15 실로봇: v2 비전 z 197 mm 인데 실제 공 중심 ≤ 141 — 높은 데서 멈추고 헛쥠)
+            #   목표 = 비전 쥐는 높이보다 descend_extra_m 더 아래, 툴 힘이 contact_n 넘게 3 샘플 변하면 멈춤 (손가락이 패드·공에 닿음)
+            below6 = detach.up(grasp6, -float(cfg["descend_extra_m"]))
+            hits, f0 = [0], {}
+
+            def touched():
+                dz = float(np.linalg.norm(np.asarray(get_tool_force()[:3], float) - f0["f"]))
+                hits[0] = hits[0] + 1 if dz >= cfg["contact_n"] else 0
+                return hits[0] >= 3
+
+            with compliance(cfg["stiffness"], log):
+                f0["f"] = np.asarray(get_tool_force()[:3], float)    # 순응이 켜진 뒤의 영점
+                how = move_checked(node, below6, cfg["descend_vel_mm_s"], ca, on_poll=touched, stall_ok=True)
+            z_stop = float(get_current_posx()[0][2])
+            log.info(f"[detach_ball] 하강 멈춤 ({how}) TCP z {z_stop:.0f} mm — 비전 쥐는 높이 {grasp6[2]:.0f}, 하한 {below6[2]:.0f}")
+            # 3. 쥐기
+            phase("grasp")
+            ok, width, detected = node.gripper(0.0, force)
+            if detach.grip_ok(ok, width, detected, r, cfg["grip_tol_mm"]):
+                grasp6 = list(get_current_posx()[0][:3]) + list(grasp6[3:6])   # 실제 쥔 자리 (벗기기 기준)
+                break
+            msg = f"잘못 쥠 — 폭 {width:.1f} mm (공 {r * 2000:.0f} ± {cfg['grip_tol_mm']:.0f}), 물체 {detected}, TCP z {z_stop:.0f}"
+            if attempt >= tries:
+                release_and_back("detach_grip_fail", msg + f" · {tries}번 다 실패")
+            log.warning(f"[detach_ball] {msg} → 열고 올라가 다시 ({attempt + 1}/{tries}번째)")
+            node.gripper(open_mm, force)
+            move_checked(node, detach.up(list(get_current_posx()[0]), cfg["approach_m"]), tv, ta)
         time.sleep(0.2)
         f0 = np.asarray(get_tool_force()[:3], float)                 # 쥔 직후 영점 (툴 무게·자세 성분 제거)
 
