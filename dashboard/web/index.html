@@ -190,6 +190,10 @@
   .camera .frame .empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:8px; color:#bbb; background:#111; font-weight:600; letter-spacing:.04em; }
   .camera .frame .empty[hidden] { display:none; }
   .camera figcaption { margin-top:6px; font-size:.9em; }
+  /* 모드 3 화면에서만 손목 카메라를 반시계 90° (10/14 조정묵): 프레임을 세로(240/424)로 바꾸고 그림 상자를 프레임의 가로·세로를 맞바꾼 크기로 두고 돌린다 */
+  .camera[data-rot="ccw"] .frame { aspect-ratio:240/424; margin:0 auto; }
+  .camera[data-rot="ccw"] img { position:absolute; top:50%; left:50%; width:calc(100% * 424 / 240); height:calc(100% * 240 / 424); transform:translate(-50%, -50%) rotate(-90deg); }
+  #camera-slot .camera[data-rot="ccw"] .frame { max-height:none; width:min(100%, calc((100vh - 440px) * 240 / 424)); }   /* 세로가 길어지니 높이 한계를 너비로 환산 */
   #report { overflow-wrap:anywhere; line-height:1.6; max-height:520px; overflow:auto; }
   #report h4 { margin:16px 0 8px; font-size:16px; font-weight:750; color:var(--text); }
   #report h4:first-child { margin-top:0; }
@@ -657,6 +661,9 @@ function showCameras() {
   for (const fig of $("cameras").children) {
     const show = fig.dataset.side !== "1" || selectedMode === null || selectedMode === 3;
     if (fig.hidden !== !show) { fig.hidden = !show; fig.toggle?.(show); }
+    // 모드 3 화면에서만 손목 카메라를 반시계 90° 로 (10/14 조정묵). 모드 1·5·전체 현황·측면은 그대로
+    const rot = selectedMode === 3 && fig.dataset.side !== "1" ? "ccw" : "";
+    if ((fig.dataset.rot || "") !== rot) { if (rot) fig.dataset.rot = rot; else delete fig.dataset.rot; }
   }
 }
 

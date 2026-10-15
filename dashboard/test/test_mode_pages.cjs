@@ -373,3 +373,21 @@ assert.match(get('rest-llm').textContent, /이번 시도 보상 동작 보임 \(
 run("renderControl(null)");
 assert.equal(get('rest-panel').hidden, true);
 console.log('rest stack + notifications OK');
+
+// 모드 3 화면에서만 손목 카메라 반시계 90° (10/14) — data-rot="ccw" 는 모드 3 의 손목 그림에만
+const wristCam = run("cameraFigure({name:'손목', topic:'/rally/perception/objects/debug_image', url:'http://robot:8080/stream?topic=/d', fallback:'http://robot:8080/stream?topic=/c'})");
+const sideCam = run("cameraFigure({name:'측면', topic:'/side/side/color/image_raw', url:'http://robot:8080/stream?topic=/s'})");
+get('cameras').children = [wristCam, sideCam];
+visit('#mode3');
+assert.equal(wristCam.dataset.rot, 'ccw', '모드 3: 손목 반시계 90°');
+assert.equal(sideCam.dataset.rot, undefined, '측면은 그대로');
+assert.equal(sideCam.hidden, false);
+visit('#mode1');
+assert.equal(wristCam.dataset.rot, undefined, '모드 1: 그대로');
+assert.equal(sideCam.hidden, true, '측면은 모드 3 전용');
+visit('#mode5');
+assert.equal(wristCam.dataset.rot, undefined, '모드 5: 그대로');
+visit('#mode3');
+assert.equal(wristCam.dataset.rot, 'ccw');
+assert.match(html, /\.camera\[data-rot="ccw"\] img \{[^}]*rotate\(-90deg\)/, 'CSS 가 반시계 90° 를 그린다');
+console.log('mode 3 wrist rotation OK');
