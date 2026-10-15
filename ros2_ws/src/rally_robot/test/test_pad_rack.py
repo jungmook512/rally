@@ -1,5 +1,7 @@
 import math
 
+import numpy as np
+
 import pytest
 
 from rally_robot import pad_rack as pr
@@ -22,6 +24,15 @@ def test_insert_points_follow_slot_axis():
     assert P[3:] == G[3:] and B[3:] == G[3:]
     with pytest.raises(SkillAbort):
         pr.insert_points(G, G, 0.03, 0.01)
+
+
+def test_back_point_behind_approach_on_handle_axis():
+    """#208: A 뒤 back_m 는 G → A 축 위, 자세는 A."""
+    b = pr.back_point(A, G, 0.06)
+    d = np.array(A[:3]) - np.array(G[:3])
+    assert np.allclose(np.array(b[:3]) - np.array(A[:3]), d / np.linalg.norm(d) * 60.0)
+    assert b[3:6] == A[3:6]
+    assert pr.DEFAULTS["pad_rack_back_m"] == 0.0                   # 기본은 예전 경로
 
 
 def test_retreat_keeps_offset_from_compliance():

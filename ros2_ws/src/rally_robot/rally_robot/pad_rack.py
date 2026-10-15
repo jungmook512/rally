@@ -9,6 +9,10 @@
 
 집기 pick_pad:  A(관절) → 열기 → G(직선, 접촉 속도) → 쥐기 → 폭 확인 → U(직선, 옆·회전은 무르게 순응 — 홈에 안 걸리게)
                 → 순응 해제 → U 다시 맞춤 → 요격 대기 자세 (mode3.ready_posj, 성현·동휘 결정)
+  대기 자세에서 집을 때 (10/15, #208 — pad_rack_back_m > 0 이면): 대기 → (손목 먼저 U 값) → U(관절) → 열기 → B(A 뒤 back_m, 직선)
+                → A(직선) → G. 예전 경로(손목 먼저 A 값 → A 관절 이동)는 그리퍼가 거치대 위에서 내려오며 상자를 쓸고 들어감
+                (충돌 메시 계산: 기존 자세 −2.6 cm, 어깨 반대 자세 −5.9 cm). U 를 거쳐 손잡이 축을 따라 뒤에서 들어오면 어느 자세든 ≥ 0.9 cm
+                (A·G 자체는 손잡이를 감싸므로 상자 모델에서 음수 — 기준선과 같음). pad_rack_back_m 0 이면 예전 경로
   (요격·받은 뒤 처리는 그 사이에 — 나중에)
 꽂기 place_pad: (대기 자세에 있으면) 대기 자세 → U 로 · 아니면 U(관절) → 홈 입구 위 P(G 에서 홈 축 따라 pre_m)
                 → 순응(옆·회전 무르게) 하강 G 너머 below_m 까지 (G 위 slow_from 부터 slow_vel),
@@ -54,6 +58,7 @@ DEFAULTS = dict(
     pad_insert_stiffness=[500, 500, 1000, 30, 30, 30],      # 꽂기 순응 [x y z N/m, rx ry rz Nm/rad] — 옆·회전 무르게
     pad_lift_stiffness=[1000, 1000, 3000, 50, 50, 50],      # 빼기 순응 — 홈에 걸려도 옆으로 따라가게
     pad_move_vel_mm_s=40.0,                                 # A↔G·G↔U 직선 속도 상한 (접촉 하강 속도와 작은 쪽)
+    pad_rack_back_m=0.0,                                    # 대기 자세에서 집을 때 U → (A 뒤 이만큼, 손잡이 축) 직선 → A. 0 = 예전 경로(손목 먼저 A → A 관절). #208 (10/15)
     pad_joint_vel_deg_s=30.0, pad_joint_acc_deg_s2=60.0,    # A·U 로 가는 관절 이동 상한 — 거치대 공·손 보기와 같은 이유(60/120 에서 관성 힘 25 N 초과)
     pad_rack_slow_radius_m=0.35,                            # ★ 10/14: TCP 가 거치대 G 에서 이 안에 있을 때 출발하는 관측·손 보기 관절 이동도 위 속도로.
                                                             #   세션 시작 '관측 자세로'(go_observe_pose, 60/120)가 거치대 자세에서 출발하며 가속 관성 힘으로
@@ -182,6 +187,16 @@ def above_seat(cur, G, U) -> float:
     return float((np.array(cur[:3], float) - g) @ (d / np.linalg.norm(d)))
 
 
+def back_point(A, G, back_m):
+    """A 에서 손잡이 축(G → A 방향)으로 back_m 더 물러난 점. 자세는 A. 순수 함수 (#208 집기 접근 직선화)."""
+    a, g = np.array(A[:3], float), np.array(G[:3], float)
+    d = a - g
+    n = float(np.linalg.norm(d))
+    if n < 1.0:
+        raise SkillAbort("pad_rack_approach_too_short")
+    return [float(v) for v in a + d / n * back_m * 1000.0] + [float(v) for v in A[3:6]]
+
+
 def retreat_from(cur, G, A):
     """지금 자리(순응으로 G 에서 몇 mm 비켜 있을 수 있음)에서 (A − G) 만큼 직선으로 빠지는 점. 자세는 A. 순수 함수.
     절대 A 로 가면 비켜 선 만큼 손가락이 손잡이를 옆으로 긁는다."""
@@ -223,17 +238,34 @@ def pick_pad(node, log, check=lambda: None):
     log.info(f"[pad_rack] 집기 A {[round(v) for v in pts['A'][:3]]} → G {[round(v) for v in pts['G'][:3]]} → U {[round(v) for v in pts['U'][:3]]}")
     from DSR_ROBOT2 import get_current_posj
     ready = _ready_posj(node)
-    if ready is not None and _near(get_current_posj(), ready):
-        # 10/13 실로봇: 대기 자세 → A 한 번에 관절 이동하면 TCP 가 y −0.675 까지 휘어 workspace_limit STOP (순기구학 여유 −7.5 cm).
-        # 꽂기(place_pad)처럼 손목 먼저 A 값으로(팔은 그대로) → 팔을 A 로: 여유 +9.1 cm
-        via = _ready_via_posj(node) or ([float(v) for v in ready[:3]] + [float(v) for v in cfg["pad_rack_approach_posj"][3:6]])
+    from_ready = ready is not None and _near(get_current_posj(), ready)
+    back_m = float(cfg["pad_rack_back_m"])
+    if from_ready and back_m > 0:
+        # 10/15 #208: 대기 → (손목 먼저 U 값) → U 관절 → 열기 → A 뒤 back_m 직선 → A 직선. 거치대 위(U)에서 손잡이 축을 따라 뒤로 들어온다
+        for q in ready_route(cfg["pad_rack_lift_posj"], ready, _ready_via_posj(node))[::-1][1:] + [cfg["pad_rack_lift_posj"]]:
+            check()
+            movej_checked(node, q, jv, ja)
+        ok, _, _ = node.gripper(open_mm, force)
+        if not ok:
+            raise SkillAbort("gripper_unavailable")
+        Bk = back_point(pts["A"], pts["G"], back_m)
+        log.info(f"[pad_rack] U → A 뒤 {back_m * 100:.0f} cm {[round(v) for v in Bk[:3]]} → A (직선, 손잡이 축)")
         check()
-        movej_checked(node, via, jv, ja)                      # 10/14 Y0: ready_via_posj(팔 세움) — 팔만 두고 손목을 A 로 돌리면 TCP x 0.60
-    check()
-    movej_checked(node, cfg["pad_rack_approach_posj"], jv, ja)
-    ok, _, _ = node.gripper(open_mm, force)
-    if not ok:
-        raise SkillAbort("gripper_unavailable")
+        move_checked(node, Bk, lv, ca)
+        check()
+        move_checked(node, pts["A"], lv, ca)
+    else:
+        if from_ready:
+            # 10/13 실로봇: 대기 자세 → A 한 번에 관절 이동하면 TCP 가 y −0.675 까지 휘어 workspace_limit STOP (순기구학 여유 −7.5 cm).
+            # 꽂기(place_pad)처럼 손목 먼저 A 값으로(팔은 그대로) → 팔을 A 로: 여유 +9.1 cm
+            via = _ready_via_posj(node) or ([float(v) for v in ready[:3]] + [float(v) for v in cfg["pad_rack_approach_posj"][3:6]])
+            check()
+            movej_checked(node, via, jv, ja)                  # 10/14 Y0: ready_via_posj(팔 세움) — 팔만 두고 손목을 A 로 돌리면 TCP x 0.60
+        check()
+        movej_checked(node, cfg["pad_rack_approach_posj"], jv, ja)
+        ok, _, _ = node.gripper(open_mm, force)
+        if not ok:
+            raise SkillAbort("gripper_unavailable")
     check()
     node.set_contact(True)
     try:
