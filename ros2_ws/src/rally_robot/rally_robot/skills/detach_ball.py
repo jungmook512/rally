@@ -141,7 +141,10 @@ def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=N
                 G = pad_rack.rack_points(fkin, pad_rack.config(node))["G"] if pad_rack.taught(node) else None
                 near = [v / 1000.0 for v in G[:3]] if G is not None else None
                 ball_m, n_obs = _observe_ball(node, cfg, check, near)
-                log.info(f"[detach_ball] 공 {np.round(ball_m, 3).tolist()} m (관측 {n_obs}, 거치대 G 기준 {cfg['ball_search_m']} m 안, {attempt}/{tries}번째)")
+                top_z = ball_m[2]
+                ball_m = [ball_m[0], ball_m[1], ball_m[2] - float(cfg["vision_top_to_center_m"])]   # 비전 z = 공 윗면 → 중심
+                log.info(f"[detach_ball] 공 윗면 z {top_z * 1000:.0f} → 중심 {np.round(np.array(ball_m) * 1000).tolist()} mm "
+                         f"(관측 {n_obs}, 거치대 G 기준 {cfg['ball_search_m']} m 안, {attempt}/{tries}번째)")
             view6 = list(get_current_posx()[0])                      # 공 보기 자세 TCP (카메라 위치·쥐는 방향 기준)
             if float(cfg["ball_z_m"]) > 0.0:                         # 거치대 높이는 고정 — 비전 깊이 오차 대신 실측
                 before = list(ball_m)
@@ -171,21 +174,10 @@ def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=N
                 raise SkillAbort("ik_failed (공 위 접근 자세)")
             movej_planned(node, log, cfg, q_pre, jv, ja, cfg["path_x_max_m"], "공 위 접근")
 
-            # 비전 높이를 믿지 않고 닿을 때까지 내려감 (10/15 실로봇: v2 비전 z 197 mm 인데 실제 공 중심 ≤ 141 — 높은 데서 멈추고 헛쥠)
-            #   목표 = 비전 쥐는 높이보다 descend_extra_m 더 아래, 툴 힘이 contact_n 넘게 3 샘플 변하면 멈춤 (손가락이 패드·공에 닿음)
-            below6 = detach.up(grasp6, -float(cfg["descend_extra_m"]))
-            hits, f0 = [0], {}
-
-            def touched():
-                dz = float(np.linalg.norm(np.asarray(get_tool_force()[:3], float) - f0["f"]))
-                hits[0] = hits[0] + 1 if dz >= cfg["contact_n"] else 0
-                return hits[0] >= 3
-
-            with compliance(cfg["stiffness"], log):
-                f0["f"] = np.asarray(get_tool_force()[:3], float)    # 순응이 켜진 뒤의 영점
-                how = move_checked(node, below6, cfg["descend_vel_mm_s"], ca, on_poll=touched, stall_ok=True)
+            with compliance(cfg["stiffness"], log):                  # 공 중심 높이까지 (닿을 때까지 더 내려가지 않음 — 10/15 정정인)
+                how = move_checked(node, grasp6, cv, ca, stall_ok=True)
             z_stop = float(get_current_posx()[0][2])
-            log.info(f"[detach_ball] 하강 멈춤 ({how}) TCP z {z_stop:.0f} mm — 비전 쥐는 높이 {grasp6[2]:.0f}, 하한 {below6[2]:.0f}")
+            log.info(f"[detach_ball] 하강 {how} — TCP z {z_stop:.0f} mm (목표 {grasp6[2]:.0f})")
             # 3. 쥐기
             phase("grasp")
             ok, width, detected = node.gripper(0.0, force)
