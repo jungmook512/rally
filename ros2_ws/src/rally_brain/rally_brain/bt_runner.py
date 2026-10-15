@@ -49,7 +49,7 @@ from std_msgs.msg import Bool, String
 
 from rally_brain import graph_rag, hand_stop, rule_layer, metrics, posture_coach, session_report
 from rally_brain.config import config_path, load_skills
-from rally_brain.behaviours import SkillCall
+from rally_brain.behaviours import SkillCall, WaitUntil
 from rally_brain.knowledge import ontology
 from rally_brain.speech import phrase_problem
 from rally_brain.session_control import SessionControl
@@ -76,6 +76,18 @@ def mode3_enabled(skills_cfg: dict) -> bool:
 
 def default_modes(include_mode3: bool) -> list[int]:
     return [m for m in ALL_MODES if include_mode3 or m != TrialResult.MODE_CATCH_PAD]
+
+
+# 모드 선택 대기 (10/14 조정묵): goal.modes 가 비어 있으면 모드를 순서대로 돌지 않고, 대기 → 음성·대시보드로 고른 모드 N회 → 다시 대기.
+#   종료는 음성 stop(비상 아님: "여기까지 하자"·"세션 끝내자")·대시보드 종료 버튼. skills.yaml brain.mode_select
+MODE_SELECT_DEFAULTS = {"enabled": False, "prompt": "어떤 모드를 진행할지 말씀해 주세요", "prompt_interval_s": 10.0,
+                        "start_prompt": "{mode} 진행하겠습니다.",   # 고른 모드가 시작될 때 (빈 문자열이면 말하지 않음)
+                        "done_prompt": "{mode} 모드가 끝났습니다. 다음으로 진행할 모드를 말씀해 주세요",
+                        "end_prompt": "오늘 훈련을 마칠게요. 수고하셨어요"}
+
+
+def mode_select_cfg(skills_cfg: dict) -> dict:
+    return {**MODE_SELECT_DEFAULTS, **((skills_cfg.get("brain") or {}).get("mode_select") or {})}
 
 
 class BtRunner(Node):
@@ -110,6 +122,10 @@ class BtRunner(Node):
         self._pending_intent: str | None = None
         self._session: Session | None = None
         self._pending_switch: tuple[int | None, str] | None = None   # (목표 모드 또는 None=다음, 요청한 곳)
+        self._select_session = False    # 이 세션은 모드 선택 대기 방식 (lock 안에서 바꿈)
+        self._selecting = False         # 지금 모드 선택 대기 중 (lock 안에서 바꿈, tick 스레드가 시작·끝)
+        self._end_requested: str | None = None   # 세션 종료 요청한 곳 (음성·dashboard). tick 루프가 시도 경계에서 끝냄
+        self._last_mode: int | None = None        # 선택 방식에서 마지막으로 끝난 모드 (안내용)
         self.control = SessionControl()
         self._posture = posture_coach.PostureCoach(posture_coach.config(self._skills_cfg))   # 보상 동작 교정 안내 (#119)
         self._comp_history: dict[int, list[bool]] = {}   # 모드별 시도마다 보상 동작이 보였는지 — 규칙 레이어 '보상 동작 반복'
@@ -207,6 +223,11 @@ class BtRunner(Node):
                 self.get_logger().warn(f"[휴식] {message}")
             if not ok:
                 self._say("지금은 이어갈 수 없어요. 화면을 확인해 주세요")
+        elif msg.intent == "stop":
+            if msg.is_emergency:
+                return   # 비상어는 safety 경로
+            ok, message = self._request_end("음성")          # "여기까지 하자"·"세션 끝내자"
+            (self.get_logger().info if ok else self.get_logger().warn)(f"[세션 종료] 음성 — {message}")
         elif msg.intent in RULE_INTENTS:
             with self._switch_lock:
                 if self.control.phase in ("paused", "pause_pending") or self.control.hand_wait:
@@ -249,6 +270,8 @@ class BtRunner(Node):
                 return False, "손 근접 정지 대기 중 — 손이 빠지고 이어진 뒤 요청해 주세요"
             if ctx is not None and ctx.safety.level == SafetyStatus.LEVEL_STOP:
                 return False, "안전 정지 중 — 세션이 끝나므로 전환하지 않음"
+            if target is None and self._selecting:
+                return False, "어떤 모드를 할지 말씀해 주세요 (공 굴리기·캐치볼·건네고 받기)"
             if target is not None:
                 if target not in MODE_NAMES:
                     return False, f"없는 모드 {target} (1·3·5·7)"
@@ -259,11 +282,39 @@ class BtRunner(Node):
             replaced = self._pending_switch is not None
             self._invalidate_rest()
             self._pending_switch = (target, source)
+            selecting, select_session = self._selecting, self._select_session
+        if selecting:
+            return True, f"모드 {target} {MODE_NAMES[target]} 시작" + (" (앞선 요청은 취소)" if replaced else "")
         if target is None and not modes_after_switch(session.modes, session.current_mode, None):
-            what = "다음 모드 없음(마지막 모드) — 전환하면 세션이 끝남"
+            what = "다음 모드 없음(마지막 모드) — 전환하면 " + ("모드 선택 대기로" if select_session else "세션이 끝남")
         else:
             what = ("다음 모드" if target is None else f"모드 {target} {MODE_NAMES[target]}") + "(으)로 전환"
         return True, f"{what} 접수 — 지금 시도가 끝나면 바뀜" + (" (앞선 요청은 취소)" if replaced else "")
+
+    # ---------- 세션 종료 (음성 stop · 대시보드 버튼) ----------
+    def _request_end(self, source: str) -> tuple[bool, str]:
+        """접수만. 실제 종료는 tick 루프 — 모드 선택 대기 중이면 바로, 시도 중이면 그 시도가 끝난 뒤 (스킬을 끊지 않음)."""
+        with self._switch_lock:
+            session = self._session
+            if session is None or self._safety_abort:
+                return False, "진행 중인 세션 없음 또는 안전 중단 중"
+            self._end_requested = source
+            self._pending_switch = self._pending_intent = None
+            self._invalidate_rest()
+            now = "곧 끝남" if (self._selecting or not session.trial_active) else "지금 시도가 끝나면 끝남"
+        return True, f"세션 종료 접수 — {now}"
+
+    def _dashboard_end_session(self, session_id: str) -> tuple[bool, str]:
+        if session_id != self.control.session_id:
+            return False, "세션이 바뀌었습니다. 새 상태를 확인해 주세요"
+        ok, message = self._request_end("dashboard")
+        self.get_logger().info(f"[세션 종료] dashboard — {message}")
+        return ok, message
+
+    @staticmethod
+    def _waiting_tree() -> py_trees.trees.BehaviourTree:
+        """모드 선택 대기 — 아무것도 안 하고 기다림. 이름은 bt_node 로 대시보드에 보임. 손 근접 STOP 대기는 그대로 동작(스킬 없음)."""
+        return py_trees.trees.BehaviourTree(WaitUntil("모드 선택 대기", lambda: False))
 
     def _dashboard_set_mode(self, session_id: str, target: int | None) -> tuple[bool, str]:
         """대시보드 모드 버튼. 화면이 보던 세션일 때만 — 나머지 확인은 set_mode·음성과 같은 _request_switch."""
@@ -484,6 +535,7 @@ class BtRunner(Node):
                 "mode": session.current_mode if session else None,
                 "difficulty": session.difficulty.get(session.current_mode, 0) if session else None,
                 "trial_index": len(session.trials) if session else 0,
+                "lane": session.lane if session else None,           # 모드 1 레인(0·1), 아니면 None — 대시보드 그림
                 "can_resume": self.control.phase == "paused" and not blocked,
                 "blocked_reason": blocked, "updated_at": time.time(),
                 "hand_wait": self.control.hand_wait,
@@ -492,6 +544,7 @@ class BtRunner(Node):
                 "proposal": self._proposal_snapshot(),
                 # 접수된 모드 전환 (지금 시도가 끝나면 바뀜). None = 없음, {"mode": None} = 다음 모드
                 "pending_switch": None if self._pending_switch is None else {"mode": self._pending_switch[0]},
+                "mode_select": self._selecting,     # 모드 선택 대기 중 (음성·버튼으로 모드를 고르면 시작) — 뒤에 추가
             }
 
     def _action_client(self, action_type: type, name: str) -> ActionClient:
@@ -543,16 +596,20 @@ class BtRunner(Node):
 
     def _run_session(self, goal_handle) -> RunSession.Result:
         goal: RunSession.Goal = goal_handle.request
-        modes = list(goal.modes) or default_modes(mode3_enabled(self._skills_cfg))
+        select = mode_select_cfg(self._skills_cfg)
+        selecting = bool(select["enabled"]) and not list(goal.modes)   # 모드 선택 대기 방식. goal 에 모드를 적으면 예전처럼 순서대로
+        modes = [] if selecting else (list(goal.modes) or default_modes(mode3_enabled(self._skills_cfg)))
         n = goal.trials_per_mode or int(self.get_parameter("trials_per_mode").value)
         session = Session(node=self, session_id=str(uuid.uuid4()), get_context=lambda: self._context,
                           publish=self._trial_pub.publish, action_client=self._action_client,
                           skills_cfg=self._skills_cfg, say=self._say, after_trial=self._after_trial,
                           service_client=self._service_client, allow_trial=self._allow_trial,
                           robot_resume_ok=self._robot_resume_ok, exposure_fixed=self._exposure_fixed)
-        tree = py_trees.trees.BehaviourTree(build_session_tree(session, modes, n))
+        tree = self._waiting_tree() if selecting else py_trees.trees.BehaviourTree(build_session_tree(session, modes, n))
         with self._switch_lock:
             self._session, self._pending_switch = session, None
+            self._select_session = self._selecting = selecting
+            self._end_requested = self._last_mode = None
             self._pending_intent = None
             self._safety_abort = False
             self._posture = posture_coach.PostureCoach(posture_coach.config(self._skills_cfg))
@@ -564,10 +621,12 @@ class BtRunner(Node):
             self.control.start(session.session_id)
         started = time.monotonic()
         started_at = datetime.now(timezone.utc)
-        self.get_logger().info(f"세션 시작 {session.session_id[:8]} — 모드 {modes}, 모드마다 {n}회")
+        self.get_logger().info(f"세션 시작 {session.session_id[:8]} — "
+                               + ("모드 선택 대기 (음성·대시보드로 고름)" if selecting else f"모드 {modes}") + f", 모드마다 {n}회")
 
         outcome = "aborted"
         last_feedback = 0.0
+        last_prompt = float("-inf")       # 모드 선택 대기 안내는 prompt_interval_s 마다
         try:
             while rclpy.ok():
                 if goal_handle.is_cancel_requested:
@@ -589,6 +648,26 @@ class BtRunner(Node):
                         last_feedback = time.monotonic()
                     time.sleep(self.tick_period)
                     continue
+                if self._end_requested is not None and (self._selecting or not (session.trial_active or self._skill_running(tree))):
+                    tree.root.stop(py_trees.common.Status.INVALID)
+                    self.get_logger().info(f"[세션 종료] {self._end_requested} 요청 — 시도 경계에서 끝냄")
+                    self._say(str(select["end_prompt"]))
+                    outcome = "succeeded"
+                    break
+                if self._selecting:
+                    with self._switch_lock:
+                        pend, self._pending_switch = self._pending_switch, None
+                    if pend is not None and pend[0] is not None:
+                        target = pend[0]
+                        self.get_logger().info(f"[모드 선택] {pend[1]}: 모드 {target} {MODE_NAMES.get(target, '?')} 시작")
+                        if start := str(select["start_prompt"] or ""):   # "공 굴리기 진행하겠습니다." — 모드 자체 intro 보다 먼저 (tts 는 순서대로 재생)
+                            self._say(start.format(mode=MODE_NAMES.get(target, f"{target}")))
+                        tree = py_trees.trees.BehaviourTree(build_session_tree(session, [target], n))
+                        with self._switch_lock:
+                            self._selecting = False
+                    elif time.monotonic() - last_prompt >= float(select["prompt_interval_s"]):
+                        self._say(str(select["prompt"]))
+                        last_prompt = time.monotonic()
                 with self._switch_lock:
                     self._poll_rest()
                 tree = self._apply_switch(tree, session, n)
@@ -599,6 +678,20 @@ class BtRunner(Node):
                 self._state_name = tip.name if tip is not None else "idle"
                 status = tree.root.status
                 if status == py_trees.common.Status.SUCCESS:
+                    if self._select_session:                       # 고른 모드 끝 → 다시 모드 선택 대기
+                        done = session.current_mode
+                        with self._switch_lock:
+                            self._last_mode = done if done is not None else self._last_mode
+                            session.current_mode, session.modes = None, []
+                            self._selecting = True
+                        if done is not None:
+                            self.get_logger().info(f"[모드 선택] 모드 {done} {MODE_NAMES.get(done, '?')} 끝 — 다시 대기")
+                            self._say(str(select["done_prompt"]).format(mode=MODE_NAMES.get(done, f"{done}")))
+                        else:
+                            self._say(str(select["prompt"]))
+                        last_prompt = time.monotonic()
+                        tree = self._waiting_tree()
+                        continue
                     outcome = "succeeded"
                     break
                 if status == py_trees.common.Status.FAILURE:
@@ -618,6 +711,8 @@ class BtRunner(Node):
                 self.control.finish(outcome)
                 self._session = self._pending_switch = None
                 self._pending_intent = None
+                self._select_session = self._selecting = False
+                self._end_requested = None
 
         threading.Thread(target=self._publish_report, daemon=True, name="session_report",
                          args=(session.session_id, list(session.trials), dict(session.difficulty), started_at,

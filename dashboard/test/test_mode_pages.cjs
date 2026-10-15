@@ -37,7 +37,7 @@ vm.runInContext(fs.readFileSync(path.join(__dirname,'../web/images/training-scen
 vm.runInContext(html.split('<script>')[1].split('</script>')[0].replace('load().then(connect);',''),context);
 function run(code){return vm.runInContext(code,context);}
 const get = id => elements.get(id);
-for(const mode of [1,3,5,7]) {
+for(const mode of [1,3,5]) {
   run(`location.hash='#mode${mode}';selectPage();`);
   assert.match(get('page-title').textContent,new RegExp(`모드 ${mode}`));
   const picture = get('mode-diagram').innerHTML;
@@ -48,6 +48,24 @@ for(const mode of [1,3,5,7]) {
   assert.equal(get('events-view').hidden,true);
   assert.equal(nav.find(a=>a.attributes['aria-current']==='page').dataset.page,'mode');
 }
+// 모드 1 레인은 2개 (#142 레인 3 제거) — 레일 2개 × 레인 2개
+assert.equal((run('topLanes()').match(/url\(#t-rail\)/g) || []).length, 4, 'mode 1 scene must draw exactly 2 lanes');
+// brain 이 고른 레인으로 공이 굴러간다 (control.lane 0 → 거치대 쪽 x 630, 1 → 가운데 x 480, 없으면 가운데)
+assert.equal(run('renderTrainingScene(7,0,"running")'), '', 'mode 7 has no scene any more');
+const ballAt = (lane) => { const svg = run(`renderTrainingScene(1,1,'running',{lane:${lane}})`); const m = svg.match(/class="ball-roll"><circle cx="(\d+)"/); return m && Number(m[1]); };
+assert.equal(ballAt(0), 630, 'lane 0 rolls on the rack-side lane');
+assert.equal(ballAt(1), 480, 'lane 1 rolls on the middle lane');
+assert.equal(ballAt(null), 480, 'unknown lane keeps the middle lane');
+run("location.hash='#mode1';selectPage();renderState({time:new Date().toISOString(),safety:{level:'normal'}});renderControl({mode:1,phase:'running',bt_node:'밀기',updated_at:Date.now()/1000,trial_index:1,lane:0});");
+assert(get('mode-diagram').innerHTML.includes('class="ball-roll"><circle cx="630"'), 'page scene follows control.lane');
+run("renderControl({...control,lane:1});");
+assert(get('mode-diagram').innerHTML.includes('class="ball-roll"><circle cx="480"'), 'lane change redraws the scene');
+// 세션 리포트 마크다운 → HTML (표·제목·목록·참고 문장), 본문의 HTML 은 글자로
+const rep = run(String.raw`renderReportMd("## 세션 요약 (취소)\n\n| 모드 | 시도 |\n|---|---|\n| 5 건네고 받기 | 4 |\n\n지표에서 뺀 시도:\n- 모드 5: interrupted 1회 <b>x</b>\n\n### 지식 그래프 근거\n\n_이 해석은 참고용입니다._")`);
+assert(rep.includes('<h4>세션 요약 (취소)</h4>') && rep.includes('<h5>지식 그래프 근거</h5>'), 'headings');
+assert(rep.includes('<th>모드</th>') && rep.includes('<td>4</td>') && !rep.includes('---'), 'table without separator row');
+assert(rep.includes('<li>모드 5: interrupted 1회 &lt;b&gt;x&lt;/b&gt;</li>'), 'list items escaped');
+assert(rep.includes('<p class="note"><em>이 해석은 참고용입니다.</em></p>'), 'closing note');
 run("location.hash='#mode1';selectPage();renderControl({mode:1,phase:'running',bt_node:'손 이탈 확인 대기',updated_at:Date.now()/1000,trial_index:2,difficulty:1});");
 assert.equal(get('step-title').textContent,'손 이탈 대기');
 assert.match(get('steps').innerHTML,/aria-current="step"/);
@@ -138,7 +156,7 @@ for (const [hash,title,trialVisible,eventVisible] of [
 }
 visit('#trials');
 assert.equal(get('trials').children.filter(r=>!r.hidden).length,2);
-run("addTrial({trial_id:'seven',mode:7},true);addTrial({trial_id:'seven',mode:7},true);");
+run("addTrial({trial_id:'five2',mode:5},true);addTrial({trial_id:'five2',mode:5},true);");
 assert.equal(get('trials').children.filter(r=>!r.hidden).length,3);
 visit('#mode1');
 assert.equal(get('trials-view').hidden,true);
@@ -278,6 +296,24 @@ async function testProposalResponses() {
   assert.equal(btn(1).disabled, false);
   assert(btn(3).classList.contains('pending') && !btn(1).classList.contains('pending'));
   assert.equal(btn(7), undefined, 'mode 7 button removed (10/14)');
+  // 세션 종료 버튼 (10/14): 진행·휴식 중에만 누를 수 있고, 확인 뒤 POST /api/session/end
+  assert.equal(get('end-session').disabled, false, 'end button enabled while running');
+  receive({phase:'ended',session_id:'s-mode',mode:5,updated_at:Date.now()/1000,proposal:null,pending_switch:null});
+  assert.equal(get('end-session').disabled, true, 'end button disabled after session end');
+  receive({phase:'running',session_id:'s-mode',mode:null,mode_select:true,mode3_enabled:false,hand_wait:'',updated_at:Date.now()/1000,proposal:null,pending_switch:null});
+  assert.match(get('phase').textContent, /모드 선택 대기/);
+  assert.equal(btn(null).hidden, true, 'no next-mode button while selecting');
+  assert.equal(btn(1).disabled, false);
+  {
+    let endSent = null;
+    context.confirm = () => true;
+    context.fetch = async (url, options) => { endSent = {url, body:JSON.parse(options.body)}; return {ok:true,json:async()=>({message:'세션 종료 접수'})}; };
+    await get('end-session').onclick();
+    assert.equal(endSent.url, '/api/session/end');
+    assert.deepEqual(endSent.body, {session_id:'s-mode'});
+    assert.equal(get('control-message').textContent, '세션 종료 접수');
+  }
+  receive({phase:'running',session_id:'s-mode',mode:5,mode3_enabled:false,hand_wait:'',updated_at:Date.now()/1000,proposal:null,pending_switch:{mode:3}});
   let sent = null, asked = 0;
   context.confirm = () => { asked++; return false; };
   await get('mode-switch').onclick({target:{closest:()=>btn(1)}});

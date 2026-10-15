@@ -100,13 +100,16 @@ ros2 run rally_bringup wait_ready --group session --once
 
 **시작** (로봇·인식 PC 네이티브 터미널, `source scripts/env_robot_pc.sh` 후)
 ```bash
-# 전체: 모드 1 → 3 → 5 → 7 (modes 비우면 기본 순서, 모드 3 은 mode3_challenge.enabled 일 때만)
+# 시연 (10/14 부터, skills.yaml brain.mode_select.enabled): modes 를 비우면 '모드 선택 대기' — 10 s 마다 "어떤 모드를 진행할지 말씀해 주세요",
+#   음성("랠리야 → 공 굴리기 하자"·"모드 5")이나 대시보드 모드 버튼으로 고르면 "○○ 진행하겠습니다." → 그 모드만 N회 → "○○ 모드가 끝났습니다. 다음으로 진행할 모드를 말씀해 주세요" → 다시 대기
+#   (문구는 모두 skills.yaml brain.mode_select — prompt·start_prompt·done_prompt·end_prompt. 바꾸면 brain 재빌드)
 ros2 action send_goal /rally/session/run rally_interfaces/action/RunSession "{patient_id: demo, modes: [], trials_per_mode: 0}" --feedback
-# 모드 골라서 (리허설에서 모드 3 이 불안하면 1·5·7 세션 + 모드 3 따로)
-ros2 action send_goal /rally/session/run rally_interfaces/action/RunSession "{patient_id: demo, modes: [1, 5, 7], trials_per_mode: 0}" --feedback
+# 예전처럼 순서대로 돌리려면 modes 를 적는다 (모드 3 은 mode3_challenge.enabled 일 때만)
+ros2 action send_goal /rally/session/run rally_interfaces/action/RunSession "{patient_id: demo, modes: [1, 5], trials_per_mode: 0}" --feedback
 ```
-- 시도 수: 모드 1 = 거치대 공 4개, 나머지 모드당 5회 (`trials_per_mode: 0` 일 때)
-- 세션 도중 모드 바꾸기: 음성 "공 굴리기 하자" 등 / 다음 모드 "다음"
+- 시도 수: 모드 1 = 2회(#200), 나머지 모드당 5회 (`trials_per_mode: 0` 일 때)
+- 모드 고르기·바꾸기: 음성 "공 굴리기 하자"·"캐치볼"·"건네고 받기 하자" / 대시보드 모드 버튼. 대기 중 "다음"은 안 받음 (모드 이름을 말해야 함)
+- 세션 끝내기: 음성 "여기까지 하자"·"세션 끝내자" / 대시보드 **세션 종료** 버튼 — 시도 중이면 그 시도를 마친 뒤 끝남. 비상어(그만·멈춰)는 종료가 아니라 안전 정지
 
 **모드별로 볼 것**
 

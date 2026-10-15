@@ -8,6 +8,7 @@
   WS   /ws            {"type": "state", "data": …} 0.5 s 마다 바뀌었을 때 / {"type": "event", "data": …} rally:events 그대로
   GET /api/session · POST /api/session/resume — Redis를 통해 brain 상태 조회·재개 승인 요청
   POST /api/session/mode — 모드 전환 요청 (1·3·5 또는 null = 다음 모드). brain 이 확인하고 지금 시도가 끝나면 바꾼다
+  POST /api/session/end  — 현재 세션 종료. brain 이 접수하고 시도 경계에서 끝낸다 (모드 선택 대기 중이면 바로)
   GET  /api/cameras   카메라 화면 주소 — 로봇·인식 PC 의 web_video_server(ROBOT_VIDEO_URL) MJPEG. 브라우저가 거기서 직접 받는다
                       (영상은 대시보드 서버를 거치지 않고, 저장하지 않는다 — 같은 네트워크 안 화면 표시만)
 대시보드는 ROS 를 쓰지 않는다. 휴식 재개·휴식 제안 응답·모드 전환을 Redis로 연결하며 안전 reset과 구분한다.
@@ -44,7 +45,9 @@ STATE_PERIOD_S = 0.5
 # 로봇·인식 PC 의 web_video_server (pc2_perception.launch part:=vision, 포트 8080). 예: http://192.168.0.10:8080. 비우면 카메라 칸 꺼짐
 ROBOT_VIDEO_URL = os.environ.get("ROBOT_VIDEO_URL", "").strip().rstrip("/")
 # 보여 줄 카메라 (INTERFACES 2.1). 작게·낮은 화질로 — 로봇 PC 의 압축 부담과 네트워크를 줄인다
-CAMERAS = [("손목", "/camera/color/image_raw"), ("측면", "/side/side/color/image_raw")]
+# (이름, 토픽, 대신 쓸 토픽). 손목은 세그먼터의 인식 결과 화면(마스크·신뢰도·3D 좌표가 그려진 debug_image, 구독자가 있을 때만 10 Hz 발행)을
+#   먼저 쓰고, 안 오면(비전 컨테이너 꺼짐) 브라우저가 원본 카메라로 바꾼다. 측면은 원본만
+CAMERAS = [("손목", "/rally/perception/objects/debug_image", "/camera/color/image_raw"), ("측면", "/side/side/color/image_raw", None)]
 STREAM_QUERY = "type=mjpeg&quality=50&width=424&height=240&qos_profile=sensor_data"
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 
@@ -125,6 +128,25 @@ async def respond_proposal(body: ProposalResponse) -> dict[str, Any]:
         return await send_command({"request_id": str(uuid.uuid4()), "session_id": str(body.session_id),
             "proposal_id": str(body.proposal_id), "command": "proposal_" + body.decision,
             "expires_at": time.time() + 2})
+    except aioredis.RedisError as e:
+        raise HTTPException(503, "제어 연결이 끊겼습니다. 상태를 다시 확인해 주세요") from e
+
+
+class EndRequest(BaseModel):
+    session_id: uuid.UUID
+
+
+@app.post("/api/session/end")
+async def end_session(body: EndRequest) -> dict[str, Any]:
+    """현재 세션 종료 (10/14). brain 이 접수하고 모드 선택 대기 중이면 바로, 시도 중이면 그 시도가 끝난 뒤 끝낸다."""
+    try:
+        state = await _get_control()
+        if not state:
+            raise HTTPException(503, "brain의 최신 상태가 없습니다")
+        if state["session_id"] != str(body.session_id) or state["phase"] not in ("running", "pause_pending", "paused"):
+            raise HTTPException(409, "진행 중인 세션이 아니거나 상태가 바뀌었습니다")
+        return await send_command({"request_id": str(uuid.uuid4()), "session_id": str(body.session_id),
+            "command": "end_session", "expires_at": time.time() + 2})
     except aioredis.RedisError as e:
         raise HTTPException(503, "제어 연결이 끊겼습니다. 상태를 다시 확인해 주세요") from e
 
@@ -223,8 +245,9 @@ def camera_streams(base: str) -> dict[str, Any]:
     if not base.startswith(("http://", "https://")):
         return {"enabled": False, "reason": "ROBOT_VIDEO_URL 미설정 (docker/.env, 예: http://로봇PC주소:8080)", "streams": []}
     return {"enabled": True, "reason": "",
-            "streams": [{"name": name, "topic": topic, "url": f"{base}/stream?topic={topic}&{STREAM_QUERY}"}
-                        for name, topic in CAMERAS]}
+            "streams": [{"name": name, "topic": topic, "url": f"{base}/stream?topic={topic}&{STREAM_QUERY}",
+                         "fallback": None if alt is None else f"{base}/stream?topic={alt}&{STREAM_QUERY}"}
+                        for name, topic, alt in CAMERAS]}
 
 
 @app.get("/api/cameras")

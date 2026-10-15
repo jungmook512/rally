@@ -173,9 +173,10 @@ def test_camera_streams_point_to_robot_pc():
     r = web.camera_streams("http://192.168.0.10:8080")
     assert r["enabled"] and [s["name"] for s in r["streams"]] == ["손목", "측면"]
     wrist = r["streams"][0]["url"]
-    assert wrist.startswith("http://192.168.0.10:8080/stream?topic=/camera/color/image_raw&")
+    assert wrist.startswith("http://192.168.0.10:8080/stream?topic=/rally/perception/objects/debug_image&")   # 인식 결과(마스크·신뢰도)
     assert "type=mjpeg" in wrist and "width=424" in wrist and "qos_profile=sensor_data" in wrist
-    assert r["streams"][1]["topic"] == "/side/side/color/image_raw"
+    assert r["streams"][0]["fallback"].startswith("http://192.168.0.10:8080/stream?topic=/camera/color/image_raw&")  # 안 오면 원본
+    assert r["streams"][1]["topic"] == "/side/side/color/image_raw" and r["streams"][1]["fallback"] is None
 
 
 def test_camera_panel_on_page():
@@ -216,3 +217,32 @@ def test_mode_switch_failures(monkeypatch, case, expected):
     assert r.status_code == expected
     if case != "brain_reject":
         assert store.command is None
+
+
+def post_end(monkeypatch, store, body):
+    monkeypatch.setattr(web, "_redis", store)
+
+    async def call():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url="http://test") as client:
+            return await client.post("/api/session/end", json=body)
+    return asyncio.run(call())
+
+
+@pytest.mark.parametrize("phase", ["running", "paused"])
+def test_end_session_sends_command_and_waits_for_brain(monkeypatch, phase):
+    state = snapshot() | {"phase": phase}
+    store = FakeRedis(state)
+    r = post_end(monkeypatch, store, {"session_id": state["session_id"]})
+    assert r.status_code == 200 and r.json()["success"]
+    assert store.command["command"] == "end_session" and store.command["session_id"] == state["session_id"]
+
+
+@pytest.mark.parametrize("case, expected", [("ended", 409), ("other_session", 409), ("brain_reject", 409), ("stale", 503)])
+def test_end_session_failures(monkeypatch, case, expected):
+    state = snapshot() | {"phase": "ended" if case == "ended" else "running"}
+    if case == "stale":
+        state["updated_at"] -= 10
+    body = {"session_id": str(uuid.uuid4()) if case == "other_session" else state["session_id"]}
+    store = FakeRedis(state, reply=case != "brain_reject")
+    r = post_end(monkeypatch, store, body)
+    assert r.status_code == expected and store.command is None if case != "brain_reject" else r.status_code == expected
