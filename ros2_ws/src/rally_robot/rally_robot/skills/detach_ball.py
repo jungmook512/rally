@@ -100,6 +100,7 @@ def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=N
     r = float(cfg["ball_radius_m"])
     limit = float(limit_n) if limit_n and limit_n > 0 else float(cfg["limit_n"])
     open_mm, force = node.gripper_cfg(detach.ball_classes(cfg["ball_class"])[0])
+    force = float(cfg["grip_force_n"]) if float(cfg["grip_force_n"]) > 0 else force   # 떼기는 세게 쥠 (10/15: gripper.velcro_ball 12 N 은 미끄러짐)
     if grip_force_n and grip_force_n > 0:
         force = float(grip_force_n)
     tv, ta, cv, ca, _, _ = motion_speeds(node)
@@ -193,8 +194,9 @@ def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=N
         time.sleep(0.2)
         f0 = np.asarray(get_tool_force()[:3], float)                 # 쥔 직후 영점 (툴 무게·자세 성분 제거)
 
-        def poll():
-            return watch.feed(np.asarray(get_tool_force()[:3], float) - f0) in ("over", "detached")
+        def poll():                                                  # 한계만 멈춤 — 양쪽 번갈아 돌리면 힘이 저절로 오르내려 급락으로 떼어짐을 판단할 수 없음 (10/15)
+            watch.feed(np.asarray(get_tool_force()[:3], float) - f0)
+            return watch.over
 
         # 4. 벗기기
         phase("pull")
@@ -213,27 +215,31 @@ def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=N
                 if feedback:
                     feedback("pull", watch.last)
                 log.info(f"[detach_ball] 벗기기 {deg:+.0f}° (후퇴 {back * 1000:.0f} mm · 아래 {down * 1000:.0f} mm) {how} · 힘 {watch.last:.1f} N (최대 {watch.peak:.1f})")
-                if watch.over or watch.detached:
+                if watch.over:
                     break
-            if not (watch.detached or watch.over):
-                # 한계 각까지 급락 없음 → n 방향으로 더 당겨 보고 힘이 풀렸으면 떼어진 것
+            if not watch.over:
+                # 다 돌린 뒤 n 방향(+x)으로 당기며 아래로 — 위로 들지 않음 (10/15 정정인: 위로 떼면 패드가 거치대에서 딸려 올라옴)
                 check()
                 here = list(get_current_posx()[0])
                 how = move_checked(node, detach.up(detach.along(here, n, cfg["pull_extra_m"]), -float(cfg["pull_down_m"])), cfg["peel_vel_mm_s"], ca, on_poll=poll, stall_ok=True)
-                f_now = float(np.linalg.norm(np.asarray(get_tool_force()[:3], float) - f0))
-                log.info(f"[detach_ball] 당기기 {cfg['pull_extra_m'] * 1000:.0f} mm {how} · 힘 {f_now:.1f} N (최대 {watch.peak:.1f})")
-                if not (watch.over or watch.detached) and how == "done" and f_now < cfg["drop_n"]:
-                    watch.detached = True                            # 끝까지 갔고 힘이 풀림 = 공이 따라옴
-        out["peak_n"], out["drop_n"] = float(watch.peak), float(watch.drop)
-        if watch.over:
-            release_and_back("detach_force_limit", f"힘 {watch.last:.1f} N ≥ 한계 {limit:.0f} N — 멈춤 (공은 패드에 붙은 채)")
-        if not watch.detached:
-            release_and_back("detach_not_detached", f"안 떼어짐 (최대 {watch.peak:.1f} N)")
+                log.info(f"[detach_ball] 당기기 +x {cfg['pull_extra_m'] * 1000:.0f} mm · 아래 {cfg['pull_down_m'] * 1000:.0f} mm {how} · 힘 {watch.last:.1f} N (최대 {watch.peak:.1f})")
+            out["peak_n"], out["drop_n"] = float(watch.peak), float(watch.drop)
+            if watch.over:
+                release_and_back("detach_force_limit", f"힘 {watch.last:.1f} N ≥ 한계 {limit:.0f} N — 멈춤 (공은 패드에 붙은 채)")
+            # 5. 떨어졌는지 확인: 쥔 채 +x 로 retreat_m 더 (아래로 조금) — 공이 떨어졌으면 힘이 작고, 붙어 있으면 패드를 끌어 힘이 남음
+            check()
+            here = list(get_current_posx()[0])
+            how = move_checked(node, detach.up(detach.along(here, n, cfg["retreat_m"]), -float(cfg["sep_down_m"])), cfg["peel_vel_mm_s"], ca, on_poll=poll, stall_ok=True)
+            time.sleep(0.3)
+            f_sep = float(np.linalg.norm(np.asarray(get_tool_force()[:3], float) - f0))
+            log.info(f"[detach_ball] 떼어짐 확인: +x {cfg['retreat_m'] * 1000:.0f} mm {how} · 힘 {f_sep:.1f} N (기준 {cfg['sep_max_n']:.0f} N 미만이면 떨어짐)")
+            if watch.over or how != "done" or f_sep >= cfg["sep_max_n"]:
+                release_and_back("detach_not_detached", f"안 떼어짐 — 떼어짐 확인 힘 {f_sep:.1f} N (최대 {watch.peak:.1f})")
         out["detached"] = True
-        # 5. 후퇴
-        phase("detached", watch.last)
+        phase("detached", f_sep)
+        # 패드에서 떨어진 뒤에만 위로
         here = list(get_current_posx()[0])
-        move_checked(node, detach.up(detach.along(here, n, cfg["retreat_m"]), cfg["lift_after_m"]), tv, ta)
+        move_checked(node, detach.up(here, cfg["lift_after_m"]), tv, ta)
     finally:
         node.set_contact(False)
 
