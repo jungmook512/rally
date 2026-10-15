@@ -100,7 +100,7 @@ def prepare_request(node, mode=5):
     session.trials = [trial(1, mode, True), trial(2, mode, False), trial(3, mode, True, 10.0)]
     for item in session.trials:
         item.notes = ""
-    node._comp_history[mode] = [True, True]      # 앞선 두 시도에서 보상 동작
+    node._comp_history = [True, True]            # 앞선 두 시도에서 보상 동작 (세션 전체 순서, 10/15)
     node._posture.observe(True, "trunk_lean")     # 이번 시도에서도 → 최근 3회 = 보상 동작 반복
     gate = threading.Event()
     calls = []

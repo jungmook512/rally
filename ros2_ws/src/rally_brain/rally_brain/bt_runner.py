@@ -128,7 +128,7 @@ class BtRunner(Node):
         self._last_mode: int | None = None        # 선택 방식에서 마지막으로 끝난 모드 (안내용)
         self.control = SessionControl()
         self._posture = posture_coach.PostureCoach(posture_coach.config(self._skills_cfg))   # 보상 동작 교정 안내 (#119)
-        self._comp_history: dict[int, list[bool]] = {}   # 모드별 시도마다 보상 동작이 보였는지 — 규칙 레이어 '보상 동작 반복'
+        self._comp_history: list[bool] = []   # 세션의 시도마다(모드 무관) 보상 동작이 보였는지 — 규칙 '보상 동작 반복'. 10/15 조정묵: 모드별 → 세션 전체
         self.proposals = ProposalControl()
         self._proposal_cancelled = False
         self._rest_generation = 0
@@ -348,7 +348,7 @@ class BtRunner(Node):
 
     def _after_trial(self, session: Session, trial: TrialResult) -> None:
         with self._switch_lock:
-            self._comp_history.setdefault(trial.mode, []).append(bool(self._posture.seen))   # end_trial 이 비우기 전에
+            self._comp_history.append(bool(self._posture.seen))   # end_trial 이 비우기 전에. 어느 모드든 한 줄 (몸 신호라 모드를 안 가림)
             if not self._safety_abort and (text := self._posture.end_trial(self._speaking)):
                 self.get_logger().info(f"[자세] 보상 동작 연속 — 안내: {text}")
                 self._say(text)
@@ -364,7 +364,7 @@ class BtRunner(Node):
         d = rule_layer.decide(self._context, session.trials_for_rules(trial.mode), intent,
                               self._rule_cfg, self._graph,
                               performance=trial.mode != TrialResult.MODE_PUSH_BALL, fatigue_history=history,
-                              compensation_history=self._comp_history.get(trial.mode, ()))
+                              compensation_history=self._comp_history)
         log = self.get_logger()
         if d.action in ("harder", "easier"):
             if trial.mode not in (TrialResult.MODE_PUSH_BALL, TrialResult.MODE_RESIST):
@@ -496,7 +496,7 @@ class BtRunner(Node):
             return None
         history = self._rest_history(session, mode)
         detail = rule_layer.fatigue_breakdown(history, self._rule_cfg, performance=mode != TrialResult.MODE_PUSH_BALL,
-                                              compensation_history=self._comp_history.get(mode, ()))
+                                              compensation_history=self._comp_history)
         on = [key for key, value in detail.items() if value["on"]]
         return {"mode": mode, "trials": len(history), "need": int(self._rule_cfg["llm_signal_count"]), "count": len(on), "on": on,
                 "signals": detail, "current_comp": sorted(self._posture.seen), "llm": dict(self._rest_llm)}
@@ -635,7 +635,7 @@ class BtRunner(Node):
             self._pending_intent = None
             self._safety_abort = False
             self._posture = posture_coach.PostureCoach(posture_coach.config(self._skills_cfg))
-            self._comp_history = {}
+            self._comp_history = []
             self._rest_llm = {"state": "idle", "result": None, "at": None, "signals": []}
             self._hand_stop_seen = self._hand_wait = self._normal_since = None
             self._proposal_cancelled = False

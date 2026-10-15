@@ -340,7 +340,7 @@ context.restBase = restBase;
 run("renderControl({phase:'running',session_id:'rest-s',mode:5,updated_at:Date.now()/1000,rest:restBase});");
 assert.equal(get('rest-panel').hidden, false);
 assert.equal(get('rest-count').textContent, '신호 0/2');
-assert.match(get('rest-stack').innerHTML, /보상 동작 반복.*최근 3회 중 2회 · 3회면 신호/);
+assert.match(get('rest-stack').innerHTML, /보상 동작 반복.*최근 3회 중 2회 \(모든 모드\) · 3회면 신호/);
 assert.match(get('rest-stack').innerHTML, /성공률 67% · 40% 이하면 신호/);
 assert.match(get('rest-stack').innerHTML, /마지막 10초 \/ 평균 10초 = 1배 · 1.5배면 신호/);
 assert.match(get('rest-llm').textContent, /아직 요청 없음/);

@@ -130,3 +130,12 @@ def test_fatigue_counts_compensation_per_trial(node):
     assert node.build().fatigue_score == pytest.approx(0.5)
     node._on_trial(trial(session="s2", index=1))          # 세션이 바뀌면 기록도 비움
     assert node.build().fatigue_score == 0.0
+
+
+def test_fatigue_compensation_counts_across_modes(node):
+    # 10/15 조정묵: 보상 동작은 몸 신호라 모드를 넘어 세션 전체로 센다 (성공률·시간은 모드별 그대로)
+    from rally_interfaces.msg import BodyPose
+    for i, mode in enumerate((1, 5, 3), start=1):
+        node._on_body(BodyPose(compensation_detected=True))
+        node._on_trial(trial(index=i, mode=mode))
+    assert node.build().fatigue_score == pytest.approx(0.5)              # 모드 셋에서 1회씩 = 최근 5회 중 3회
