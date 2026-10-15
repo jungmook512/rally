@@ -112,6 +112,7 @@ class BtRunner(Node):
         self._pending_switch: tuple[int | None, str] | None = None   # (목표 모드 또는 None=다음, 요청한 곳)
         self.control = SessionControl()
         self._posture = posture_coach.PostureCoach(posture_coach.config(self._skills_cfg))   # 보상 동작 교정 안내 (#119)
+        self._comp_history: dict[int, list[bool]] = {}   # 모드별 시도마다 보상 동작이 보였는지 — 규칙 레이어 '보상 동작 반복'
         self.proposals = ProposalControl()
         self._proposal_cancelled = False
         self._rest_generation = 0
@@ -286,6 +287,7 @@ class BtRunner(Node):
 
     def _after_trial(self, session: Session, trial: TrialResult) -> None:
         with self._switch_lock:
+            self._comp_history.setdefault(trial.mode, []).append(bool(self._posture.seen))   # end_trial 이 비우기 전에
             if not self._safety_abort and (text := self._posture.end_trial(self._speaking)):
                 self.get_logger().info(f"[자세] 보상 동작 연속 — 안내: {text}")
                 self._say(text)
@@ -300,7 +302,8 @@ class BtRunner(Node):
         history = self._rest_history(session, trial.mode)
         d = rule_layer.decide(self._context, session.trials_for_rules(trial.mode), intent,
                               self._rule_cfg, self._graph,
-                              performance=trial.mode != TrialResult.MODE_PUSH_BALL, fatigue_history=history)
+                              performance=trial.mode != TrialResult.MODE_PUSH_BALL, fatigue_history=history,
+                              compensation_history=self._comp_history.get(trial.mode, ()))
         log = self.get_logger()
         if d.action in ("harder", "easier"):
             if trial.mode not in (TrialResult.MODE_PUSH_BALL, TrialResult.MODE_RESIST):
@@ -543,6 +546,7 @@ class BtRunner(Node):
             self._pending_intent = None
             self._safety_abort = False
             self._posture = posture_coach.PostureCoach(posture_coach.config(self._skills_cfg))
+            self._comp_history = {}
             self._hand_stop_seen = self._hand_wait = self._normal_since = None
             self._proposal_cancelled = False
             self._invalidate_rest()

@@ -16,13 +16,16 @@ def ctx(stop=False, compensation=False):
     return c
 
 
+REPEATED = (True, False, True, True)   # 최근 5회 중 3회 보상 동작
+
+
 def trials(*results, mode=1, durations=None):
     durations = durations or [10.0] * len(results)
     return [TrialResult(mode=mode, success=r, duration_s=d) for r, d in zip(results, durations)]
 
 
-def decide(c=None, ts=(), intent=None):
-    return rule_layer.decide(c if c is not None else ctx(), list(ts), intent, CFG)
+def decide(c=None, ts=(), intent=None, comp=()):
+    return rule_layer.decide(c if c is not None else ctx(), list(ts), intent, CFG, compensation_history=comp)
 
 
 def test_config_comes_from_skills_yaml():
@@ -65,15 +68,24 @@ def test_6_two_weak_signals_ask_llm():
     d = decide(ts=ts)
     assert d.action == "ask_llm" and set(d.signals) == {"success_drop", "slowing"}
     ts = trials(False, False, True, False, True, durations=[10, 10, 10, 10, 20])
-    d = decide(ctx(compensation=True), ts)
+    d = decide(ts=ts, comp=REPEATED)
     assert d.action == "ask_llm"
     assert set(d.signals) == {"compensation", "success_drop", "slowing"}
     assert "성공률 하락" in d.reason
 
 
 def test_6_one_signal_is_not_enough():
-    d = decide(ctx(compensation=True), trials(True, False, True))
+    d = decide(ts=trials(True, False, True), comp=REPEATED)
     assert d.action == "continue" and d.signals == ("compensation",)
+
+
+def test_compensation_counts_recent_trials_not_current_frame():
+    # 판단 순간 상황판에 보여도 시도 기록이 없으면 신호 아님 (보상 동작은 팔을 뻗는 동안만 나옴, #83)
+    assert "compensation" not in decide(ctx(compensation=True)).signals
+    assert "compensation" not in decide(comp=(True, True, False)).signals             # 2회 < 3
+    assert "compensation" in decide(comp=(True, True, True)).signals
+    assert "compensation" not in decide(comp=(True, True, True, False, False, False)).signals   # 최근 5회 중 2회
+    assert CFG["compensation_window"] == 5 and CFG["compensation_min_trials"] == 3
 
 
 def test_7_continue():

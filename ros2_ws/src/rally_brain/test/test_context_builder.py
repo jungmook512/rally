@@ -118,3 +118,15 @@ def test_fatigue_score_connected(node):
     assert node.build().fatigue_score == pytest.approx(0.25)
     node._intent = (intent("tired", sec=5), node._now_ns())
     assert node.build().fatigue_score == 1.0
+
+
+def test_fatigue_counts_compensation_per_trial(node):
+    # 시도 사이에 보상 동작이 한 번이라도 보이면 그 시도 기록. 같은 모드 최근 5회 중 3회 → compensation (0.5)
+    from rally_interfaces.msg import BodyPose
+    for i in range(1, 4):
+        node._on_body(BodyPose(compensation_detected=True))
+        node._on_body(BodyPose())                         # 끝나는 순간엔 안 보여도 기록됨
+        node._on_trial(trial(index=i))
+    assert node.build().fatigue_score == pytest.approx(0.5)
+    node._on_trial(trial(session="s2", index=1))          # 세션이 바뀌면 기록도 비움
+    assert node.build().fatigue_score == 0.0

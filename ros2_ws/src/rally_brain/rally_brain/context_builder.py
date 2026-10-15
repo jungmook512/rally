@@ -16,6 +16,7 @@
 session_id · mode · trial_index 는 마지막 TrialResult 에서 가져온다 — bt_runner 가 생기면 그쪽 상태로 바꾼다.
 recent_success_rate 는 마지막 시도와 같은 모드만으로 metrics.success_rate (metrics.yaml — 규칙 레이어와 같은 정의).
 fatigue_score 는 같은 모드 최근 시도로 rule_layer.fatigue_signals (+ 음성 tired) → metrics.fatigue_score (0~1, 표시용).
+  보상 동작은 시도 사이에 body.compensation_detected 가 한 번이라도 보였는지를 그 시도의 기록으로 남겨 센다 (bt_runner 와 같은 방식).
   규칙 레이어는 난이도가 바뀐 뒤의 시도만 보므로 신호가 조금 다를 수 있다 — 휴식 결정은 규칙 레이어가 한다. robot_state 는 STOP 이면 STOPPED, 아니면 IDLE
 (스킬 실행 상태 토픽이 아직 없다).
 """
@@ -83,12 +84,14 @@ class ContextBuilder(Node):
         self._objects: tuple[TrackedObjectArray, int] | None = None
         self._intent: tuple[VoiceIntent, int] | None = None
         self._trials: deque[TrialResult] = deque(maxlen=int(p("recent_n").value))
+        self._trial_comp: deque[bool] = deque(maxlen=self._trials.maxlen)   # _trials 와 같은 순서, 시도별 보상 동작 여부
+        self._comp_seen = False                                              # 지난 시도 뒤로 보상 동작이 보였나
         self._last_stale_warn: bool | None = None
 
         reliable = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, depth=10)
         self.create_subscription(SafetyStatus, "/rally/safety/status", self._keep("_safety"), reliable)
         self.create_subscription(HandState, "/rally/perception/hand", self._keep("_hand"), qos_profile_sensor_data)
-        self.create_subscription(BodyPose, "/rally/perception/body", self._keep("_body"), qos_profile_sensor_data)
+        self.create_subscription(BodyPose, "/rally/perception/body", self._on_body, qos_profile_sensor_data)
         self.create_subscription(
             TrackedObjectArray, "/rally/perception/objects", self._keep("_objects"), qos_profile_sensor_data)
         self.create_subscription(VoiceIntent, "/rally/voice/intent", self._on_intent, reliable)
@@ -113,10 +116,17 @@ class ContextBuilder(Node):
             return
         self._intent = (msg, self._now_ns())
 
+    def _on_body(self, msg: BodyPose) -> None:
+        self._body = (msg, self._now_ns())
+        self._comp_seen = self._comp_seen or msg.compensation_detected
+
     def _on_trial(self, msg: TrialResult) -> None:
         if self._trials and self._trials[-1].session_id != msg.session_id:
             self._trials.clear()
+            self._trial_comp.clear()
         self._trials.append(msg)
+        self._trial_comp.append(self._comp_seen)
+        self._comp_seen = False
 
     def _fresh(self, kept: tuple | None, max_age_s: float, now_ns: int):
         """신선하면 메시지, 아니면 None."""
@@ -149,7 +159,8 @@ class ContextBuilder(Node):
             ctx.session_id = last.session_id
             ctx.mode = last.mode
             ctx.trial_index = last.trial_index
-        signals = rule_layer.fatigue_signals(ctx, metrics.counted(same_mode), self._rule_cfg)
+        comp = [c for t, c in zip(self._trials, self._trial_comp) if t.mode == ctx.mode] if self._trials else []
+        signals = rule_layer.fatigue_signals(metrics.counted(same_mode), self._rule_cfg, compensation_history=comp)
         if ctx.last_intent.intent == "tired":
             signals.append("voice_tired")
         ctx.fatigue_score = metrics.fatigue_score(signals)
