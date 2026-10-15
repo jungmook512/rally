@@ -798,7 +798,7 @@ function notify(text, kind) {
 }
 function restDetail(key, v) {
   const pct = x => `${Math.round(Number(x) * 100)}%`;
-  if (key === 'compensation') return `최근 ${v.trials}회 중 ${v.count}회 · ${v.need}회면 신호`;
+  if (key === 'compensation') return `최근 ${v.trials}회 중 ${v.count}회 (모든 모드) · ${v.need}회면 신호`;
   if (key === 'success_drop' && !v.applies) return '모드 1 은 성공률 신호 없음';
   if (v.trials < v.min_trials) return `시도 ${v.trials}/${v.min_trials}회 뒤 판단`;
   if (key === 'slowing') return `마지막 ${v.last_s}초 / 평균 ${v.mean_s}초 = ${v.ratio}배 · ${v.need_ratio}배면 신호`;

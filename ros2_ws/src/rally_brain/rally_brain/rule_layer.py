@@ -14,6 +14,7 @@
   6. 애매한 신호 llm_signal_count 개 이상          → ask_llm (규칙으로 정하지 않음)
      (보상 동작 반복 · 성공률 하락 · 시도 시간 증가 — 각각은 근거가 약해 혼자서는 행동을 정하지 않는다)
      보상 동작은 팔을 뻗는 동안에만 나오므로(#83) 판단 순간의 상황판이 아니라 시도별 기록(compensation_history)으로 센다.
+     그 기록은 모드를 가리지 않는 세션 전체 순서다 (10/15 조정묵 — 몸 신호라 모드 무관). 성공률·시간 신호는 같은 모드만.
   7. 그 외                                       → continue
 
 연속 횟수는 그 모드의 난이도가 마지막으로 바뀐 뒤의 시도만 센다 (호출하는 쪽이 잘라서 넘김).
@@ -93,7 +94,7 @@ def fatigue_breakdown(trials: Sequence[TrialResult], cfg: dict[str, Any], perfor
                       compensation_history: Sequence[bool] = ()) -> dict[str, dict[str, Any]]:
     """신호별 진행값 — 대시보드 「휴식 제안 조건」 패널이 신호가 쌓이는 모습을 보여 주는 데 쓴다 (10/14).
     fatigue_signals 는 여기서 on 인 것만 고르므로 기준은 이 한 곳. 값은 유한한 숫자·불리언만 (Redis JSON 으로 그대로 나감).
-    compensation_history: 이 모드의 시도마다 보상 동작이 한 번이라도 보였는지 (오래된 것 → 최근)."""
+    compensation_history: 세션의 시도마다(모드 무관) 보상 동작이 한 번이라도 보였는지 (오래된 것 → 최근)."""
     recent = list(compensation_history)[-int(cfg["compensation_window"]):]
     n = len(trials)
     enough = n >= MIN_TRIALS_FOR_TREND

@@ -17,6 +17,7 @@ session_id · mode · trial_index 는 마지막 TrialResult 에서 가져온다 
 recent_success_rate 는 마지막 시도와 같은 모드만으로 metrics.success_rate (metrics.yaml — 규칙 레이어와 같은 정의).
 fatigue_score 는 같은 모드 최근 시도로 rule_layer.fatigue_signals (+ 음성 tired) → metrics.fatigue_score (0~1, 표시용).
   보상 동작은 시도 사이에 body.compensation_detected 가 한 번이라도 보였는지를 그 시도의 기록으로 남겨 센다 (bt_runner 와 같은 방식).
+  보상 동작 반복은 모드를 가리지 않고 세션의 최근 시도로 센다 (10/15 조정묵: 몸 신호라 모드 무관). 성공률·시간은 같은 모드만.
   규칙 레이어는 난이도가 바뀐 뒤의 시도만 보므로 신호가 조금 다를 수 있다 — 휴식 결정은 규칙 레이어가 한다. robot_state 는 STOP 이면 STOPPED, 아니면 IDLE
 (스킬 실행 상태 토픽이 아직 없다).
 """
@@ -159,7 +160,7 @@ class ContextBuilder(Node):
             ctx.session_id = last.session_id
             ctx.mode = last.mode
             ctx.trial_index = last.trial_index
-        comp = [c for t, c in zip(self._trials, self._trial_comp) if t.mode == ctx.mode] if self._trials else []
+        comp = list(self._trial_comp)                                   # 모드 무관 — 세션의 시도 순서대로 (10/15)
         signals = rule_layer.fatigue_signals(metrics.counted(same_mode), self._rule_cfg, compensation_history=comp)
         if ctx.last_intent.intent == "tired":
             signals.append("voice_tired")

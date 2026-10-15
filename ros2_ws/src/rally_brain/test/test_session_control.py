@@ -404,7 +404,7 @@ def test_rest_snapshot_shows_signal_progress_and_llm_state(node):
     for ok, dur in ((True, 10.0), (False, 10.0), (True, 20.0)):
         session.record(TrialResult(mode=5, success=ok, duration_s=dur))
     node._session = session
-    node._comp_history = {5: [True, False, True]}
+    node._comp_history = [True, False, True]                          # 세션 전체(모드 무관) 시도 순서
     rest = node.control_snapshot()["rest"]
     assert rest["mode"] == 5 and rest["trials"] == 3 and rest["need"] == 2
     assert rest["on"] == ["slowing"] and rest["count"] == 1                # 20 ≥ 1.5 × 10. 성공률 2/3 은 신호 아님, 보상 동작은 2/3 회
@@ -422,3 +422,17 @@ def test_rest_snapshot_shows_signal_progress_and_llm_state(node):
         assert node._rest_llm["state"] == "dropped"                       # 답 전에 새 시도 기록 → 취소로 표시
     finally:
         node._rest_advisor = advisor                                      # destroy_node 가 close() 를 부름
+
+
+def test_compensation_history_spans_modes(node):
+    """10/15 조정묵: 보상 동작 기록은 모드를 가리지 않고 세션 순서대로 쌓인다 — 모드 1·5·3 에서 1회씩이면 '보상 동작 반복'."""
+    session = node._session
+    node._comp_history = []
+    for i, mode in enumerate((1, 5, 3), start=1):
+        session.current_mode = mode
+        node._posture.seen.add("trunk_lean")
+        node._after_trial(session, TrialResult(mode=mode, success=True, duration_s=10.0, trial_index=i))
+    assert node._comp_history == [True, True, True]
+    session.current_mode = 3
+    session.trials = []
+    assert node.control_snapshot()["rest"]["signals"]["compensation"] == {"on": True, "count": 3, "need": 3, "window": 5, "trials": 3}
