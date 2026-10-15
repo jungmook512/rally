@@ -199,3 +199,13 @@ def test_top_grasp_pose_like_keeps_camera_side():
 
 def test_default_ball_class_is_velcro_only():
     assert d.ball_classes(d.DEFAULTS["ball_class"]) == ("velcro_ball",)
+
+
+
+def test_peel_alternate_schedule_and_mirror():
+    s_ = d.peel_schedule_alternate(5.0, 15.0)
+    assert [a for a, _ in s_] == [5.0, -5.0, 10.0, -10.0, 15.0, -15.0] and [k for _, k in s_] == [1, 2, 3, 4, 5, 6]
+    g = d.top_grasp_pose(BALL, 0.0, [174.8, -177.0, 175.1], 90.0)
+    p, m = d.peel_pose_vertical(g, BALL, N, R, 0.5, 10.0, 0.0), d.peel_pose_vertical(g, BALL, N, R, 0.5, -10.0, 0.0)
+    assert p[0] > g[0] and m[0] > g[0] and p[0] == pytest.approx(m[0])          # 양쪽 다 패드에서 떨어지는 쪽(+x)으로 같은 만큼
+    assert (p[1] - g[1]) == pytest.approx(-(m[1] - g[1]))                        # y 는 거울

@@ -200,15 +200,19 @@ def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=N
         phase("pull")
         cur = list(get_current_posx()[0])
         grasp_now = cur[:3] + list(grasp6[3:6])                      # 순응으로 실제 멈춘 자리 기준 (목표와 몇 mm 다를 수 있음)
-        with compliance(cfg["stiffness"], log):
-            for deg, back in detach.peel_schedule(cfg["peel_step_deg"], cfg["peel_max_deg"], cfg["peel_retreat_per_step_m"]):
+        if cfg["peel_alternate"]:
+            steps = detach.peel_schedule_alternate(cfg["peel_step_deg"], cfg["peel_max_deg"])
+        else:
+            steps = [(d_, k) for k, (d_, _) in enumerate(detach.peel_schedule(cfg["peel_step_deg"], cfg["peel_max_deg"], 0.0), 1)]
+        with compliance(cfg["peel_stiffness"], log):
+            for deg, k in steps:
                 check()
-                target = detach.up(detach.peel_pose_vertical(grasp_now, ball_m, n, r, cfg["pivot_side_r"], deg, back),
-                                   -float(cfg["peel_down_per_step_m"]) * deg / float(cfg["peel_step_deg"]))   # 돌리며 아래로 (패드가 딸려 올라오지 않게)
+                back, down = cfg["peel_retreat_per_step_m"] * k, cfg["peel_down_per_step_m"] * k
+                target = detach.up(detach.peel_pose_vertical(grasp_now, ball_m, n, r, cfg["pivot_side_r"], deg, back), -down)   # 돌리며 아래로 (패드가 딸려 올라오지 않게)
                 how = move_checked(node, target, cfg["peel_vel_mm_s"], ca, on_poll=poll, stall_ok=True)
                 if feedback:
                     feedback("pull", watch.last)
-                log.info(f"[detach_ball] 벗기기 {deg:.0f}° (후퇴 {back * 1000:.0f} mm · 아래 {cfg['peel_down_per_step_m'] * 1000 * deg / cfg['peel_step_deg']:.0f} mm) {how} · 힘 {watch.last:.1f} N (최대 {watch.peak:.1f})")
+                log.info(f"[detach_ball] 벗기기 {deg:+.0f}° (후퇴 {back * 1000:.0f} mm · 아래 {down * 1000:.0f} mm) {how} · 힘 {watch.last:.1f} N (최대 {watch.peak:.1f})")
                 if watch.over or watch.detached:
                     break
             if not (watch.detached or watch.over):

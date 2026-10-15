@@ -59,15 +59,18 @@ DEFAULTS = dict(
     ball_offset_m=[0.0, 0.0, 0.0],          # 위 보정 뒤 남는 고정 오차 [m, base] — 실로봇에서 쥐는 위치 보고 맞춤
     peel_step_deg=5.0,                      # 한 스텝 회전각
     peel_max_deg=40.0,                      # 이 각까지 급락 없으면 n 방향 pull_extra_m 당겨 보고 판정
-    peel_retreat_per_step_m=0.002,          # 스텝마다 n 방향으로 더 후퇴
-    peel_down_per_step_m=0.002,             # ★ 10/15 정정인 실로봇: 스텝마다 아래(−z)로도 — 위로 딸려 올라오던 패드를 거치대 홈에 눌러 둠
+    peel_retreat_per_step_m=0.001,          # 스텝마다 n 방향으로 더 후퇴 (양쪽 번갈아 16 스텝이면 16 mm)
+    peel_down_per_step_m=0.001,             # ★ 10/15 정정인 실로봇: 스텝마다 아래(−z)로도 — 위로 딸려 올라오던 패드를 거치대 홈에 눌러 둠 (16 스텝 16 mm)
     pull_down_m=0.01,                       # 마지막 n 방향 당기기 동안 아래로 이만큼 같이
     pull_extra_m=0.03,
     peel_vel_mm_s=15.0,
-    limit_n=15.0,                           # 스킬 자체 힘 한계 (goal.pull_force_limit_n 이 0 이면). safety 25 N 아래
+    limit_n=20.0,                           # 스킬 자체 힘 한계 (goal.pull_force_limit_n 이 0 이면). safety 25 N 아래. 10/15 15 → 20 (힘이 약해 안 떼어짐)
     drop_n=5.0,                             # peak 뒤 이만큼 떨어지면 떼어짐
     min_peak_n=4.0,                         # 급락 판정은 peak 가 이 이상일 때만 (잡음 제외)
-    stiffness=[300, 300, 300, 400, 400, 400],   # [x y z N/m, rx ry rz Nm/rad] — 이동 무르게, 회전 단단히 (DSR 회전 최대 400)
+    stiffness=[300, 300, 300, 400, 400, 400],   # [x y z N/m, rx ry rz Nm/rad] — 접근·쥐기 하강: 이동 무르게, 회전 단단히 (DSR 회전 최대 400)
+    peel_stiffness=[2000, 2000, 500, 400, 400, 400],    # ★ 10/15 벗기기: 300 N/m 면 명령만큼 안 가고 힘 3~5 N 에서 멈춤(stalled) → x·y 단단히.
+                                                        #   z 는 500 — 아래 누름 16 mm 가 꽂힌 패드에 막혀도 8 N 정도 (2000 이면 32 N, 한계 20 N 넘음)
+    peel_alternate=True,                    # ★ 10/15 정정인: +5, −5, +10, −10 … 양쪽 번갈아
     retreat_m=0.05,                         # 떼어진 뒤 n 방향 후퇴
     place_release_s=0.3,
     # ★ 10/14 실로봇: 거치대 옆(x 0.26)에서 공 보기 자세(J1 159°)로 관절 이동하면 경로 TCP 가 x 0.58 까지 휘어 workspace_limit STOP.
@@ -187,6 +190,18 @@ def peel_pose(grasp6, ball_m, normal, r_m, pivot_down_r, deg, retreat_m) -> list
     return [float(v) for v in p] + [float(v) for v in rot.as_euler("ZYZ", degrees=True)]
 
 
+def peel_schedule_alternate(step_deg, max_deg) -> list[tuple[float, int]]:
+    """양쪽 번갈아 벗기기 스텝 [(각도 deg, 몇 번째 k), ...] = +5, −5, +10, −10, … ±max (10/15 정정인: 한쪽으로만 돌리면 잘 안 떼어짐).
+    후퇴·아래 누름은 k 에 비례해 계속 늘린다. 순수 함수."""
+    n = max(1, int(round(max_deg / step_deg)))
+    out, k = [], 0
+    for i in range(1, n + 1):
+        for sgn in (1.0, -1.0):
+            k += 1
+            out.append((sgn * step_deg * i, k))
+    return out
+
+
 def peel_schedule(step_deg, max_deg, retreat_per_step_m) -> list[tuple[float, float]]:
     """[(각도 deg, 누적 후퇴 m), ...] 스텝 목록. 순수 함수."""
     n = max(1, int(round(max_deg / step_deg)))
@@ -295,7 +310,8 @@ def peel_pose_vertical(grasp6, ball_m, normal, r_m, pivot_side_r, deg, retreat_m
     n = _unit(normal)
     l = lateral(n)
     c = np.asarray(ball_m, float) * 1000.0
-    pivot = c - n * r_m * 1000.0 - l * r_m * pivot_side_r * 1000.0
+    side = -1.0 if deg < 0 else 1.0                  # −deg 면 경첩을 반대쪽(+l) 옆으로 — 양쪽 번갈아 벗기기 (10/15)
+    pivot = c - n * r_m * 1000.0 - l * r_m * pivot_side_r * side * 1000.0
     R = Rotation.from_rotvec(np.deg2rad(-deg) * np.array([0.0, 0.0, 1.0]) * float(np.sign(np.cross(n, l)[2]) or 1.0))
     p0 = np.asarray(grasp6[:3], float)
     p = pivot + R.apply(p0 - pivot) + n * retreat_m * 1000.0

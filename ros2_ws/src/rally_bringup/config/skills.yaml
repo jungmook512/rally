@@ -69,7 +69,7 @@ mode3:
   detach_ball_z_m: 0.0              # ★ 10/14 정정인: 0 = 비전 z 그대로 (비전 119 mm 가 맞음 — 95 mm 실측 정정). 값을 주면 그 높이로 + 카메라 시선 따라 x·y 보정
   detach_vision_top_to_center_m: 0.05   # ★ 10/15 정정인 실로봇: 비전 z(공 윗면)에서 5 cm 아래를 쥠 (3 → 4 → 5 cm, 높았음)
   detach_grip_tol_mm: 20.0           # ★ 10/15 정정인 실로봇: 공을 잘 쥐었는데 폭이 공 지름 62 mm 와 10 mm 넘게 달라 잘못 쥠으로 판정 → ±20 mm
-  detach_ball_offset_m: [-0.02, 0.0, 0.0]   # ★ 10/15 정정인 실로봇: x 로 2 cm 로봇 쪽 (−1 → −2 cm). 카메라가 공의 +x 위에서 비스듬히(약 20°) 내려다봐
+  detach_ball_offset_m: [-0.025, 0.0, 0.0]   # ★ 10/15 정정인 실로봇: x 로 2.5 cm 로봇 쪽 (−1 → −2 → −2.5 cm). 카메라가 공의 +x 위에서 비스듬히(약 20°) 내려다봐
                                             #   비전 점이 공의 카메라 쪽(+x) 표면에 찍힘 → 약 r·sin20° ≈ 1 cm +x 로 치우침
   detach_box_drop_posj: [166.2, -36.9, -52.6, -0.0, -90.3, -108.2]    # ★ 10/14 20:1x 정정인 직접교시: 박스 위 수직 약 6 cm, 툴 아래 향함. posx [595.0, -152.7, 119.6, 154.3, -179.8, -120.0] (URDF 계산, fkin 무응답). x 0.595 m 는 평소 상한 0.57 밖 → 박스 구간만 safety.yaml workspace_x_max_extended_m(0.65) 로 확장 (/rally/safety/workspace_extend)
   pad_place_after_catch: true     # ★ 10/12 정정인: 요격 판정 뒤 패드를 거치대에 꽂고 끝냄 (catch_ball.after_catch). 다음 시도는 pickup_pad 가 다시 집음
