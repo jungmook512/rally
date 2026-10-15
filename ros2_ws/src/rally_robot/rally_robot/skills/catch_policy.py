@@ -71,22 +71,31 @@ def meta_mismatches(meta: dict | None, cfg: dict[str, Any]) -> list[str]:
     env = meta["env"]
     out: list[str] = []
 
+    def num(x):
+        """숫자로 못 바꾸는 값(손으로 만든 json 의 null·문자열)은 None — 대조만 건너뛴다 (#212 리뷰: 예외가 execute() 까지 올라가면 안 됨)."""
+        try:
+            return None if x is None else float(x)
+        except (TypeError, ValueError):
+            return None
+
     def differ(a, b) -> bool:
-        return a is not None and b is not None and abs(float(a) - float(b)) > 1e-3
+        a, b = num(a), num(b)
+        return a is not None and b is not None and abs(a - b) > 1e-3
 
     lim = env.get("limits")
     if isinstance(lim, (list, tuple)) and len(lim) == 4:
-        for name, trained in (("right_max_m", lim[1]), ("updown_max_m", -float(lim[2])), ("down_max_m", lim[3])):
+        w_min = num(lim[2])
+        for name, trained in (("right_max_m", lim[1]), ("updown_max_m", None if w_min is None else -w_min), ("down_max_m", lim[3])):
             if differ(trained, cfg.get(name)):
-                out.append(f"{name} 학습 {float(trained):.2f} vs yaml {float(cfg[name]):.2f}")
+                out.append(f"{name} 학습 {num(trained):.2f} vs yaml {num(cfg[name]):.2f}")
     if differ(env.get("reach_max"), cfg.get("reach_max_m")):
-        out.append(f"reach_max_m 학습 {float(env['reach_max']):.2f} vs yaml {float(cfg['reach_max_m']):.2f}")
+        out.append(f"reach_max_m 학습 {num(env['reach_max']):.2f} vs yaml {num(cfg['reach_max_m']):.2f}")
     accel = str(env.get("accel", "") or "")
     move = "amovej" if accel == "movej" else ("amovel" if accel else "")
     if move and cfg.get("catch_move") and str(cfg["catch_move"]) != move:
         out.append(f"catch_move 학습 {move} vs yaml {cfg['catch_move']}")
     if differ(env.get("overshoot"), cfg.get("catch_overshoot_m")):
-        out.append(f"catch_overshoot_m 학습 {float(env['overshoot']):.2f} vs yaml {float(cfg['catch_overshoot_m']):.2f}"
+        out.append(f"catch_overshoot_m 학습 {num(env['overshoot']):.2f} vs yaml {num(cfg['catch_overshoot_m']):.2f}"
                    " (시뮬에선 정책이 보정으로 되돌림 — 실측 영향 미확인)")
     return out
 

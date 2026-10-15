@@ -47,7 +47,7 @@ catch_ball 은 정책을 읽을 때 이 json 의 학습 조건과 skills.yaml(ri
    cd ~/rally/ros2_ws/src/rally_robot && python3 -m pytest test/test_catch_policy.py -q      # real_policy 가 skip 이 아니라 pass
    ```
 3. **설정**: `ros2_ws/src/rally_bringup/config/skills.yaml` mode3 `decide_mode: rule` → `policy` (시험 세션 동안만. 한계·catch_move·지나침·`policy_std_source: sim_table` 은 그대로). 빌드 뒤 재시작.
-4. **공 없이 1회**: catch_ball 로그에 `정책 모드 — …/policy_stage1.onnx` · `정책 학습 조건 — run stage1_2026-10-14_18-27-37_watch1 …` 이 찍히고, **`정책 학습 조건과 skills.yaml 이 다름` 경고가 없어야** 한다. 투구 감지 뒤 `정책 출발 — 놓은 뒤 0.2x s (n회 호출), 보정 u … w …` 가 찍히는지. `규칙 결정으로` 만 찍히면 파일·onnxruntime 문제 (에러 로그에 이유).
+4. **공 없이 1회**: catch_ball 로그에 `정책 모드 — …/policy_stage1.onnx` · `정책 학습 조건 — run stage1_2026-10-14_18-27-37_watch1 …` 이 찍히고, `정책 학습 조건과 skills.yaml 이 다름` 경고는 **`catch_overshoot_m 학습 0.00 vs yaml 0.05` 한 줄만 예상**(지나침은 학습에 없던 값 — 5절대로 규칙·정책 같은 0.05 로 비교)이고, **그 밖의 다름 경고(한계·두 축 합·catch_move)는 없어야** 한다. 투구 감지 뒤 `정책 출발 — 놓은 뒤 0.2x s (n회 호출), 보정 u … w …` 가 찍히는지. `규칙 결정으로` 만 찍히면 파일·onnxruntime 문제 (에러 로그에 이유).
 5. **A/B**: 같은 투구자·3 m·같은 대기 자세. 규칙 10회 → 정책 10회 블록을 3번 (각 30회). 매 블록 `decide_mode` 만 바꿈. bag(landing, landing_info, catch_ball 로그, ball_on_pad, joint_states, 힘)을 보존.
    - 기록: 투구 번호 · 모드 · 결과(caught/missed/out_of_radius/too_late/low_confidence) · 출발 시각(놓은 뒤 s) · 보정 · 반응 시간 · 예측점과 실제 교차점.
    - 30회씩으로는 15 %p 넘는 차이만 구분된다. "정책이 규칙보다 나빠지지 않는가" 를 보는 시험이다.

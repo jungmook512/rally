@@ -173,3 +173,11 @@ def test_real_policy_if_available():
     pol = OnnxPolicy(path)
     a = pol(policy_obs(pred_at(0.2), PAD, N, 100.3))
     assert a.shape == (3,) and np.all(np.isfinite(a))
+
+
+def test_meta_mismatches_tolerates_non_numeric_json():
+    """#212 리뷰: 손으로 만든 json 에 null·문자열이 있어도 예외 없이 대조만 건너뛴다."""
+    meta = {"env": {"accel": "movej", "limits": [0.0, "abc", None, 0.08], "reach_max": None, "overshoot": "x"}}
+    cfg = dict(right_max_m=0.35, updown_max_m=0.35, down_max_m=0.08, reach_max_m=0.35, catch_move="amovej", catch_overshoot_m=0.05)
+    assert meta_mismatches(meta, cfg) == []
+    assert meta_mismatches({"env": {"limits": [0.0, 0.15, -0.35, 0.08]}}, cfg) == ["right_max_m 학습 0.15 vs yaml 0.35"]
