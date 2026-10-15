@@ -63,6 +63,12 @@ mode3:
   pad_insert_abs_stop_n: 15.0             # ★ 10/14: 툴 힘 합력이 이 이상이면 바로 멈춤. 18 N 은 10 Hz 라 23.3 N 까지 넘침(10:27) → 15 (safety force_limit 25 N 보다 먼저)
   pad_insert_slow_from_m: 0.02            # G 위 2 cm 부터는
   pad_insert_slow_vel_mm_s: 10.0          #   10 mm/s 로 (다 꽂히는 순간 덜 눌리게)
+  # 공 떼기 (catch_ball.after_catch 가 패드를 꽂은 뒤 detach_ball.run — rally_robot/detach.py DEFAULTS 의 detach_ 접두 키로 덮어씀)
+  detach_after_place: true          # ★ 10/14 정정인: 패드 꽂은 뒤 공 떼기 → 박스. 교시 둘이 없으면 자동으로 건너뜀
+  detach_ball_view_posj: [158.8, -7.9, -71.0, -8.3, -119.5, -114.1]   # ★ 10/14 20:0x 정정인 직접교시: 거치대에 꽂힌 패드의 공 붙은 면(+x)을 손목 카메라로 보는 자세. posx [345.5, -156.6, 500.9, 180.0, 160.0, -90.0] (두산 fkin)
+  detach_ball_z_m: 0.0              # ★ 10/14 정정인: 0 = 비전 z 그대로 (비전 119 mm 가 맞음 — 95 mm 실측 정정). 값을 주면 그 높이로 + 카메라 시선 따라 x·y 보정
+  detach_ball_offset_m: [0.0, 0.0, 0.0]   # 시선 보정 뒤 남는 쥐는 위치 고정 오차 [m, base]. 예: x 로 5 mm 더 로봇 쪽이면 [-0.005, 0, 0]
+  detach_box_drop_posj: [166.2, -36.9, -52.6, -0.0, -90.3, -108.2]    # ★ 10/14 20:1x 정정인 직접교시: 박스 위 수직 약 6 cm, 툴 아래 향함. posx [595.0, -152.7, 119.6, 154.3, -179.8, -120.0] (URDF 계산, fkin 무응답). x 0.595 m 는 평소 상한 0.57 밖 → 박스 구간만 safety.yaml workspace_x_max_extended_m(0.65) 로 확장 (/rally/safety/workspace_extend)
   pad_place_after_catch: true     # ★ 10/12 정정인: 요격 판정 뒤 패드를 거치대에 꽂고 끝냄 (catch_ball.after_catch). 다음 시도는 pickup_pad 가 다시 집음
   pad_place_only_if_caught: true  # ★ 10/12 밤 정정인: 놓쳤으면 꽂지 않고 패드를 쥔 채 대기 자세로 (다음 투구 바로). 받았을 때만 꽂음
   decide_after_s: 0.25                                # ★ 10/12 밤 0.16 → 0.25: 실로봇 투구에서 std ≤ 10 cm 예측이 놓은 뒤 0.13~0.25 s 에 나옴. 0.20 은 덜 익은 예측(z 20 cm 낮게)으로 더 나빴음

@@ -12,6 +12,7 @@
 ## 모델 기록
 | 날짜 | 파일 | 클래스 | 데이터 | 학습 | 검증 (val 69장) | 비고 |
 |---|---|---|---|---|---|---|
+| 2026-10-13 | `velcro_ball_yolo11n-seg_1024_rot_v2.pt` (+ `.engine`) | velcro_ball | `velcro_v2` — `rot_final`(`rally_v1_yolov8`) 데이터에 패드에 붙은 공 추가 | yolo11n-seg, imgsz 1024, 150 epoch | — | 모드 3 예측·패드 위 공 판정 (`flight_predictor`). 10/14 정정인 교체. `.engine` 은 로봇·인식 PC 에서 `export(format="engine", half=True, imgsz=1024, batch=2)` (TensorRT 11.4, 호스트 venv·컨테이너 같음, 두 장 8.2 ms) |
 | 2026-10-08 | `yolov8n-seg_cupstick.pt` | cup, stick(→rod) | Roboflow `cup_and_stick` v1, 311장 (train 218 / val 47 / test 46), RealSense 848×480 | 로컬 `~/rokey_ws/yolo_exp`(RTX 3080), 모델 4종 × imgsz 640/864 × 증강 × detect/seg, seed 3개 비교 → yolov8n-seg imgsz 864, 300 epoch | test Mask mAP50-95 0.978 (cup 0.995 · stick 0.961) / Box mAP50-95 0.981, 추론 5.5 ms | 비교 페이지 https://claude.ai/artifact/SMEiKB1Y3WkUG7t7naz69F . **공을 본 적이 없어 테니스공을 cup 으로 잡음**(공 사진 20~30 %) → segmenter 가 ball 모델과 같이 돌리고 겹치면 ball 우선. 다음 학습 때 공 사진을 배경(빈 라벨)으로 넣을 것 |
 | 2026-10-07 | `yolov8n-seg_ball.pt` | tennis_ball(→ball) | Roboflow `tennis_ball` v3, 344장 (train 240 / val 69 / test 35), RealSense 848×480·640×480, 테이블·레일·스탠드·패드 위 | Colab T4, yolov8n-seg, 63 epoch (최적 43), batch 16, imgsz 640 | Box mAP50 0.988 · mAP50-95 0.98 / Mask mAP50 0.988 · mAP50-95 0.95 / P 0.98 R 1.0 | 저장 사진 96장 확인: 테니스공 전부 검출(conf ≥ 0.93), 컵·막대 사진 오검출 0. velcro_ball 은 ball 로 잡힘(클래스 없음) → 2차에서 추가 |
 

@@ -48,6 +48,9 @@ def _params(context, executable: str) -> list[dict]:
         conf = LaunchConfiguration("segmenter_conf").perform(context).strip()
         if conf:                                   # 비우면 segmenter 기본값(0.5)
             params["conf"] = float(conf)
+        models = LaunchConfiguration("segmenter_models").perform(context).strip()
+        if models:                                 # 쉼표 목록, /models 기준 이름 (앞이 겹칠 때 우선). 비우면 segmenter 기본 찾기(공 + 컵·막대)
+            params["model_path"] = ",".join(m if m.startswith("/") else f"/models/{m}" for m in (x.strip() for x in models.split(",")) if m)
         return [params] if params else []
     return []
 
@@ -150,5 +153,8 @@ def generate_launch_description():
                               description="segmenter hand_eye_path: 비우면 hand_eye.yaml, none = 옛 T_gripper2camera.npy (#66 좌표, vision_offset_m 기준)"),
         DeclareLaunchArgument("segmenter_conf", default_value="",
                               description="segmenter 검출 신뢰도 하한: 비우면 0.5. 모드 5 받기(손에 든 막대 0.25~0.5)는 0.25 — 테이블 집기는 brain 이 0.5 로 다시 거름"),
+        DeclareLaunchArgument("segmenter_models", default_value="",
+                              description="segmenter 모델 쉼표 목록 (/models 안 이름, 앞이 우선). 비우면 공 + 컵·막대. "
+                                          "모드 3 벨크로 공은 velcro_ball_yolo11n-seg_1024_rot_v2.pt (10/15)"),
         OpaqueFunction(function=_launch_part),
     ])

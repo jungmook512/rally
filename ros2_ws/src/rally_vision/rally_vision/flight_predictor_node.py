@@ -39,7 +39,8 @@ from rally_vision import projection as pj
 from rally_vision.flight_tracking import PadBallJudge, SideCalib, StaticFilter, StereoAssociator, ThrowSession, WristDet, projection_matrix
 from rally_vision.side_debug import draw_side_debug
 
-MODEL_NAMES = ("velcro_ball_yolo11n-seg_1024_rot_final.engine", "velcro_ball_yolo11n-seg_1024_rot_final.pt")
+# 10/14 v2: 패드에 붙은 공 데이터를 더해 다시 학습 (rot_final 은 패드 위 공을 자주 놓쳐 받기 판정이 '놓침'으로 나옴). 클래스·입력 크기는 같음
+MODEL_NAMES = ("velcro_ball_yolo11n-seg_1024_rot_v2.engine", "velcro_ball_yolo11n-seg_1024_rot_v2.pt")
 MODEL_DIRS = ("/models", os.path.expanduser("~/rally/models"), "models")
 CALIB_NAME = "mode3_side_calib.json"
 
