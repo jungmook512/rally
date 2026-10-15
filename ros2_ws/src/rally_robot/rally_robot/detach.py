@@ -48,6 +48,8 @@ DEFAULTS = dict(
     ball_z_m=0.0,                           # 0 이 아니면 공 중심 높이를 이 값으로 (비전 z 대신). 10/14 실측 95 mm, 비전은 119 mm (+24 mm, 알려진 깊이 오차)
     pivot_side_r=0.5,                       # 수직축 회전 중심 = 접촉점에서 옆(−l)으로 r × 이 값 → 반대쪽(+l) 옆부터 벗겨짐
     lift_after_m=0.05,                      # 떼어지고 n 방향 후퇴 뒤 위로
+    safe_z_m=0.30,                          # ★ 10/15 정정인 실로봇: 떼기 실패·잘못 쥠·떼어진 뒤 — 그 자리에서 수직으로 z 0.30 m 까지 먼저 올라감
+                                            #   (실패 뒤 열고 +x·위로 대각선 물러나다 거치대에 부딪혀 force_limit STOP)
     # ★ 10/14 실로봇: 위에서 쥐러 내려갈 때 공 보기 자세의 카메라 방향(+x 쪽)을 그대로 — 툴 아래 자세 두 후보(±90°) 중 지금 자세와 가까운 것
     keep_view_yaw=True,
     # ★ 10/14: 비전 점 = 카메라 쪽 공 표면(+ 깊이 오차) → 카메라(+x 위)에서 본 시선 방향으로 밀려 z +24 mm·x + 쪽. z 만 95 로 바꾸면 x 는
@@ -362,3 +364,8 @@ def top_grasp_pose_like(ball_m, below_m, zyz_down, cur_zyz):
 def tension_n(f3, normal) -> float:
     """툴 힘(영점 뺀, base) 중 공을 패드 쪽(−n)으로 당기는 성분 [N]. 공이 붙은 채 +n 으로 물러나면 커지고 떨어지면 0 근처. 순수 함수."""
     return float(-np.dot(np.asarray(f3, float)[:3], _unit(normal)))
+
+
+def rise_to(pose6, z_m) -> list[float]:
+    """pose6 를 x·y·자세 그대로 높이 z_m 까지 수직으로 (이미 더 높으면 그대로). 순수 함수."""
+    return [float(pose6[0]), float(pose6[1]), max(float(pose6[2]), z_m * 1000.0)] + [float(v) for v in pose6[3:6]]

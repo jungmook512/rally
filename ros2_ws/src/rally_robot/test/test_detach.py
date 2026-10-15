@@ -215,3 +215,9 @@ def test_peel_alternate_schedule_and_mirror():
 def test_tension_is_pull_toward_pad():
     assert d.tension_n([-6.0, 1.0, 2.0], N) == pytest.approx(6.0)     # 공이 붙어 패드(−x) 쪽으로 당김
     assert d.tension_n([3.0, 0.0, 0.0], N) == pytest.approx(-3.0)     # 미는 쪽은 음수
+
+
+
+def test_rise_to_is_vertical():
+    assert d.rise_to([300.0, -100.0, 99.0, 1, 2, 3], 0.30) == [300.0, -100.0, 300.0, 1.0, 2.0, 3.0]
+    assert d.rise_to([300.0, -100.0, 350.0, 1, 2, 3], 0.30)[2] == 350.0       # 이미 높으면 그대로

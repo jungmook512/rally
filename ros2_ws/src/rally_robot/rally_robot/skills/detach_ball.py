@@ -114,12 +114,18 @@ def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=N
             feedback(name, float(f))
         log.info(f"[detach_ball] {name}")
 
-    def release_and_back(reason, msg):
-        """실패 정리: 열고 n 방향으로 approach_m 물러난 뒤 SkillAbort."""
-        log.error(f"[detach_ball] {msg} → 열고 물러남")
-        node.gripper(open_mm, force)
+    def rise(why):
+        """그 자리에서 수직으로 safe_z_m 까지 (x·y·자세 그대로) — 거치대·패드 옆을 비스듬히 지나가지 않게 (10/15)."""
         here = list(get_current_posx()[0])
-        move_checked(node, detach.up(detach.along(here, n, 0.01), cfg["approach_m"]), tv, ta, stall_ok=True)   # 패드에서 1 cm 떼고 위로 (순응 중이면 덜 갈 수 있음)
+        target = detach.rise_to(here, cfg["safe_z_m"])
+        log.info(f"[detach_ball] {why} → 수직으로 z {here[2]:.0f} → {target[2]:.0f} mm")
+        move_checked(node, target, tv, ta, stall_ok=True)
+
+    def release_and_back(reason, msg):
+        """실패 정리: 열고 수직으로 safe_z_m 까지 올라간 뒤 SkillAbort."""
+        log.error(f"[detach_ball] {msg} → 열고 수직으로 올라감")
+        node.gripper(open_mm, force)
+        rise("놓음")
         raise SkillAbort(reason)
 
     # 1~3. 공 보기 → 비전 → 접근 → 닿을 때까지 하강 → 쥐기. 잘못 쥐면 열고 올라가 공 보기부터 다시 (grasp_tries 번, 10/15 정정인)
@@ -190,7 +196,7 @@ def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=N
                 release_and_back("detach_grip_fail", msg + f" · {tries}번 다 실패")
             log.warning(f"[detach_ball] {msg} → 열고 올라가 다시 ({attempt + 1}/{tries}번째)")
             node.gripper(open_mm, force)
-            move_checked(node, detach.up(list(get_current_posx()[0]), cfg["approach_m"]), tv, ta)
+            rise("잘못 쥠 — 다시")
         time.sleep(0.2)
         f0 = np.asarray(get_tool_force()[:3], float)                 # 쥔 직후 영점 (툴 무게·자세 성분 제거)
 
@@ -250,8 +256,7 @@ def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=N
         out["detached"] = True
         phase("detached", f_sep)
         # 패드에서 떨어진 뒤에만 위로
-        here = list(get_current_posx()[0])
-        move_checked(node, detach.up(here, cfg["lift_after_m"]), tv, ta)
+        rise("떨어짐")
     finally:
         node.set_contact(False)
 
