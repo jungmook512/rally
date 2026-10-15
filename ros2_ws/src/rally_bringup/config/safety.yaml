@@ -89,7 +89,7 @@ rally_safety_monitor:
     # 모드 3 받기 동안만 x 상한 (10/14 정동휘, 대기 자세 Y0 — docs/mode3/MODE3_READY_POSE_Y0.md): 요격 이동 중 TCP x 최대 0.73 m.
     #   catch_window 신호가 살아 있는 동안 + 꺼진 뒤 TCP 가 0.57 안으로 돌아올 때까지(최대 workspace_catch_hold_s) 이 값. 투구자는 J1 에서 3 m 밖.
     #   모드 1·5 는 받기 창이 없으므로 그대로 0.57. 음수면 기능 없음. ★ 정정인 승인 필요 (안전값)
-    workspace_catch_x_max_m: 0.78
+    workspace_catch_x_max_m: 1.00   # 10/16 정동휘: 0.78 → 1.00 — 모드 3 투구자는 J1 에서 3 m 밖, 받기 창 동안(+ 복귀까지)만. 실로봇 아래 이동 중 STOP (계산 경로 x 최대 0.734). 평소 workspace_x_max_m 0.57 · 모드 1·5·7 은 그대로
     workspace_catch_hold_s: 10.0
     workspace_y_min_m: -2.00   # 10/14 조정묵 결정: ±0.60 → ±2.00 (사실상 제한 없음, M0609 도달 ≈ 1.25 m). 옆쪽 제한은 테이블 옆에 사람이 설 때를 위한 것이었는데
     workspace_y_max_m: 2.00    #   환자는 +x 멀리(보라색 선 너머)에만 있고 옆에는 아무도 없음. 모드 3 요격이 −y 35 cm 에서 잘려 동작이 너무 작아짐. 환자 쪽 x_max 는 그대로
