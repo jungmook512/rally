@@ -9,6 +9,7 @@
     python3 scripts/detach_loop.py --no-box            # 박스에 안 놓고 떼기까지만 (교시 없을 때 — skills.yaml detach_box_drop_posj 비우고)
 
 전제: 터미널 1 bringup · 터미널 2 pc1_robot(skill_server·safety_monitor·force_publisher·gripper_node) · 비전 컨테이너(/rally/perception/objects).
+      시작할 때 손목 인식(segmenter)을 모드 3(벨크로 공 모델 v2 만)으로 바꾸고 끝나면 되돌린다 (--ball 을 주면 안 바꿈).
       안전 NORMAL. 공을 붙인 패드가 거치대에 꽂혀 있고 그리퍼는 비어 있음. 로봇은 아무 자세나 (스킬이 공 보기 자세로 먼저 감).
       skills.yaml 을 바꿨으면 터미널 2 재시작 (skill_server 가 시작 때 읽음).
 출력: 단계(phase)·힘 피드백, 스킬 서버의 [detach_ball]·[pad_rack] 로그, 툴 힘 최대(/rally/robot/wrench), 결과(성공·최대 당김 힘·급락).
@@ -58,6 +59,28 @@ class DetachLoop(Node):
         if msg.name.endswith("rally_skill_server") and ("[detach_ball]" in msg.msg or "[pad_rack]" in msg.msg or "[movej_safe]" in msg.msg):
             print(f"    | {msg.msg}")
             self.notes.append(msg.msg)
+
+    def set_seg_mode(self, mode: int) -> int | None:
+        """손목 인식(segmenter) active_mode 를 바꾸고 이전 값을 돌려준다. 실패하면 None (경고만). brain 없이 돌릴 때 모드 3 모델로."""
+        from rcl_interfaces.msg import Parameter as P, ParameterType, ParameterValue
+        from rcl_interfaces.srv import GetParameters, SetParameters
+        get = self.create_client(GetParameters, "/rally_segmenter/get_parameters")
+        put = self.create_client(SetParameters, "/rally_segmenter/set_parameters")
+        if not (get.wait_for_service(timeout_sec=10.0) and put.wait_for_service(timeout_sec=5.0)):
+            print("  ⚠ /rally_segmenter 파라미터 서비스 없음 — 손목 인식 모델을 못 바꿈 (vision 컨테이너 확인)")
+            return None
+        f = get.call_async(GetParameters.Request(names=["active_mode"]))
+        rclpy.spin_until_future_complete(self, f, timeout_sec=5.0)
+        prev = f.result().values[0].integer_value if f.done() and f.result() and f.result().values else 0
+        req = SetParameters.Request(parameters=[P(name="active_mode", value=ParameterValue(type=ParameterType.PARAMETER_INTEGER, integer_value=mode))])
+        f = put.call_async(req)
+        rclpy.spin_until_future_complete(self, f, timeout_sec=10.0)
+        r = f.result().results[0] if f.done() and f.result() and f.result().results else None
+        if r is None or not r.successful:
+            print(f"  ⚠ 손목 인식 모델 모드 {mode} 로 못 바꿈 ({getattr(r, 'reason', '응답 없음')})")
+            return None
+        print(f"  손목 인식 모델 → 모드 {mode} (이전 {prev})")
+        return prev
 
     def stopped(self) -> bool:
         return self.safety is not None and self.safety.level == SafetyStatus.LEVEL_STOP
@@ -116,6 +139,7 @@ def main():
     rclpy.init()
     n = DetachLoop()
     rows = []
+    prev_mode = None
     try:
         if not n.cli.wait_for_server(timeout_sec=15.0):      # Discovery Server 모드면 몇 초 걸림
             raise SystemExit("/rally/skill/detach_ball 없음 — 터미널 2 (pc1_robot) 확인")
@@ -126,6 +150,8 @@ def main():
             raise SystemExit("/rally/safety/status 못 받음")
         if n.safety.level != SafetyStatus.LEVEL_NORMAL:
             raise SystemExit(f"안전 {LEVEL.get(n.safety.level)} ({n.safety.reason}) — NORMAL 일 때만 (reset_safety)")
+        if opt.ball is None:
+            prev_mode = n.set_seg_mode(3)                    # 모드 3 = 벨크로 공 모델(v2) 만 (10/15)
         for i in range(1, opt.count + 1):
             if i > 1 and input(f"\n[{i}/{opt.count}] 공을 패드에 붙였으면 Enter, q 멈춤: ").strip().lower() == "q":
                 break
@@ -148,6 +174,8 @@ def main():
                 print(f"{i:4d} | {'성공' if r['ok'] else '실패 ' + r['msg']} | {r['dt']:5.1f} | {r['f']:4.1f} | "
                       f"{r.get('peak', float('nan')):4.1f} | {r.get('drop', float('nan')):4.1f} | {ph}")
             print(f"성공 {sum(1 for r in rows if r['ok'])}/{len(rows)}")
+        if prev_mode is not None and prev_mode != 3:
+            n.set_seg_mode(prev_mode)                        # 원래 모드로
         n.destroy_node()
         rclpy.shutdown()
 

@@ -29,9 +29,8 @@ services:
     # segmenter_hand_eye:=none — 옛 npy 보정 (#66 좌표). mode1.vision_offset_m 이 그 기준이라 hand_eye.yaml 과 겹치면 약 1 cm 어긋남 (10/14 정정인 결정)
     # segmenter_conf 0.25 (10/14 실로봇): 받기 때 손에 든 막대 점수가 0.1~0.49 라 0.5 에선 전부 버려져 "rod 안 보임" → 기울기·다가가기 안 됨.
     #   로봇 받기는 원래 0.25 로 설계(skills.yaml receive_depth·receive_tilt_follow), 테이블 집기는 brain 이 object_min_confidence 0.5 로 다시 거름
-    # segmenter_models (10/15 정정인): 모드 3 패드에 붙은 공은 벨크로 공 모델(v2)로 — 테니스공 모델(ball) 아님. 앞이 겹칠 때 우선.
-    #   세 모델을 매 프레임 같이 돌려 손목 인식 약 29 → 14~24 fps (10/14 실측)
-    command: ros2 launch rally_bringup pc2_perception.launch.py part:=vision segmenter_conf:=0.25 segmenter_models:=velcro_ball_yolo11n-seg_1024_rot_v2.pt,yolov8n-seg_ball.pt,yolov8n-seg_cupstick.pt   # segmenter_hand_eye:=none 이면 옛 npy 보정 (10/14: 거치대 밖에서 2.5 cm 넘게 틀어져 hand_eye.yaml 로 복귀)
+    # 손목 인식 모델은 모드마다 다름 (segmenter mode_models, brain 이 active_mode 를 바꿈 — 10/15)
+    command: ros2 launch rally_bringup pc2_perception.launch.py part:=vision segmenter_conf:=0.25   # segmenter_hand_eye:=none 이면 옛 npy 보정 (10/14: 거치대 밖에서 2.5 cm 넘게 틀어져 hand_eye.yaml 로 복귀)
 
   hand_pose:
     <<: *ros

@@ -138,6 +138,9 @@ class BtRunner(Node):
         self._exposure = self._make_exposure()                       # 모드 3 동안만 손목 카메라 노출 고정 (camera_exposure.py)
         if self._exposure is not None:
             self._exposure.want(False)                               # 켜질 때 자동 노출 한 번 (모드 3 도중 재시작 대비, #139 리뷰)
+        self._seg_mode = self._make_seg_mode()                       # 모드마다 손목 인식 모델 (segmenter_mode.py, 10/15)
+        if self._seg_mode is not None:
+            self._seg_mode.want(0)                                   # 켜질 때 기본 모델 한 번 (모드 3 도중 재시작 대비)
         self.get_logger().info(f"휴식 LLM: {self._rest_advisor.status}")
         self._switch_lock = self.control.lock                         # 세션·전환·휴식의 공통 lock
         self._safety_abort = False                                    # STOP 한 번 수신하면 세션 종료까지 유지
@@ -697,6 +700,8 @@ class BtRunner(Node):
                 tree.tick()
                 if self._exposure is not None:
                     self._exposure.want(session.current_mode == TrialResult.MODE_CATCH_PAD)
+                if self._seg_mode is not None:
+                    self._seg_mode.want(session.current_mode)
                 tip = tree.tip()
                 self._state_name = tip.name if tip is not None else "idle"
                 status = tree.root.status
@@ -729,6 +734,8 @@ class BtRunner(Node):
             self._hand_wait = None
             if self._exposure is not None:
                 self._exposure.want(False)                           # 정상·취소·중단 모두 자동 노출로
+            if self._seg_mode is not None:
+                self._seg_mode.want(0)                               # 세션 밖은 기본 모델 (공 + 컵·막대)
             with self._switch_lock:
                 self._invalidate_rest()
                 self.control.finish(outcome)
@@ -860,6 +867,15 @@ class BtRunner(Node):
     def _exposure_fixed(self) -> bool:
         """모드 3 투구 안내 전 — 손목 노출 고정이 적용됐는가. cameras.yaml 이 없어 노출을 안 다루면 참."""
         return self._exposure is None or self._exposure.state is True
+
+    def _make_seg_mode(self):
+        """segmenter active_mode 바꾸기. 만들지 못하면 None — 손목 인식은 기본 모델 그대로."""
+        try:
+            from rally_brain.segmenter_mode import SegmenterModeSwitch
+            return SegmenterModeSwitch(self)
+        except Exception as e:  # noqa: BLE001
+            self.get_logger().warn(f"[인식] 손목 인식 모델 전환 못 함 ({type(e).__name__}: {e}) — 기본 모델 그대로")
+            return None
 
     def _make_exposure(self):
         """cameras.yaml 을 못 읽으면 None — 노출은 건드리지 않음 (카메라 기본 = 자동)."""

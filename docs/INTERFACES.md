@@ -35,6 +35,7 @@ webcam_link          측면 대각 웹캠, 높이 약 2 m (table_link 기준 sta
 | `/joint_states` | `sensor_msgs/JointState` | dsr_bringup2 | 100 Hz | SensorData |
 | `/tf`, `/tf_static` | `tf2_msgs/TFMessage` | 여러 노드 | - | 표준 |
 
+- **손목 인식 모델은 모드마다 (10/15 정정인)**: segmenter 파라미터 `mode_models`(기본 `1:yolov8n-seg_ball.pt;3:velcro_ball_yolo11n-seg_1024_rot_v2.pt;5:yolov8n-seg_cupstick.pt;7:`) 중 `active_mode` 에 해당하는 모델만 돌린다 (시작 때 모두 읽어 둠). brain(`segmenter_mode.py`)이 모드에 들어갈 때 `/rally_segmenter` 의 `active_mode` 를 바꾸고 세션이 끝나면 0. 0 = 표 밖 → `model_path`/기본 찾기(공 + 컵·막대). 7 = 모델 없음(빈 objects). 공 떼기 시험 도구 `scripts/detach_loop.py` 는 brain 없이 3 으로 바꿨다 되돌린다.
 - **RealSense 두 대 (10/12, `rally_bringup/config/cameras.yaml`)**: `pc2_perception.launch.py part:=vision` 이 시리얼로 구분해 둘 다 848×480 @60 으로 띄운다 (`side_camera:=false` 면 측면 안 띄움). 노출: 측면은 항상 고정(20 · gain 128, `set_camera_params` 가 뜬 뒤 넣음), **손목은 평소 자동이고 모드 3 동안만 고정** — brain(`camera_exposure.py`)이 모드 3 에 들어갈 때·나올 때·세션이 끝날 때 손목 드라이버 노드(`/camera`)의 `rgb_camera.enable_auto_exposure`·`exposure`·`gain` 파라미터를 바꾼다. brain 이 켜질 때도 자동 노출을 한 번 보낸다(모드 3 도중 재시작 대비). 모드 3 은 고정이 적용된 뒤(최대 `skills.yaml mode3.exposure_wait_s` 3 s) 투구를 안내한다. 모드 3 동안은 노출이 짧아 손 검출이 약해질 수 있다. 노출·gain 은 드라이버 launch 인자로 받지 않아(4.58.4) 파라미터로만 넣는다.
 
 ### 2.2 인식 (커스텀)
