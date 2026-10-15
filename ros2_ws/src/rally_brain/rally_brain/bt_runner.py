@@ -508,14 +508,14 @@ class BtRunner(Node):
         return {"mode": mode, "trials": len(history), "need": int(self._rule_cfg["llm_signal_count"]), "count": len(on), "on": on,
                 "signals": detail, "current_comp": sorted(self._posture.seen), "llm": dict(self._rest_llm)}
 
-    def _comp_snapshot(self) -> dict | None:
+    def _comp_snapshot(self) -> dict:
         """대시보드 「보상 동작 기록」 패널 (10/15, 훈련 탭 모드별 진행 아래): 세션의 시도마다(모드 무관) 보인 보상 동작 종류,
-        지금 시도에서 이미 보인 종류, 규칙 '보상 동작 반복' 창 안 횟수. 표시용 — 제어에 쓰지 않는다. lock 안에서 부른다. 세션 없으면 None."""
-        if self._session is None:
-            return None
+        지금 시도에서 이미 보인 종류, 규칙 '보상 동작 반복' 창 안 횟수. 표시용 — 제어에 쓰지 않는다. lock 안에서 부른다.
+        세션이 없어도(시작 전·끝난 뒤) 마지막 세션의 기록을 그대로 싣고 current 만 비운다 — 끝나자마자 패널이 비면 볼 수가 없어서.
+        기록은 다음 세션 시작 때 비운다."""
         window = int(self._rule_cfg["compensation_window"])
         recent = self._comp_history[-window:]
-        return {"log": list(self._comp_log[-COMP_LOG_MAX:]), "current": sorted(self._posture.seen),
+        return {"log": list(self._comp_log[-COMP_LOG_MAX:]), "current": sorted(self._posture.seen) if self._session is not None else [],
                 "window": window, "need": int(self._rule_cfg["compensation_min_trials"]),
                 "count": sum(1 for seen in recent if seen), "trials": len(recent)}
 

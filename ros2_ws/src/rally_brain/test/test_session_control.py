@@ -440,7 +440,7 @@ def test_compensation_history_spans_modes(node):
 
 def test_compensation_log_for_dashboard(node):
     """대시보드 「보상 동작 기록」 (10/15): 시도마다 보인 보상 동작 종류를 세션 순서대로(모드 무관) 싣고, 지금 시도에서 이미 보인 것과
-    규칙 '보상 동작 반복' 창 안 횟수도 같이. 세션 없으면 None."""
+    규칙 '보상 동작 반복' 창 안 횟수도 같이. 세션이 없어도 마지막 기록은 남고 current 만 빈다(끝난 세션 기록을 볼 수 있게)."""
     session = node._session
     node._comp_history, node._comp_log = [], []
     assert node.control_snapshot()["comp_log"] == {"log": [], "current": [], "window": 5, "need": 3, "count": 0, "trials": 0}
@@ -457,5 +457,8 @@ def test_compensation_log_for_dashboard(node):
     assert snap["current"] == [] and snap["count"] == 2 and snap["trials"] == 3     # end_trial 이 이번 시도 기억을 비움
     assert node._comp_history == [True, False, True]
     saved, node._session = node._session, None
-    assert node._comp_snapshot() is None
+    node._posture.seen.add("trunk_lean")                     # 세션이 끊긴 채 남은 '지금 시도' 기억은 싣지 않음
+    off = node._comp_snapshot()
+    assert off["log"] == snap["log"] and off["current"] == [] and off["count"] == 2 and off["trials"] == 3
     node._session = saved
+    node._posture.seen.clear()

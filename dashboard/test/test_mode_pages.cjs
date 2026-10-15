@@ -332,7 +332,10 @@ testProposalResponses().catch(error => { console.error(error); process.exitCode 
 
 // 조건 확인 알림 (10/14) — 토스트만. 신호 스택 패널은 10/15 「보상 동작 기록」 패널로 바뀜
 run("renderControl(null)");
-assert.equal(get('comp-panel').hidden, true);
+assert.equal(get('comp-panel').hidden, false, '보상 동작 기록 패널은 brain·세션 없어도 보임 (10/15)');
+assert.equal(get('comp-empty').hidden, false);
+assert.equal(get('comp-count').textContent, '');
+assert.equal(get('comp-now').textContent, 'brain 연결을 기다리는 중');
 const restBase = {mode:5, trials:3, need:2, count:0, on:[], current_comp:[], llm:{state:'idle', result:null, at:null, signals:[]},
   signals:{compensation:{on:false, count:2, need:3, window:5, trials:3}, success_drop:{on:false, applies:true, rate:0.667, max_rate:0.4, trials:3, min_trials:3},
            slowing:{on:false, last_s:10, mean_s:10, ratio:1, need_ratio:1.5, trials:3, min_trials:3}}};
@@ -360,7 +363,7 @@ assert.equal(get('toasts').children.length, 4);
 const compBase = {log:[{trial:1,mode:1,success:true,types:['trunk_lean']},{trial:2,mode:5,success:false,types:[]},{trial:3,mode:3,success:true,types:['shoulder_hike','trunk_lean']}],
   current:['trunk_lean'], window:5, need:3, count:2, trials:3};
 context.compBase = compBase;
-run("renderControl({...control,comp_log:compBase});");
+run("renderControl({...control,phase:'running',comp_log:compBase});");
 assert.equal(get('comp-panel').hidden, false);
 assert.equal(get('comp-count').textContent, '최근 3회 중 2회 · 3회면 휴식 신호');
 assert.equal(get('comp-count').className, 'badge');
@@ -368,12 +371,19 @@ assert.equal(get('comp-now').textContent, '이번 시도: 몸통 기울임 보�
 assert.match(get('comp-rows').innerHTML, /^<tr class="seen"><td class="num">3회<\/td><td><span class="mchip">3<\/span>캐치볼<\/td><td><span class="ctag">어깨 들림<\/span><span class="ctag">몸통 기울임<\/span><\/td><td><span class="r-res ok">성공/);
 assert.match(get('comp-rows').innerHTML, /<tr class=""><td class="num">2회<\/td><td><span class="mchip">5<\/span>건네고 받기<\/td><td><span class="none">없음<\/span><\/td><td><span class="r-res fail">실패/);
 assert.equal(get('comp-empty').hidden, true);
-run("renderControl({...control,comp_log:{...compBase,log:[],current:[],count:3,trials:5}});");
+run("renderControl({...control,phase:'running',comp_log:{...compBase,log:[],current:[],count:3,trials:5}});");
 assert.equal(get('comp-empty').hidden, false);
 assert.equal(get('comp-count').className, 'badge met');
 assert.equal(get('comp-now').textContent, '이번 시도: 아직 보상 동작 없음');
-run("renderControl(null)");
-assert.equal(get('comp-panel').hidden, true);
+run("renderControl({...control,phase:'ended',comp_log:compBase});");                      // 세션이 끝나도 마지막 기록은 그대로
+assert.equal(get('comp-panel').hidden, false);
+assert.equal(get('comp-empty').hidden, true);
+assert.equal(get('comp-count').textContent, '최근 3회 중 2회 · 3회면 휴식 신호');
+assert.equal(get('comp-now').textContent, '지난 세션 기록 — 다음 세션을 시작하면 새로 쌓입니다');
+run("renderControl({...control,phase:'idle',comp_log:{...compBase,log:[],current:[],count:0,trials:0}});");   // brain 켠 직후
+assert.equal(get('comp-empty').hidden, false);
+assert.equal(get('comp-count').textContent, '3회면 휴식 신호');
+assert.equal(get('comp-now').textContent, '세션을 시작하면 시도마다 기록됩니다');
 visit('#overview'); visit('#mode5');
 assert.equal(get('comp-panel').parentNode, get('mode-left'), '훈련 탭: 모드별 진행(단계) 아래');
 assert.equal(get('mode-left').children.at(-2), get('progress-panel'));

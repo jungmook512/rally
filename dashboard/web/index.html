@@ -58,7 +58,6 @@
   #proposal-reject:disabled { background:#e3e8e4; color:#53635c; }
   /* 보상 동작 기록 (10/15) — 훈련 탭, 모드별 진행(단계) 아래. 조건 확인 알림(토스트, 10/14)은 그대로 */
   #comp-panel { border-left:4px solid #b08a4a; }
-  #comp-panel[hidden] { display:none; }
   #comp-now { margin:8px 0 10px; }
   #comp-panel .scroll { max-height:280px; overflow:auto; }
   .comp-table { width:100%; border-collapse:collapse; font-size:13.5px; }
@@ -377,7 +376,7 @@
         <div class="mode-card" id="card-5" role="link" tabindex="0"><div class="top"><span class="num">5</span><span class="state" id="card-state-5">대기</span></div>
           <div class="name">건네고 받기</div><div class="sub" id="card-sub-5">시도 0회</div><div class="bar"><i id="card-bar-5"></i></div><div class="card-slot" id="card-slot-5"></div></div>
       </div></div>
-      <div class="panel" id="comp-panel" hidden aria-label="보상 동작 기록">
+      <div class="panel" id="comp-panel" aria-label="보상 동작 기록">
         <div class="panel-top"><h2>보상 동작 기록 <small class="section-tag">몸통 기울임 · 어깨 들림</small></h2><span id="comp-count" class="badge"></span></div>
         <p id="comp-now" class="caption"></p>
         <div class="scroll"><table class="comp-table"><thead><tr><th>시도</th><th>모드</th><th>보상 동작</th><th>결과</th></tr></thead><tbody id="comp-rows"></tbody></table></div>
@@ -817,20 +816,22 @@ function renderRest(s) {
   restSeen = now;
 }
 // 보상 동작 기록 (brain session_control.comp_log, 10/15): 시도마다 보인 보상 동작 종류(모든 모드, 세션 순서 — 최신이 위),
-// 지금 시도에서 이미 보인 것, 규칙 '보상 동작 반복' 창 안 횟수. 훈련 탭의 모드별 진행(단계) 아래
+// 지금 시도에서 이미 보인 것, 규칙 '보상 동작 반복' 창 안 횟수. 훈련 탭의 모드별 진행(단계) 아래.
+// 패널은 늘 보인다 — brain 은 세션이 없을 때도(시작 전·끝난 뒤) 마지막 세션 기록을 보내고, 그때는 안내 문구만 바뀜
 function renderComp(s) {
   const c = s?.comp_log;
-  $('comp-panel').hidden = !c;
-  if (!c) return;
-  const log = [...(c.log || [])].reverse();
+  const log = [...(c?.log || [])].reverse();
   $('comp-rows').innerHTML = log.map(e => `<tr class="${e.types?.length ? 'seen' : ''}"><td class="num">${Number(e.trial)}회</td>`
     + `<td><span class="mchip">${Number(e.mode)}</span>${esc(MODES[e.mode] ?? '')}</td>`
     + `<td>${e.types?.length ? e.types.map(t => `<span class="ctag">${esc(COMP_NAMES[t] || t)}</span>`).join('') : '<span class="none">없음</span>'}</td>`
     + `<td><span class="r-res ${e.success ? 'ok' : 'fail'}">${e.success ? '성공' : '실패'}</span></td></tr>`).join('');
   $('comp-empty').hidden = log.length > 0;
-  $('comp-count').textContent = `최근 ${c.trials}회 중 ${c.count}회 · ${c.need}회면 휴식 신호`;
-  $('comp-count').className = `badge${c.count >= c.need ? ' met' : ''}`;
-  $('comp-now').textContent = c.current?.length ? `이번 시도: ${c.current.map(t => COMP_NAMES[t] || t).join(' · ')} 보임` : '이번 시도: 아직 보상 동작 없음';
+  const active = !!c && !['idle', 'ended'].includes(s.phase);
+  $('comp-count').textContent = !c ? '' : c.trials ? `최근 ${c.trials}회 중 ${c.count}회 · ${c.need}회면 휴식 신호` : `${c.need}회면 휴식 신호`;
+  $('comp-count').className = `badge${c && c.count >= c.need ? ' met' : ''}`;
+  $('comp-now').textContent = !c ? 'brain 연결을 기다리는 중'
+    : !active ? (log.length ? '지난 세션 기록 — 다음 세션을 시작하면 새로 쌓입니다' : '세션을 시작하면 시도마다 기록됩니다')
+    : c.current?.length ? `이번 시도: ${c.current.map(t => COMP_NAMES[t] || t).join(' · ')} 보임` : '이번 시도: 아직 보상 동작 없음';
 }
 
 async function respondProposal(decision) {
