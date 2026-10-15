@@ -64,7 +64,9 @@ mode3:
   pad_insert_slow_from_m: 0.02            # G 위 2 cm 부터는
   pad_insert_slow_vel_mm_s: 10.0          #   10 mm/s 로 (다 꽂히는 순간 덜 눌리게)
   # 공 떼기 (catch_ball.after_catch 가 패드를 꽂은 뒤 detach_ball.run — rally_robot/detach.py DEFAULTS 의 detach_ 접두 키로 덮어씀)
-  detach_after_place: true          # ★ 10/14 정정인: 패드 꽂은 뒤 공 떼기 → 박스. 교시 둘이 없으면 자동으로 건너뜀
+  detach_after_place: false         # ★ 10/15 정정인: 로봇 공 떼기 끔 — 실제로 던진 공은 50 N 까지 당겨도 안 떼어짐 → 사람이 뗌. true = 로봇이 떼어 박스로
+  manual_removal_prompt: "패드에 붙은 공을 떼 주세요"   # 꽂은 뒤 로봇이 말함 (/rally/voice/speak)
+  manual_removal_wait_s: 10.0       # 그동안 로봇은 거치대 옆(A)에서 멈춰 기다림. 다음 시도에 패드를 다시 집음
   detach_ball_view_posj: [158.8, -7.9, -71.0, -8.3, -119.5, -114.1]   # ★ 10/14 20:0x 정정인 직접교시: 거치대에 꽂힌 패드의 공 붙은 면(+x)을 손목 카메라로 보는 자세. posx [345.5, -156.6, 500.9, 180.0, 160.0, -90.0] (두산 fkin)
   detach_ball_z_m: 0.0              # ★ 10/14 정정인: 0 = 비전 z 그대로 (비전 119 mm 가 맞음 — 95 mm 실측 정정). 값을 주면 그 높이로 + 카메라 시선 따라 x·y 보정
   detach_vision_top_to_center_m: 0.05   # ★ 10/15 정정인 실로봇: 비전 z(공 윗면)에서 5 cm 아래를 쥠 (3 → 4 → 5 cm, 높았음)

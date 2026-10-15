@@ -270,6 +270,20 @@ def after_catch(node, goal_handle, ctx: CatchContext) -> None:
     from rally_robot import detach
     from rally_robot.skills import detach_ball
     if not ctx.cfg.get("detach_after_place", True):
+        # 10/15 정정인: 실제로 던진 공은 벨크로에 세게 붙어 로봇이 못 뗌(50 N 까지 당겨도) → 사람이 뗀다. 꽂은 뒤 A 에서 멈춰 안내하고 기다림
+        wait_s = float(ctx.cfg.get("manual_removal_wait_s", 10.0))
+        prompt = str(ctx.cfg.get("manual_removal_prompt", "") or "")
+        if wait_s > 0:
+            node.say(prompt)
+            node.get_logger().info(f"[catch_ball] 공 떼기는 사람 몫 — \"{prompt}\" · {wait_s:.0f} s 기다림 (로봇 정지)")
+            node.set_contact(True)                     # 사람이 패드를 만져도 nudge 안 걸리게 (힘 한계 25 N 은 그대로)
+            try:
+                t0 = time.monotonic()
+                while time.monotonic() - t0 < wait_s:
+                    node.check_stop(goal_handle)
+                    time.sleep(0.1)
+            finally:
+                node.set_contact(False)
         return None
     if not detach.taught(node):
         node.get_logger().warning("[catch_ball] 공 떼기 교시 없음 (skills.yaml mode3.detach_*_posj) → 건너뜀")

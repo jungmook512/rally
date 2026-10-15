@@ -35,7 +35,7 @@ from std_srvs.srv import Trigger
 
 from rally_interfaces.action import CatchBall, DetachBall, Handover, MoveTarget, PickCompliant, PushBall, ResistPush, ReturnBall
 from rally_interfaces.msg import HandState, SafetyStatus, TrackedObjectArray
-from rally_interfaces.srv import GripperCommand
+from rally_interfaces.srv import GripperCommand, Speak
 from rally_robot.dsr_helpers import OBSERVE_POS, ROBOT_ID, SkillAbort, init_dsr, motion_speeds
 from rally_robot import pad_rack
 
@@ -259,6 +259,18 @@ class SkillServer(Node):
         detach_ball 만 쓴다. 하트비트가 끊기거나 workspace_extend_max_s 를 넘으면 safety_monitor 가 평소 상한으로 되돌린다."""
         self._workspace_extend = bool(on)
         self.pub_workspace_extend.publish(Bool(data=self._workspace_extend))
+
+    def say(self, text: str) -> bool:
+        """음성 안내 (/rally/voice/speak, 기다리지 않음). 서비스가 없으면 로그만 — 안내는 동작을 막지 않는다 (10/15 모드 3 공 떼기 사람 몫)."""
+        if self.fake or not text:
+            return False
+        if getattr(self, "_speak_cli", None) is None:
+            self._speak_cli = self.create_client(Speak, "/rally/voice/speak", callback_group=self.cb_state)
+        if not self._speak_cli.service_is_ready():
+            self.get_logger().warning(f"[안내] /rally/voice/speak 없음 — 말하지 못함: {text}")
+            return False
+        self._speak_cli.call_async(Speak.Request(text=text, block_mic=True))
+        return True
 
     def set_detach_window(self, on: bool):
         """모드 3 공 떼기 (10/15): 켠 동안(+ contact_expected 도 켜져 있을 때) safety_monitor 힘 한계가 detach_window_force_limit_n.
