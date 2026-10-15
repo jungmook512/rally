@@ -62,8 +62,14 @@ DEFAULTS = dict(
     peel_retreat_per_step_m=0.001,          # 스텝마다 n 방향으로 더 후퇴 (양쪽 번갈아 16 스텝이면 16 mm)
     peel_down_per_step_m=0.001,             # ★ 10/15 정정인 실로봇: 스텝마다 아래(−z)로도 — 위로 딸려 올라오던 패드를 거치대 홈에 눌러 둠 (16 스텝 16 mm)
     pull_down_m=0.01,                       # 마지막 n 방향 당기기 동안 아래로 이만큼 같이
-    sep_down_m=0.005,                       # 떼어짐 확인(+x retreat_m) 동안 아래로 — 위로 들지 않음
-    sep_max_n=5.0,                          # 떼어짐 확인 끝 힘(쥔 직후 영점 기준)이 이 미만이면 떨어짐. 넘으면 패드를 끌고 있는 것 → 놓고 물러남
+    sep_down_m=0.0,                         # 떼어짐 확인(+x retreat_m) 동안 아래로 (10/15: 아래로 누르면 stalled → 0)
+    sep_max_n=5.0,                          # 떼어짐 확인 끝 당김 힘(−n 성분)이 이 미만이면 떨어짐. 넘으면 패드를 끌고 있는 것 → 놓고 물러남
+    # ★ 10/15 정정인 실로봇: 떨어졌는데 ±60° 까지 다 돌림 → 스텝마다 당김 힘(툴 힘의 −n 성분, 쥔 직후 영점 기준)을 보고
+    #   +x 로 sep_min_back_m 이상 물러난 뒤 sep_tension_n 미만이 sep_consec 스텝 이어지면 떨어진 것으로 보고 그만 돌림
+    sep_tension_n=2.5,
+    sep_min_back_m=0.004,
+    sep_consec=2,
+    peel_down_max_m=0.006,                  # 돌리며 아래로 누르는 총량 상한 (10/15: 24 mm 까지 누르니 모든 스텝 stalled)
     grip_force_n=40.0,                      # ★ 10/15 정정인: 떼기는 RG2 최대 힘(40 N)으로 — gripper.velcro_ball 12 N 은 돌릴 때 미끄러짐
     pull_extra_m=0.03,
     peel_vel_mm_s=15.0,
@@ -351,3 +357,8 @@ def top_grasp_pose_like(ball_m, below_m, zyz_down, cur_zyz):
         if best is None or ang < best[0]:
             best = (ang, g)
     return best[1]
+
+
+def tension_n(f3, normal) -> float:
+    """툴 힘(영점 뺀, base) 중 공을 패드 쪽(−n)으로 당기는 성분 [N]. 공이 붙은 채 +n 으로 물러나면 커지고 떨어지면 0 근처. 순수 함수."""
+    return float(-np.dot(np.asarray(f3, float)[:3], _unit(normal)))

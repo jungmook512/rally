@@ -209,3 +209,9 @@ def test_peel_alternate_schedule_and_mirror():
     p, m = d.peel_pose_vertical(g, BALL, N, R, 0.5, 10.0, 0.0), d.peel_pose_vertical(g, BALL, N, R, 0.5, -10.0, 0.0)
     assert p[0] > g[0] and m[0] > g[0] and p[0] == pytest.approx(m[0])          # 양쪽 다 패드에서 떨어지는 쪽(+x)으로 같은 만큼
     assert (p[1] - g[1]) == pytest.approx(-(m[1] - g[1]))                        # y 는 거울
+
+
+
+def test_tension_is_pull_toward_pad():
+    assert d.tension_n([-6.0, 1.0, 2.0], N) == pytest.approx(6.0)     # 공이 붙어 패드(−x) 쪽으로 당김
+    assert d.tension_n([3.0, 0.0, 0.0], N) == pytest.approx(-3.0)     # 미는 쪽은 음수

@@ -119,7 +119,7 @@ def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=N
         log.error(f"[detach_ball] {msg} → 열고 물러남")
         node.gripper(open_mm, force)
         here = list(get_current_posx()[0])
-        move_checked(node, detach.up(detach.along(here, n, 0.01), cfg["approach_m"]), tv, ta)   # 패드에서 1 cm 떼고 위로
+        move_checked(node, detach.up(detach.along(here, n, 0.01), cfg["approach_m"]), tv, ta, stall_ok=True)   # 패드에서 1 cm 떼고 위로 (순응 중이면 덜 갈 수 있음)
         raise SkillAbort(reason)
 
     # 1~3. 공 보기 → 비전 → 접근 → 닿을 때까지 하강 → 쥐기. 잘못 쥐면 열고 올라가 공 보기부터 다시 (grasp_tries 번, 10/15 정정인)
@@ -206,18 +206,30 @@ def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=N
             steps = detach.peel_schedule_alternate(cfg["peel_step_deg"], cfg["peel_max_deg"])
         else:
             steps = [(d_, k) for k, (d_, _) in enumerate(detach.peel_schedule(cfg["peel_step_deg"], cfg["peel_max_deg"], 0.0), 1)]
+        def tension():
+            return detach.tension_n(np.asarray(get_tool_force()[:3], float) - f0, n)
+
+        early, low = False, 0
         with compliance(cfg["peel_stiffness"], log):
             for deg, k in steps:
                 check()
-                back, down = cfg["peel_retreat_per_step_m"] * k, cfg["peel_down_per_step_m"] * k
+                back = cfg["peel_retreat_per_step_m"] * k
+                down = min(cfg["peel_down_per_step_m"] * k, cfg["peel_down_max_m"])
                 target = detach.up(detach.peel_pose_vertical(grasp_now, ball_m, n, r, cfg["pivot_side_r"], deg, back), -down)   # 돌리며 아래로 (패드가 딸려 올라오지 않게)
                 how = move_checked(node, target, cfg["peel_vel_mm_s"], ca, on_poll=poll, stall_ok=True)
                 if feedback:
                     feedback("pull", watch.last)
-                log.info(f"[detach_ball] 벗기기 {deg:+.0f}° (후퇴 {back * 1000:.0f} mm · 아래 {down * 1000:.0f} mm) {how} · 힘 {watch.last:.1f} N (최대 {watch.peak:.1f})")
+                t_n = tension()
+                low = low + 1 if back >= cfg["sep_min_back_m"] and t_n < cfg["sep_tension_n"] else 0
+                log.info(f"[detach_ball] 벗기기 {deg:+.0f}° (후퇴 {back * 1000:.0f} mm · 아래 {down * 1000:.0f} mm) {how} · 힘 {watch.last:.1f} N"
+                         f" · 당김 {t_n:+.1f} N (최대 {watch.peak:.1f})" + (f" · 약함 {low}/{cfg['sep_consec']}" if low else ""))
                 if watch.over:
                     break
-            if not watch.over:
+                if low >= int(cfg["sep_consec"]):
+                    early = True
+                    log.info(f"[detach_ball] 당김 힘이 {cfg['sep_tension_n']:.1f} N 미만 {low} 스텝 — 떨어진 것으로 보고 그만 돌림")
+                    break
+            if not watch.over and not early:
                 # 다 돌린 뒤 n 방향(+x)으로 당기며 아래로 — 위로 들지 않음 (10/15 정정인: 위로 떼면 패드가 거치대에서 딸려 올라옴)
                 check()
                 here = list(get_current_posx()[0])
@@ -231,10 +243,10 @@ def run(node, log, check, ball_m=None, grip_force_n=0.0, limit_n=0.0, feedback=N
             here = list(get_current_posx()[0])
             how = move_checked(node, detach.up(detach.along(here, n, cfg["retreat_m"]), -float(cfg["sep_down_m"])), cfg["peel_vel_mm_s"], ca, on_poll=poll, stall_ok=True)
             time.sleep(0.3)
-            f_sep = float(np.linalg.norm(np.asarray(get_tool_force()[:3], float) - f0))
-            log.info(f"[detach_ball] 떼어짐 확인: +x {cfg['retreat_m'] * 1000:.0f} mm {how} · 힘 {f_sep:.1f} N (기준 {cfg['sep_max_n']:.0f} N 미만이면 떨어짐)")
-            if watch.over or how != "done" or f_sep >= cfg["sep_max_n"]:
-                release_and_back("detach_not_detached", f"안 떼어짐 — 떼어짐 확인 힘 {f_sep:.1f} N (최대 {watch.peak:.1f})")
+            f_sep = tension()
+            log.info(f"[detach_ball] 떼어짐 확인: +x {cfg['retreat_m'] * 1000:.0f} mm {how} · 당김 {f_sep:+.1f} N (기준 {cfg['sep_max_n']:.0f} N 미만이면 떨어짐)")
+            if watch.over or f_sep >= cfg["sep_max_n"]:                # stalled 여부는 안 봄 — 순응이라 몇 mm 덜 가도 됨 (10/15)
+                release_and_back("detach_not_detached", f"안 떼어짐 — 떼어짐 확인 당김 {f_sep:+.1f} N (최대 {watch.peak:.1f})")
         out["detached"] = True
         phase("detached", f_sep)
         # 패드에서 떨어진 뒤에만 위로
