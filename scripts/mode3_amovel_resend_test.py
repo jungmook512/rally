@@ -80,6 +80,7 @@ def main() -> int:
     ap.add_argument("--dir", type=str.strip, default="-y", choices=list(DIRS))
     ap.add_argument("--first", type=float, default=10.0, help="첫 목표 cm")
     ap.add_argument("--second", type=float, default=15.0, help="둘째 목표 cm")
+    ap.add_argument("--max-cm", type=float, default=25.0, help="둘째 목표 상한 cm. 10/16: 15 → 25 — 어깨 반대 대기 자세는 25 cm (예전 자세 right_max 15 시절 값). 계획 단계가 관절 속도·작업 공간을 따로 본다")
     ap.add_argument("--delay", type=float, nargs="+", default=[0.15], help="첫 amovel → 둘째 amovel s")
     ap.add_argument("--vel", type=float, default=450.0, help="mm/s (안전 speed_override 를 곱함)")
     ap.add_argument("--acc", type=float, default=1000.0, help="mm/s²")
@@ -88,8 +89,8 @@ def main() -> int:
     ap.add_argument("--return-vel", type=float, default=100.0)
     ap.add_argument("--settle", type=float, default=1.0)
     opt = ap.parse_args([a + " " if a in ("-y", "-u") else a for a in sys.argv[1:]])   # "-y" 를 값으로 (reach 시험과 같음)
-    if opt.second > 15.0 or opt.first > opt.second:
-        print("--second 는 15 cm 까지, --first ≤ --second")
+    if opt.second > opt.max_cm or opt.first > opt.second:
+        print(f"--second 는 {opt.max_cm:.0f} cm 까지 (--max-cm), --first ≤ --second")
         return 1
 
     rclpy.init()

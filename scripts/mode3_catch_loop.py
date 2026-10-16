@@ -158,6 +158,7 @@ def main():
     ap.add_argument("--count", type=int, default=0, help="반복 횟수 (0 = Ctrl+C 까지)")
     ap.add_argument("--radius", type=float, default=None, help="받으러 가는 반경 m (기본 skills.yaml mode3.catch_radius_m)")
     ap.add_argument("--timeout", type=float, default=30.0, help="투구 기다리는 시간 s")
+    ap.add_argument("--no-ask", action="store_true", help="사람 판정(y + Enter) 묻지 않고 비전 판정만 (10/16 정동휘: 측면 판정이 잘 보임)")
     ap.add_argument("--after-catch-wait", type=float, default=0.0,
                     help="받은 뒤 다음 goal 전에 더 기다리는 시간 s. 10/13 부터 스킬이 받은 뒤 접촉 예정을 켜고 기다리므로(skills.yaml mode3.ball_removal_wait_s) 기본 0")
     opt = ap.parse_args([a for a in sys.argv[1:] if not a.startswith("--ros-args")])
@@ -218,7 +219,7 @@ def main():
                   f"   예측 교차점 ({p.x:.3f}, {p.y:.3f}, {p.z:.3f}) m{d}\n"
                   f"   로봇 이동 {r.robot_travel_mm:.0f} mm · 반응 {r.reaction_time_s:.2f} s{sp} · 단계 {' → '.join(phases)} · {time.monotonic() - t0:.0f} s")
             manual = None
-            if moved and r.failure_reason != "timeout":
+            if moved and r.failure_reason != "timeout" and not opt.no_ask:
                 # 10/13: 측면 판정이 패드 가운데 붙은 공을 못 보는 경우가 있어 사람 판정도 같이 기록. 스킬이 접촉 예정 켜고 기다리는 ball_removal_wait_s(5 s) 안에
                 print("   ▶ 받았으면 y + Enter (4 s): ", end="", flush=True)
                 rd, _, _ = select.select([sys.stdin], [], [], 4.0)

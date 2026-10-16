@@ -85,7 +85,7 @@ python3 scripts/mode3_reach_test.py --run --posj -58.7 7.0 100.2 98.8 63.6 -100.
 # a) 4축(0·90·180·270°) × 5·10·15·20·25 cm × 2회 = 40
 python3 scripts/mode3_movej_test.py --run --posj -58.7 7.0 100.2 98.8 63.6 -100.3 --angles 0 90 180 270 --dist 5 10 15 20 25 --cases amovej --jvel 120 --jacc 400 --reps 2 --ws-x-max 0.78
 # b) 8방향(45° 간격) × 15·25 cm × 2회 = 32
-python3 scripts/mode3_movej_test.py --run --angles $(seq 0 45 315) --dist 15 25 --cases amovej --jvel 120 --jacc 400 --reps 2 --ws-x-max 0.78
+python3 scripts/mode3_movej_test.py --run --posj 123.1 -7.0 -100.2 -80.5 61.9 -100.6 --angles $(seq 0 45 315) --dist 15 25 --cases amovej --jvel 120 --jacc 400 --reps 2 --ws-x-max 0.78
 ```
 스크립트는 방향 순서대로 돈다 (섞는 옵션 없음 — 박성현 제안의 "순서 섞기"는 아직 미반영).
 
@@ -122,6 +122,67 @@ python3 scripts/mode3_reach_test.py --run --posj -58.7 7.0 100.2 98.8 63.6 -100.
 ## 8. 모델이 안 보는 것 (실로봇에서만)
 
 두산 관절 가속 한계·자기충돌(기둥 7 cm)·케이블·툴 힘 추정의 자세 의존 오차·명령 지연(시뮬 0.11~0.33 s, 실로봇 0.1 s)·amovej 중 패드 기울기 변화(movej_test 가 `tilt_deg` 로 계산해 줌).
+
+## 9. 적용본 검증 — 어깨 반대 자세 (10/15, 로봇 시간이 적을 때 이 순서만)
+
+**10/14 저녁 실로봇에서 Y0 로 가다 J1 −97° 에서 J2 모터 몸통이 패드 거치대에 충돌(#208).** 이 브랜치(`feat/rally_robot/mode3-ready-flip`)는 같은 TCP·패드 자리의 **어깨 반대 IK 해** `[123.1, -7.0, -100.2, -80.5, 61.9, -100.6]` 로 바꾸고, 집기 접근을 **U 를 거쳐 손잡이 축 뒤에서 들어오는 직선**으로 바꾼 것(`pad_rack_back_m` 0.06). 두산 충돌 메시 모델(`scripts/m0609_collision.py` — 실로봇 충돌을 J1 −90~−120° 겹침으로 재현함)로 계산한 결과 — 실로봇 미확인:
+
+| 구간 | 기존 자세 (실로봇에서 됨 — 기준선) | 어깨 반대 | 비고 |
+|---|---|---|---|
+| 관측 → 대기 (관절 직접) | — | 팔 11.0 cm, TCP x ≤ 0.560 | 경유 자세 불필요 |
+| 받기 이동 24방향 × 25 cm (왼쪽 23) | 12방향만 가능 | **팔·그리퍼·패드 ≥ 6.1 cm** | amovej 15 cm 0.47 s · 25 cm 0.67 s |
+| 집기 **예전 경로** (손목 먼저 A → A 관절) | 그리퍼 −2.6 / −0.4 | 그리퍼 **−4.3 / −5.9** | 거치대 위에서 내려오며 쓸고 들어감 → **안 씀** |
+| 집기 **새 경로** (손목 먼저 U → U 관절 → A 뒤 6 cm 직선 → A 직선) | 팔 ≥ 18, 그리퍼 ≥ 0.9 | 팔 ≥ 8.4, 그리퍼 ≥ 0.9 | 거치대 위 → 손잡이 축 따라 뒤에서. A·G 근처 값은 손잡이를 감싸는 자리라 상자 모델에서 음수(기준선과 같음) |
+| G → U 들기 · U → P 꽂기 · 놓고 빠짐 | 두 자세 같음 (교시점이 같음) | 같음 | 10/14 꽂기 5/5 와 같은 경로 |
+| U ↔ 대기 (꽂기 가기·집기 끝) | 팔 23, 패드 6.5 | 팔 21, 패드 6.4 | 손목 먼저 U 값 → 팔 (ready_route 그대로) |
+
+**대기 자세에서 TCP x 0.560 — safety x 상한 0.57 까지 9.6 mm.** 컨트롤러 fkin 과 URDF 계산이 x 로 2.7 mm 차이(print_pose.py) → 멈춰 있을 때 `workspace_limit` 이 날 수 있으므로 시험 동안 x 상한을 0.60 으로.
+
+### 준비 (터미널 4개, 모두 `cd ~/rally && source scripts/robot.sh env`)
+```bash
+git fetch && git checkout feat/rally_robot/mode3-ready-flip && git pull
+cd ros2_ws && colcon build --packages-select rally_robot rally_bringup && cd ..
+# 1
+scripts/robot.sh bringup
+# 2  안전감시·힘·그리퍼·스킬서버 (safety·[pad_rack] 로그가 여기)
+scripts/robot.sh nodes novision
+# 3  시험값 — 끝나면 원복
+ros2 param get /rally_safety_monitor workspace_catch_x_max_m     # 1.00 (−1 이면 빌드·재시작 안 됨)
+ros2 param set /rally_safety_monitor workspace_x_max_m 0.60       # 대기 자세 x 0.560 의 9.6 mm 여유 때문 (시험 동안만)
+# 4  이동 측정 bag (#195, 영상 없음)
+IMAGES=0 DURATION=900 OUT=~/bags/motion_flip scripts/record_mode3_bag.sh
+```
+패드는 거치대에 꽂혀 있는 상태로 시작(평소대로).
+
+### 공 던지기(받기 10회) 전에 — 비전 컨테이너 다시 빌드 (박성현 #223 리뷰)
+flight_predictor 는 패드 평면을 **컨테이너 안 rally_bringup 설치본**의 skills.yaml 에서 읽는다. 브랜치 체크아웃 + colcon 만 하면 catch_ball(네이티브)은 새 패드 (0.595, −0.423), 예측기(컨테이너)는 옛 패드 (0.345, −0.332) 를 써서 **요격 목표가 25 cm 어긋난다.**
+```bash
+cd ~/rally/docker && docker compose --profile pc2 up -d --build vision      # scripts/vision_local.sh 를 쓰면 config 를 끼워 쓰므로 재시작만
+docker compose --profile pc2 logs vision | grep "패드 평면"                    # 중심 [0.595, -0.423, 0.433] 이어야 함
+```
+패드 중심 x 0.595 는 보라색 선(0.568) 밖이다 — 모드 3 투구자는 J1 에서 3 m 밖이라 #198 결정대로 받기 창 동안만 x 를 넓힌다.
+
+### 순서 (터미널 3, 비상정지 손에 — 1·3·4 는 사람이 거치대 쪽을 보면서)
+
+> ⚠ **`mode3_movej_test.py` 는 `--posj` 가 없으면 지금 자세를 출발점으로 쓴다.** 패드를 꽂은 뒤(거치대 앞)에 `--posj` 없이 치면 거치대 주변을 12방향으로 움직이려 한다 (10/16 실로봇에서 STOP 덕에 안 움직임). 받기 이동은 항상 `--posj` 를 붙인다 — 스크립트가 먼저 대기 자세로 간 뒤 시작한다. 거치대 근처에서 출발할 때는 그 전에 `mode3_go_ready.py --vel 10`.
+| # | 무엇 | 명령 | 통과 |
+|---|---|---|---|
+| 0 | 계획만 | `python3 scripts/mode3_movej_test.py --posj 123.1 -7.0 -100.2 -80.5 61.9 -100.6 --angles $(seq 0 30 330) --dist 15 23 --cases amovej --jvel 120 --jacc 400 --ws-x-max 0.78` | 24개 모두 OK (관절 변화 ≤ 44°) |
+| 1 | **대기 자세로 (저속)** | `python3 scripts/mode3_go_ready.py --vel 10` — 관측 자세에서 직접. J1 이 0 → 123° 로 크게 도는 게 정상 | 거치대·천장 안 닿음, STOP 없음. `print_pose.py` TCP ≈ (0.56, −0.32, 0.43). **눈으로: J2 모터가 거치대 반대쪽(로봇 왼쪽 뒤)** |
+| 2 | 받기 이동 15 cm 12방향 (bag 켠 채) — 패드 없이 | `python3 scripts/mode3_movej_test.py --run --posj 123.1 -7.0 -100.2 -80.5 61.9 -100.6 --angles $(seq 0 30 330) --dist 15 --cases amovej --jvel 120 --jacc 400 --reps 2 --ws-x-max 0.78` | 완주, 힘 ≤ 88 N, 터미널 2 에 `작업 공간 x 상한 1.00` ↔ `0.60` 로그 쌍 |
+| 3 | **집기 → 꽂기 1회** (새 접근 경로) | `python3 scripts/pad_rack_loop.py --count 1` — 대기 자세에서 시작하므로 `[pad_rack] U → A 뒤 6 cm … → A (직선, 손잡이 축)` 로그가 나와야 함 | 집기: U 로 올라갔다 손잡이 뒤에서 수평으로 들어옴(위에서 내려오지 않음), 쥔 폭 24~38 mm. 꽂기: 10/14 와 같이 끝까지. STOP 없음 |
+| 4 | 집기 → 꽂기 3회 더 | `python3 scripts/pad_rack_loop.py --count 3 --auto` | 4/4 |
+| 5 | 받기 이동 23 cm 12방향 — **패드 쥔 채** (`--start place` 전 상태: 3번 뒤 `/rally/robot/pad_pick` 한 번 더 불러 쥐고 대기 자세) | `ros2 service call /rally/robot/pad_pick std_srvs/srv/Trigger` → 같은 `movej_test --dist 23` | 완주 (왼쪽 180° 포함), 240~270° 방향은 거치대 6 cm — 눈으로 |
+| 6 | (시간 있으면) 5·10·20·25 cm 4축 + 재전송 — 6절 2·3단계 | | 이동 측정 bag 완성 |
+| 7 | 받기 10회 | `python3 scripts/mode3_catch_loop.py --count 10` | 왼쪽·아래 투구도 움직임, 받은 뒤 꽂기까지 STOP 없음 |
+
+끝: bag Ctrl+C → `ros2 param set /rally_safety_monitor workspace_x_max_m 0.57` → `git checkout main`.
+
+### 안 되면
+- 1 에서 거치대 쪽으로 가까워 보이면 즉시 정지 → 관절값·`print_pose.py` 를 #208 에.
+- 3 에서 그리퍼가 손잡이에 못 들어가거나 깊이가 안 맞으면: `pad_rack_back_m` 을 0.08 로(더 뒤에서 출발) 또는 A·G 를 툴 −z 로 몇 mm 다시 교시 (#208 정정인 관측 "도착 위치가 손잡이 안쪽으로 깊음" — 이건 자세와 무관한 교시점 문제).
+- 2·5 에서 `workspace_limit` STOP: 터미널 2 로그의 TCP 와 그때 x 상한(0.78 이었는지). 받기 창이 안 켜졌으면 `movej_test` 가 내는 `catch_window` 가 safety 에 안 닿은 것.
+- 되돌리기: `git checkout main` (10/13 자세, 예전 집기 경로). 이 브랜치의 코드 변경(왼쪽 허용·x 완화·back_m)은 main 으로 가면 전부 꺼진다.
 
 ## 기록
 

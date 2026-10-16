@@ -1,5 +1,7 @@
 import math
 
+import numpy as np
+
 import pytest
 
 from rally_robot import pad_rack as pr
@@ -22,6 +24,15 @@ def test_insert_points_follow_slot_axis():
     assert P[3:] == G[3:] and B[3:] == G[3:]
     with pytest.raises(SkillAbort):
         pr.insert_points(G, G, 0.03, 0.01)
+
+
+def test_back_point_behind_approach_on_handle_axis():
+    """#208: A 뒤 back_m 는 G → A 축 위, 자세는 A."""
+    b = pr.back_point(A, G, 0.06)
+    d = np.array(A[:3]) - np.array(G[:3])
+    assert np.allclose(np.array(b[:3]) - np.array(A[:3]), d / np.linalg.norm(d) * 60.0)
+    assert b[3:6] == A[3:6]
+    assert pr.DEFAULTS["pad_rack_back_m"] == 0.0                   # 기본은 예전 경로
 
 
 def test_retreat_keeps_offset_from_compliance():
@@ -51,6 +62,15 @@ def test_config_and_rack_points():
     assert pts["G"][0] == 1.0 and pts["A"][0] == 2.0 and pts["U"][0] == 3.0
     with pytest.raises(SkillAbort):
         pr.rack_points(lambda q: -1, cfg)                       # fkin 실패
+
+
+def test_ready_route_uses_via_posj_when_given():
+    """10/14 Y0: ready_via_posj 가 있으면 그 경유 자세 → 대기 자세 (팔만 먼저 돌리는 기본 경로 대신)."""
+    VIA = [-58.7, 0.0, 0.0, 98.8, 63.6, -100.3]
+    Y0 = [-58.7, 7.0, 100.2, 98.8, 63.6, -100.3]
+    via, end = pr.ready_route(U, Y0, VIA)
+    assert via == VIA and end == Y0
+    assert pr.ready_route(U, Y0)[0][:3] == Y0[:3]               # 없으면 기본 그대로
 
 
 def test_ready_route_moves_arm_first_then_wrist():

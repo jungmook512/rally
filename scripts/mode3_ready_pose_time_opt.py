@@ -41,6 +41,38 @@ class TimeModel(Model):
         self.acc, self.step = acc, step
         # 10/14 2차: 1차 결과가 손목 특이점(|sin J5| 0.26)·팔 거의 뻗음(TCP 0.83 m) 틈을 파서 조임 옵션
         self.cond_max, self.j5_min_sin, self.reach_max, self.keep_ws = cond_max, j5_min_sin, reach_max, keep_ws
+        # 10/14 저녁 #208: Y0 받기 이동 중 J2 모터 몸통이 패드 거치대에 닿음 (실로봇). 설치물 상자 ↔ 충돌 메시 여유 제약 (선택)
+        self.body, self.boxes, self.box_margin = None, [], 0.0
+        self.transition_from, self.trans_ws = None, None
+
+    def set_obstacles(self, boxes, margin, pad_off, pts_per_link=400, transition_from_deg=None, trans_ws=None):
+        """boxes: m0609_collision.Box 목록 — 받기 이동의 모든 표본에서 여유 ≥ margin. transition_from_deg(예: 거치대 U) 가 있으면
+        그 자세 → 대기 자세 관절 직선 이동도 같은 여유 + 작업 공간(trans_ws) 안이어야 함 (경유 자세 없이 가게)."""
+        from m0609_collision import RobotBody
+        self.body = RobotBody(pad_offset_tool_m=pad_off, max_pts_per_link=pts_per_link)
+        self.boxes, self.box_margin = list(boxes), float(margin)
+        self.transition_from = None if transition_from_deg is None else np.radians(transition_from_deg)
+        self.trans_ws = trans_ws
+
+    def box_clear(self, q):
+        return self.body.clearance(q, self.boxes) if self.body is not None and self.boxes else (np.inf, "")
+
+    def transition_bad(self, q0, n=24):
+        """transition_from → q0 관절 직선 이동 중 문제 (없으면 빈 목록)."""
+        if self.transition_from is None:
+            return []
+        bad = []
+        for s in np.linspace(0.0, 1.0, n + 1)[1:-1]:
+            q = self.transition_from + s * (q0 - self.transition_from)
+            d, who = self.box_clear(q)
+            if d < self.box_margin:
+                bad.append(f"{s:.2f}:trans_box({who},{d * 100:.1f}cm)"); break
+            if self.trans_ws is not None:
+                _, T = self.c.fk_frames(q)
+                tcp = T[:3, 3] + T[:3, :3] @ self.off
+                if not (self.trans_ws["x"][0] <= tcp[0] <= self.trans_ws["x"][1] and self.trans_ws["y"][0] <= tcp[1] <= self.trans_ws["y"][1]):
+                    bad.append(f"{s:.2f}:trans_ws"); break
+        return bad
 
     def check_point(self, q):
         """한 점 제약: 관절 한계 · z ≥ zmin(관절 원점 전부 + TCP + 패드 아랫단) · 손목-베이스 · 특이점. 작업 공간은 안 봄 (10/14)."""
@@ -69,6 +101,10 @@ class TimeModel(Model):
         cond = float(np.linalg.cond(J))
         if cond > self.cond_max:
             why.append("singular")
+        if self.body is not None and not why:                 # 비싼 검사는 다른 제약을 통과한 점만
+            d, _ = self.box_clear(q)
+            if d < self.box_margin:
+                why.append("box")
         return why, J, cond, tcp, pad, n, orig
 
     def ray_speed(self, q0, d, radius):
@@ -129,6 +165,9 @@ class TimeModel(Model):
         u, r = self.plane_basis(n)
         Rmax = max(radii)
         per_dir, times, bad, cmax = {}, {rr: {} for rr in radii}, {}, cond0
+        tb = self.transition_bad(q0)
+        if tb:
+            bad["trans"] = tb
         tmax = 0.0
         for a in self.angles:
             d = math.cos(a) * r + math.sin(a) * u
@@ -180,12 +219,20 @@ def main():
     ap.add_argument("--j5-min-sin", type=float, default=0.0, help="|sin J5| 최소 (0.5 = 박성현 10/11 조건)")
     ap.add_argument("--reach-max", type=float, default=9.9, help="TCP ↔ 베이스 거리 상한 m")
     ap.add_argument("--keep-ws", action="store_true", help="safety.yaml 작업 공간(x ≤ 0.57 등)도 제약으로")
+    ap.add_argument("--box", type=float, nargs=6, action="append", metavar=("XLO", "YLO", "ZLO", "XHI", "YHI", "ZHI"),
+                    help="피할 설치물 상자 base [m] (여러 번). 예: 패드 거치대(패드 없음) 0.25 -0.25 0 0.30 -0.05 0.17 (#208)")
+    ap.add_argument("--box-margin", type=float, default=0.05, help="상자 ↔ 충돌 메시 최소 여유 m")
+    ap.add_argument("--transition-from", type=float, nargs=6, help="이 관절값(예: 거치대 U) → 대기 자세 직선 관절 이동도 상자·작업 공간 검사")
     ap.add_argument("--out", default=str(ROOT / "data/measure/mode3_ready_pose_time_opt.json"))
     a = ap.parse_args()
 
     q_ready, pad_off, ws = load_cfg()
     M = TimeModel(pad_off, ws, a.radius, a.zmin, a.acc, n_ang=a.n_ang, step=a.step,
                   cond_max=a.cond_max, j5_min_sin=a.j5_min_sin, reach_max=a.reach_max, keep_ws=a.keep_ws)
+    if a.box:
+        from m0609_collision import Box
+        M.set_obstacles([Box(tuple(b[:3]), tuple(b[3:]), f"box{i}") for i, b in enumerate(a.box)], a.box_margin, M.pad_off,
+                        transition_from_deg=a.transition_from, trans_ws=ws)
     rng = np.random.default_rng(a.seed)
     p_r, R_ready = M.flange(q_ready)
     n_now = R_ready @ PAD_NORMAL_TOOL
@@ -250,7 +297,8 @@ def main():
         print(f"  반경 {rr * 100:.0f} cm: 최악 {ts[worst]['single']:.3f} s ({worst}°), 이상 프로파일 {max(v['profile'] for v in ts.values()):.3f} s, 한계 없을 때 {2 * math.sqrt(rr / a.acc):.3f} s")
     print("  방향별 v_c(m/s): " + ", ".join(f"{k}:{v['v_c']:.2f}" for k, v in d["per_dir"].items()))
     out = dict(radius=a.radius, radii=a.radii, zmin=a.zmin, acc=a.acc, yaw_center=a.yaw_center, ry=a.ry, rr=a.rr,
-               limits=dict(cond_max=a.cond_max, j5_min_sin=a.j5_min_sin, reach_max=a.reach_max, keep_ws=a.keep_ws),
+               limits=dict(cond_max=a.cond_max, j5_min_sin=a.j5_min_sin, reach_max=a.reach_max, keep_ws=a.keep_ws,
+                           boxes=a.box, box_margin=a.box_margin, transition_from=a.transition_from),
                x=x.tolist(), pad_center=d["pad"].tolist(), tcp=d["tcp"].tolist(), normal=d["normal"].tolist(), cam_axis=cam.tolist(),
                posj_deg=np.degrees(q).tolist(), score=s, tmax=d["tmax"], cond_max=d["cond"], violations=nb, bad=d["bad"],
                per_dir={str(k): v["v_c"] for k, v in d["per_dir"].items()},
