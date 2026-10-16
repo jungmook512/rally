@@ -126,9 +126,9 @@ mode3:
   #     → 아래 right_max_m·updown_max_m·down_max_m·reach_max_m·catch_move 와 같음. 비교 시험 때 한계를 줄이지 말 것 (옛 10/13 정책만 15/15/8 학습).
   #     옆의 policy_stage1.onnx.json 을 같이 두면 catch_ball 이 학습 조건과 이 yaml 을 대조해 다르면 경고(동작은 yaml 대로). 절차 docs/mode3/MODE3_POLICY_1014.md
   #   A/B(규칙 30회 vs 정책 30회) 통과 전까지 기본 rule. 시험 때만 policy 로 바꿈
-  decide_mode: rule
+  decide_mode: policy              # 10/16 정동휘: 어깨 반대 자세 학습 정책 policy_stage1_flip1016 시험
   #   policy 로 출발한 투구는 resend_enabled 가 true 여도 재전송하지 않음 (재전송이 정책 보정 ±10 cm 를 지움, #175 리뷰). 정책이 출발을 안 내 규칙으로 넘어간 투구는 재전송 그대로
-  policy_path: ""                                     #   비면 /models · ~/rally/models · models 의 policy_stage1.onnx
+  policy_path: "~/rally/models/policy_stage1_flip1016.onnx"   # ★ 10/16 어깨 반대 대기 자세로 학습 (run stage1_2026-10-16_08-28-59_flip1016_os5, md5 c806a9bb, 옆 .onnx.json — git 제외). 비면 models 의 policy_stage1.onnx
   policy_hz: 50.0                                     #   정책 호출 주기 (시뮬 dt 0.02 s)
   policy_start_s: 0.10                                #   놓은 뒤 이때부터 (시뮬 첫 결정)
   policy_max_s: 0.40                                  #   여기까지 출발 안 나오면 규칙 결정(decide_after_s·품질 기다림)으로
