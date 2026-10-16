@@ -67,11 +67,17 @@ class TtsNode(Node):
         self.declare_parameter("tail_s", 0.3)               # 재생 끝 → speaking=false 까지 잔향 여유
         self.declare_parameter("output_device", "")         # 번호 또는 이름 일부. 비우면 환경변수 VOICE_SPEAKER_DEVICE, 그것도 없으면 기본 장치
         self.declare_parameter("output_latency", "high")    # PortAudio 출력 지연: high(큰 버퍼) | low | 초(예 "0.2"). 10/14 로봇 PC: 펄스 경유 기본(low)은 CPU 가 바쁘면 underrun 으로 뚝뚝 끊김
+        self.declare_parameter("listen_hold_max_s", 15.0)   # 사람이 말하는 중(/rally/voice/listening)이면 발화를 이만큼까지 미룸 (10/15)
 
         latched = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL,
                              history=HistoryPolicy.KEEP_LAST, depth=1)
         self.pub_speaking = self.create_publisher(Bool, "/rally/voice/speaking", latched)
         self.set_speaking(False)                            # 늦게 켜진 intent_node 도 "말 안 하는 중" 을 알게
+        # 듣는 중 (10/15): intent_node 가 호출어 감지 → 녹음 → STT → 의도 발행 동안 true. 그 동안 들어온 발화는 끝날 때까지 미룬다
+        # (순서 유지 — 서비스 콜백 그룹이 하나라 차례로). 너무 오래 true 면(노드가 죽음) listen_hold_max_s 뒤 그냥 말한다
+        self.listening, self.listening_since = False, 0.0
+        self.create_subscription(Bool, "/rally/voice/listening", self._on_listening,
+                                 QoSProfile(reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=1))
 
         self.voice = None
         path = find_voice(self.get_parameter("voice_model").value)
@@ -100,6 +106,21 @@ class TtsNode(Node):
         except Exception as e:      # noqa: BLE001
             self.get_logger().error(f"스피커 장치 확인 실패 (output_device={self.device!r}): {e}")
 
+    def _on_listening(self, m: Bool) -> None:
+        if m.data and not self.listening:
+            self.listening_since = time.monotonic()
+        self.listening = bool(m.data)
+
+    def hold_while_listening(self) -> float:
+        """사람이 말하는 중이면 끝날 때까지(최대 listen_hold_max_s) 기다린다. 기다린 시간을 돌려준다."""
+        max_s = float(self.get_parameter("listen_hold_max_s").value)
+        t0 = time.monotonic()
+        while self.listening and time.monotonic() - t0 < max_s:
+            if time.monotonic() - self.listening_since > max_s:     # 오래된 true (intent_node 가 끝을 못 보냄) → 무시
+                break
+            time.sleep(0.05)
+        return time.monotonic() - t0
+
     def set_speaking(self, on: bool) -> None:
         try:
             self.pub_speaking.publish(Bool(data=on))
@@ -115,6 +136,8 @@ class TtsNode(Node):
             return res
         if self.voice is None:
             return res
+        if (held := self.hold_while_listening()) >= 0.2:
+            self.get_logger().info(f'듣는 중이라 {held:.1f} s 미룸 → "{text}"')
         try:
             return self._speak(text, req.block_mic, res)
         except Exception as e:      # noqa: BLE001 — 합성·재생 실패로 노드가 죽지 않게

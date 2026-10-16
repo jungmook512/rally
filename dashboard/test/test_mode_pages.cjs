@@ -399,6 +399,24 @@ const wristCam = run("cameraFigure({name:'손목', topic:'/rally/perception/obje
 const bodyCam = run("cameraFigure({name:'몸 자세', topic:'/rally/perception/body/debug_image', url:'http://robot:8080/stream?topic=/body', fallback:'http://robot:8080/stream?topic=/side/side/color/image_raw'})");
 const ballCam = run("cameraFigure({name:'공 추적', topic:'/rally/perception/side/debug_image', url:'http://robot:8080/stream?topic=/s3', fallback:null, modes:[3]})");
 get('cameras').children = [wristCam, bodyCam, ballCam];
+// 몸 자세 칸 아래 게이지 (10/15): 몸 자세 칸에만 붙고, 상황판 body 로 채움 — 임계 넘으면 over, 값 없으면 회색 '—'
+assert.ok(run('bodyGauges') && run('bodyGauges').parentNode === bodyCam, '게이지는 몸 자세 칸에');
+assert.equal(run("bodyGauges.rows.trunk_lean_deg.bar.className"), 'bar off', '처음엔 값 없음');
+run("renderState({time:new Date().toISOString(),safety:{level:'normal'},body:{detected:true,trunk_lean_deg:25.4,shoulder_elevation_deg:4,elbow_extension_deg:152,compensation_detected:true,compensation_type:'trunk_lean'}});");
+assert.equal(run("bodyGauges.rows.trunk_lean_deg.val.textContent"), '25°');
+assert.equal(run("bodyGauges.rows.trunk_lean_deg.bar.className"), 'bar over', '임계 20° 넘음 → 빨강');
+assert.equal(run("bodyGauges.rows.shoulder_elevation_deg.bar.className"), 'bar');
+assert.equal(run("bodyGauges.rows.elbow_extension_deg.bar.className"), 'bar', '팔꿈치는 뻗음 표시만, 빨강 아님');
+assert.equal(run("bodyGauges.rows.elbow_extension_deg.fill.style.width"), `${(152 / 180 * 100)}%`);
+assert.equal(run("bodyGauges.note.textContent"), '보상 동작: 몸통 기울임');
+run("renderState({time:new Date().toISOString(),safety:{level:'normal'},body:{detected:true,trunk_lean_deg:null,shoulder_elevation_deg:null,elbow_extension_deg:95,compensation_detected:false,compensation_type:'none'}});");
+assert.equal(run("bodyGauges.rows.trunk_lean_deg.val.textContent"), '—', '팔 안 뻗음 → 값 없음');
+assert.equal(run("bodyGauges.rows.trunk_lean_deg.bar.className"), 'bar off');
+assert.equal(run("bodyGauges.note.textContent"), '팔을 뻗을 때만 잽니다 (팔꿈치 140° 이상)');
+run("renderState({time:new Date(Date.now()-5000).toISOString(),safety:{level:'normal'},body:{detected:true,trunk_lean_deg:5}});");
+assert.equal(run("bodyGauges.note.textContent"), '몸 자세 값 없음 (body_pose 연결 대기)', '상황판이 2 s 넘게 끊기면 회색');
+assert.equal(run("bodyGauges.rows.trunk_lean_deg.val.textContent"), '—');
+assert.ok(!wristCam.children.some(c => c && c.className === 'gauges'), '손목 칸엔 게이지 없음');
 visit('#mode3');
 assert.equal(wristCam.dataset.rot, 'ccw', '모드 3: 손목 반시계 90°');
 assert.equal(get('cameras').dataset.layout, 'row', '모드 3: 왼쪽 세로 손목 + 오른쪽 몸 자세·공 추적 (10/15)');
@@ -421,3 +439,40 @@ visit('#mode3');
 assert.equal(wristCam.dataset.rot, 'ccw');
 assert.match(html, /\.camera\[data-rot="ccw"\] img \{[^}]*rotate\(-90deg\)/, 'CSS 가 반시계 90° 를 그린다');
 console.log('mode 3 wrist rotation OK');
+
+// 난이도 변화 패널 (10/16): 모드 1 화면에만. brain control.difficulty_log 로 — 어렵게/쉽게가 적용된 시도·전후 단계·출처.
+// 새 기록은 훈련 기록 줄 + 알림(실제로 바뀐 것만) + 현재 단계 숫자 강조. 처음 받은 기록은 알리지 않음
+visit('#mode5');
+assert.equal(get('level-panel').hidden, true, '난이도 변화 패널은 모드 1 화면에만');
+visit('#mode1');
+assert.equal(get('level-panel').hidden, false);
+run("renderControl({...control,mode:1,phase:'running',difficulty:0,session_id:'lv-s',difficulty_log:{log:[],range:{1:[0,3],7:[-3,3]}}});");
+assert.equal(get('level-empty').hidden, false);
+assert.equal(get('level-sum').textContent, '');
+assert.equal(get('level-meter').innerHTML, '<b>0단계</b><i class="on" title="0단계"></i><i class="" title="1단계"></i><i class="" title="2단계"></i><i class="" title="3단계"></i>');
+assert.match(get('level-now').textContent, /^지금 0단계 \(0~3\)/);
+const toastsBefore = get('toasts').children.length, eventsBefore = get('events').children.length;
+context.levelLog = {log:[{trial:2,mode:1,from:0,to:1,action:'harder',source:'voice',at:1000}],range:{1:[0,3],7:[-3,3]}};
+run("renderControl({...control,difficulty:1,difficulty_log:levelLog});");
+assert.equal(get('level-empty').hidden, true);
+assert.equal(get('level-sum').textContent, '1번 바뀜');
+assert.equal(get('level-list').innerHTML, '<li><span class="r-no">2회 뒤</span><span class="r-chg">0 → 1단계</span><span class="r-why">어렵게 · 음성</span></li>');
+assert.match(get('level-meter').innerHTML, /^<b>1단계<\/b><i class="on"[^>]*><\/i><i class="on"/);
+assert.equal(get('toasts').children.length, toastsBefore + 1, '실제로 바뀐 기록은 알림');
+assert.equal(get('toasts').children.at(-1).textContent, '난이도 0 → 1단계 (어렵게)');
+assert.equal(get('events').children.length, eventsBefore + 1, '훈련 기록 줄로도');
+assert.match(get('events').children[0].innerHTML, /class="kind difficulty_change">난이도<\/span><span>1 공 굴리기 0 → 1단계 · 어렵게 · 음성</);
+assert.equal(get('mode-level').className, 'new', '현재 단계 숫자 강조');
+run("renderControl({...control,difficulty:1,difficulty_log:levelLog});");
+assert.equal(get('toasts').children.length, toastsBefore + 1, '같은 기록은 다시 알리지 않음');
+run("renderControl({...control,difficulty:3,difficulty_log:{...levelLog,log:[...levelLog.log,{trial:4,mode:1,from:3,to:3,action:'harder',source:'voice',at:1001}]}});");
+assert.match(get('level-list').innerHTML, /^<li><span class="r-no">4회 뒤<\/span><span class="r-chg same">3단계 그대로 \(한계\)<\/span>/);
+assert.equal(get('level-sum').textContent, '1번 바뀜');
+assert.equal(get('toasts').children.length, toastsBefore + 1, '한계라 그대로면 알림 없음');
+assert.equal(get('events').children.length, eventsBefore + 2, '기록 줄은 남김');
+run("renderControl({...control,phase:'ended',difficulty_log:levelLog});");   // 끝나도 마지막 기록은 그대로
+assert.equal(get('level-now').textContent, '지난 기록 — 모드 1 을 다시 시작하면 새로 쌓입니다');
+assert.match(get('level-meter').innerHTML, /^<b>1단계<\/b>/);
+run("renderControl(null);");   // 연결 끊김 → 마지막 화면 유지
+assert.equal(get('level-empty').hidden, true);
+console.log('difficulty panel OK');

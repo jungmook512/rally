@@ -29,6 +29,7 @@ from rally_brain import hand_stop
 from rally_brain.config import load_table
 from rally_brain.behaviours import Do, ServiceCall, WaitUntil
 from rally_brain.trees import mode1_push, mode3_catch, mode5_handover, mode7_resist
+from rally_brain.trees.steps import pose_config, retrying
 from rally_interfaces.msg import SafetyStatus, SceneContext, TrialResult
 
 OBSERVE_SERVICE = "/rally/robot/go_observe_pose"
@@ -66,6 +67,11 @@ class Session:
     difficulty: dict[int, int] = field(default_factory=dict)        # 모드 → 난이도 단계 (0 = 시작)
     level_changed_at: dict[int, int] = field(default_factory=dict)  # 모드 → 난이도가 바뀐 시점의 len(trials)
     modes: list[int] = field(default_factory=list)                  # 지금 트리의 모드 순서 (전환하면 바뀜)
+    trials_planned: dict[int, int] = field(default_factory=dict)    # 모드 → 이 트리에서 계획한 시도 수 (build_session_tree. 모드 3 마지막 시도 안내용)
+    block_trial_start: int = 0                                      # 지금 모드 블록(서브트리)이 시작될 때의 len(trials) — 복구 뒤 남은 시도 계산 (10/15)
+    gripper_empty: Callable[[], bool] = lambda: True                 # 그리퍼가 비었는가 (모름이면 True). 사람에게 물건을 빼 달라고 한 뒤 확인용 (10/15, bt_runner)
+    gripper_holding: Callable[[], bool | None] = lambda: None        # 그리퍼가 물건을 쥐고 있는가 — True/False/None(모름). 모드 3 투구 안내 시점(패드를 쥔 뒤) (10/16, bt_runner)
+    joint_deg: Callable[[], list[float] | None] = lambda: None       # 로봇 관절 각도 6개 [deg] (/dsr01/joint_states, 1 s 넘게 없으면 None). 모드 3 대기 자세 판정 (10/16, bt_runner)
     current_mode: int | None = None                                 # 지금 진행 중인 모드
     lane: int | None = None                                         # 모드 1 에서 손으로 고른 레인(0·1). 대시보드 그림용, 시도 끝나면 None
     trial_active: bool = False                                      # 로봇이 시도 중 (begin_trial ~ record). 모드 전환은 이때 안 함
@@ -174,17 +180,23 @@ def mode_prompt(session: Session, mode: int, key: str) -> str:
     return str((session.skills_cfg.get(f"mode{mode}") or {}).get(key) or "")
 
 
-def build_session_tree(session: Session, modes: list[int], trials_per_mode: int) -> py_trees.behaviour.Behaviour:
+def build_session_tree(session: Session, modes: list[int], trials_per_mode: int,
+                       first_remaining: int | None = None) -> py_trees.behaviour.Behaviour:
+    """first_remaining: 복구 뒤 다시 만들 때(10/15) 첫 모드의 남은 시도 수 — 그 모드는 이미 시작한 것이라 intro 를 다시 말하지 않고
+    (session.current_mode 가 그 모드) 관측 자세부터 남은 횟수만 돈다."""
     session.modes = list(modes)
+    if first_remaining is not None:
+        session.block_trial_start = len(session.trials)
     root = py_trees.composites.Sequence("세션", memory=True)
     if session.service_client is not None and not session.body_baseline_done:
         root.add_child(body_baseline(session))
-    for mode in modes:
+    for i, mode in enumerate(modes):
         name = f"모드 {mode} {MODE_NAMES.get(mode, '?')}"
 
         def enter(m: int = mode, n: str = name) -> None:
             if session.current_mode != m:
                 session.current_mode = m
+                session.block_trial_start = len(session.trials)
                 session.node.get_logger().info(f"{n} 시작")
                 intro = mode_prompt(session, m, "intro_prompt")
                 if intro:
@@ -196,21 +208,34 @@ def build_session_tree(session: Session, modes: list[int], trials_per_mode: int)
                               lambda n=name: session.node.get_logger().warn(f"{n} — 시도 서브트리가 아직 없어 건너뜀")))
             continue
         count = TRIAL_COUNTS[mode](session.skills_cfg) if mode in TRIAL_COUNTS else trials_per_mode
+        if i == 0 and first_remaining is not None:
+            count = max(1, int(first_remaining))
+        session.trials_planned[mode] = count
         trial = py_trees.composites.Sequence(name, memory=True, children=[
             WaitUntil("휴식 대기", session.allow_trial),
             Do(f"{name} 시작", enter), builder(session),
         ])
         repeat = py_trees.decorators.Repeat(f"{name} × {count}", trial, count)
-        if session.service_client is None:              # 테스트 — 자세 이동 없음
-            root.add_child(repeat)
-        else:
-            # 10/11: 모든 모드는 관측 자세에서 시작 (테이블·중앙선·환자 손이 화면에 들어옴). 못 가면 세션 실패
+        steps: list[py_trees.behaviour.Behaviour] = []
+        if session.service_client is not None:          # None = 테스트 — 자세 이동 없음
+            # 10/11: 모든 모드는 관측 자세에서 시작 (테이블·중앙선·환자 손이 화면에 들어옴)
             # 10/12: 이동 중 손 STOP 이면 손이 빠지고 NORMAL 유지 뒤 다시 요청 — 시도 안쪽 손 보기·물체 보기 자세와 같게 (#132 정동휘 리뷰)
+            # 10/15: 그 밖의 실패는 pose_retry_wait_s 쉬고 pose_tries 번까지 다시. 끝내 못 가면 이 모드만 건너뜀 (세션 실패 아님)
             hand_reasons = tuple(hand_stop.config(session.skills_cfg)["hand_stop_wait_reasons"])
-            root.add_child(py_trees.composites.Sequence(name, memory=True, children=[
-                ServiceCall(f"{name} — 관측 자세로", session.service_client(Trigger, OBSERVE_SERVICE), Trigger.Request,
-                            timeout_s=40.0, resend_reasons=hand_reasons, resume_ok=session.robot_resume_ok),
-                repeat]))
+            tries, wait_s = pose_config(session.skills_cfg)
+            steps.append(retrying(f"{name} — 관측 자세로", lambda k, n=name: ServiceCall(
+                f"{n} — 관측 자세로 {k}", session.service_client(Trigger, OBSERVE_SERVICE), Trigger.Request,
+                timeout_s=40.0, resend_reasons=hand_reasons, resume_ok=session.robot_resume_ok), tries, wait_s))
+        steps.append(repeat)
         if mode_prompt(session, mode, "done_prompt"):
-            root.add_child(Do(f"{name} 끝 안내", lambda m=mode: session.say(mode_prompt(session, m, "done_prompt"))))
+            steps.append(Do(f"{name} 끝 안내", lambda m=mode: session.say(mode_prompt(session, m, "done_prompt"))))
+
+        def skipped(n: str = name) -> None:
+            # 관측 자세로 끝내 못 감·스킬 서버 없음(state.fatal) 등 — 세션을 끝내지 않고 이 모드만 건너뜀 (10/15)
+            session.node.get_logger().error(f"{n} — 진행할 수 없어 건너뜀 (관측 자세 실패·스킬 서버 없음 등). 다음 모드 / 모드 선택으로")
+            if text := str((session.skills_cfg.get("brain") or {}).get("mode_skip_prompt") or ""):
+                session.say(text)
+
+        root.add_child(py_trees.composites.Selector(f"{name} 또는 건너뜀", memory=True, children=[
+            py_trees.composites.Sequence(name, memory=True, children=steps), Do(f"{name} 건너뜀", skipped)]))
     return root

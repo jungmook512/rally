@@ -38,7 +38,7 @@ from std_srvs.srv import Trigger
 
 from rally_brain import hand_stop
 from rally_brain.behaviours import Do, Guard, ServiceCall, WaitUntil
-from rally_brain.trees.steps import HAND_DEFAULTS, TrialState, no_hand, reason_code, skill_step
+from rally_brain.trees.steps import HAND_DEFAULTS, TrialState, no_hand, reason_code, skill_step, OperatorWait, pose_config, retrying
 from rally_interfaces.action import Handover, PickCompliant
 from rally_interfaces.msg import TrackedObject, TrialResult
 
@@ -54,6 +54,8 @@ DEFAULTS: dict[str, Any] = {
     "retry_reasons": ["timeout", "no_object"], "max_retries": 1, "retry_prompt": "한 번 더 해 볼게요",
     "object_class": "rod", "object_wait_s": 5.0, "object_min_confidence": 0.5, "pick_x_range_m": [0.15, 0.55],
     "pick_retry_reasons": ["pick_failed"], "receive_prompt": "물체를 로봇 손 사이로 다시 넣어 주세요",
+    # 10/15: 받기 실패(물건이 환자 손에) → 세션 종료 대신 안내·대기(비전에 물건이 보이거나 receive_fail_wait_s) 뒤 다음 시도
+    "receive_fail_prompt": "물건을 테이블 흰 자리에 올려 주세요", "receive_fail_wait_s": 30.0,
     # 물체별 파지 높이 (테이블 면 위, m) — PickCompliant goal Z = table.z_m + 이 값. 없는 클래스는 로봇 기본(공 반지름)
     "grasp_height_m": {"rod": 0.007, "cup": 0.080},   # 컵은 세워 두고 입구 벽 (10/12)
     # 10/11 정정인: 집기 전에 손을 기다리지 않는다 — 훈련 목적은 '기울여 건넸을 때 잡는가'이고, 건네기 스킬이 환자가 잡아 당길 때까지
@@ -170,6 +172,7 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
     def start() -> None:
         state.start()
         state.data.update(tilt=random_tilt(cfg, rng), give_attempts=0, pick_attempts=0)
+        receive_said.clear()
 
     # ── 집기 ──
     def object_seen() -> bool:
@@ -220,9 +223,11 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
             log.warn("[모드 5] 물체 보기 자세로 못 감")
             record("view_failed")
             return False
+        v_tries, v_wait = pose_config(session.skills_cfg)
         view_steps = [py_trees.composites.Selector("물체 보기 자세", memory=True, children=[
-            ServiceCall("물체 보기 자세로", session.service_client(Trigger, PICK_VIEW_SERVICE), Trigger.Request, timeout_s=40.0,
-                        resend_reasons=tuple(hand_reasons), resume_ok=session.robot_resume_ok),
+            retrying("물체 보기 자세로", lambda k: ServiceCall(
+                f"물체 보기 자세로 {k}", session.service_client(Trigger, PICK_VIEW_SERVICE), Trigger.Request, timeout_s=40.0,
+                resend_reasons=tuple(hand_reasons), resume_ok=session.robot_resume_ok), v_tries, v_wait),
             Do("보기 실패 기록", view_failed)])]
 
     pick_branch = py_trees.composites.Selector("집기", memory=True, children=[
@@ -273,13 +278,25 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
                       can_retry=lambda r: r in cfg["retry_reasons"], on_retry=give_retry, on_feedback=give_feedback)
 
     # ── 받기 ──
+    # 10/16 조정묵: 돌려주기 안내는 로봇이 받을 자세에 서서 기다리기 시작할 때(feedback wait — present 는 이동 중), 칭찬은 잡는 순간(feedback grasp).
+    # 결과(내려놓은 뒤)는 몇 초 늦다. 시도마다 한 번씩 — timeout 재시도(receive_prompt 가 따로 안내) 때 되풀이하지 않음
+    receive_said: set[str] = set()
+
+    def receive_feedback(fb: Any) -> None:
+        for phase, key in (("wait", "give_back_prompt"), ("grasp", "receive_ok_prompt")):
+            if fb.phase == phase and phase not in receive_said:
+                receive_said.add(phase)
+                say(key)
+
     def received(_result: Handover.Result, _k: int) -> None:
         record("", received=1.0)
-        say("receive_ok_prompt")
+        if "grasp" not in receive_said:      # 잡기 피드백을 못 받았으면(옛 로봇) 결과 때
+            say("receive_ok_prompt")
 
     def receive_failed(_result: Any, reason: str, _k: int) -> None:
-        state.data["abort_session"] = True
-        log.error(f"[모드 5] 받기 실패: {reason} — 물체가 환자 쪽에 남음. 세션을 끝냄 (사람이 정리 후 다시 시작)")
+        # 10/15 조정묵: 세션 종료 대신 — 물건이 환자 쪽에 남았으니 테이블에 올려 달라고 하고(비전에 보이면 바로) 다음 시도
+        log.warn(f"[모드 5] 받기 실패: {reason} — 물체가 환자 쪽에 남음. 테이블에 올려 달라고 안내하고 다음 시도")
+        state.data["receive_failed"] = True
         record(f"receive_{reason_code(reason)}")
 
     receive = skill_step(state, "받기 RECEIVE", hand_client,
@@ -288,10 +305,16 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
                          hand_resume=hand_resume("receive", hand_reasons),
                          on_interrupt=lambda r: record(f"receive_{reason_code(r)}"),
                          can_retry=lambda r: r == "timeout",
-                         on_retry=lambda *_: session.say(cfg["receive_prompt"]))
+                         on_retry=lambda *_: session.say(cfg["receive_prompt"]), on_feedback=receive_feedback)
 
     def end() -> bool:
-        return not (state.fatal or state.data.get("abort_session"))
+        return not state.fatal
+
+    after_fail = py_trees.composites.Selector("받기 실패 정리", memory=True, children=[
+        Do("받기 실패 아님", lambda: not state.data.get("receive_failed")),
+        OperatorWait("물건 정리 대기", session, cfg["receive_fail_prompt"], float(cfg["receive_fail_wait_s"]),
+                     until=lambda: find_object(session, cfg, rng=rng) is not None),
+    ])
 
     def on_stop() -> None:
         if state.started and not state.recorded:
@@ -299,8 +322,8 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
 
     progress = py_trees.composites.Selector("진행", memory=True, children=[
         py_trees.composites.Sequence("집기 → 건네기 → 받기", memory=True, children=[
-            Do("시작", start), pick_branch, give, Do("돌려주기 안내", lambda: say("give_back_prompt")), receive]),
-        Do("끝", end),
+            Do("시작", start), pick_branch, give, receive]),
+        py_trees.composites.Sequence("끝", memory=True, children=[Do("끝", end), after_fail]),
     ])
     if not cfg["require_hand"]:
         return Guard("모드 5 시도", progress, on_stop)
@@ -314,11 +337,15 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
             state.start()
             record("observe_failed")
             return False
+        tries, wait_s = pose_config(session.skills_cfg)
         trial = py_trees.composites.Sequence("모드 5 (관측 자세에서)", memory=True, children=[
             py_trees.composites.Selector("관측 자세", memory=True, children=[
                 Do("쥐고 있으면 그대로", lambda: robot["holding"]),
-                ServiceCall("관측 자세로", session.service_client(Trigger, OBSERVE_SERVICE), Trigger.Request, timeout_s=40.0,
-                        resend_reasons=tuple(hand_reasons), resume_ok=session.robot_resume_ok),
+                retrying("관측 자세로", lambda k: ServiceCall(
+                    f"관측 자세로 {k}", session.service_client(Trigger, OBSERVE_SERVICE), Trigger.Request, timeout_s=40.0,
+                    resend_reasons=tuple(hand_reasons), resume_ok=session.robot_resume_ok), tries, wait_s),
                 Do("관측 실패 기록", observe_failed)]),
             trial])
-    return Guard("모드 5 시도", trial, on_stop)
+    # 10/15: 자세 이동 실패는 기록만 하고 다음 시도 (스킬 서버 없음 state.fatal 만 FAILURE → 모드 건너뜀)
+    return Guard("모드 5 시도", py_trees.composites.Selector("모드 5 시도", memory=True, children=[
+        trial, Do("시도 실패로 끝", lambda: not state.fatal)]), on_stop)

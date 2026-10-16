@@ -17,7 +17,7 @@ from std_srvs.srv import Trigger
 from rally_brain import hand_stop
 from rally_brain.config import load_safety
 from rally_brain.behaviours import Do, Guard, ServiceCall, WaitUntil
-from rally_brain.trees.steps import HAND_DEFAULTS, TrialState, no_hand, reason_code, skill_step
+from rally_brain.trees.steps import HAND_DEFAULTS, TrialState, no_hand, reason_code, skill_step, OperatorWait, pose_config, retrying
 from rally_interfaces.action import PushBall, ReturnBall
 from rally_interfaces.msg import HandState, TrialResult, SafetyStatus
 
@@ -30,6 +30,8 @@ HAND_VIEW_SERVICE = "/rally/robot/go_hand_view"
 DEFAULTS: dict[str, Any] = {**HAND_DEFAULTS, "balls_per_cycle": 4, "push_speed_range": [0.05, 0.35],
                            "hand_max_age_s": 1.0, "patient_margin_m": 0.05,
                            "hand_clear_m": 0.20, "hand_clear_log_s": 2.0,
+                           "push_fail_prompt": "공을 거치대에 넣어 주세요. 정리되면 이어서 할게요",   # 10/15: 밀기 실패 → 안내·대기 뒤 다음 시도 (전엔 세션 종료)
+                           "push_fail_wait_s": 10.0,      #   그 대기. 그리퍼에 공이 있으면 사람이 뺄 때까지 더 기다림 (session.gripper_empty)
                            "return_fail_wait_s": 5.0,     # 회수 실패(집기 실패 등) → 안내 뒤 이 시간 기다리고 다음 시도 (10/14 정정인: 세션을 끝내지 않는다)
                            # 레인 결정: 손바닥이 hand_hold_tol_m 안에서 hand_hold_s 머물러야 (10/11 실로봇: 지나가는 손 한 프레임으로 레인 0 → 치기)
                            "hand_hold_s": 1.5, "hand_hold_tol_m": 0.04,
@@ -338,9 +340,10 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
         state.finish(trial)
 
     def on_push_fail(result: PushBall.Result | None, reason: str, _k: int) -> None:
-        log.warn(f"[모드 1] 밀기 실패: {reason}")
-        state.data.update(push=result, notes=reason_code(reason))
-        state.fatal = True  # 공/그리퍼 상태가 불명확하므로 다음 타격 금지. 운영자 확인 필요.
+        # 10/15 조정묵: 세션 종료 대신 — 기록하고 사람에게 공 정리를 부탁한 뒤(push_fail_prompt, 그리퍼가 비면) 다음 시도.
+        # 다음 push_ball 은 거치대에서 다시 집는다. 전엔 state.fatal 로 세션이 ABORTED 됐다
+        log.warn(f"[모드 1] 밀기 실패: {reason} — 공 정리를 부탁하고 {cfg['push_fail_wait_s']:.0f} s 뒤 다음 시도")
+        state.data.update(push=result, notes=reason_code(reason), push_failed=True)
         record()
 
     def on_interrupt(reason: str) -> None:
@@ -479,13 +482,16 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
     view_steps = []
     if session.service_client is not None:
         def view_failed() -> bool:
+            # 10/15: pose_tries 번 다 실패하면 이 시도만 실패로 기록하고 다음 시도 (전엔 세션 종료)
+            log.warn("[모드 1] 손 보기 자세로 못 감 — 이 시도는 실패, 다음 시도에서 다시")
             state.data.update(caught=False, returned=False, notes="hand_view_failed")
             record()
-            state.fatal = True
             return False
+        tries, wait_s = pose_config(session.skills_cfg)
         view_steps = [Do("자세 이동 시작", state.start), py_trees.composites.Selector("손 보기 자세", memory=True, children=[
-            ServiceCall("손 보기 자세로", session.service_client(Trigger, HAND_VIEW_SERVICE), Trigger.Request, timeout_s=30.0,
-                        resend_reasons=tuple(hand_reasons), resume_ok=session.robot_resume_ok),
+            retrying("손 보기 자세로", lambda k: ServiceCall(
+                f"손 보기 자세로 {k}", session.service_client(Trigger, HAND_VIEW_SERVICE), Trigger.Request, timeout_s=30.0,
+                resend_reasons=tuple(hand_reasons), resume_ok=session.robot_resume_ok), tries, wait_s),
             Do("손 보기 실패", view_failed),
         ]), Do("손 대기 준비", view_ready)]
 
@@ -505,10 +511,19 @@ def build_trial(session: Session, rng: random.Random | None = None) -> py_trees.
         Do("받기 안내", lambda: session.say(cfg["catch_prompt"]) if cfg["catch_prompt"] else None),
         catch, recover, Do("기록", record), Do("다음 시도 가능", lambda: not state.fatal),
     ])
-    return Guard("모드 1 시도", py_trees.composites.Sequence("모드 1", memory=True, children=[
-        *view_steps,
-        py_trees.composites.Selector("손 확인", memory=True, children=[
-            no_hand(session, cfg, TrialResult.MODE_PUSH_BALL, hand_ready),
-            py_trees.composites.Selector("진행 또는 끝", memory=True, children=[proceed, Do("끝", lambda: not state.fatal)]),
+    # 밀기 실패 뒤 정리 (10/15): 공이 로봇 손에 있거나 길 중간에 있을 수 있다 — 사람에게 부탁하고 그리퍼가 빌 때까지 기다린 뒤 다음 시도
+    after_fail = py_trees.composites.Selector("밀기 실패 정리", memory=True, children=[
+        Do("밀기 실패 아님", lambda: not state.data.get("push_failed")),
+        OperatorWait("공 정리 대기", session, cfg["push_fail_prompt"], float(cfg["push_fail_wait_s"]), gripper_empty=True),
+    ])
+    return Guard("모드 1 시도", py_trees.composites.Selector("모드 1", memory=True, children=[
+        py_trees.composites.Sequence("모드 1 진행", memory=True, children=[
+            *view_steps,
+            py_trees.composites.Selector("손 확인", memory=True, children=[
+                no_hand(session, cfg, TrialResult.MODE_PUSH_BALL, hand_ready),
+                py_trees.composites.Selector("진행 또는 끝", memory=True, children=[
+                    proceed, py_trees.composites.Sequence("끝", memory=True, children=[Do("끝", lambda: not state.fatal), after_fail])]),
+            ]),
         ]),
+        Do("시도 실패로 끝", lambda: not state.fatal),   # 손 보기 실패 등 — 기록했으면 다음 시도 (스킬 서버 없음만 FAILURE)
     ]), on_stop)

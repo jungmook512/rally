@@ -12,6 +12,7 @@ from geometry_msgs.msg import Point
 from fakes import FakeClient, Status, make_session, metric, param, run
 from rally_brain import behaviours, metrics
 from rally_brain.trees import mode1_push as m
+from rally_brain.trees import steps
 from rally_brain.trees.session_tree import Session, build_session_tree
 from rally_interfaces.action import PushBall, ReturnBall
 from rally_interfaces.msg import HandState, TrialResult
@@ -155,17 +156,22 @@ def test_table_is_only_centerline_source():
     assert p['target'][0] >= .80 - 1e-9
 
 
-def test_measured_error_and_failure_recorded():
+def test_measured_error_and_failure_recorded(monkeypatch):
+    clock = [0.0]
+    monkeypatch.setattr(steps, 'time', NS(monotonic=lambda: clock[0]))
     result = (True, {'success': True, 'error_mm': 42.0, 'stop_position': Point(x=.7, y=.1)})
     client, session, published = arrange([result, (False, {'failure_reason': 'no_ball_detected (설명)'})])
     tree = m.build_trial(session)
     assert run(tree) == Status.SUCCESS
     assert published[0].error_mm == pytest.approx(42) and metric(published[0], 'stop_x_m') == pytest.approx(.7)
-    assert run(tree) == Status.FAILURE
+    assert run(tree, max_s=0.3) == Status.RUNNING                 # 10/15: 밀기 실패 → 기록 뒤 공 정리 대기 (세션 종료 아님)
     assert published[1].notes == 'no_ball_detected' and client.sent == 2
+    clock[0] = m.mode1_config(session.skills_cfg)['push_fail_wait_s']
+    assert run(tree) == Status.SUCCESS                            # 대기 끝 → 시도 끝 (다음 시도 가능)
 
 
-def test_server_missing_fails_session(monkeypatch):
+def test_server_missing_fails_trial_tree(monkeypatch):
+    # 스킬 서버 없음은 시도 트리 FAILURE (state.fatal) → session_tree 가 그 모드만 건너뜀 (10/15: 세션 실패 아님)
     clock = [0.0]
     def fast():
         clock[0] += 1.0
@@ -210,12 +216,24 @@ def test_start_wait_rechecks_latest_hand_and_normal(blocked):
     assert param(published[0], 'reach_actual_m') >= param(published[0], 'reach_requested_m')
 
 
-def test_failed_push_does_not_start_another_ball():
+def test_failed_push_prompts_waits_for_empty_gripper_then_next_trial(monkeypatch):
+    # 10/15 조정묵: 밀기 실패는 세션 종료가 아니다 — 기록 + "공을 거치대에 넣어 주세요" + push_fail_wait_s, 그리퍼가 빌 때까지 → 다음 시도
+    clock = [0.0]
+    monkeypatch.setattr(steps, 'time', NS(monotonic=lambda: clock[0]))
     client, session, published = arrange([(False, {'failure_reason': 'slow_at_strike'}), OK])
-    assert run(build_session_tree(session, [1], 10)) == Status.FAILURE
-    assert client.sent == 1 and len(published) == 1
-    assert published[0].notes == 'slow_at_strike'
+    said = []
+    session.say = said.append
+    tree = build_session_tree(session, [1], 10)
+    assert run(tree, max_s=0.3) == Status.RUNNING                 # 안내 뒤 대기 중, 회수는 안 함
+    assert client.sent == 1 and len(published) == 1 and published[0].notes == 'slow_at_strike'
+    assert m.mode1_config(session.skills_cfg)['push_fail_prompt'] in said
     assert session.action_client(ReturnBall, m.RETURN_ACTION).sent == 0
+    session.gripper_empty = lambda: False                           # 공이 아직 로봇 손에 → 시간이 지나도 더 기다림
+    clock[0] = m.mode1_config(session.skills_cfg)['push_fail_wait_s'] + 1.0
+    assert run(tree, max_s=0.3) == Status.RUNNING
+    session.gripper_empty = lambda: True                            # 사람이 뺌 → 다음 시도 (거치대에서 다시 집음)
+    assert run(tree) == Status.SUCCESS and client.sent == 2 and len(published) == 2   # 두 번째 시도가 정상 진행 (거치대에서 다시 집음)
+    assert published[1].notes != 'slow_at_strike'
 
 
 def test_stop_records_once():
@@ -339,13 +357,15 @@ def test_catch_needs_fresh_grab_hold_release():
     assert w.grabbed and w.update(sample(1.5, .1), 1_500_000_000)
 
 
-def test_hand_view_failure_does_not_push():
+def test_hand_view_failure_retries_then_records_trial_only():
+    # 10/15: 손 보기 자세 실패 → pose_tries 번 다시 → 그래도 안 되면 이 시도만 hand_view_failed 로 기록 (세션 종료 아님)
     from fakes import Done
-    client, session, published = arrange([])
+    calls = []
+    client, session, published = arrange([], {**cfg(), 'brain': {'pose_tries': 2, 'pose_retry_wait_s': 0.0}})
     session.service_client = lambda *_: NS(service_is_ready=lambda: True,
-        call_async=lambda _: Done(NS(success=False, message='motion failed')))
-    assert run(m.build_trial(session)) == Status.FAILURE
-    assert client.sent == 0 and len(published) == 1
+        call_async=lambda _: calls.append(1) or Done(NS(success=False, message='motion failed')))
+    assert run(m.build_trial(session)) == Status.SUCCESS
+    assert client.sent == 0 and len(published) == 1 and len(calls) == 2
     assert published[0].notes == 'hand_view_failed'
 
 

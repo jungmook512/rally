@@ -177,3 +177,77 @@ def no_hand(session: Session, cfg: dict, mode: int, condition: Callable[[], bool
         py_trees.decorators.Inverter("손 보이면 넘어감", hand_wait(session, cfg, condition)),
         Do("손 없음 기록", record),
     ])
+
+
+class Delay(py_trees.behaviour.Behaviour):
+    """seconds 가 지나면 SUCCESS (초기화마다 새로 잼). 손 근접 STOP 대기 뒤 shift_time 으로 기다린 시간을 뺀다."""
+
+    def __init__(self, name: str, seconds: float):
+        super().__init__(name)
+        self.seconds = float(seconds)
+        self._t0 = 0.0
+
+    def initialise(self) -> None:
+        self._t0 = time.monotonic()
+
+    def shift_time(self, dt: float) -> None:
+        self._t0 += dt
+
+    def update(self) -> py_trees.common.Status:
+        return py_trees.common.Status.SUCCESS if time.monotonic() - self._t0 >= self.seconds else py_trees.common.Status.RUNNING
+
+
+def retrying(name: str, make: Callable[[int], py_trees.behaviour.Behaviour], tries: int, wait_s: float) -> py_trees.behaviour.Behaviour:
+    """make(k) 를 tries 번까지 (10/15): 실패하면 wait_s 쉬고 다시 만든 블록으로. 모두 실패하면 FAILURE.
+    자세 이동 서비스(관측·손 보기·물체 보기)의 일시적 실패를 세션 종료로 만들지 않기 위해."""
+    children: list[py_trees.behaviour.Behaviour] = [make(1)]
+    for k in range(2, max(1, int(tries)) + 1):
+        children.append(py_trees.composites.Sequence(f"{name} 재시도 {k}", memory=True,
+                                                     children=[Delay(f"{wait_s:.0f} s 뒤", wait_s), make(k)]))
+    return py_trees.composites.Selector(name, memory=True, children=children)
+
+
+def pose_config(skills_cfg: dict) -> tuple[int, float]:
+    """자세 이동 서비스 재시도 횟수·간격 (skills.yaml brain.pose_tries / pose_retry_wait_s)."""
+    brain = skills_cfg.get("brain") or {}
+    return max(1, int(brain.get("pose_tries", 2))), float(brain.get("pose_retry_wait_s", 3.0))
+
+
+class OperatorWait(py_trees.behaviour.Behaviour):
+    """사람에게 부탁하고 기다리는 공용 단계 (10/15 조정묵: 물건이 로봇 손에 있거나 어디 갔는지 모를 때 세션을 끝내는 대신).
+    시작할 때 prompt 를 말하고(prompt_every_s 마다 다시), until 이 참이 되거나 wait_s 가 지나면 SUCCESS.
+    gripper_empty 면 wait_s 뒤에도 그리퍼가 빌 때까지(session.gripper_empty, 모르면 빈 것으로) 더 기다린다 — 다음 스킬이
+    시작하자마자 그리퍼를 열어 물건을 떨어뜨리지 않게. max_s 를 넘기면 경고만 남기고 SUCCESS — 세션을 끝내지 않는다."""
+
+    def __init__(self, name: str, session: "Session", prompt: str, wait_s: float, *,
+                 until: Callable[[], bool] | None = None, gripper_empty: bool = False,
+                 prompt_every_s: float = 15.0, max_s: float = 120.0):
+        super().__init__(name)
+        self.session, self.prompt = session, str(prompt or "")
+        self.wait_s, self.until, self.gripper_empty = float(wait_s), until, gripper_empty
+        self.prompt_every_s, self.max_s = float(prompt_every_s), float(max_s)
+        self._t0 = self._last_prompt = 0.0
+
+    def initialise(self) -> None:
+        self._t0 = self._last_prompt = time.monotonic()
+        if self.prompt:
+            self.session.say(self.prompt)
+
+    def shift_time(self, dt: float) -> None:
+        self._t0 += dt
+        self._last_prompt += dt
+
+    def update(self) -> py_trees.common.Status:
+        now = time.monotonic()
+        elapsed = now - self._t0
+        if self.until is not None and self.until():
+            return py_trees.common.Status.SUCCESS
+        if elapsed >= self.wait_s and (not self.gripper_empty or self.session.gripper_empty()):
+            return py_trees.common.Status.SUCCESS
+        if elapsed > self.max_s:
+            self.session.node.get_logger().warn(f"[{self.name}] {self.max_s:.0f} s 넘게 기다림 — 그냥 진행")
+            return py_trees.common.Status.SUCCESS
+        if self.prompt and now - self._last_prompt >= self.prompt_every_s:
+            self._last_prompt = now
+            self.session.say(self.prompt)
+        return py_trees.common.Status.RUNNING

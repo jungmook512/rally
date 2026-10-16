@@ -1,4 +1,4 @@
-"""모드 1 손 근접 STOP 대기 (#98 4번) — 순수 함수 + bt_runner 실행 루프를 가짜 상황판으로."""
+"""손 근접 STOP 대기 (#98 4번) + 복구 대기 (10/15) — 순수 함수 + bt_runner 실행 루프를 가짜 상황판으로."""
 import threading
 import time
 import uuid
@@ -22,20 +22,46 @@ CFG = hand_stop.config({})
 
 
 # ---------- 순수 ----------
-def test_waitable_only_listed_hand_reasons_in_mode1():
+def test_waitable_only_listed_hand_reasons_in_wait_modes():
     for reason in ("hand_near_robot", "hand_near_centerline", "hand_lost_near"):
-        assert hand_stop.waitable(reason, 1, CFG)
+        for mode in (1, 3, 5, 7):                                   # 10/15: 모든 모드
+            assert hand_stop.waitable(reason, mode, CFG)
     for reason in ("estop", "voice_stop", "force_limit", "nudge", "workspace_limit",
                    "wrench_missing", "tcp_missing", "wrench_lost", "hand_something_new", ""):
-        assert not hand_stop.waitable(reason, 1, CFG)
-    assert not hand_stop.waitable("hand_near_robot", 5, CFG)
+        assert not hand_stop.waitable(reason, 1, CFG)               # → 복구 대기 (세션 종료 아님)
     assert not hand_stop.waitable("hand_near_robot", None, CFG)
+    # 안전 상태 끊김은 어느 모드든 기다리고(모드 없음 포함) 스킬도 취소하지 않는다
+    assert hand_stop.waitable("no_safety_status", None, CFG) and hand_stop.no_cancel("no_safety_status", CFG)
+    assert not hand_stop.no_cancel("hand_near_robot", CFG)
 
 
-def test_config_from_skills_yaml_and_prompt_is_speakable():
+def test_config_from_skills_yaml_and_prompts_are_speakable():
     cfg = hand_stop.config({"brain": {"hand_stop_resume_hold_s": 2.0}})
-    assert cfg["hand_stop_resume_hold_s"] == 2.0 and cfg["hand_stop_wait_modes"] == [1]
-    assert phrase_problem(CFG["hand_stop_prompt"]) is None
+    assert cfg["hand_stop_resume_hold_s"] == 2.0 and cfg["hand_stop_wait_modes"] == [1, 3, 5, 7]
+    for key in ("hand_stop_prompt", "recovery_prompt", "clear_gripper_prompt"):
+        assert phrase_problem(CFG[key]) is None, key
+    assert hand_stop.stop_prompt("hand_near_robot", CFG) == CFG["hand_stop_prompt"]
+    assert hand_stop.stop_prompt("force_limit", CFG) == CFG["recovery_prompt"]
+    assert hand_stop.stop_prompt("no_safety_status", CFG) == ""                   # 끊김은 말하지 않음
+
+
+def test_recovery_stages_safety_then_gripper_then_done():
+    cfg = {**CFG, "hand_stop_resume_hold_s": 1.0, "recovery_prompt_s": 5.0}
+    r = hand_stop.Recovery("force_limit", 0.0, cfg, check_gripper=True)
+    assert r.prompt(0.0) == CFG["recovery_prompt"] and r.prompt(1.0) is None      # 바로 한 번, 간격 안엔 다시 안 함
+    assert r.update(STOP, 1.0, None) == "wait" and r.update(NORMAL, 2.0, None) == "wait"   # NORMAL 유지 전
+    assert r.update(NORMAL, 3.0, False) == "wait" and r.stage == "gripper"          # NORMAL 1 s → 그리퍼 단계, 물건 있음
+    assert r.prompt(3.0) == CFG["clear_gripper_prompt"]
+    assert r.update(STOP, 3.5, False) == "wait" and r.stage == "safety"              # 비우다 손이 가까워 STOP → 안전부터
+    assert r.update(NORMAL, 4.0, False) == "wait" and r.update(NORMAL, 5.5, True) == "done"   # 비면 끝
+    r2 = hand_stop.Recovery("hand_near_robot", 0.0, cfg, check_gripper=False)
+    assert r2.prompt(0.0) == CFG["hand_stop_prompt"]
+    assert r2.update(NORMAL, 1.5, None) == "wait" and r2.update(NORMAL, 2.6, None) == "done"   # NORMAL 1 s 뒤, 그리퍼 확인 없음 (모드 3·7)
+    r3 = hand_stop.Recovery("force_limit", 0.0, {**cfg, "recovery_max_s": 10.0}, check_gripper=False)
+    assert r3.update(STOP, 11.0, None) == "timeout"                                  # 이때만 세션 종료
+    r4 = hand_stop.Recovery("estop", 0.0, {**cfg, "clear_gripper_max_s": 3.0}, check_gripper=True)
+    assert r4.update(NORMAL, 1.0, False) == "wait" and r4.update(NORMAL, 2.5, False) == "wait" and r4.stage == "gripper"
+    assert r4.update(NORMAL, 6.0, False) == "timeout"                                # 그리퍼 단계 3 s 넘게 안 비움
 
 
 class PendingClient:
@@ -99,7 +125,7 @@ def node():
     node = BtRunner()
     node.said = []
     node._say = node.said.append
-    node._hand_cfg = {**node._hand_cfg, "hand_stop_resume_hold_s": 0.2, "hand_stop_prompt_s": 100.0}
+    node._hand_cfg = {**node._hand_cfg, "hand_stop_resume_hold_s": 0.2, "hand_stop_prompt_s": 100.0, "recovery_prompt_s": 100.0}
     yield node
     node.destroy_node()
     rclpy.shutdown()
@@ -131,7 +157,7 @@ def run_session(node, monkeypatch, build_children, mode=1):
     """build_children(session) → 트리 자식들. 세션 결과(succeed/abort/canceled)를 돌려준다."""
     outcomes = []
 
-    def build(session, modes, n):
+    def build(session, modes, n, first_remaining=None):
         session.current_mode = mode
         return py_trees.composites.Sequence("test", memory=True, children=build_children(session))
 
@@ -175,27 +201,67 @@ def test_idle_hand_stop_waits_then_continues_same_tree(node, monkeypatch):
     assert node.control.hand_wait == ""
 
 
-def test_hand_stop_while_robot_moving_ends_session(node, monkeypatch):
-    feed = Feed(node)
-    client = PendingClient()
+def recovering_children(node, feed, first, steps, seen):
+    """첫 트리는 first(session) (복구로 멈춤), 복구 뒤 다시 만든 트리는 바로 끝. seen 에 대기 상태를 기록."""
+    builds = {"n": 0}
 
     def children(session):
-        script(feed, [(0.15, STOP, "hand_near_robot")])
+        builds["n"] += 1
+        if builds["n"] == 1:
+            script(feed, steps)
+            return first(session)
+        seen["rebuilt"] = builds["n"]
+        seen["wait_at_rebuild"] = node.control.hand_wait
+        return [Do("끝", lambda: None)]
+    return children
+
+
+def test_hand_stop_while_robot_moving_cancels_trial_then_next_trial(node, monkeypatch):
+    # 10/15: 이어 갈 수 없는 단계의 손 STOP → 세션 종료 대신 스킬 취소 → 손 빠짐 → 같은 모드 다음 시도 (트리 다시)
+    feed = Feed(node)
+    client = PendingClient()
+    seen = {}
+
+    def first(session):
         return [SkillCall("밀기", node, client, PushBall.Goal, on_result=lambda _: None)]
 
     try:
-        out = run_session(node, monkeypatch, children)
+        out = run_session(node, monkeypatch, recovering_children(node, feed, first, [(0.15, STOP, "hand_near_robot"), (0.3, NORMAL, "")], seen))
     finally:
         feed.close()
-    assert out == ["abort"] and client.sent == 1
+    assert out == ["success"] and client.sent == 1 and seen["rebuilt"] == 2
+    assert node.said == [CFG["hand_stop_prompt"]] and node.control.hand_wait == "" and seen["wait_at_rebuild"] == ""
 
 
 @pytest.mark.parametrize("reason", ["force_limit", "estop", "wrench_lost", "tcp_missing"])
-def test_other_stop_ends_session(node, monkeypatch, reason):
+def test_other_stop_waits_for_reset_then_next_trial(node, monkeypatch, reason):
+    # 10/15: 래치 STOP 도 세션을 끝내지 않는다 — reset 부탁 → NORMAL 유지 → 같은 모드 남은 시도
     feed = Feed(node)
+    seen = {}
+
+    def first(session):
+        def probe():
+            time.sleep(0.3)
+            seen["waiting"] = node.control.hand_wait
+            seen["switch_blocked"] = not node._request_switch(5, "test")[0]
+        threading.Thread(target=probe, daemon=True).start()
+        return [WaitUntil("대기", lambda: False)]
+
+    try:
+        out = run_session(node, monkeypatch, recovering_children(node, feed, first, [(0.1, STOP, reason), (0.5, NORMAL, "")], seen))
+    finally:
+        feed.close()
+    assert out == ["success"] and seen["rebuilt"] == 2
+    assert seen["waiting"] == reason and seen["switch_blocked"]
+    assert node.said == [CFG["recovery_prompt"]]
+
+
+def test_other_stop_times_out_then_session_ends(node, monkeypatch):
+    feed = Feed(node)
+    node._hand_cfg = {**node._hand_cfg, "recovery_max_s": 0.3}
 
     def children(session):
-        script(feed, [(0.1, STOP, reason)])
+        script(feed, [(0.1, STOP, "force_limit")])
         return [WaitUntil("대기", lambda: False)]
 
     try:
@@ -205,32 +271,97 @@ def test_other_stop_ends_session(node, monkeypatch, reason):
     assert out == ["abort"]
 
 
-def test_hand_stop_outside_mode1_ends_session(node, monkeypatch):
+def test_hand_stop_in_mode7_waits_then_continues_same_tree(node, monkeypatch):
+    # 10/15: 손 STOP 대기는 모든 모드 (전엔 모드 1·5 만 — 그 밖은 세션 종료)
     feed = Feed(node)
 
     def children(session):
-        script(feed, [(0.1, STOP, "hand_near_robot")])
+        script(feed, [(0.1, STOP, "hand_near_robot"), (0.3, NORMAL, "")])
+        return [WaitUntil("대기", lambda: time.monotonic() > t0 + 0.8), Do("끝", lambda: None)]
+
+    t0 = time.monotonic()
+    try:
+        out = run_session(node, monkeypatch, children, mode=7)
+    finally:
+        feed.close()
+    assert out == ["success"] and node.said == [CFG["hand_stop_prompt"]]
+
+
+def test_latched_stop_during_hand_wait_goes_to_recovery(node, monkeypatch):
+    feed = Feed(node)
+    seen = {}
+    first = lambda session: [WaitUntil("대기", lambda: False)]   # noqa: E731
+    try:
+        out = run_session(node, monkeypatch, recovering_children(
+            node, feed, first, [(0.1, STOP, "hand_near_robot"), (0.2, STOP, "estop"), (0.2, NORMAL, "")], seen))
+    finally:
+        feed.close()
+    assert out == ["success"] and seen["rebuilt"] == 2
+    assert node.said == [CFG["hand_stop_prompt"], CFG["recovery_prompt"]]
+
+
+def test_recovery_waits_until_gripper_is_emptied(node, monkeypatch):
+    # 모드 1 복구: 그리퍼에 물건이 있으면 사람이 뺄 때까지 (clear_gripper_prompt) — 다음 스킬이 그리퍼를 열어 떨어뜨리지 않게
+    from sensor_msgs.msg import JointState
+    feed = Feed(node)
+    seen = {}
+
+    def grip(holding: bool):
+        node._on_gripper(JointState(name=["rg2_width_mm", "rg2_grip", "rg2_target_mm"],
+                                    position=[20.0 if holding else 0.5, 1.0 if holding else 0.0, 0.0]))
+
+    def first(session):
+        grip(True)
+        def keep():
+            for _ in range(45):            # 0.9 s 동안 '쥠' 유지한 뒤 비움 (복구는 0.1 STOP + 0.2 NORMAL + 0.2 유지 ≈ 0.5 s 에 그리퍼 단계)
+                grip(True); time.sleep(0.02)
+            seen["said_before_clear"] = list(node.said)
+            grip(False)
+        threading.Thread(target=keep, daemon=True).start()
         return [WaitUntil("대기", lambda: False)]
 
     try:
-        out = run_session(node, monkeypatch, children, mode=7)   # 10/11: 모드 5 는 손 STOP 대기 대상에 들어감 (skills.yaml)
+        out = run_session(node, monkeypatch, recovering_children(node, feed, first, [(0.1, STOP, "nudge"), (0.2, NORMAL, "")], seen))
     finally:
         feed.close()
-    assert out == ["abort"]
+    assert out == ["success"] and seen["rebuilt"] == 2
+    assert seen["said_before_clear"] == [CFG["recovery_prompt"], CFG["clear_gripper_prompt"]]
 
 
-def test_latched_stop_during_wait_ends_session(node, monkeypatch):
+def test_no_safety_status_waits_without_cancelling_skill(node, monkeypatch):
+    # 안전 상태 끊김(와이파이): 스킬은 그대로 두고 기다렸다가 상태가 돌아오면 결과를 받는다 — 안내 없음
     feed = Feed(node)
 
+    class HoldResultClient:
+        """goal 수락 뒤 succeed() 전까지 결과를 붙잡는 스킬 (상태 끊김 동안에도 로봇은 돌고 있음)."""
+        def __init__(self):
+            self.sent, self.ok = 0, threading.Event()
+
+        def server_is_ready(self):
+            return True
+
+        def succeed(self):
+            self.ok.set()
+
+        def send_goal_async(self, goal, feedback_callback=None):
+            self.sent += 1
+            fut = NS(done=lambda: self.ok.is_set(),
+                     result=lambda: NS(status=GoalStatus.STATUS_SUCCEEDED, result=PushBall.Result(success=True)))
+            return Done(NS(accepted=True, get_result_async=lambda: fut, cancel_goal_async=lambda: None))
+
+    client = HoldResultClient()
+    results = []
+
     def children(session):
-        script(feed, [(0.1, STOP, "hand_near_robot"), (0.2, STOP, "estop"), (0.1, NORMAL, "")])
-        return [WaitUntil("대기", lambda: False)]
+        script(feed, [(0.1, STOP, "no_safety_status"), (0.4, NORMAL, "")])
+        threading.Timer(0.3, client.succeed).start()
+        return [SkillCall("밀기", node, client, PushBall.Goal, on_result=results.append)]
 
     try:
-        out = run_session(node, monkeypatch, children)
+        out = run_session(node, monkeypatch, children, mode=7)
     finally:
         feed.close()
-    assert out == ["abort"]
+    assert out == ["success"] and client.sent == 1 and len(results) == 1 and node.said == []
 
 
 def test_slow_keeps_waiting_and_blocks_switch_keeps_rest_until_cancel(node, monkeypatch):
@@ -410,6 +541,17 @@ def test_moving_hand_stop_waits_and_resends_in_session_loop(node, monkeypatch):
     finally:
         feed.close()
     assert out == ["success"] and client.sent == 2 and results[0].success
+
+
+def test_user_speaking_skips_until_listening_ends_or_goes_stale(node):
+    # 10/15: intent_node 가 듣는 중(/rally/voice/listening)이면 모드 선택 안내를 건너뛴다. 20 s 넘게 true 면 끝을 못 받은 것으로
+    assert not node._user_speaking()
+    node._listening = (True, time.monotonic())
+    assert node._user_speaking()
+    node._listening = (True, time.monotonic() - 30.0)
+    assert not node._user_speaking()
+    node._listening = (False, time.monotonic())
+    assert not node._user_speaking()
 
 
 def test_service_stop_reason():

@@ -116,9 +116,25 @@ def test_safety_payload_nan_hand_distance_is_null():
     json.dumps(p, allow_nan=False)
 
 
+def body(lean=12.34, hike=float("nan"), elbow=151.2, comp="trunk_lean", detected=True):
+    return NS(detected=detected, trunk_lean_deg=lean, shoulder_elevation_deg=hike, elbow_extension_deg=elbow,
+              compensation_detected=comp != "none", compensation_type=comp)
+
+
 def test_context_to_state():
     msg = NS(header=header(), session_id=SID, mode=5, trial_index=2, robot_state=1, safety=safety(0, ""),
-             hand=hand(), last_intent=NS(intent="harder"), recent_success_rate=0.6, fatigue_score=0.2)
+             hand=hand(), last_intent=NS(intent="harder"), recent_success_rate=0.6, fatigue_score=0.2, body=body())
     s = convert.context_to_state(msg)
     assert s["robot_state"] == "moving" and s["safety"]["level"] == "normal"
     assert s["session_id"] == SID and s["last_intent"] == "harder"
+    # 몸 자세 게이지 (10/15): 각도 소수 1자리, NaN(팔 안 뻗음·기준 전) 은 null, 보상 종류 그대로
+    assert s["body"] == {"detected": True, "trunk_lean_deg": 12.3, "shoulder_elevation_deg": None,
+                         "elbow_extension_deg": 151.2, "compensation_detected": True, "compensation_type": "trunk_lean"}
+    import json
+    json.dumps(s, allow_nan=False)
+
+
+def test_body_payload_without_person():
+    p = convert.body_to_payload(body(float("nan"), float("nan"), float("nan"), "none", detected=False))
+    assert p == {"detected": False, "trunk_lean_deg": None, "shoulder_elevation_deg": None, "elbow_extension_deg": None,
+                 "compensation_detected": False, "compensation_type": "none"}

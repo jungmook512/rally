@@ -161,7 +161,7 @@ def test_each_mode_starts_at_observe_pose():
     inner = s.service_client
     s.service_client = lambda t, name: (names.append(name), inner(t, name))[1]
     build_session_tree(s, [5], 1)
-    assert names.count(OBSERVE_SERVICE) == 1           # 모드 시작 (모드 5 는 손 확인 안 함 — require_hand 기본 False)
+    assert names.count(OBSERVE_SERVICE) == 2           # 모드 시작 (모드 5 는 손 확인 안 함 — require_hand 기본 False). 10/15: 재시도 블록까지 pose_tries 2 개
 
 
 def test_observe_pose_resends_after_hand_stop():
@@ -190,13 +190,16 @@ def test_observe_pose_resends_after_hand_stop():
     assert len(sent) == 3                                           # 이동 중 STOP · 받을 때 STOP 둘 다 다시 요청
 
 
-def test_observe_pose_other_failure_ends_session():
+def test_observe_pose_other_failure_retries_then_skips_mode():
+    # 10/15: 관측 자세로 끝내 못 가면 세션 실패가 아니라 그 모드만 건너뜀 (안내 mode_skip_prompt) — pose_tries 번 다시 요청한 뒤
     from rally_brain.trees.session_tree import OBSERVE_SERVICE
-    s, _, _ = baseline_session()
+    s, said, _ = baseline_session()
+    s.skills_cfg["brain"].update(pose_tries=2, pose_retry_wait_s=0.0, mode_skip_prompt="이 훈련은 지금 할 수 없어요")
     inner = s.service_client
+    sent = []
     s.service_client = lambda t, name: (NS(name=name, service_is_ready=lambda: True,
-                                           call_async=lambda req: Done(NS(success=False, message="force_limit")))
+                                           call_async=lambda req: sent.append(req) or Done(NS(success=False, message="force_limit")))
                                         if name == OBSERVE_SERVICE else inner(t, name))
     tree = build_session_tree(s, [5], 1)
-    tick_until(tree, lambda: tree.status == Status.FAILURE, n=5)
-    assert tree.status == Status.FAILURE and s.current_mode != 5   # 래치 STOP 등은 지금처럼 세션 실패
+    assert tick_until(tree, lambda: tree.status == Status.SUCCESS, n=10)
+    assert s.current_mode != 5 and len(sent) == 2 and said[-1] == "이 훈련은 지금 할 수 없어요"

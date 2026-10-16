@@ -111,6 +111,12 @@ class IntentNode(Node):
                              history=HistoryPolicy.KEEP_LAST, depth=1)
         self.pub_intent = self.create_publisher(VoiceIntent, "/rally/voice/intent", reliable)
         self.pub_text = self.create_publisher(String, "/rally/voice/transcript", reliable)
+        # 듣는 중 (10/15 조정묵): 호출어 감지 → 녹음 → STT → 의도 발행까지 true. tts_node 는 이 동안 발화를 미루고,
+        # brain 은 모드 선택 안내를 건너뛴다 — 사람이 말하는 동안 로봇이 끼어들지 않게. TransientLocal 아님(규칙: estop·speaking 만)
+        self.pub_listening = self.create_publisher(Bool, "/rally/voice/listening",
+                                                   QoSProfile(reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=1))
+        self._listen_n, self._listen_lock = 0, threading.Lock()   # 녹음·판단이 겹칠 수 있어(앞 말 처리 중 다음 호출어) 개수로
+        self.pub_listening.publish(Bool(data=False))
         self.pub_estop = self.create_publisher(Bool, "/rally/safety/estop", latched)
         self.create_subscription(Bool, "/rally/voice/speaking", self._on_speaking, latched)
 
@@ -141,6 +147,23 @@ class IntentNode(Node):
         self.speaking = m.data
         if not m.data:
             self.mute_until = time.monotonic() + float(self.get_parameter("speaking_tail_s").value)
+
+    def _listen_begin(self) -> None:
+        """호출어 감지 — 녹음 시작. 0 → 1 이면 listening=true."""
+        with self._listen_lock:
+            self._listen_n += 1
+            first = self._listen_n == 1
+        if first:
+            self.pub_listening.publish(Bool(data=True))
+
+    def _listen_end(self) -> None:
+        """녹음 뒤 STT·의도 판단이 끝남(실패·버림 포함). 마지막이면 listening=false."""
+        with self._listen_lock:
+            was = self._listen_n
+            self._listen_n = max(0, was - 1)
+            last = was == 1                                      # 1 → 0 일 때만 (0 에서 또 불려도 false 를 다시 내지 않음)
+        if last:
+            self.pub_listening.publish(Bool(data=False))
 
     def _robot_speaking(self) -> bool:
         now = time.monotonic()
@@ -207,6 +230,7 @@ class IntentNode(Node):
                 rec_start = time.monotonic()
                 during_speech = self._robot_speaking()
                 self.get_logger().info("호출어 감지 → 녹음" + (" (로봇 발화 중: 비상어만 처리)" if during_speech else ""))
+                self._listen_begin()                               # 녹음 → 판단 끝(_handle_audio)까지 '듣는 중'
                 frames = []
                 for _ in range(rec_frames):
                     frames.append(read().copy())
@@ -292,6 +316,12 @@ class IntentNode(Node):
         self.get_logger().warn(f'비상어 "{hit.word}" (점수 {hit.score:.2f}) → 정지 요청 [키워드, STT 없음]')
 
     def _handle_audio(self, audio: np.ndarray, stamp, during_speech: bool = False, rec_start: float = -1.0) -> None:
+        try:
+            self._handle_audio_inner(audio, stamp, during_speech, rec_start)
+        finally:
+            self._listen_end()                                     # 어떻게 끝나든 '듣는 중' 해제
+
+    def _handle_audio_inner(self, audio: np.ndarray, stamp, during_speech: bool, rec_start: float) -> None:
         if not self.api_key:
             return
         t0 = time.perf_counter()

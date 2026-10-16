@@ -69,10 +69,21 @@
   .comp-table .none { color:var(--muted); }
   .comp-table .r-res { display:inline-block; min-width:40px; font-size:12px; font-weight:700; padding:2px 8px; border-radius:999px; text-align:center; }
   .comp-table .r-res.ok { background:#e2f1e6; color:#2f6b45; } .comp-table .r-res.fail { background:#f6e3e3; color:#9a2525; }
+  /* 난이도 변화 패널 (10/16, 모드 1 화면) — 단계 막대 + 바뀐 기록 */
+  .level-meter { display:flex; gap:6px; align-items:center; margin:8px 0 2px; }
+  .level-meter b { font-size:16px; font-variant-numeric:tabular-nums; min-width:48px; }
+  .level-meter i { flex:1; height:10px; border-radius:999px; background:#e3ebe5; } .level-meter i.on { background:#aa8440; }
+  #level-list { list-style:none; margin:8px 0 0; padding:0; }
+  #level-list li { display:grid; grid-template-columns:56px 128px minmax(0,1fr); gap:6px; align-items:center; padding:6px 2px; border-bottom:1px solid #e3ebe5; font-size:13px; }
+  #level-list li:last-child { border-bottom:0; }
+  #level-list .r-no { color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  #level-list .r-chg { font-weight:700; font-variant-numeric:tabular-nums; } #level-list .r-chg.same { color:var(--muted); font-weight:500; }
+  #level-list .r-why { color:var(--muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #mode-level.new { border-radius:6px; padding:0 4px; }
   #comp-count.met { background:#9b6400; color:#fff; border-color:#9b6400; }
   #toasts { position:fixed; top:14px; right:14px; z-index:50; display:grid; gap:8px; max-width:380px; }
   .toast { padding:11px 14px; border-radius:10px; background:#2e3a35; color:#fff; font-weight:650; box-shadow:0 6px 18px #0003; }
-  .toast.signal { background:#2f6b45; } .toast.met { background:#9b6400; } .toast.llm { background:#5b4a8a; }
+  .toast.signal { background:#2f6b45; } .toast.met { background:#9b6400; } .toast.llm { background:#5b4a8a; } .toast.level { background:#7a5414; }
   #safety { display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; border:1px solid currentColor; border-left:6px solid currentColor; border-radius:10px; padding:6px 14px; font-weight:750; }
   #safety.normal { background:var(--ok-bg); color:var(--ok); }
   #safety.slow { background:var(--warn-bg); color:var(--warn); }
@@ -190,6 +201,18 @@
   .camera .frame .empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:8px; color:#bbb; background:#111; font-weight:600; letter-spacing:.04em; }
   .camera .frame .empty[hidden] { display:none; }
   .camera figcaption { margin-top:6px; font-size:.9em; }
+  /* 몸 자세 칸 아래 게이지 (10/15 조정묵): check_body_live.py 의 막대와 같은 눈금 — 몸통 0~60°·어깨 0~50° 에 임계 20°, 팔꿈치 0~180° 에 140° '뻗음' */
+  .camera .gauges { display:grid; grid-template-columns:auto minmax(0,1fr) 3.4em; gap:4px 8px; align-items:center; margin-top:6px; font-size:12px; font-variant-numeric:tabular-nums; }
+  .camera .gauges .label { color:var(--muted); font-weight:700; white-space:nowrap; }
+  .camera .gauges .bar { position:relative; height:10px; background:#dfe8e3; border-radius:5px; }
+  .camera .gauges .bar i { position:absolute; left:0; top:0; bottom:0; width:0; background:#4a8fd6; border-radius:5px; transition:width .25s; }
+  .camera .gauges .bar b { position:absolute; top:-3px; bottom:-3px; width:2px; margin-left:-1px; background:var(--stop); }   /* 임계·뻗음 눈금 */
+  .camera .gauges .bar.over i { background:var(--stop); }
+  .camera .gauges .bar.off i { background:#b9c4bf; }
+  .camera .gauges .val { text-align:right; }
+  .camera .gauges .val.over { color:var(--stop); font-weight:800; }
+  .camera .gauges .note { grid-column:1 / -1; color:var(--muted); font-size:11px; min-height:1.2em; }
+  .camera .gauges .note.over { color:var(--stop); font-weight:700; }
   /* 모드 3 화면에서만 손목 카메라를 반시계 90° (10/14 조정묵): 프레임을 세로(240/424)로 바꾸고 그림 상자를 프레임의 가로·세로를 맞바꾼 크기로 두고 돌린다 */
   .camera[data-rot="ccw"] .frame { aspect-ratio:240/424; margin:0 auto; }
   .camera[data-rot="ccw"] img { position:absolute; top:50%; left:50%; width:calc(100% * 424 / 240); height:calc(100% * 240 / 424); transform:translate(-50%, -50%) rotate(-90deg); }
@@ -332,7 +355,7 @@
   ul#events .kind { flex:none; min-width:52px; text-align:center; font-size:12px; font-weight:700; padding:2px 8px; border-radius:999px; background:#eef3ef; color:var(--muted); }
   ul#events .kind.safety-normal { background:#e2f1e6; color:#2f6b45; } ul#events .kind.safety-slow { background:#f8ecd0; color:#7a5414; } ul#events .kind.safety-stop { background:#f6e3e3; color:#9a2525; }
   ul#events .kind.ok { background:#e2efeb; color:var(--accent); } ul#events .kind.fail { background:#f6e3e3; color:#9a2525; }
-  ul#events .kind.voice_intent { background:#ece7f5; color:#5b4a8a; } ul#events .kind.mode_change { background:#e4ecf3; color:#3b5a78; } ul#events .kind.session_report { background:#f1ece2; color:#6b5a3a; }
+  ul#events .kind.voice_intent { background:#ece7f5; color:#5b4a8a; } ul#events .kind.mode_change { background:#e4ecf3; color:#3b5a78; } ul#events .kind.session_report { background:#f1ece2; color:#6b5a3a; } ul#events .kind.difficulty_change { background:#f3e3c9; color:#7a5414; }
 </style>
 </head>
 <body>
@@ -391,6 +414,11 @@
     <div id="mode-right">
       <div class="panel instruction"><div class="panel-top"><div class="section-heading current-label">현재 단계</div><span class="stat-line">시도 <b id="mode-trials">—</b> · 난이도 <b id="mode-level">—</b></span></div>
         <h2 id="step-title" role="status">대기 중</h2><p id="step-description"></p><span id="raw-stage" class="caption"></span><p id="mode-extra" class="caption"></p></div>
+      <div class="panel" id="level-panel" aria-label="난이도 변화" hidden><div class="panel-top"><h2>난이도 변화 <small class="section-tag">어렵게 · 쉽게</small></h2><span class="stat-line" id="level-sum"></span></div>
+        <div class="level-meter" id="level-meter"></div>
+        <p id="level-now" class="caption">brain 연결을 기다리는 중</p>
+        <p class="caption">단계가 오르면 손 시작 위치가 공 목표에서 더 멀어집니다. 시도가 끝난 뒤 적용됩니다.</p>
+        <ol id="level-list"></ol><div class="empty" id="level-empty">아직 바뀐 적 없음</div></div>
       <div id="camera-slot"></div>
       <div class="panel" id="recent-panel"><div class="panel-top"><h2>이 모드 최근 시도</h2><span class="stat-line" id="recent-sum"></span></div><ol id="recent-list"></ol><div class="empty" id="recent-empty">아직 시도 없음</div></div>
     </div>
@@ -448,7 +476,7 @@ const reasonText = (r) => String(r || "").split(/[ ,]+/).filter(Boolean).map((c)
 const NOTES = {missed: "놓침", timeout: "시간 초과", out_of_radius: "반경 밖", low_confidence: "예측 불확실", too_late: "늦음(받기 창 안에 못 감)", slow_at_catch: "느리게 상태라 중단",
   interrupted: "중단", pick_failed: "집기 실패", object_not_found: "물체 못 찾음", skill_aborted: "스킬 중단", safety_stop: "안전 정지"};
 const ROBOT = {idle: "대기", moving: "움직이는 중", holding: "잡고 있음", stopped: "멈춤"};
-const KINDS = {safety_change: "안전", voice_intent: "음성", mode_change: "모드", trial: "시도", session_report: "리포트"};
+const KINDS = {safety_change: "안전", voice_intent: "음성", mode_change: "모드", trial: "시도", session_report: "리포트", difficulty_change: "난이도"};
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 const modeName = (m) => m ? `${m} ${MODES[m] ?? ""}`.trim() : "—";
@@ -485,9 +513,10 @@ function renderControl(s) {
   renderProposal();
   renderRest(s);
   renderComp(s);
+  renderLevel(s);
   $("phase").textContent = s ? phaseText(s)
     + (s.phase === "paused" && s.blocked_reason ? ` · ${s.blocked_reason}` : "")
-    + (s.hand_wait ? " · 손 근접 정지 대기" : "") : "연결 대기";
+    + (s.hand_wait ? ` · ${waitLabel(s.hand_wait)}` : "") : "연결 대기";
   $("resume").disabled = resuming || !s?.can_resume || s.phase !== "paused";
   $("end-session").disabled = ending || !s || !["running", "pause_pending", "paused"].includes(s.phase);
   renderModeSwitch(s);
@@ -507,7 +536,7 @@ function renderModeSwitch(s) {
     b.classList.toggle("pending", !!pending && (pending.mode ?? null) === m);
     b.hidden = m === null && !!s.mode_select;                       // 대기 중엔 '다음 모드' 없음 — 모드를 골라야 함
     b.disabled = switching || current || !!s.hand_wait || (m === 3 && !s.mode3_enabled);
-    b.title = m === 3 && !s.mode3_enabled ? "모드 3 캐치볼은 꺼져 있음" : s.hand_wait ? "손 근접 정지 대기 중" : "";
+    b.title = m === 3 && !s.mode3_enabled ? "모드 3 캐치볼은 꺼져 있음" : s.hand_wait ? `${waitLabel(s.hand_wait)} 중` : "";
   }
 }
 
@@ -586,7 +615,8 @@ setInterval(() => {
 function renderState(s) {
   sceneSafety = s?.safety?.level ?? null;
   stateTime = s ? Date.parse(s.time) || 0 : 0;
-  if (!stateTime || Date.now() - stateTime < 0 || Date.now() - stateTime > 2000) { renderModePage(); return; }
+  if (!stateTime || Date.now() - stateTime < 0 || Date.now() - stateTime > 2000) { renderBodyGauges(null); renderModePage(); return; }
+  renderBodyGauges(s.body ?? null);
   const [cls, word] = LEVELS[s.safety?.level] ?? ["unknown", "모름"];
   $("safety").className = cls;
   $("safety").innerHTML = `안전: ${word}` + (s.safety?.reason ? ` <small>${esc(reasonText(s.safety.reason))}</small>` : "");
@@ -628,6 +658,7 @@ function describe(e) {
     case "mode_change": return `${modeName(e.from)} → ${modeName(e.to)}`;
     case "trial": return `${e.trial_index}회째 ${modeName(e.mode)} ${e.success ? "성공" : "실패"}`;
     case "session_report": return `세션 ${String(e.session_id || "").slice(0, 8)} 리포트 저장`;
+    case "difficulty_change": return `${modeName(e.mode)} ${levelChange(e)} · ${levelWhy(e)}`;   // 화면에서만 만든 줄 (brain difficulty_log, DB 에는 없음)
     default: return JSON.stringify(e);
   }
 }
@@ -681,6 +712,48 @@ function showCameras() {
   }
 }
 
+// 몸 자세 칸 아래 게이지 (10/15 조정묵): 상황판 body(rally_db convert.body_to_payload → rally:state, 0.5 s) 를 막대로.
+// 눈금·임계는 check_body_live.py · body_pose 파라미터(lean/hike_threshold_deg 20, extended_deg 140)와 같게. 값은 기준 자세 대비이고
+// 팔꿈치 140° 이상(뻗음)일 때만 숫자 — 아니면 회색 '—'. 상황판이 2 s 넘게 끊기면 전부 회색
+const BODY_GAUGES = [
+  {key: "trunk_lean_deg", label: "몸통 기울기", max: 60, thr: 20},
+  {key: "shoulder_elevation_deg", label: "어깨 들림", max: 50, thr: 20},
+  {key: "elbow_extension_deg", label: "팔꿈치 펴짐", max: 180, thr: 140, mark: "뻗음"},
+];
+let bodyGauges = null, lastBody = null;   // cameraFigure(몸 자세) 가 만들고 renderState 가 채운다
+function bodyGaugeBlock() {
+  const box = document.createElement("div"); box.className = "gauges"; box.rows = {};
+  for (const g of BODY_GAUGES) {
+    const label = document.createElement("span"); label.className = "label"; label.textContent = g.label;
+    const bar = document.createElement("div"); bar.className = "bar off";
+    const fill = document.createElement("i"); const tick = document.createElement("b");
+    tick.style.left = `${g.thr / g.max * 100}%`; tick.title = g.mark ? `${g.thr}° 이상 = ${g.mark}` : `임계 ${g.thr}°`;
+    bar.append(fill); bar.append(tick);
+    const val = document.createElement("span"); val.className = "val"; val.textContent = "—";
+    box.append(label); box.append(bar); box.append(val); box.rows[g.key] = {bar, fill, val};
+  }
+  const note = document.createElement("span"); note.className = "note"; box.append(note); box.note = note;
+  return box;
+}
+function renderBodyGauges(body) {
+  lastBody = body;
+  if (!bodyGauges) return;
+  for (const g of BODY_GAUGES) {
+    const r = bodyGauges.rows[g.key], v = body?.[g.key];
+    const has = typeof v === "number" && Number.isFinite(v);
+    const over = has && !g.mark && v >= g.thr;   // 임계 넘음 — 팔꿈치는 '뻗음' 표시라 빨강 아님
+    r.fill.style.width = has ? `${Math.min(100, Math.max(0, v / g.max * 100))}%` : "0%";
+    r.bar.className = `bar${over ? " over" : ""}${has ? "" : " off"}`;
+    r.val.className = `val${over ? " over" : ""}`;
+    r.val.textContent = has ? `${v.toFixed(0)}°` : "—";
+  }
+  const elbow = body?.elbow_extension_deg, extended = typeof elbow === "number" && elbow >= 140;
+  const comp = body?.compensation_detected ? (COMP_NAMES[body.compensation_type] ?? body.compensation_type) : "";
+  bodyGauges.note.className = `note${comp ? " over" : ""}`;
+  bodyGauges.note.textContent = !body ? "몸 자세 값 없음 (body_pose 연결 대기)" : !body.detected ? "사람이 안 보임"
+    : comp ? `보상 동작: ${comp}` : extended ? "뻗은 팔 기준 · 평소 자세 대비 각도" : "팔을 뻗을 때만 잽니다 (팔꿈치 140° 이상)";
+}
+
 const CAMERA_FALLBACK_S = 8;   // 인식 화면이 이만큼 안 오면 원본 카메라로
 function cameraFigure(cam, why = "") {
   // 영상은 로봇·인식 PC 의 web_video_server 에서 브라우저가 직접 받는다. 끊기면 5 s 뒤 다시 연결
@@ -692,8 +765,12 @@ function cameraFigure(cam, why = "") {
   const img = document.createElement("img"); img.alt = `${cam.name} 카메라 화면`;
   const msg = document.createElement("div"); msg.className = "empty"; msg.textContent = "No Image";
   const cap = document.createElement("figcaption"); cap.textContent = cam.topic ? `${cam.name} · ${cam.topic}` : cam.name;
+  // 몸 자세 칸에만 게이지 (10/15). 칸이 다시 만들어지면(카메라 설정 재요청) 새 블록이 이어받는다
+  const isBody = cam.name === "몸 자세" || cam.topic.startsWith("/rally/perception/body");
+  const gauges = isBody ? bodyGaugeBlock() : null;
+  const finish = () => { if (gauges) { fig.append(gauges); bodyGauges = gauges; renderBodyGauges(lastBody); } return fig; };
   fig.setShown = (show) => { fig.hidden = !show; };
-  if (!cam.url) { msg.title = why; frame.append(msg); fig.append(frame, cap); return fig; }
+  if (!cam.url) { msg.title = why; frame.append(msg); fig.append(frame, cap); return finish(); }
   // MJPEG(multipart)는 브라우저마다 load 이벤트가 다르게 와서, 실제로 그림이 한 장 들어왔는지(naturalWidth)로 본다.
   // 서버는 있는데 카메라 토픽이 없으면 그림이 안 들어오므로 계속 No Image
   // 손목은 인식 결과 화면(세그먼트 마스크·신뢰도가 그려진 debug_image)을 먼저 받고, FALLBACK_S 동안 그림이 안 오면(비전 꺼짐) 원본 카메라로
@@ -714,7 +791,7 @@ function cameraFigure(cam, why = "") {
   // 보이지 않는 화면에선 연결을 끊고(로봇 PC 압축 부담), 다시 보이면 연결
   fig.setShown = (show) => { if (fig.hidden === !show) return; fig.hidden = !show; if (show) open(); else { img.removeAttribute("src"); msg.hidden = false; } };
   frame.append(img, msg); fig.append(frame, cap); open();
-  return fig;
+  return finish();
 }
 
 // 세션 리포트 마크다운(rally_brain session_report.py: ## 제목 · 표 · - 목록 · _참고_) → HTML.
@@ -807,6 +884,10 @@ function renderProposal() {
 // 신호 스택 패널은 10/15 「보상 동작 기록」 패널(renderComp)로 바뀜
 const REST_LABELS = {compensation:'보상 동작 반복', success_drop:'성공률 하락', slowing:'시도 시간 증가'};
 const COMP_NAMES = {trunk_lean:'몸통 기울임', shoulder_hike:'어깨 들림'};
+// 대기 사유 → 표시 (10/15): 손 근접 사유면 같은 시도를 이어 가는 대기, 그 밖(힘 한계·툭 치기·상태 끊김 등)은 복구 대기 (hand_stop.py Recovery)
+const HAND_WAIT_REASONS = new Set(["hand_near_robot", "hand_near_centerline", "hand_lost_near"]);
+function isHandWait(reason) { return HAND_WAIT_REASONS.has(reason); }
+function waitLabel(reason) { return isHandWait(reason) ? "손 근접 정지 대기" : reason === "no_safety_status" ? "안전 상태 수신 대기" : "정지 뒤 복구 대기"; }
 let restSeen = null;   // 마지막으로 본 {key, on, met, llm} — 바뀐 것만 알린다
 function notify(text, kind) {
   const el = document.createElement('div');
@@ -846,6 +927,41 @@ function renderComp(s) {
   $('comp-now').textContent = !c ? 'brain 연결을 기다리는 중'
     : !active ? (log.length ? '지난 세션 기록 — 다음 세션을 시작하면 새로 쌓입니다' : '세션을 시작하면 시도마다 기록됩니다')
     : c.current?.length ? `이번 시도: ${c.current.map(t => COMP_NAMES[t] || t).join(' · ')} 보임` : '이번 시도: 아직 보상 동작 없음';
+}
+
+const ACTIONS = {harder: "어렵게", easier: "쉽게"};
+const SOURCES = {voice: "음성", rule: "규칙"};
+const levelChange = (e) => e.from === e.to ? `${e.to}단계 그대로 (한계)` : `${e.from} → ${e.to}단계`;
+const levelWhy = (e) => `${ACTIONS[e.action] ?? e.action} · ${SOURCES[e.source] ?? e.source}`;
+let levelSeenAt = null;   // 난이도 변화 기록 중 이미 알린 마지막 at — 처음 받은 기록은 알리지 않음 (휴식 신호 알림과 같은 규칙)
+// 난이도 변화 패널 (10/16, 모드 1 화면 현재 단계 아래): brain control.difficulty_log — 어렵게/쉽게가 적용된 시도·전후 단계·요청 출처.
+// 모드 1 단계 = 손 시작 거리 (오를수록 공 목표에서 멀리서 시작). 새 기록은 훈련 기록 줄로도 남기고, 실제로 바뀐 것만 알림 + 현재 단계 숫자 강조
+function renderLevel(s) {
+  const d = s?.difficulty_log;
+  if (!d) return;   // 연결 끊김·옛 brain: 마지막 화면 유지
+  const all = d.log || [];
+  const log = all.filter((e) => Number(e.mode) === 1);
+  const [lo, hi] = d.range?.[1] ?? [0, 3];
+  const active = Number(s.mode) === 1 && !['idle', 'ended'].includes(s.phase);
+  const cur = active && s.difficulty != null ? Number(s.difficulty) : log.length ? Number(log.at(-1).to) : null;
+  $('level-meter').innerHTML = cur == null ? '' : `<b>${cur}단계</b>` + Array.from({length: hi - lo + 1}, (_, i) => `<i class="${lo + i <= cur ? 'on' : ''}" title="${lo + i}단계"></i>`).join('');
+  $('level-now').textContent = active ? `지금 ${cur ?? '—'}단계 (${lo}~${hi}) · "어렵게"·"쉽게"라고 말하면 이번 시도가 끝난 뒤 바뀝니다`
+    : log.length ? '지난 기록 — 모드 1 을 다시 시작하면 새로 쌓입니다' : '모드 1 이 진행되면 "어렵게"·"쉽게"로 바뀐 단계가 여기 쌓입니다';
+  const changed = log.filter((e) => e.from !== e.to).length;
+  $('level-sum').textContent = changed ? `${changed}번 바뀜` : '';
+  $('level-empty').hidden = log.length > 0;
+  $('level-list').innerHTML = [...log].reverse().map((e) => `<li><span class="r-no">${Number(e.trial)}회 뒤</span>`
+    + `<span class="r-chg${e.from === e.to ? ' same' : ''}">${levelChange(e)}</span><span class="r-why">${esc(levelWhy(e))}</span></li>`).join('');
+  const newest = all.reduce((m, e) => Math.max(m, Number(e.at) || 0), 0);
+  if (levelSeenAt === null) { levelSeenAt = newest; return; }
+  for (const e of all.filter((e) => Number(e.at) > levelSeenAt)) {
+    addEvent({kind: 'difficulty_change', time: new Date(Number(e.at) * 1000).toISOString(), ...e}, true, false);
+    if (e.from !== e.to) {
+      notify(`난이도 ${e.from} → ${e.to}단계 (${ACTIONS[e.action] ?? e.action})`, 'level');
+      $('mode-level').className = 'new'; setTimeout(() => { $('mode-level').className = ''; }, 1300);
+    }
+  }
+  levelSeenAt = newest;
 }
 
 async function respondProposal(decision) {
@@ -909,6 +1025,7 @@ function selectPage() {
   if ($('steps-panel').parentNode !== stepsHome) stepsHome.append($('steps-panel'));
   for (const m of [1, 3, 5]) $(`card-${m}`).className = `mode-card${m === selectedMode ? ' selected' : ''}`;
   $('v-rail').hidden = $('v-track').hidden = selectedMode === null;
+  $('level-panel').hidden = selectedMode !== 1;   // 난이도 변화 패널은 모드 1 화면에만 (모드 3·5 는 단계 레시피 없음, 10/16)
   showCameras();
   $('trials-view').hidden=selectedPage!=='trials';
   $('events-view').hidden=selectedPage!=='events';
@@ -1014,7 +1131,9 @@ function renderModePage(){
   else if(index>=0){title=page.steps[index];description=page.help[index];}
   else if(running){title='세부 단계 확인 중';description='수신한 상태에 대응하는 단계가 아직 연결되지 않았습니다.';}
   if(active&&control.phase==='pause_pending')description+=' 현재 시도와 회수 완료 후 휴식합니다.';
-  if(active&&control.hand_wait){title='손 근접 정지 대기';description=`${reasonText(control.hand_wait)} — 로봇은 멈춰 있고, 손이 빠져 정상 상태가 1초 이어지면 같은 시도를 이어갑니다.`;}
+  if(active&&control.hand_wait){title=waitLabel(control.hand_wait);description=isHandWait(control.hand_wait)
+    ?`${reasonText(control.hand_wait)} — 로봇은 멈춰 있고, 손이 빠져 정상 상태가 1초 이어지면 같은 시도를 이어갑니다.`
+    :`${reasonText(control.hand_wait)} — 로봇은 멈춰 있습니다. 안전을 확인하고 정지를 풀면(모드 1·5는 로봇 손의 물건도 빼면) 같은 모드의 남은 시도부터 이어갑니다.`;}
   $('step-title').textContent=title;$('step-description').textContent=description;$('raw-stage').textContent=node?`BT · ${node}`:''; $('step-title').title=node?`BT · ${node}`:'';
   $('steps').innerHTML=page.steps.map((step,i)=>`<li data-i="${i}" title="눌러서 이 단계 그림 보기" class="${i===index?'active':''}${preview&&i===previewStage?' preview':''}" ${i===index?'aria-current="step"':''}><span>${i+1}</span><strong>${esc(step)}</strong></li>`).join('');
   $('steps-play').textContent=preview?'■ 실시간 보기':'▶ 단계 미리보기';

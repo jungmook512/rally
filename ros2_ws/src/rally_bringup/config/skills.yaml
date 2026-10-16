@@ -34,8 +34,21 @@ mode3:
   trial_timeout_s: 30.0             # 공을 던지기를 기다리는 시간 — 운영자가 패드에서 공을 떼어 건네는 시간 포함 (after_catch 보류)
   timeout_end_after: 2              # 연속 이만큼 안 던지면 모드 3 남은 시도 건너뜀
   intro_prompt: "이번에는 공을 던져서 로봇 패드에 붙여 볼게요"      # 모드 3 시작 (session_tree)
-  throw_prompt: "준비되면 패드를 향해 공을 던져 주세요"             # 시도마다
+  throw_prompt: "준비되면 패드를 향해 공을 던져 주세요"             # 시도마다 — 로봇이 패드를 쥐고 대기 자세(ready_posj)에 선 뒤
+  # ★ 10/16 조정묵: 투구 안내는 대기 자세에 선 뒤. 로봇은 도착을 알리지 않아(feedback ready 는 집기 전) brain 이 관절값(/dsr01/joint_states)을
+  #   ready_posj 와 비교한다 — 일정한 값이 아니라 허용 오차 안이면 (도착 관절값이 교시값과 조금씩 달라서). 그리퍼가 빈 걸 알면(집기 전) 아직
+  throw_prompt_pose_tol_deg: 3.0    #   관절 6개 모두 ready_posj ± 이 각도 안
+  throw_prompt_settle_s: 1.0        #   그 안에 이만큼 머물면 안내 (지나가는 중 오탐 방지)
+  throw_prompt_after_grip_s: 8.0    #   관절값이 안 올 때: 거치대에서 집는 경우 쥔 것이 보인 뒤 이만큼 (거치대 → 대기 자세 이동 시간, 관절 30 °/s)
+  throw_prompt_delay_s: 3.0         #   관절값이 안 올 때: goal 때 이미 쥐고 있던 경우(직전 놓침) 또는 그리퍼 상태도 모를 때 goal 뒤 이만큼
+  throw_prompt_max_s: 25.0          #   늦어도 goal 뒤 이만큼엔 안내. 그 전에 스킬이 끝나면 안내 없음
   done_prompt: "캐치볼을 마쳤어요. 수고하셨어요"                   # 모드 3 시도를 모두 마침 (session_tree)
+  # 결과 안내 (10/15 조정묵: 코드 상수 → 여기). 빈 문자열이면 말하지 않음. timeout·안전 정지·중단은 말하지 않음
+  #   10/16: 판정 피드백(caught/missed) 이 오는 순간 말한다 — 결과(패드 꽂기·공 떼기 뒤)를 기다리지 않음. 놓쳤는데 안 움직인 경우(반경 밖)만 결과 때
+  success_prompt: "잘 던졌어요, 받았어요"                          # 패드 위 공을 측면 카메라가 연속으로 봄
+  missed_prompt: "아쉬워요, 다시 던져 볼까요"                      # 움직였지만 못 받음
+  out_of_radius_prompt: "조금 더 패드 쪽으로 던져 볼까요"           # 예측점이 catch_radius_m 밖이라 안 움직임
+  last_fail_prompt: "아쉬워요"                                     # 마지막 시도의 놓침·반경 밖 — 바로 done_prompt 가 이어지므로 '다시 던져' 없이
   # catch_ball 스킬 (10/11, 근거 docs/mode3/MODE3_OVERVIEW.md). 없으면 catch_ball.DEFAULTS
   ready_posj: [89.8, 30.0, -121.7, 90.2, -80.2, 88.3]   # 대기 자세 (정정인 결정, 패드 면 45°)
   # 패드 TCP 10/12 정동휘 실측: 공구 좌표 (−17.5, −104.3, 6.5) mm, Ry −45°. 대기 자세에서 base 패드 중심 (0.323, −0.328, 0.496) m,
@@ -188,6 +201,8 @@ mode1:
   return_tries: 2
   return_timeout_s: 20.0
   out_of_reach_prompt: "공을 보라색 선 너머로 굴려 주세요"   # 10/8 정정인: 회수는 환자가 공을 선 너머 로봇 쪽으로 굴려 줘야 함 (로봇은 x ≤ 0.55 만 집음)
+  push_fail_prompt: "공을 거치대에 넣어 주세요. 정리되면 이어서 할게요"   # ★ 10/15: 밀기 실패 → 기록 + 안내 + push_fail_wait_s(그리퍼 비면) 뒤 다음 시도 (전엔 세션 종료)
+  push_fail_wait_s: 10.0
   return_fail_prompt: "공을 거치대에 올려 주세요"
   return_fail_wait_s: 5.0         # ★ 10/14 정정인: 회수(집기) 실패는 세션 종료가 아니라 안내 뒤 5 s 기다리고 다음 시도 (brain mode1_push)
   reach_rmse_multiplier: 2.0     # 사용자 합의: 초기 reach/단계 = RMSE×2, 실물 확인용
@@ -326,10 +341,25 @@ brain:
   #   로봇이 서 있을 때 걸린 아래 사유의 STOP(safety_monitor 비래치)은 세션을 끝내지 않고 기다렸다가, NORMAL 이 resume_hold_s
   #   이어지면 같은 시도를 이어 간다 (SLOW 는 재진행 아님, 10/11 결정). 로봇이 움직이는 중이거나 그 밖의 STOP 은 기존대로 세션 종료
   hand_stop_wait_reasons: [hand_near_robot, hand_near_centerline, hand_lost_near]
-  hand_stop_wait_modes: [1, 5]     # 10/11: 모드 5 추가 — 받기 자세로 가는 중 방금 막대를 받은 손이 가까워 STOP → 세션 종료되던 것
+  hand_stop_wait_modes: [1, 3, 5, 7]   # 10/11: 모드 5 추가 — 받기 자세로 가는 중 방금 막대를 받은 손이 가까워 STOP → 세션 종료되던 것. 10/15 조정묵: 모든 모드
   hand_stop_resume_hold_s: 1.0
   hand_stop_prompt: "손을 조금 떼어 주세요. 손이 빠지면 이어서 할게요"
   hand_stop_prompt_s: 10.0          # 기다리는 동안 안내 간격
+  # ★ 10/15 조정묵 — 복구 대기 (rally_brain/hand_stop.py Recovery): 그 밖의 STOP(힘 한계·툭 치기·작업 공간·비상어 등 래치)과 로봇 동작 중 이어 갈 수 없는
+  #   단계의 손 STOP 은 세션을 끝내지 않는다. 돌던 스킬 취소(그 시도 interrupted) → NORMAL 이 resume_hold_s 이어질 때까지(래치면 운영자 reset) →
+  #   모드 1·5 는 그리퍼에 물건이 있으면 사람이 뺄 때까지 → 같은 모드의 남은 시도부터 (관측 자세부터). 아래 시간을 넘기면 그때만 세션 종료
+  stop_wait_reasons_no_cancel: [no_safety_status]   # 안전 상태 끊김(와이파이, 래치 아님): 어느 모드든 스킬을 취소하지 않고 기다림 (안내 없음)
+  recovery_prompt: "로봇이 서 있어요. 안전을 확인하고 리셋해 주세요"   # 래치 STOP 대기 중 (TTS 문구에 '정지'·'멈춰' 금지 — 비상어)
+  recovery_prompt_s: 15.0
+  recovery_max_s: 300.0
+  clear_gripper_prompt: "로봇 손에 있는 물건을 빼서 제자리에 놓아 주세요"
+  clear_gripper_modes: [1, 5]       # 3 은 패드, 7 은 손잡이를 쥔 게 정상이라 확인 안 함
+  clear_gripper_max_s: 120.0
+  # ★ 10/15 조정묵 — 자세 이동 서비스(관측·손 보기·물체 보기) 실패는 pose_retry_wait_s 쉬고 pose_tries 번까지. 끝내 못 가면 그 시도만 실패
+  #   (손 보기·물체 보기) 또는 그 모드만 건너뜀 (모드 시작 관측 자세, 스킬 서버 없음) — 세션 실패 아님
+  pose_tries: 2
+  pose_retry_wait_s: 3.0
+  mode_skip_prompt: "이 훈련은 지금 할 수 없어요. 다른 훈련을 골라 주세요"
 
 mode3_challenge:
   enabled: true                     # CP13 결정에 따라 false 로 시연에서 제외
@@ -465,12 +495,14 @@ mode5:
   pick_x_range_m: [0.15, 0.55]    # 이 x 범위의 물체만 집는다 — 환자 손에 든 물체(중앙선 근처)를 집으러 가지 않게
   pick_retry_reasons: [pick_failed]   # 집기 재시도 (max_retries 공용). 이유 없는 abort(안전 정지일 수 있음)는 재시도 안 함
   receive_prompt: "물체를 로봇 손 사이로 다시 넣어 주세요"   # 받기 timeout 때 안내 후 1회 재시도
+  receive_fail_prompt: "물건을 테이블 흰 자리에 올려 주세요"   # ★ 10/15: 받기 실패(물건이 환자 손에) → 기록 + 안내, 비전에 물건이 보이거나 아래 시간 뒤 다음 시도 (전엔 세션 종료)
+  receive_fail_wait_s: 30.0
   # 음성 피드백 (#119 정동휘 문구, 10/11). 모두 phrase_problem 통과. 빈 문자열이면 말하지 않음
   intro_prompt: "이번에는 물건을 주고받아 볼게요"                  # 모드 5 시작 (session_tree)
   present_prompt: "로봇이 내미는 물건을 손목을 돌려서 잡아 보세요"  # GIVE 내민 뒤 당김 대기(feedback wait)
   grasp_ok_prompt: "잘 잡으셨어요. 천천히 당겨 가져가세요"         # GIVE 당김 감지 → 놓기(feedback release)
-  give_back_prompt: "이제 그 물건을 로봇에게 다시 건네주세요"       # RECEIVE 보내기 전
-  receive_ok_prompt: "잘 건네주셨어요"                            # RECEIVE 성공
+  give_back_prompt: "이제 그 물건을 로봇에게 다시 건네주세요"       # RECEIVE 받을 자세에 서서 기다리기 시작할 때 (feedback wait, 10/16)
+  receive_ok_prompt: "잘 건네주셨어요"                            # RECEIVE 잡는 순간 (feedback grasp, 10/16). 피드백이 없으면 결과 때
   done_prompt: "주고받기를 모두 마쳤어요. 수고하셨어요"             # 모드 5 시도를 모두 마침 (session_tree)
 
 # llm_tunable — LLM(llm_advisor)이 제안해도 되는 값과 그 범위. 범위는 여기서만 정한다 (요청에 온 범위는 이 안으로 좁히기만).
