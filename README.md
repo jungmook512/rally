@@ -1,5 +1,35 @@
 # RALLY — 테이블 건너편 재활 파트너 로봇
 
+> **이 저장소는 팀 프로젝트 RALLY의 공개 사본입니다.**
+> 원본 저장소(`ImymemineJ/rally`)가 비공개라, 팀원 동의를 받아 `main` 브랜치의 커밋 기록을 그대로 옮겼습니다.
+> 원본의 Pull Request(본문의 `#번호`)는 이 사본에 없습니다. 아래 수치는 원본 저장소 기준입니다.
+
+## 조정묵 담당 범위 (이 사본을 올린 사람)
+
+두산로보틱스 ROKEY BOOT CAMP 9기 최종 프로젝트 · 2026-10-05 ~ 10-16 · 4명 · 시연 성공
+
+물리 PC 2대 중 **서버 PC**를 맡았습니다. 판단·데이터·대시보드를 구현했고, 기동 설정과 PC 간 통신·컨테이너 장애 수정을 맡았습니다.
+로봇 제어·비전·사람 인식·음성은 다른 팀원이 구현했습니다 (아래 "팀" 표).
+
+| 볼 곳 | 내용 |
+|---|---|
+| [`ros2_ws/src/rally_brain/rally_brain/trees/session_tree.py`](ros2_ws/src/rally_brain/rally_brain/trees/session_tree.py), [`bt_runner.py`](ros2_ws/src/rally_brain/rally_brain/bt_runner.py) | py_trees 행동 트리로 세션 흐름 지휘. 안전 정지 후 같은 시도를 이어가는 복구 구조 |
+| [`rule_layer.py`](ros2_ws/src/rally_brain/rally_brain/rule_layer.py) → [`graph_rag.py`](ros2_ws/src/rally_brain/rally_brain/graph_rag.py) → [`rest_advisor.py`](ros2_ws/src/rally_brain/rally_brain/rest_advisor.py), [`llm_advisor.py`](ros2_ws/src/rally_brain/rally_brain/llm_advisor.py) | 규칙 → 지식 그래프 → LLM 순의 판단. LLM은 두 선택지·3초 제한·스키마 검증·실패 시 규칙 복귀 |
+| [`docs/INTELLIGENCE.md`](docs/INTELLIGENCE.md) | 위 판단 구조의 설계 이유와 한계 |
+| [`ros2_ws/src/rally_bringup/config/metrics.yaml`](ros2_ws/src/rally_bringup/config/metrics.yaml), [`llm.yaml`](ros2_ws/src/rally_bringup/config/llm.yaml) | 지표 정의·LLM 설정을 설정 파일 한 곳에 둠 |
+| [`ros2_ws/src/rally_db/`](ros2_ws/src/rally_db/) | 기록 노드와 스키마. PostgreSQL·TimescaleDB·pgvector(HNSW)·Redis |
+| [`dashboard/`](dashboard/) | FastAPI·WebSocket 실시간 대시보드 |
+
+| 기여 (원본 저장소 기준) | 값 |
+|---|---|
+| 커밋 | 244 / 전체 775 (머지 포함) |
+| Pull Request | 82 / 전체 202 |
+| 담당 코드 중 본인 작성 비율 (`git blame`) | `rally_brain` 91% · `rally_db` 92% · `dashboard` 99% · `rally_bringup` 59% |
+
+커밋 작성자 이름 `mook`, `jungmook512`가 조정묵입니다.
+
+---
+
 **R**ehabilitation **A**rm that **L**earns the ra**LLY** with you
 
 두산 M0609 협동로봇이 공·패드·막대 같은 **물체를 통해서만** 환자와 주고받으며 상지 재활 훈련의
